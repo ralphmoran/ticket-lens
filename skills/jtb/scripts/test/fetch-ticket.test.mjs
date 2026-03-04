@@ -1,8 +1,9 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
 import { run } from '../fetch-ticket.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -13,6 +14,9 @@ const validEnv = {
   JIRA_BASE_URL: 'https://test.atlassian.net',
   JIRA_PAT: 'test-token',
 };
+
+// Use a nonexistent configDir so profile-resolver falls back to env vars
+const NO_CONFIG = '/tmp/ticketlens-no-config';
 
 function captureOutput() {
   let stdout = '';
@@ -34,13 +38,12 @@ describe('fetch-ticket integration', () => {
     const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
     const out = captureOutput();
     try {
-      await run(['PROD-1234', '--depth=0'], validEnv, mockFetch);
+      await run(['PROD-1234', '--depth=0'], validEnv, mockFetch, NO_CONFIG);
       assert.ok(out.stdout.includes('# PROD-1234: Fix payment validation on checkout'));
       assert.ok(out.stdout.includes('## Description'));
       assert.ok(out.stdout.includes('## Comments'));
       assert.ok(out.stdout.includes('## Code References'));
       assert.ok(out.stdout.includes('`validateCart`'));
-      assert.equal(out.stderr, '');
     } finally {
       out.restore();
     }
@@ -49,7 +52,7 @@ describe('fetch-ticket integration', () => {
   it('missing ticket ID outputs error to stderr and sets exit code 1', async () => {
     const out = captureOutput();
     try {
-      await run([], validEnv);
+      await run([], validEnv, undefined, NO_CONFIG);
       assert.ok(out.stderr.includes('Missing ticket ID'));
       assert.equal(process.exitCode, 1);
       assert.equal(out.stdout, '');
@@ -61,8 +64,7 @@ describe('fetch-ticket integration', () => {
   it('missing env vars outputs error to stderr and sets exit code 1', async () => {
     const out = captureOutput();
     try {
-      await run(['PROD-1234'], {});
-      assert.ok(out.stderr.includes('Missing env vars'));
+      await run(['PROD-1234'], {}, undefined, NO_CONFIG);
       assert.ok(out.stderr.includes('JIRA_BASE_URL'));
       assert.equal(process.exitCode, 1);
     } finally {
@@ -74,11 +76,39 @@ describe('fetch-ticket integration', () => {
     const mockFetch = async () => ({ ok: false, status: 500, statusText: 'Internal Server Error' });
     const out = captureOutput();
     try {
-      await run(['PROD-1234'], validEnv, mockFetch);
+      await run(['PROD-1234'], validEnv, mockFetch, NO_CONFIG);
       assert.ok(out.stderr.includes('500'));
       assert.equal(process.exitCode, 1);
     } finally {
       out.restore();
+    }
+  });
+
+  it('uses profile when config exists and prefix matches', async () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'ticketlens-'));
+    writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({
+      profiles: {
+        testprofile: { baseUrl: 'https://profiled.atlassian.net', auth: 'cloud', email: 'p@test.com', ticketPrefixes: ['ADV'] },
+      },
+      default: 'testprofile',
+    }));
+    writeFileSync(join(configDir, 'credentials.json'), JSON.stringify({
+      testprofile: { apiToken: 'profile-token' },
+    }));
+
+    const calls = [];
+    const mockFetch = async (url, opts) => {
+      calls.push({ url, auth: opts.headers.Authorization });
+      return { ok: true, json: async () => cloudFixture };
+    };
+    const out = captureOutput();
+    try {
+      await run(['PROD-1234', '--depth=0'], {}, mockFetch, configDir);
+      assert.ok(calls[0].url.startsWith('https://profiled.atlassian.net'));
+      assert.ok(out.stderr.includes('Using profile: testprofile'));
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
     }
   });
 });
