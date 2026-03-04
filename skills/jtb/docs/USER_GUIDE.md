@@ -42,12 +42,14 @@ The skill lives at `~/.agents/skills/jtb/`. No npm install required — it uses 
     │   ├── jira-client.mjs         # Jira REST API client
     │   ├── code-ref-parser.mjs     # Code reference extraction
     │   ├── vcs-detector.mjs        # VCS detection
-    │   └── brief-assembler.mjs     # Markdown output assembly
+    │   ├── brief-assembler.mjs     # Markdown output assembly
+    │   └── profile-resolver.mjs    # Multi-account profile resolution
     └── test/
         ├── code-ref-parser.test.mjs
         ├── vcs-detector.test.mjs
         ├── jira-client.test.mjs
         ├── brief-assembler.test.mjs
+        ├── profile-resolver.test.mjs
         └── fetch-ticket.test.mjs
 ```
 
@@ -55,32 +57,86 @@ The skill lives at `~/.agents/skills/jtb/`. No npm install required — it uses 
 
 ## Configuration
 
-### Jira Cloud
+### Multi-Account Profiles (Recommended)
 
-Generate an API token at https://id.atlassian.com/manage-profile/security/api-tokens.
+Profiles let you work with multiple Jira instances. Tickets are automatically routed to the right account based on their prefix.
+
+#### 1. Create `~/.ticketlens/profiles.json`
+
+```json
+{
+  "profiles": {
+    "myteam": {
+      "baseUrl": "https://myteam.atlassian.net",
+      "auth": "cloud",
+      "email": "you@example.com",
+      "ticketPrefixes": ["PROJ", "OPS"]
+    },
+    "client": {
+      "baseUrl": "https://jira.client.com",
+      "auth": "server",
+      "ticketPrefixes": ["CLI"]
+    }
+  },
+  "default": "myteam"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `baseUrl` | Yes | Jira instance URL |
+| `auth` | Yes | `"cloud"` (Basic) or `"server"` (Bearer PAT) |
+| `email` | Cloud only | Your Atlassian email |
+| `ticketPrefixes` | Yes | Array of Jira project keys this profile handles |
+
+#### 2. Create `~/.ticketlens/credentials.json`
+
+```json
+{
+  "myteam": { "apiToken": "your-cloud-api-token" },
+  "client": { "pat": "your-server-pat" }
+}
+```
+
+Secure this file: `chmod 600 ~/.ticketlens/credentials.json`
+
+For Cloud accounts, generate tokens at https://id.atlassian.com/manage-profile/security/api-tokens. For Server/DC, create a PAT in your Jira profile settings.
+
+#### Resolution Order
+
+When you run `/jtb PROJ-42`, the profile is resolved in this order:
+
+1. **`--profile` flag** — explicit override (`/jtb PROJ-42 --profile=client`)
+2. **Prefix match** — ticket prefix `PROJ` matches "myteam" profile
+3. **Default profile** — falls back to the `"default"` profile if no prefix matches
+4. **Environment variables** — falls back to `JIRA_BASE_URL` / `JIRA_PAT` / `JIRA_EMAIL` + `JIRA_API_TOKEN`
+
+If a prefix matches multiple profiles, a warning is emitted and the first match is used.
+
+#### Adding a New Account
+
+1. Add a profile entry to `~/.ticketlens/profiles.json` with the project's ticket prefixes
+2. Add matching credentials to `~/.ticketlens/credentials.json`
+3. Test: `node ~/.agents/skills/jtb/scripts/fetch-ticket.mjs NEWPROJ-1 --depth=0`
+
+### Environment Variables (Single Account)
+
+For simpler setups, environment variables work without any config files:
 
 ```bash
+# Jira Cloud
 export JIRA_BASE_URL="https://yourteam.atlassian.net"
 export JIRA_EMAIL="you@example.com"
 export JIRA_API_TOKEN="your-api-token"
-```
 
-Authentication: Base64-encoded `email:token` sent as a Basic auth header.
-
-### Jira Server / Data Center
-
-Generate a Personal Access Token in your Jira profile settings.
-
-```bash
+# Jira Server / Data Center
 export JIRA_BASE_URL="https://jira.yourcompany.com"
 export JIRA_PAT="your-personal-access-token"
 ```
 
-Authentication: Bearer token header.
-
 ### Auth Detection Logic
 
-If `JIRA_PAT` is set, Bearer auth is used (Server/DC). Otherwise, Basic auth with `JIRA_EMAIL` + `JIRA_API_TOKEN` is used (Cloud). This means you can have both configured — PAT takes priority.
+If `JIRA_PAT` is set (or profile has `pat`), Bearer auth is used (Server/DC). Otherwise, Basic auth with email + API token is used (Cloud).
 
 ---
 
@@ -92,12 +148,13 @@ If `JIRA_PAT` is set, Bearer auth is used (Server/DC). Otherwise, Basic auth wit
 /jtb PROD-1234                  # Default depth 1
 /jtb PROD-1234 --depth=0        # Fast mode, target only
 /jtb PROD-1234 --depth=2        # Deep traversal
+/jtb PROD-1234 --profile=client # Force a specific profile
 ```
 
 ### Standalone CLI
 
 ```bash
-node ~/.agents/skills/jtb/scripts/fetch-ticket.mjs TICKET-KEY [--depth=N]
+node ~/.agents/skills/jtb/scripts/fetch-ticket.mjs TICKET-KEY [--depth=N] [--profile=NAME]
 ```
 
 Output goes to stdout (the TicketBrief markdown). Errors go to stderr with exit code 1.
@@ -271,6 +328,11 @@ User types: /jtb PROD-1234
 **brief-assembler.mjs**
 - `assembleBrief(ticket, codeRefs)` — produces ordered markdown from normalized ticket data
 
+**profile-resolver.mjs**
+- `loadProfiles(configDir)` — loads `~/.ticketlens/profiles.json`
+- `resolveProfile(ticketKey, opts)` — matches ticket prefix to profile
+- `resolveConnection(ticketKey, opts)` — full resolution: profile → env var fallback, returns `{ baseUrl, email, apiToken, pat, source, profileName }`
+
 **vcs-detector.mjs**
 - `detectVcs(dir)` — checks for `.git/`, `.svn/`, `.hg/` directories
 
@@ -278,13 +340,15 @@ User types: /jtb PROD-1234
 
 ## Troubleshooting
 
-### "Missing env vars" error
+### "Missing env vars" or "Missing config in profile" error
 
-Ensure `JIRA_BASE_URL` is set and you have either:
-- `JIRA_PAT` (Server/DC), or
-- Both `JIRA_EMAIL` and `JIRA_API_TOKEN` (Cloud)
+**With profiles**: Ensure `~/.ticketlens/profiles.json` and `~/.ticketlens/credentials.json` both exist and the profile name matches between them. Verify the credentials file has the correct key (`apiToken` for cloud, `pat` for server).
 
-If you set them in `~/.zshrc`, run `source ~/.zshrc` or restart your terminal.
+**With env vars**: Ensure `JIRA_BASE_URL` is set and you have either `JIRA_PAT` (Server/DC) or both `JIRA_EMAIL` + `JIRA_API_TOKEN` (Cloud). If set in `~/.zshrc`, run `source ~/.zshrc`.
+
+### Wrong profile selected
+
+Use `--profile=NAME` to force a specific profile. Check that your `ticketPrefixes` arrays don't overlap across profiles. If they do, use `--profile` or reorder the profiles.
 
 ### 401 Unauthorized
 
@@ -355,14 +419,15 @@ All tests use `node:test` + `node:assert` with zero external dependencies.
 | `vcs-detector.test.mjs` | vcs-detector | 4 |
 | `jira-client.test.mjs` | jira-client | 14 |
 | `brief-assembler.test.mjs` | brief-assembler | 8 |
-| `fetch-ticket.test.mjs` | fetch-ticket (integration) | 4 |
-| **Total** | | **42** |
+| `profile-resolver.test.mjs` | profile-resolver | 13 |
+| `fetch-ticket.test.mjs` | fetch-ticket (integration) | 5 |
+| **Total** | | **56** |
 
 ### Test Fixtures
 
 Jira API response fixtures are at:
 ```
-~/Desktop/personal/solopreneur/jtb-repo/jira-fixtures/
+~/Desktop/Projects/ticket-lens/fixtures/jira-fixtures/
 ├── PROD-1234-cloud.json     # Jira Cloud format
 └── PROD-1234-server.json    # Jira Server format
 ```

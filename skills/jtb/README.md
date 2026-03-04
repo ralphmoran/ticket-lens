@@ -16,21 +16,51 @@ export JIRA_API_TOKEN="your-api-token"
 
 ## Setup
 
-### Jira Cloud
+### Option A: Multi-Account Profiles (Recommended)
 
-1. Go to [Atlassian API Tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
-2. Create a new token
-3. Add to your shell profile (`~/.zshrc` or `~/.bashrc`):
+Create `~/.ticketlens/profiles.json`:
+
+```json
+{
+  "profiles": {
+    "myteam": {
+      "baseUrl": "https://myteam.atlassian.net",
+      "auth": "cloud",
+      "email": "you@example.com",
+      "ticketPrefixes": ["PROJ", "OPS"]
+    },
+    "client": {
+      "baseUrl": "https://jira.client.com",
+      "auth": "server",
+      "ticketPrefixes": ["CLI"]
+    }
+  },
+  "default": "myteam"
+}
+```
+
+Create `~/.ticketlens/credentials.json` (chmod 600):
+
+```json
+{
+  "myteam": { "apiToken": "your-cloud-api-token" },
+  "client": { "pat": "your-server-pat" }
+}
+```
+
+Tickets are auto-routed by prefix: `PROJ-42` uses "myteam", `CLI-10` uses "client".
+
+### Option B: Environment Variables
+
+For single-account setups, env vars still work:
 
 ```bash
+# Jira Cloud
 export JIRA_BASE_URL="https://yourteam.atlassian.net"
 export JIRA_EMAIL="you@example.com"
 export JIRA_API_TOKEN="your-token"
-```
 
-### Jira Server / Data Center
-
-```bash
+# Jira Server / Data Center
 export JIRA_BASE_URL="https://jira.yourcompany.com"
 export JIRA_PAT="your-personal-access-token"
 ```
@@ -41,6 +71,7 @@ export JIRA_PAT="your-personal-access-token"
 /jtb TICKET-KEY              # Fetch ticket + linked tickets (depth 1)
 /jtb TICKET-KEY --depth=0    # Target ticket only (fast)
 /jtb TICKET-KEY --depth=2    # Include linked-of-linked tickets
+/jtb TICKET-KEY --profile=client  # Force a specific profile
 ```
 
 ### What it does
