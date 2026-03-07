@@ -132,6 +132,27 @@ describe('profile-resolver', () => {
       assert.equal(result.source, 'profile');
       assert.equal(result.apiToken, null); // no creds file
     });
+
+    it('returns auth type from cloud profile', () => {
+      writeConfig();
+      const result = resolveConnection('CNV1-3', { configDir });
+      assert.equal(result.auth, 'cloud');
+    });
+
+    it('returns auth type from server profile', () => {
+      writeConfig();
+      const result = resolveConnection('PROD-1234', { configDir });
+      assert.equal(result.auth, 'server');
+    });
+
+    it('returns auth as null when falling back to env vars', () => {
+      const env = {
+        JIRA_BASE_URL: 'https://fallback.atlassian.net',
+        JIRA_PAT: 'tok',
+      };
+      const result = resolveConnection('ANY-123', { env, configDir: '/tmp/nonexistent-ticketlens' });
+      assert.equal(result.auth, null);
+    });
   });
 
   describe('loadProfiles', () => {

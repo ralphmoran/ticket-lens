@@ -1,7 +1,16 @@
 /**
  * Jira REST API client supporting Cloud and Server/Data Center.
  * Normalizes responses into a consistent shape.
+ * Supports v2 (Server/DC) and v3 (Cloud) API versions.
  */
+
+import { adfToText } from './adf-converter.mjs';
+
+function toText(value) {
+  if (value == null) return null;
+  if (typeof value === 'string') return value;
+  return adfToText(value);
+}
 
 export function normalizeTicket(raw) {
   const f = raw.fields;
@@ -13,7 +22,7 @@ export function normalizeTicket(raw) {
     priority: f.priority?.name ?? null,
     assignee: f.assignee?.displayName ?? null,
     reporter: f.reporter?.displayName ?? null,
-    description: f.description ?? null,
+    description: toText(f.description),
     created: f.created ?? null,
     updated: f.updated ?? null,
     labels: f.labels ?? [],
@@ -22,7 +31,7 @@ export function normalizeTicket(raw) {
       author: c.author?.displayName ?? c.author?.name ?? null,
       authorAccountId: c.author?.accountId ?? null,
       authorName: c.author?.name ?? null,
-      body: c.body,
+      body: toText(c.body),
       created: c.created,
     })),
     linkedIssues: (f.issuelinks ?? []).map(link => {
@@ -53,11 +62,11 @@ export function buildAuthHeader(env) {
 }
 
 export async function fetchCurrentUser(opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch } = opts;
+  const { env = process.env, fetcher = globalThis.fetch, apiVersion = 2 } = opts;
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
-  const url = `${baseUrl}/rest/api/2/myself`;
+  const url = `${baseUrl}/rest/api/${apiVersion}/myself`;
   const response = await fetcher(url, { headers });
 
   if (!response.ok) {
@@ -74,11 +83,11 @@ export async function fetchCurrentUser(opts = {}) {
 }
 
 export async function fetchStatuses(opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch } = opts;
+  const { env = process.env, fetcher = globalThis.fetch, apiVersion = 2 } = opts;
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
-  const url = `${baseUrl}/rest/api/2/status`;
+  const url = `${baseUrl}/rest/api/${apiVersion}/status`;
   const response = await fetcher(url, { headers });
 
   if (!response.ok) {
@@ -90,13 +99,14 @@ export async function fetchStatuses(opts = {}) {
 }
 
 export async function searchTickets(jql, opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, maxResults = 50 } = opts;
+  const { env = process.env, fetcher = globalThis.fetch, maxResults = 50, apiVersion = 2 } = opts;
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
   const fields = 'summary,status,assignee,priority,issuetype,comment,updated,statuscategorychangedate';
   const params = new URLSearchParams({ jql, fields, maxResults: String(maxResults) });
-  const url = `${baseUrl}/rest/api/2/search?${params}`;
+  const endpoint = apiVersion >= 3 ? `/rest/api/3/search/jql` : `/rest/api/2/search`;
+  const url = `${baseUrl}${endpoint}?${params}`;
   const response = await fetcher(url, { headers });
 
   if (!response.ok) {
@@ -113,11 +123,11 @@ export async function searchTickets(jql, opts = {}) {
 }
 
 export async function fetchTicket(ticketKey, opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, depth = 1, _visited = new Set(), _currentDepth = 0 } = opts;
+  const { env = process.env, fetcher = globalThis.fetch, depth = 1, apiVersion = 2, _visited = new Set(), _currentDepth = 0 } = opts;
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
-  const url = `${baseUrl}/rest/api/2/issue/${ticketKey}`;
+  const url = `${baseUrl}/rest/api/${apiVersion}/issue/${ticketKey}`;
   const response = await fetcher(url, { headers });
 
   if (!response.ok) {
@@ -139,7 +149,7 @@ export async function fetchTicket(ticketKey, opts = {}) {
     for (const linkedKey of linkedKeys) {
       if (_visited.size >= MAX_TICKETS) break;
       const linkedTicket = await fetchTicket(linkedKey, {
-        env, fetcher, depth, _visited, _currentDepth: _currentDepth + 1,
+        env, fetcher, depth, apiVersion, _visited, _currentDepth: _currentDepth + 1,
       });
       ticket.linkedTicketDetails.push(linkedTicket);
     }

@@ -47,6 +47,9 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
     ...(conn.pat ? { JIRA_PAT: conn.pat } : { JIRA_EMAIL: conn.email, JIRA_API_TOKEN: conn.apiToken }),
   };
 
+  // Cloud profiles use v3 API (v2 search is deprecated/410), Server stays on v2
+  const apiVersion = conn.auth === 'cloud' ? 3 : 2;
+
   if (conn.source === 'profile') {
     process.stderr.write(`Using profile: ${conn.profileName}\n`);
   }
@@ -56,7 +59,7 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
 
   let ticket;
   try {
-    ticket = await fetchTicket(ticketKey, { env: jiraEnv, fetcher, depth });
+    ticket = await fetchTicket(ticketKey, { env: jiraEnv, fetcher, depth, apiVersion });
   } catch (err) {
     process.stderr.write(`Error: ${err.message}\n`);
     process.exitCode = 1;

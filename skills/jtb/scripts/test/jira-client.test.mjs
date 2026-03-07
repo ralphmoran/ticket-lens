@@ -76,6 +76,60 @@ describe('normalizeTicket', () => {
     assert.equal(result.comments.length, 3);
     assert.equal(result.linkedIssues.length, 2);
   });
+
+  it('converts ADF description to plain text', () => {
+    const adfTicket = {
+      key: 'ADF-1',
+      fields: {
+        summary: 'ADF test',
+        issuetype: { name: 'Task' },
+        status: { name: 'Open' },
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            { type: 'paragraph', content: [{ type: 'text', text: 'Description from ADF' }] },
+          ],
+        },
+      },
+    };
+    const result = normalizeTicket(adfTicket);
+    assert.equal(result.description, 'Description from ADF');
+  });
+
+  it('converts ADF comment body to plain text', () => {
+    const adfTicket = {
+      key: 'ADF-2',
+      fields: {
+        summary: 'ADF comments',
+        issuetype: { name: 'Task' },
+        status: { name: 'Open' },
+        comment: {
+          comments: [
+            {
+              author: { displayName: 'Dev' },
+              body: {
+                type: 'doc',
+                version: 1,
+                content: [
+                  { type: 'paragraph', content: [{ type: 'text', text: 'Comment from ADF' }] },
+                ],
+              },
+              created: '2026-03-06T10:00:00.000+0000',
+            },
+          ],
+        },
+      },
+    };
+    const result = normalizeTicket(adfTicket);
+    assert.equal(result.comments[0].body, 'Comment from ADF');
+  });
+
+  it('keeps plain string description unchanged', () => {
+    const result = normalizeTicket(cloudFixture);
+    assert.equal(typeof result.description, 'string');
+    assert.ok(result.description.includes('payment validation'));
+  });
 });
 
 describe('buildAuthHeader', () => {
@@ -190,6 +244,35 @@ describe('fetchTicket', () => {
     assert.ok(callCount <= 15, `Made ${callCount} API calls, expected <= 15`);
   });
 
+  it('uses v3 endpoint when apiVersion is 3', async () => {
+    let capturedUrl = '';
+    const mockFetch = async (url) => {
+      capturedUrl = url;
+      return { ok: true, json: async () => cloudFixture };
+    };
+    await fetchTicket('PROD-1234', {
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+      depth: 0,
+      apiVersion: 3,
+    });
+    assert.ok(capturedUrl.includes('/rest/api/3/issue/PROD-1234'), `Expected v3 URL, got: ${capturedUrl}`);
+  });
+
+  it('defaults to v2 endpoint for fetchTicket', async () => {
+    let capturedUrl = '';
+    const mockFetch = async (url) => {
+      capturedUrl = url;
+      return { ok: true, json: async () => cloudFixture };
+    };
+    await fetchTicket('PROD-1234', {
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+      depth: 0,
+    });
+    assert.ok(capturedUrl.includes('/rest/api/2/issue/PROD-1234'));
+  });
+
   it('tracks visited keys to avoid circular references', async () => {
     const calls = [];
     // A links to B, B links back to A
@@ -259,6 +342,20 @@ describe('fetchCurrentUser', () => {
       }
     );
   });
+
+  it('uses v3 endpoint when apiVersion is 3', async () => {
+    let capturedUrl = '';
+    const mockFetch = async (url) => {
+      capturedUrl = url;
+      return { ok: true, json: async () => ({ accountId: 'abc', displayName: 'Dev' }) };
+    };
+    await fetchCurrentUser({
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+      apiVersion: 3,
+    });
+    assert.ok(capturedUrl.includes('/rest/api/3/myself'), `Expected v3 URL, got: ${capturedUrl}`);
+  });
 });
 
 describe('searchTickets', () => {
@@ -282,6 +379,78 @@ describe('searchTickets', () => {
     assert.equal(result.length, 1);
     assert.equal(result[0].key, 'PROD-1234');
     assert.equal(result[0].summary, 'Fix payment validation on checkout');
+  });
+
+  it('uses v3 endpoint when apiVersion is 3', async () => {
+    let capturedUrl = '';
+    const mockFetch = async (url) => {
+      capturedUrl = url;
+      return {
+        ok: true,
+        json: async () => ({ issues: [cloudFixture] }),
+      };
+    };
+    await searchTickets('assignee = currentUser()', {
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+      apiVersion: 3,
+    });
+    assert.ok(capturedUrl.includes('/rest/api/3/search/jql'), `Expected v3 URL, got: ${capturedUrl}`);
+    assert.ok(!capturedUrl.includes('/rest/api/2/'), 'Should not contain v2 path');
+  });
+
+  it('defaults to v2 endpoint when apiVersion not specified', async () => {
+    let capturedUrl = '';
+    const mockFetch = async (url) => {
+      capturedUrl = url;
+      return { ok: true, json: async () => ({ issues: [] }) };
+    };
+    await searchTickets('assignee = currentUser()', {
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+    });
+    assert.ok(capturedUrl.includes('/rest/api/2/search'));
+  });
+
+  it('normalizes ADF description from v3 response', async () => {
+    const v3Fixture = {
+      key: 'PROJ-1',
+      fields: {
+        summary: 'Test ticket',
+        issuetype: { name: 'Task' },
+        status: { name: 'Open' },
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            { type: 'paragraph', content: [{ type: 'text', text: 'ADF description text' }] },
+          ],
+        },
+        comment: {
+          comments: [
+            {
+              author: { displayName: 'Alice' },
+              body: {
+                type: 'doc',
+                version: 1,
+                content: [
+                  { type: 'paragraph', content: [{ type: 'text', text: 'ADF comment body' }] },
+                ],
+              },
+              created: '2026-03-06T10:00:00.000+0000',
+            },
+          ],
+        },
+      },
+    };
+    const mockFetch = async () => ({ ok: true, json: async () => ({ issues: [v3Fixture] }) });
+    const result = await searchTickets('test', {
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+      apiVersion: 3,
+    });
+    assert.equal(result[0].description, 'ADF description text');
+    assert.equal(result[0].comments[0].body, 'ADF comment body');
   });
 
   it('returns empty array for no results', async () => {
@@ -349,5 +518,19 @@ describe('fetchStatuses', () => {
         return true;
       }
     );
+  });
+
+  it('uses v3 endpoint when apiVersion is 3', async () => {
+    let capturedUrl = '';
+    const mockFetch = async (url) => {
+      capturedUrl = url;
+      return { ok: true, json: async () => [{ name: 'Open' }] };
+    };
+    await fetchStatuses({
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+      apiVersion: 3,
+    });
+    assert.ok(capturedUrl.includes('/rest/api/3/status'), `Expected v3 URL, got: ${capturedUrl}`);
   });
 });

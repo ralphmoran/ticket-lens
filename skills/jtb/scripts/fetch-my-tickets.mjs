@@ -44,6 +44,9 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
     ...(conn.pat ? { JIRA_PAT: conn.pat } : { JIRA_EMAIL: conn.email, JIRA_API_TOKEN: conn.apiToken }),
   };
 
+  // Cloud profiles use v3 API (v2 search is deprecated/410), Server stays on v2
+  const apiVersion = conn.auth === 'cloud' ? 3 : 2;
+
   // Status resolution: --status flag > profile triageStatuses > defaults
   const statuses = statusArg
     ? statusArg.split('=')[1].split(',').map(s => s.trim())
@@ -55,7 +58,7 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
 
   let currentUser;
   try {
-    currentUser = await fetchCurrentUser({ env: jiraEnv, fetcher });
+    currentUser = await fetchCurrentUser({ env: jiraEnv, fetcher, apiVersion });
   } catch (err) {
     process.stderr.write(`Error fetching current user: ${err.message}\n`);
     process.exitCode = 1;
@@ -67,12 +70,12 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
 
   let tickets;
   try {
-    tickets = await searchTickets(jql, { env: jiraEnv, fetcher });
+    tickets = await searchTickets(jql, { env: jiraEnv, fetcher, apiVersion });
   } catch (err) {
     if (err.status === 400 && err.detail && /does not exist for the field 'status'/.test(err.detail)) {
       process.stderr.write(`\nInvalid status in triage config. Fetching available statuses from Jira...\n\n`);
       try {
-        const available = await fetchStatuses({ env: jiraEnv, fetcher });
+        const available = await fetchStatuses({ env: jiraEnv, fetcher, apiVersion });
         const invalid = statuses.filter(s => !available.includes(s));
         const devLike = available.filter(s =>
           /progress|review|develop|test|qa|blocked|code/i.test(s)

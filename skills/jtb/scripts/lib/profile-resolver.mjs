@@ -99,6 +99,7 @@ export function resolveConnection(ticketKey, opts = {}) {
     const profileCreds = creds[profile.name] || {};
     return {
       baseUrl: profile.baseUrl,
+      auth: profile.auth || null,
       email: profile.email || null,
       apiToken: profileCreds.apiToken || null,
       pat: profileCreds.pat || null,
@@ -111,6 +112,7 @@ export function resolveConnection(ticketKey, opts = {}) {
   // 4. Fall back to env vars
   return {
     baseUrl: env.JIRA_BASE_URL || null,
+    auth: null,
     email: env.JIRA_EMAIL || null,
     apiToken: env.JIRA_API_TOKEN || null,
     pat: env.JIRA_PAT || null,
