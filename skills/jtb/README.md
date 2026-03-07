@@ -161,7 +161,8 @@ node ~/.agents/skills/jtb/scripts/fetch-my-tickets.mjs [--stale=N] [--status=X,Y
 
 ## Known Issues
 
-- **Jira Cloud v2 API deprecation**: Atlassian deprecated `/rest/api/2/search` on Cloud instances (returns 410 Gone). Triage and search use this endpoint. Needs migration to `/rest/api/3/search/jql` for Cloud. Jira Server/DC is unaffected.
+None at this time. Previous issues resolved:
+- ~~Jira Cloud v2 API deprecation (410 Gone)~~ — Fixed. Cloud profiles auto-select v3 API endpoints.
 
 ## Full Documentation
 

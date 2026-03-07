@@ -44,7 +44,7 @@ node --test skills/jtb/scripts/test/*.test.mjs
 See [ROADMAP.md](ROADMAP.md) for the full iteration plan (45 features across 10 iterations).
 
 **Next up (Iteration 3):**
-- Jira Cloud v3 API migration (unblocks Cloud triage)
+- ~~Jira Cloud v3 API migration~~ (done)
 - npm package (`ticketlens`) for easy global install
 - Polished README with demo GIFs
 
@@ -59,4 +59,5 @@ See [ROADMAP.md](ROADMAP.md) for the full iteration plan (45 features across 10 
 
 ## Known Issues
 
-- **Jira Cloud v2 API deprecation**: Atlassian has deprecated `/rest/api/2/search` on Cloud instances (returns 410 Gone). The `/jtb triage` command currently uses this endpoint. Needs migration to `/rest/api/3/search/jql` for Cloud. Jira Server is unaffected.
+None at this time. Previous issues resolved:
+- ~~Jira Cloud v2 API deprecation (410 Gone)~~ — Fixed in v3 API migration. Cloud profiles now auto-select `/rest/api/3/search/jql`.

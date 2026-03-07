@@ -10,15 +10,15 @@ Unblock Cloud users, make the repo presentable for public launch.
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| 1 | Bug | **Jira Cloud v3 API migration** | `/rest/api/2/search` returns 410 Gone on Cloud. Migrate `searchTickets()` to `/rest/api/3/search/jql`. Affects `/jtb triage` and any search-based features on Cloud. Server/DC unaffected. | Medium |
-| 2 | Bug | **Jira Cloud v3 fetch endpoint** | Audit `fetchTicket()` and `fetchCurrentUser()` for v2 endpoints that may also be deprecated on Cloud. Migrate as needed. | Small |
+| 1 | ~~Bug~~ | ~~**Jira Cloud v3 API migration**~~ | Done. All endpoints support `apiVersion` option. Cloud profiles auto-select v3. Added ADF-to-text converter. | ~~Medium~~ |
+| 2 | ~~Bug~~ | ~~**Jira Cloud v3 fetch endpoint**~~ | Done. `fetchTicket`, `fetchCurrentUser`, `fetchStatuses` all support v3 paths. | ~~Small~~ |
 | 3 | Feature | **npm package (`ticketlens`)** | Publish to npm so users can `npx ticketlens PROJ-123` instead of cloning + symlinking. | Medium |
 | 4 | Chore | **Polish README with GIF demos** | Record 3 GIFs: ticket fetch, triage scan, depth traversal. First impression for GitHub visitors. | Small |
 | 5 | Chore | **CONTRIBUTING.md + issue templates** | Signals "this is a real project" and invites open-source contributors. | Small |
 | 6 | Chore | **GitHub Discussions enabled** | Community Q&A channel without cluttering Issues. | Small |
 
 ### Known Issues Addressed
-- Jira Cloud v2 search API deprecated (410 Gone) — items 1-2
+- ~~Jira Cloud v2 search API deprecated (410 Gone)~~ — resolved in items 1-2
 
 ---
 

@@ -45,7 +45,8 @@ The skill lives at `~/.agents/skills/jtb/`. No npm install required — it uses 
     │   ├── vcs-detector.mjs        # VCS detection
     │   ├── brief-assembler.mjs     # Markdown output assembly
     │   ├── attention-scorer.mjs    # Ticket attention scoring logic
-    │   └── profile-resolver.mjs    # Multi-account profile resolution
+    │   ├── profile-resolver.mjs    # Multi-account profile resolution
+    │   └── adf-converter.mjs       # Atlassian Document Format to plain text
     └── test/
         ├── code-ref-parser.test.mjs
         ├── vcs-detector.test.mjs
@@ -53,6 +54,7 @@ The skill lives at `~/.agents/skills/jtb/`. No npm install required — it uses 
         ├── brief-assembler.test.mjs
         ├── attention-scorer.test.mjs
         ├── profile-resolver.test.mjs
+        ├── adf-converter.test.mjs
         ├── fetch-ticket.test.mjs
         └── fetch-my-tickets.test.mjs
 ```
@@ -473,7 +475,7 @@ Use `--profile=NAME` to force a specific profile. Check that your `ticketPrefixe
 
 ### 410 Gone (Jira Cloud)
 
-Atlassian has deprecated `/rest/api/2/search` on Cloud instances. This affects `/jtb triage` on Cloud. Migration to v3 API is planned. Jira Server/DC is unaffected.
+If you see a 410 error, ensure your profile has `"auth": "cloud"` set. Cloud profiles automatically use the v3 API (`/rest/api/3/search/jql`). Server/DC profiles use v2. If using env vars without a profile, the system defaults to v2 — switch to profile-based config for Cloud instances.
 
 ### No linked tickets showing
 
@@ -504,13 +506,14 @@ All tests use `node:test` + `node:assert` with zero external dependencies.
 |-----------|--------|-------|
 | `code-ref-parser.test.mjs` | code-ref-parser | 12 |
 | `vcs-detector.test.mjs` | vcs-detector | 4 |
-| `jira-client.test.mjs` | jira-client | 25 |
+| `jira-client.test.mjs` | jira-client | 32 |
 | `brief-assembler.test.mjs` | brief-assembler | 11 |
 | `attention-scorer.test.mjs` | attention-scorer | 27 |
-| `profile-resolver.test.mjs` | profile-resolver | 20 |
+| `profile-resolver.test.mjs` | profile-resolver | 22 |
 | `fetch-ticket.test.mjs` | fetch-ticket (integration) | 5 |
 | `fetch-my-tickets.test.mjs` | fetch-my-tickets (integration) | 4 |
-| **Total** | | **108** |
+| `adf-converter.test.mjs` | adf-converter | 13 |
+| **Total** | | **134** |
 
 ### Test Fixtures
 
