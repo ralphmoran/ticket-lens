@@ -39,6 +39,24 @@ See [skills/jtb/README.md](skills/jtb/README.md) for setup and usage.
 node --test skills/jtb/scripts/test/*.test.mjs
 ```
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the full iteration plan (45 features across 10 iterations).
+
+**Next up (Iteration 3):**
+- Jira Cloud v3 API migration (unblocks Cloud triage)
+- npm package (`ticketlens`) for easy global install
+- Polished README with demo GIFs
+
+**Coming soon:**
+- GitHub Issues and Linear as ticket sources
+- Confluence/wiki page fetching
+- **Compliance Check** — compare ticket requirements against shipped code
+- **TicketLens Cloud** — E2EE cloud sync across machines
+- **Team Dashboard** — ticket health, bottlenecks, workload visibility
+- **Slack/Teams Alerts** — actionable notifications
+- **IDE Plugins** — VS Code, JetBrains, Neovim
+
 ## Known Issues
 
 - **Jira Cloud v2 API deprecation**: Atlassian has deprecated `/rest/api/2/search` on Cloud instances (returns 410 Gone). The `/jtb triage` command currently uses this endpoint. Needs migration to `/rest/api/3/search/jql` for Cloud. Jira Server is unaffected.
