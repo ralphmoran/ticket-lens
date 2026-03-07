@@ -13,11 +13,18 @@ Fetches a Jira ticket's full context and assembles a structured brief for implem
 /jtb TICKET-KEY --depth=0    # Target ticket only (fast)
 ```
 
+### /jtb triage — Ticket Attention Scanner
+
+Scans your assigned tickets and surfaces what needs attention — unread comments, CR/QA feedback, aging tickets.
+
+```
+/jtb triage                          # Auto-detect profile from project path
+/jtb triage --stale=3                # Custom aging threshold (days, default: 5)
+/jtb triage --status=CR,QA           # Only check specific statuses
+/jtb triage --profile=acme         # Explicit profile override
+```
+
 See [skills/jtb/README.md](skills/jtb/README.md) for setup and usage.
-
-### /jtb check — Ticket Attention Scanner (Coming Soon)
-
-Scans your assigned tickets and flags ones needing attention (unread comments, CR/QA feedback, aging tickets).
 
 ## Architecture
 
@@ -31,3 +38,7 @@ Scans your assigned tickets and flags ones needing attention (unread comments, C
 ```bash
 node --test skills/jtb/scripts/test/*.test.mjs
 ```
+
+## Known Issues
+
+- **Jira Cloud v2 API deprecation**: Atlassian has deprecated `/rest/api/2/search` on Cloud instances (returns 410 Gone). The `/jtb triage` command currently uses this endpoint. Needs migration to `/rest/api/3/search/jql` for Cloud. Jira Server is unaffected.

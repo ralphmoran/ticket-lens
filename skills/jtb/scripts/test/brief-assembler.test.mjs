@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { assembleBrief } from '../lib/brief-assembler.mjs';
+import { assembleBrief, assembleTriageSummary } from '../lib/brief-assembler.mjs';
 
 const baseTicket = {
   key: 'PROD-1234',
@@ -120,5 +120,52 @@ describe('assembleBrief', () => {
     assert.ok(metaIdx < descIdx);
     assert.ok(descIdx < commentsIdx);
     assert.ok(commentsIdx < codeIdx);
+  });
+});
+
+describe('assembleTriageSummary', () => {
+  it('renders mixed urgencies with correct sections', () => {
+    const scored = [
+      {
+        ticketKey: 'PROD-100',
+        summary: 'Fix payment bug',
+        status: 'Code Review',
+        urgency: 'needs-response',
+        reason: 'Sarah QA commented',
+        lastComment: { author: 'Sarah QA', body: 'Found edge case with empty cart', created: '2026-03-05T10:00:00Z' },
+      },
+      {
+        ticketKey: 'PROD-200',
+        summary: 'Update API docs',
+        status: 'In Progress',
+        urgency: 'aging',
+        reason: 'No activity for 8 days',
+        daysSinceUpdate: 8,
+        lastComment: null,
+      },
+    ];
+    const result = assembleTriageSummary(scored);
+    assert.ok(result.includes('## Tickets Needing Your Attention (2 found)'));
+    assert.ok(result.includes('### Needs Response'));
+    assert.ok(result.includes('PROD-100'));
+    assert.ok(result.includes('Sarah QA'));
+    assert.ok(result.includes('Found edge case'));
+    assert.ok(result.includes('Code Review'));
+    assert.ok(result.includes('### Aging'));
+    assert.ok(result.includes('PROD-200'));
+    assert.ok(result.includes('8d'));
+  });
+
+  it('returns all-clear message when no actionable tickets', () => {
+    const scored = [
+      { ticketKey: 'PROD-300', urgency: 'clear', reason: 'Up to date', lastComment: null },
+    ];
+    const result = assembleTriageSummary(scored);
+    assert.ok(result.includes('All clear'));
+  });
+
+  it('returns all-clear for empty list', () => {
+    const result = assembleTriageSummary([]);
+    assert.ok(result.includes('All clear'));
   });
 });

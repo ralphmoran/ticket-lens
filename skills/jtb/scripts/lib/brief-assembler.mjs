@@ -57,3 +57,69 @@ export function assembleBrief(ticket, codeRefs = null) {
 
   return sections.join('\n\n');
 }
+
+function timeAgo(dateStr) {
+  if (!dateStr) return '';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+export function assembleTriageSummary(scoredTickets, opts = {}) {
+  const { staleDays = 5, baseUrl } = opts;
+  const browseUrl = baseUrl ? baseUrl.replace(/\/$/, '') + '/browse/' : null;
+  const actionable = scoredTickets.filter(t => t.urgency !== 'clear');
+
+  if (actionable.length === 0) {
+    return 'All clear — no tickets need your attention right now.';
+  }
+
+  const sections = [];
+  sections.push(`## Tickets Needing Your Attention (${actionable.length} found)`);
+
+  const needsResponse = actionable.filter(t => t.urgency === 'needs-response');
+  const aging = actionable.filter(t => t.urgency === 'aging');
+  const allKeys = [];
+
+  if (needsResponse.length > 0) {
+    const header = '| # | Ticket | Summary | Status | From | When | Comment |';
+    const sep =    '|---|--------|---------|--------|------|------|---------|';
+    const rows = needsResponse.map((t, i) => {
+      allKeys.push(t.ticketKey);
+      const ago = t.lastComment ? timeAgo(t.lastComment.created) : '';
+      const commenter = t.lastComment?.author ?? 'Unknown';
+      const snippet = t.lastComment?.body ? truncate(t.lastComment.body, 80) : '';
+      return `| ${i + 1} | ${t.ticketKey} | ${truncate(t.summary, 60)} | ${t.status} | ${commenter} | ${ago} | ${snippet} |`;
+    });
+    sections.push(`### Needs Response (${needsResponse.length})\n\n${header}\n${sep}\n${rows.join('\n')}`);
+  }
+
+  if (aging.length > 0) {
+    const header = '| # | Ticket | Summary | Status | Stale |';
+    const sep =    '|---|--------|---------|--------|-------|';
+    const rows = aging.map((t, i) => {
+      allKeys.push(t.ticketKey);
+      const days = t.daysSinceUpdate ?? '?';
+      return `| ${i + 1} | ${t.ticketKey} | ${truncate(t.summary, 60)} | ${t.status} | ${days}d |`;
+    });
+    sections.push(`### Aging — no activity > ${staleDays} days (${aging.length})\n\n${header}\n${sep}\n${rows.join('\n')}`);
+  }
+
+  if (browseUrl && allKeys.length > 0) {
+    const links = allKeys.map((k, i) => `${i + 1}. ${k}: ${browseUrl}${k}`);
+    sections.push(`### Quick Links\n\n${links.join('\n')}`);
+  }
+
+  return sections.join('\n\n');
+}
+
+function truncate(str, max) {
+  if (!str) return '';
+  const oneLine = str.replace(/\n/g, ' ').trim();
+  if (oneLine.length <= max) return oneLine;
+  return oneLine.slice(0, max - 3) + '...';
+}

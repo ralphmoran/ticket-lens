@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveConnection, resolveProfile, loadProfiles } from '../lib/profile-resolver.mjs';
+import { resolveConnection, resolveProfile, resolveProfileByPath, loadProfiles } from '../lib/profile-resolver.mjs';
 
 const sampleProfiles = {
   profiles: {
@@ -162,6 +162,78 @@ describe('profile-resolver', () => {
       writeConfig();
       const result = resolveProfile('OPS-42', { configDir });
       assert.equal(result.name, 'acme');
+    });
+  });
+
+  describe('resolveProfileByPath', () => {
+    it('returns profile when cwd matches a projectPaths entry', () => {
+      const profiles = {
+        profiles: {
+          proj: { baseUrl: 'https://proj.atlassian.net', auth: 'cloud', email: 'a@a.com', projectPaths: ['/home/dev/projects/myapp'] },
+        },
+        default: 'proj',
+      };
+      writeConfig(profiles, { proj: { apiToken: 'tok' } });
+      const result = resolveProfileByPath('/home/dev/projects/myapp/src', configDir);
+      assert.equal(result.name, 'proj');
+    });
+
+    it('returns null when cwd does not match any projectPaths', () => {
+      const profiles = {
+        profiles: {
+          proj: { baseUrl: 'https://proj.atlassian.net', auth: 'cloud', email: 'a@a.com', projectPaths: ['/home/dev/projects/myapp'] },
+        },
+        default: 'proj',
+      };
+      writeConfig(profiles, { proj: { apiToken: 'tok' } });
+      const result = resolveProfileByPath('/tmp/random', configDir);
+      assert.equal(result, null);
+    });
+
+    it('returns null when no projectPaths configured', () => {
+      writeConfig(); // sampleProfiles has no projectPaths
+      const result = resolveProfileByPath('/home/dev/anywhere', configDir);
+      assert.equal(result, null);
+    });
+
+    it('longest path wins when cwd matches multiple profiles', () => {
+      const profiles = {
+        profiles: {
+          broad: { baseUrl: 'https://broad.atlassian.net', auth: 'cloud', email: 'a@a.com', projectPaths: ['/home/dev'] },
+          specific: { baseUrl: 'https://specific.atlassian.net', auth: 'cloud', email: 'b@b.com', projectPaths: ['/home/dev/projects/myapp'] },
+        },
+      };
+      writeConfig(profiles, { broad: { apiToken: 'tok1' }, specific: { apiToken: 'tok2' } });
+      const result = resolveProfileByPath('/home/dev/projects/myapp/src', configDir);
+      assert.equal(result.name, 'specific');
+    });
+  });
+
+  describe('resolveProfile with cwd', () => {
+    it('uses project path match when no ticket key provided', () => {
+      const profiles = {
+        profiles: {
+          proj: { baseUrl: 'https://proj.atlassian.net', auth: 'cloud', email: 'a@a.com', projectPaths: ['/home/dev/myapp'] },
+          other: { baseUrl: 'https://other.atlassian.net', auth: 'cloud', email: 'b@b.com' },
+        },
+        default: 'other',
+      };
+      writeConfig(profiles, { proj: { apiToken: 'tok1' }, other: { apiToken: 'tok2' } });
+      const result = resolveProfile(null, { configDir, cwd: '/home/dev/myapp/src' });
+      assert.equal(result.name, 'proj');
+    });
+
+    it('falls to default when cwd does not match and no ticket key', () => {
+      const profiles = {
+        profiles: {
+          proj: { baseUrl: 'https://proj.atlassian.net', auth: 'cloud', email: 'a@a.com', projectPaths: ['/home/dev/myapp'] },
+          fallback: { baseUrl: 'https://fallback.atlassian.net', auth: 'cloud', email: 'b@b.com' },
+        },
+        default: 'fallback',
+      };
+      writeConfig(profiles, { proj: { apiToken: 'tok1' }, fallback: { apiToken: 'tok2' } });
+      const result = resolveProfile(null, { configDir, cwd: '/tmp/random' });
+      assert.equal(result.name, 'fallback');
     });
   });
 });

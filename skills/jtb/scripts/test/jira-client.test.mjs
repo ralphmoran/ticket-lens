@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses } from '../lib/jira-client.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -206,5 +206,148 @@ describe('fetchTicket', () => {
       depth: 2,
     });
     assert.equal(calls.length, 2); // A-1 then B-1, no re-fetch of A-1
+  });
+});
+
+describe('fetchCurrentUser', () => {
+  it('returns normalized user object from Cloud response', async () => {
+    const mockFetch = async () => ({
+      ok: true,
+      json: async () => ({
+        accountId: 'abc-123',
+        name: null,
+        displayName: 'John Dev',
+        emailAddress: 'john@example.com',
+      }),
+    });
+    const result = await fetchCurrentUser({
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+    });
+    assert.equal(result.accountId, 'abc-123');
+    assert.equal(result.displayName, 'John Dev');
+    assert.equal(result.emailAddress, 'john@example.com');
+  });
+
+  it('returns normalized user object from Server response', async () => {
+    const mockFetch = async () => ({
+      ok: true,
+      json: async () => ({
+        name: 'jdev',
+        displayName: 'John Dev',
+      }),
+    });
+    const result = await fetchCurrentUser({
+      env: { JIRA_BASE_URL: 'https://jira.server.com', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+    });
+    assert.equal(result.name, 'jdev');
+    assert.equal(result.displayName, 'John Dev');
+    assert.equal(result.accountId, null);
+  });
+
+  it('throws on HTTP error', async () => {
+    const mockFetch = async () => ({ ok: false, status: 401, statusText: 'Unauthorized' });
+    await assert.rejects(
+      () => fetchCurrentUser({
+        env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'bad' },
+        fetcher: mockFetch,
+      }),
+      (err) => {
+        assert.ok(err.message.includes('401'));
+        return true;
+      }
+    );
+  });
+});
+
+describe('searchTickets', () => {
+  it('constructs correct URL with JQL and normalizes results', async () => {
+    let capturedUrl = '';
+    const mockFetch = async (url) => {
+      capturedUrl = url;
+      return {
+        ok: true,
+        json: async () => ({
+          issues: [cloudFixture],
+        }),
+      };
+    };
+    const result = await searchTickets('assignee = currentUser()', {
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+    });
+    assert.ok(capturedUrl.includes('/rest/api/2/search'));
+    assert.ok(capturedUrl.includes('assignee'));
+    assert.equal(result.length, 1);
+    assert.equal(result[0].key, 'PROD-1234');
+    assert.equal(result[0].summary, 'Fix payment validation on checkout');
+  });
+
+  it('returns empty array for no results', async () => {
+    const mockFetch = async () => ({
+      ok: true,
+      json: async () => ({ issues: [] }),
+    });
+    const result = await searchTickets('assignee = nobody', {
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+    });
+    assert.equal(result.length, 0);
+  });
+
+  it('throws on HTTP error with detail from response body', async () => {
+    const mockFetch = async () => ({
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+      json: async () => ({ errorMessages: ["The value 'QA' does not exist for the field 'status'."] }),
+    });
+    await assert.rejects(
+      () => searchTickets('bad jql', {
+        env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+        fetcher: mockFetch,
+      }),
+      (err) => {
+        assert.ok(err.message.includes('400'));
+        assert.ok(err.message.includes("does not exist"));
+        assert.equal(err.status, 400);
+        assert.ok(err.detail.includes('QA'));
+        return true;
+      }
+    );
+  });
+});
+
+describe('fetchStatuses', () => {
+  it('returns deduplicated sorted status names', async () => {
+    const mockFetch = async () => ({
+      ok: true,
+      json: async () => [
+        { name: 'In Progress' },
+        { name: 'Done' },
+        { name: 'In Progress' },
+        { name: 'Code Review' },
+      ],
+    });
+    const result = await fetchStatuses({
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+    });
+    assert.deepStrictEqual(result, ['Code Review', 'Done', 'In Progress']);
+  });
+
+  it('throws on HTTP error', async () => {
+    const mockFetch = async () => ({ ok: false, status: 401, statusText: 'Unauthorized' });
+    await assert.rejects(
+      () => fetchStatuses({
+        env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'bad' },
+        fetcher: mockFetch,
+      }),
+      (err) => {
+        assert.ok(err.message.includes('401'));
+        return true;
+      }
+    );
   });
 });

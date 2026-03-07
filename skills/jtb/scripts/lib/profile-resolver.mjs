@@ -21,8 +21,35 @@ export function loadCredentials(configDir = DEFAULT_CONFIG_DIR) {
   return JSON.parse(readFileSync(credPath, 'utf8'));
 }
 
+export function expandTilde(p) {
+  if (p.startsWith('~/')) return join(homedir(), p.slice(2));
+  if (p === '~') return homedir();
+  return p;
+}
+
+export function resolveProfileByPath(cwd, configDir = DEFAULT_CONFIG_DIR) {
+  const config = loadProfiles(configDir);
+  if (!config) return null;
+
+  let bestMatch = null;
+  let bestLen = 0;
+
+  for (const [name, profile] of Object.entries(config.profiles)) {
+    if (!profile.projectPaths) continue;
+    for (const p of profile.projectPaths) {
+      const expanded = expandTilde(p);
+      if (cwd.startsWith(expanded) && expanded.length > bestLen) {
+        bestMatch = { name, ...profile };
+        bestLen = expanded.length;
+      }
+    }
+  }
+
+  return bestMatch;
+}
+
 export function resolveProfile(ticketKey, opts = {}) {
-  const { profileName, configDir = DEFAULT_CONFIG_DIR } = opts;
+  const { profileName, configDir = DEFAULT_CONFIG_DIR, cwd } = opts;
   const config = loadProfiles(configDir);
   if (!config) return null;
 
@@ -31,22 +58,30 @@ export function resolveProfile(ticketKey, opts = {}) {
     return { name: profileName, ...config.profiles[profileName] };
   }
 
-  // 2. Match ticket prefix
-  const prefix = ticketKey.split('-')[0];
-  const matches = [];
-  for (const [name, profile] of Object.entries(config.profiles)) {
-    if (profile.ticketPrefixes?.includes(prefix)) {
-      matches.push({ name, ...profile });
+  // 2. Match ticket prefix (skip if no ticket key)
+  if (ticketKey) {
+    const prefix = ticketKey.split('-')[0];
+    const matches = [];
+    for (const [name, profile] of Object.entries(config.profiles)) {
+      if (profile.ticketPrefixes?.includes(prefix)) {
+        matches.push({ name, ...profile });
+      }
+    }
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) {
+      const warning = `Warning: Prefix "${prefix}" matches multiple profiles: ${matches.map(m => m.name).join(', ')}. Using ${matches[0].name}. Use --profile=NAME to override.`;
+      if (opts.onWarning) opts.onWarning(warning);
+      return matches[0];
     }
   }
-  if (matches.length === 1) return matches[0];
-  if (matches.length > 1) {
-    const warning = `Warning: Prefix "${prefix}" matches multiple profiles: ${matches.map(m => m.name).join(', ')}. Using ${matches[0].name}. Use --profile=NAME to override.`;
-    if (opts.onWarning) opts.onWarning(warning);
-    return matches[0];
+
+  // 3. Project path match
+  if (cwd) {
+    const pathMatch = resolveProfileByPath(cwd, configDir);
+    if (pathMatch) return pathMatch;
   }
 
-  // 3. Default profile
+  // 4. Default profile
   if (config.default && config.profiles[config.default]) {
     return { name: config.default, ...config.profiles[config.default] };
   }
@@ -55,9 +90,9 @@ export function resolveProfile(ticketKey, opts = {}) {
 }
 
 export function resolveConnection(ticketKey, opts = {}) {
-  const { env = process.env, configDir = DEFAULT_CONFIG_DIR, profileName, onWarning } = opts;
+  const { env = process.env, configDir = DEFAULT_CONFIG_DIR, profileName, onWarning, cwd } = opts;
 
-  const profile = resolveProfile(ticketKey, { profileName, configDir, onWarning });
+  const profile = resolveProfile(ticketKey, { profileName, configDir, onWarning, cwd });
 
   if (profile) {
     const creds = loadCredentials(configDir);
@@ -67,6 +102,7 @@ export function resolveConnection(ticketKey, opts = {}) {
       email: profile.email || null,
       apiToken: profileCreds.apiToken || null,
       pat: profileCreds.pat || null,
+      triageStatuses: profile.triageStatuses || null,
       source: 'profile',
       profileName: profile.name,
     };

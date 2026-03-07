@@ -20,6 +20,8 @@ export function normalizeTicket(raw) {
     components: (f.components ?? []).map(c => c.name),
     comments: (f.comment?.comments ?? []).map(c => ({
       author: c.author?.displayName ?? c.author?.name ?? null,
+      authorAccountId: c.author?.accountId ?? null,
+      authorName: c.author?.name ?? null,
       body: c.body,
       created: c.created,
     })),
@@ -48,6 +50,66 @@ export function buildAuthHeader(env) {
   }
   const encoded = Buffer.from(`${env.JIRA_EMAIL}:${env.JIRA_API_TOKEN}`).toString('base64');
   return { Authorization: `Basic ${encoded}` };
+}
+
+export async function fetchCurrentUser(opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch } = opts;
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
+
+  const url = `${baseUrl}/rest/api/2/myself`;
+  const response = await fetcher(url, { headers });
+
+  if (!response.ok) {
+    throw new Error(`Jira API error ${response.status} (${response.statusText}) fetching current user`);
+  }
+
+  const raw = await response.json();
+  return {
+    accountId: raw.accountId ?? null,
+    name: raw.name ?? null,
+    displayName: raw.displayName ?? null,
+    emailAddress: raw.emailAddress ?? null,
+  };
+}
+
+export async function fetchStatuses(opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch } = opts;
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
+
+  const url = `${baseUrl}/rest/api/2/status`;
+  const response = await fetcher(url, { headers });
+
+  if (!response.ok) {
+    throw new Error(`Jira API error ${response.status} (${response.statusText}) fetching statuses`);
+  }
+
+  const raw = await response.json();
+  return [...new Set(raw.map(s => s.name))].sort();
+}
+
+export async function searchTickets(jql, opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch, maxResults = 50 } = opts;
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
+
+  const fields = 'summary,status,assignee,priority,issuetype,comment,updated,statuscategorychangedate';
+  const params = new URLSearchParams({ jql, fields, maxResults: String(maxResults) });
+  const url = `${baseUrl}/rest/api/2/search?${params}`;
+  const response = await fetcher(url, { headers });
+
+  if (!response.ok) {
+    let detail = '';
+    try { const body = await response.json(); detail = (body.errorMessages || []).join('; '); } catch {}
+    const err = new Error(`Jira API error ${response.status} (${response.statusText}) searching tickets${detail ? ': ' + detail : ''}`);
+    err.status = response.status;
+    err.detail = detail;
+    throw err;
+  }
+
+  const raw = await response.json();
+  return (raw.issues ?? []).map(normalizeTicket);
 }
 
 export async function fetchTicket(ticketKey, opts = {}) {

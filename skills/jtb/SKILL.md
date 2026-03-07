@@ -10,9 +10,13 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 ## Quick Start
 
 ```
-/jtb PROD-1234
-/jtb PROD-1234 --depth=0    # target ticket only (fast)
-/jtb PROD-1234 --depth=2    # include linked-of-linked tickets
+/jtb PROD-1234                          # fetch a ticket brief
+/jtb PROD-1234 --depth=0               # target ticket only (fast)
+/jtb PROD-1234 --depth=2               # include linked-of-linked tickets
+/jtb triage                            # scan your assigned tickets for attention
+/jtb triage --stale=3                  # custom aging threshold (days)
+/jtb triage --status=CR,QA             # only check specific statuses
+/jtb triage --profile=acme           # explicit profile override
 ```
 
 ## Prerequisites
@@ -26,6 +30,23 @@ The following env vars must be set:
 If any are missing, stop and tell the user which vars to set.
 
 ## Workflow
+
+### Triage subcommand
+
+If the first argument is `triage`:
+
+Run:
+```bash
+node ~/.agents/skills/jtb/scripts/fetch-my-tickets.mjs $EXTRA_ARGS
+```
+
+Where `$EXTRA_ARGS` are any flags passed (e.g. `--stale=3 --status=QA --profile=acme`).
+
+**IMPORTANT:** Copy the script's stdout and display it directly as your response text (not inside a tool result). This ensures the markdown table renders visibly and URLs are clickable in the terminal. No VCS enrichment, no plan mode. Stop here.
+
+---
+
+### Fetch ticket workflow (default)
 
 ### Step 1: Validate environment
 
