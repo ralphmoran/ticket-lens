@@ -45,36 +45,53 @@ Developers lose 15-30 minutes per ticket gathering context before writing a sing
 
 ## 2. Product Strategy
 
-### Phase 1: Open-Source Foundation (Now - Month 3)
+### Phase A: Launch & Validate (Weeks 1-4)
 
-**Goal**: Build credibility, get 500+ GitHub stars, 100+ active users.
+**Goal**: Get the product in front of people. Measure demand before building premium features.
 
-Current state is strong: 108 tests, clean architecture, multi-account support, zero deps. Ship what exists.
-
-**Actions:**
-- [ ] Fix Jira Cloud v3 API migration (unblocks Cloud users — this is critical)
-- [ ] Publish to GitHub as open-source (MIT license)
-- [ ] Create a polished README with GIF demos showing the workflow
-- [ ] Publish as an installable Claude Code skill (once skill marketplace exists)
-- [ ] Add support for GitHub Issues and Linear as ticket sources (widen TAM)
-
-### Phase 2: Community & Distribution (Month 3-6)
-
-**Goal**: 2,000+ GitHub stars, 500+ weekly active users, establish TicketLens as the standard developer research tool.
+Current state: 134 tests, clean architecture, multi-account support, Jira Cloud v3 migration complete, zero deps.
 
 **Actions:**
-- [ ] Launch on Hacker News, Reddit r/programming, Dev.to
-- [ ] Write 3-4 blog posts: "How I eliminated 30min of Jira context-switching per ticket"
-- [ ] Build integrations: VS Code extension, JetBrains plugin, Neovim plugin
-- [ ] Create a `ticketlens` npm package for easy global install
-- [ ] Add Confluence/wiki page fetching for tickets that reference docs
-- [ ] Community: Discord server for users, contributors, and feature requests
+- [x] Fix Jira Cloud v3 API migration (unblocks Cloud users)
+- [ ] Publish `ticketlens` npm package for easy global install
+- [ ] Polish README with GIF demos (ticket fetch, triage scan, depth traversal)
+- [ ] CONTRIBUTING.md + issue templates + GitHub Discussions
+- [ ] Launch: Hacker News, Reddit, Dev.to, Twitter, Discord/Slack communities
 
-### Phase 3: Individual Pro & Team Monetization (Month 6-12)
+**Validation signals:** GitHub stars (100+ week 1), npm downloads, GitHub issues/discussions, feature requests for paid features.
 
-**Goal**: $5K MRR, 50 paying teams + 200 Pro individuals, product-market fit validated.
+### Phase B: Premium CLI — Revenue with $0 Infra (Months 2-4)
 
-**Monetization model**: Open core. CLI tool stays free forever. Cloud sync, compliance checks, team collaboration, and analytics are paid.
+**Goal**: First revenue. Premium features that run 100% locally. No backend needed.
+
+**Monetization**: License key via Gumroad/LemonSqueezy ($0 infrastructure cost). Key stored in `~/.ticketlens/license.json`, validated locally.
+
+**Pro tier ($8/mo):** Multi-project triage, custom attention rules, scheduled triage, ticket history tracking.
+
+**Team tier ($15/seat/mo):** Triage by assignee/sprint/project/label/priority, triage export (CSV/JSON), brief templates, response time metrics.
+
+### Phase B.5: Compliance Check — Killer Pro Feature (Months 3-5)
+
+**Goal**: Primary conversion lever from Free to Pro.
+
+Free tier gets 3 compliance checks/month. Pro gets unlimited. This is the cap that drives upgrades.
+
+### VALIDATION GATE
+
+**Stop and assess before building infrastructure:**
+- 50+ paying Pro users?
+- 10+ teams asking for the dashboard?
+- Revenue covering time investment?
+
+If yes: proceed to Phase C. If no: iterate on Phase B, double down on marketing, or pivot.
+
+### Phase C: Infrastructure (Month 6+, only if demand is proven)
+
+**Goal**: SaaS revenue. Build cloud backend and web dashboard ONLY when paying users demand it.
+
+### Phase D: Expansion (Month 12+)
+
+**Goal**: Multi-tracker support, enterprise features. Build only what paying customers require.
 
 #### Pricing Tiers
 
@@ -82,13 +99,21 @@ Current state is strong: 108 tests, clean architecture, multi-account support, z
 |--|------|------------|-------------------|-----------|
 | CLI (fetch + triage) | Yes | Yes | Yes | Yes |
 | Compliance check | 3/month | Unlimited | Unlimited | Unlimited |
-| Cloud sync (E2EE) | No | Yes | Yes | Yes |
-| Web dashboard (personal) | No | Yes | Yes | Yes |
-| Team dashboard | No | No | Yes | Yes |
-| Slack/Teams alerts | No | No | Yes | Yes |
-| Analytics & trends | No | No | Yes | Yes |
-| SSO + audit logs | No | No | No | Yes |
-| Self-hosted deployment | No | No | No | Yes |
+| Multi-project triage | No | Yes | Yes | Yes |
+| Custom attention rules | No | Yes | Yes | Yes |
+| Scheduled triage | No | Yes | Yes | Yes |
+| Ticket history tracking | No | Yes | Yes | Yes |
+| `--assignee` flag | No | No | Yes | Yes |
+| `--sprint` flag | No | No | Yes | Yes |
+| `--project`/`--label`/`--priority` | No | No | Yes | Yes |
+| Triage export (CSV/JSON) | No | No | Yes | Yes |
+| Brief templates | No | No | Yes | Yes |
+| Response time metrics | No | No | Yes | Yes |
+| Cloud sync (E2EE) | No | Phase C | Phase C | Phase C |
+| Web dashboard | No | Phase C | Phase C | Phase C |
+| Slack/Teams alerts | No | No | Phase C | Phase C |
+| SSO + audit logs | No | No | No | Phase D |
+| Self-hosted deployment | No | No | No | Phase D |
 
 #### Pro Tier — Individual Cloud Sync
 
@@ -152,6 +177,16 @@ PROJ-200  In CR    2/4 requirements covered    GAPS FOUND
 
 Always-on, auto-refreshing `/jtb triage` in a browser tab. Devs don't have to remember to run the command.
 
+**Tech Lead CLI tools — "Check on any team member or sprint"**
+
+```
+/jtb triage --assignee=jacky        # Triage Jacky's tickets
+/jtb triage --sprint="Sprint 5"     # Triage all tickets in a sprint
+/jtb triage --assignee=alice --stale=3  # Alice's stale tickets
+```
+
+Premium (Team+): Free tier only triages your own tickets. `--assignee` and `--sprint` flags require a Team subscription. Gives leads and managers visibility into any team member's queue or an entire sprint without switching Jira accounts.
+
 **Tech Lead weekly view — "Where is my team stuck?"**
 
 ```
@@ -203,14 +238,7 @@ Every alert requires action. No "ticket updated" spam.
 | "Alice has 5 unresponded tickets" | Individual backlog growing | Lead (configurable) |
 | Weekly digest | Monday morning summary | Whole team channel |
 
-### Phase 4: Platform Expansion (Month 12+)
-
-**Goal**: $50K MRR, multi-tool platform.
-
-- Expand beyond Jira: GitHub Issues, Linear, Azure DevOps, ServiceNow
-- "TicketLens for PRs" — same context-assembly for code review
-- API for third-party integrations
-- AI-powered ticket summarization and priority recommendations
+See [ROADMAP.md](ROADMAP.md) for the full iteration plan (54 features across 12 iterations).
 
 ---
 
@@ -413,10 +441,10 @@ Most dev tools (Stepsize, Sleuth, LinearB) require full Jira OAuth and store eve
 
 ## 9. Immediate Next Steps (This Week)
 
-1. **Fix Jira Cloud v3 API** — This is the #1 blocker. Cloud users can't use triage without it.
-2. **Polish GitHub repo** — CONTRIBUTING.md, issue templates, discussions enabled, GIF demos in README
-3. **Record demo GIFs** — 3 short GIFs showing the core workflow
-4. **Write landing page copy** — Problem > Demo > Install > Testimonials
+1. ~~**Fix Jira Cloud v3 API**~~ — Done. Cloud profiles auto-select v3 API.
+2. **Publish npm package** — `npx ticketlens PROJ-123` for easy global install
+3. **Polish GitHub repo** — CONTRIBUTING.md, issue templates, discussions enabled, GIF demos in README
+4. **Record demo GIFs** — 3 short GIFs showing the core workflow
 5. **Draft HN launch post** — "Show HN: TicketLens — stop Jira tab-switching, start coding"
 
 ---

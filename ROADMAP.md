@@ -1,171 +1,249 @@
-# TicketLens — Product Roadmap
+# TicketLens — Product Roadmap (Solopreneur Edition)
+
+Optimized for one developer: revenue before infrastructure, validate before building.
 
 Iterations 1-2 are shipped. This roadmap tracks everything from Iteration 3 onward.
 
 ---
 
-## Iteration 3 — Launch-Ready (Current)
+## Phase A — Launch & Validate (Weeks 1-4)
 
-Unblock Cloud users, make the repo presentable for public launch.
+Get the product in front of people. Measure demand before building premium features.
+
+### Iteration 3 — Launch-Ready (Current)
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| 1 | ~~Bug~~ | ~~**Jira Cloud v3 API migration**~~ | Done. All endpoints support `apiVersion` option. Cloud profiles auto-select v3. Added ADF-to-text converter. | ~~Medium~~ |
-| 2 | ~~Bug~~ | ~~**Jira Cloud v3 fetch endpoint**~~ | Done. `fetchTicket`, `fetchCurrentUser`, `fetchStatuses` all support v3 paths. | ~~Small~~ |
+| 1 | ~~Bug~~ | ~~**Jira Cloud v3 API migration**~~ | Done. Cloud profiles auto-select v3. ADF-to-text converter added. | ~~Medium~~ |
+| 2 | ~~Bug~~ | ~~**Jira Cloud v3 fetch endpoint**~~ | Done. All endpoints support v3 paths. | ~~Small~~ |
 | 3 | Feature | **npm package (`ticketlens`)** | Publish to npm so users can `npx ticketlens PROJ-123` instead of cloning + symlinking. | Medium |
 | 4 | Chore | **Polish README with GIF demos** | Record 3 GIFs: ticket fetch, triage scan, depth traversal. First impression for GitHub visitors. | Small |
 | 5 | Chore | **CONTRIBUTING.md + issue templates** | Signals "this is a real project" and invites open-source contributors. | Small |
 | 6 | Chore | **GitHub Discussions enabled** | Community Q&A channel without cluttering Issues. | Small |
+
+**Launch checklist:**
+- [ ] Post on Hacker News (Show HN)
+- [ ] Post on Reddit r/programming + r/ExperiencedDevs
+- [ ] Dev.to launch article
+- [ ] Tweet thread with demo GIFs
+- [ ] Share in relevant Discord/Slack communities
+
+**Validation signals to watch:**
+- GitHub stars (target: 100 in first week)
+- npm weekly downloads
+- GitHub issues/discussions (are people actually using it?)
+- Anyone asking for features you'd charge for?
 
 ### Known Issues Addressed
 - ~~Jira Cloud v2 search API deprecated (410 Gone)~~ — resolved in items 1-2
 
 ---
 
-## Iteration 4 — Widen the Funnel
+## Phase B — Monetize Without Infrastructure (Months 2-4)
 
-Support more than just Jira. Each new tracker source multiplies TAM.
+Premium features that run 100% locally. No backend needed. License key via Gumroad/LemonSqueezy ($0 infra cost).
+
+### Iteration 4 — Premium CLI Features (Pro tier, $8/mo)
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| 7 | Refactor | **Tracker adapter abstraction** | Refactor `jira-client.mjs` into a pluggable interface (`TrackerAdapter`) so new sources don't require forking the whole client. Must be done before adding GitHub/Linear. | Medium |
-| 8 | Feature | **GitHub Issues as ticket source** | Huge OSS audience. Many devs use GH Issues, not Jira. Implement `GitHubAdapter`. | Medium |
-| 9 | Feature | **Linear as ticket source** | Fast-growing among startups. Shows TicketLens isn't "just a Jira tool." Implement `LinearAdapter`. | Medium |
-| 10 | Feature | **Confluence/wiki page fetching** | Tickets often reference Confluence pages for specs. Currently a dead end — fetch and include the page content in the brief. | Small |
+| 7 | Feature | **License key system** | `~/.ticketlens/license.json` with key validation. Buy on Gumroad/LemonSqueezy, paste key. No backend needed. | Small |
+| 8 | Feature | **Multi-project triage** | Triage across ALL profiles at once in a combined view. Devs working across repos need this daily. | Small |
+| 9 | Feature | **Custom attention rules** | User-defined scoring rules in profile config (e.g. "P1 bugs always urgent", "ignore tickets with label=backlog"). | Medium |
+| 10 | Feature | **Scheduled triage (cron)** | Auto-run triage on a schedule, save results to file. Morning triage without remembering to run the command. | Small |
+| 11 | Feature | **Ticket history tracking** | Track ticket state over time locally. "This ticket has bounced between CR and Dev 3 times." Stored in `~/.ticketlens/history/`. | Medium |
+
+### Iteration 5 — Premium CLI Features (Team tier, $15/seat/mo)
+
+| # | Type | Feature | Detail | Effort |
+|---|------|---------|--------|--------|
+| 12 | Feature | **Triage by assignee (`--assignee`)** | Triage another dev's tickets. Managers check any team member's queue. JQL change, runs locally. | Small |
+| 13 | Feature | **Triage by sprint (`--sprint`)** | Triage all tickets in a sprint regardless of assignee. Full sprint visibility. | Small |
+| 14 | Feature | **Triage by project (`--project`)** | Scope triage to a specific Jira project, not just statuses. | Small |
+| 15 | Feature | **Triage by label/priority (`--label`, `--priority`)** | Filter triage to specific labels or priority levels (e.g. only P1/P2). | Small |
+| 16 | Feature | **Triage export (CSV/JSON)** | Export triage results for standups, reports, or piping into other tools. | Small |
+| 17 | Feature | **Brief templates** | Custom output formats per team/project. Configure in profile which sections to include, field ordering, etc. | Small |
+| 18 | Feature | **Response time metrics** | "Your avg response time this week: 4.2 hours." Computed from local triage history. | Medium |
 
 ---
 
-## Iteration 5 — Compliance Check
+## Phase B.5 — Compliance Check (Month 3-5)
 
-The "did my code match the ticket?" feature. Primary conversion lever from Free to Pro.
+The killer premium feature. Primary conversion lever from Free to Pro.
+
+### Iteration 6 — Compliance Check
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| 11 | Feature | **Requirement extractor** | Parse acceptance criteria, bullet points, "should/must/given-when-then" statements from ticket description + comments. | Large |
-| 12 | Feature | **Ticket-to-commit linker** | Find git/svn commits and branches associated with a ticket key. Build on existing `code-ref-parser.mjs` + VCS detection. | Medium |
-| 13 | Feature | **Code diff analyzer** | Compare extracted requirements against actual code changes in linked commits. Map each requirement to FOUND/NOT FOUND. | Large |
-| 14 | Feature | **`/jtb compliance TICKET` CLI** | Assemble the compliance report: requirements list, coverage percentage, missing items. | Medium |
-| 15 | Feature | **Local usage tracking** | Count compliance checks locally to enforce the free-tier cap (3/month). Store count in `~/.ticketlens/usage.json`. | Small |
+| 19 | Feature | **Requirement extractor** | Parse acceptance criteria, bullet points, "should/must/given-when-then" from ticket description + comments. | Large |
+| 20 | Feature | **Ticket-to-commit linker** | Find git/svn commits and branches associated with a ticket key. Build on existing code-ref-parser + VCS detection. | Medium |
+| 21 | Feature | **Code diff analyzer** | Compare extracted requirements against actual code changes in linked commits. Map each requirement to FOUND/NOT FOUND. | Large |
+| 22 | Feature | **`/jtb compliance TICKET` CLI** | Assemble the compliance report: requirements list, coverage percentage, missing items. | Medium |
+| 23 | Feature | **Local usage tracking** | Count compliance checks locally to enforce the free-tier cap (3/month). Store count in `~/.ticketlens/usage.json`. | Small |
+
+**Pricing**: Free tier gets 3 compliance checks/month. Pro ($8/mo) gets unlimited. This is the primary conversion lever — devs hit the cap and realize it's worth $8.
 
 ---
 
-## Iteration 6 — TicketLens Cloud (Pro tier backend)
+## VALIDATION GATE
 
-Build the SaaS layer. Cloud sync enables Pro billing ($8/mo).
+**Stop here and assess before continuing.** Ask yourself:
 
-| # | Type | Feature | Detail | Effort |
-|---|------|---------|--------|--------|
-| 16 | Feature | **Cloud API service** | Auth (email/password + OAuth), user accounts, encrypted storage endpoints. | Large |
-| 17 | Feature | **E2EE client library** | Encrypt/decrypt briefs client-side before sync. User holds the key, TicketLens Cloud stores opaque blobs. | Large |
-| 18 | Feature | **Brief sync (push/pull)** | CLI sends encrypted briefs to cloud, pulls on another machine. Conflict resolution: last-write-wins by timestamp. | Medium |
-| 19 | Feature | **Triage history sync** | Persist triage results across machines. Enables "what did I triage last week?" | Medium |
-| 20 | Feature | **Ticket-to-commit map sync** | Sync the implementation history built over time across machines. | Small |
-| 21 | Feature | **Billing integration (Stripe)** | Pro subscription management, usage metering for compliance checks. | Medium |
-| 22 | Feature | **Landing page + signup flow** | Marketing site: problem statement, demo GIFs, pricing table, signup/login. | Medium |
+- Do I have 50+ paying Pro users?
+- Do I have 10+ teams asking for the dashboard?
+- Is revenue covering my time investment?
+- What are the top 3 feature requests from paying users?
+
+If yes to the first two: proceed to Phase C.
+If no: iterate on Phase B features, double down on marketing, or pivot.
 
 ---
 
-## Iteration 7 — Team Dashboard (Team tier)
+## Phase C — Infrastructure (Month 6+, only if demand is proven)
 
-Web UI for team visibility. Primary revenue driver at $15/seat/mo.
+Build the cloud backend and web dashboard ONLY when paying users demand it.
+
+### Iteration 7 — TicketLens Cloud (Pro tier backend)
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| 23 | Feature | **Dev view — Attention Queue** | Auto-refreshing triage in browser. Shows personal ticket queue + compliance status per ticket. | Large |
-| 24 | Feature | **Lead view — Team Health** | Tickets needing response (trend), avg response time, bottlenecks by status (CR/QA wait times), workload per dev (who's overloaded). | Large |
-| 25 | Feature | **Manager view — Process Metrics** | Time from assignment to first commit, research time saved per ticket, QA bounce-back rate, compliance gap trends over time. | Large |
-| 26 | Feature | **Team management** | Invite members via email, assign roles (dev/lead/manager), manage seats. | Medium |
-| 27 | Feature | **Team billing (Stripe)** | Per-seat subscription, seat add/remove, invoicing. | Medium |
+| 24 | Feature | **Cloud API service** | Auth (email/password + OAuth), user accounts, encrypted storage endpoints. | Large |
+| 25 | Feature | **E2EE client library** | Encrypt/decrypt briefs client-side before sync. User holds the key, TicketLens Cloud stores opaque blobs. | Large |
+| 26 | Feature | **Brief sync (push/pull)** | CLI sends encrypted briefs to cloud, pulls on another machine. Conflict resolution: last-write-wins. | Medium |
+| 27 | Feature | **Triage history sync** | Persist triage results across machines. "What did I triage last week?" | Medium |
+| 28 | Feature | **Billing migration (Stripe)** | Move from Gumroad/LemonSqueezy to Stripe for subscription management + usage metering. | Medium |
+| 29 | Feature | **Landing page + signup flow** | Marketing site: problem statement, demo GIFs, pricing table, signup/login. | Medium |
+
+### Iteration 8 — Team Dashboard (Team tier)
+
+| # | Type | Feature | Detail | Effort |
+|---|------|---------|--------|--------|
+| 30 | Feature | **Dev view — Attention Queue** | Auto-refreshing triage in browser. Personal ticket queue + compliance status. | Large |
+| 31 | Feature | **Lead view — Team Health** | Tickets needing response (trend), bottlenecks by status, workload per dev. | Large |
+| 32 | Feature | **Manager view — Process Metrics** | Time to first commit, QA bounce-back rate, compliance gap trends. | Large |
+| 33 | Feature | **Team management** | Invite members, assign roles (dev/lead/manager), manage seats. | Medium |
+| 34 | Feature | **Team billing (Stripe)** | Per-seat subscription, seat add/remove, invoicing. | Medium |
+
+### Iteration 9 — Slack/Teams Alerts
+
+| # | Type | Feature | Detail | Effort |
+|---|------|---------|--------|--------|
+| 35 | Feature | **Slack app (OAuth + bot)** | Install to workspace, configure target channel per team. | Medium |
+| 36 | Feature | **Needs-response alert** | Push when someone comments on a dev's ticket, no reply in 2+ hours. | Small |
+| 37 | Feature | **Aging ticket alert** | Push when ticket sits in CR/QA beyond threshold. | Small |
+| 38 | Feature | **Compliance gap alert** | Push when ticket moves to Done with incomplete requirements. | Small |
+| 39 | Feature | **Weekly team digest** | Monday morning summary to team channel. | Medium |
+| 40 | Feature | **Microsoft Teams integration** | Same alert set for Teams-first orgs. | Medium |
 
 ---
 
-## Iteration 8 — Slack/Teams Alerts
+## Phase D — Expansion (Month 12+, only if business justifies it)
 
-Push actionable signals to where the team already communicates.
+Build only what paying customers or market demand requires.
 
-| # | Type | Feature | Detail | Effort |
-|---|------|---------|--------|--------|
-| 28 | Feature | **Slack app (OAuth + bot)** | Install to workspace, configure target channel per team. | Medium |
-| 29 | Feature | **Needs-response alert** | Push when someone comments on a dev's ticket and no reply in 2+ hours. | Small |
-| 30 | Feature | **Aging ticket alert** | Push when ticket sits in CR/QA beyond configurable threshold. | Small |
-| 31 | Feature | **Compliance gap alert** | Push when ticket moves to Done but requirements coverage is incomplete. | Small |
-| 32 | Feature | **Weekly team digest** | Monday morning summary posted to team channel: attention items, bottlenecks, wins. | Medium |
-| 33 | Feature | **Microsoft Teams integration** | Same alert set for Teams-first organizations. | Medium |
-
----
-
-## Iteration 9 — IDE Plugins
-
-Meet devs where they already are. Not everyone uses Claude Code or the terminal.
+### Iteration 10 — Multi-Tracker Support
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| 34 | Feature | **VS Code extension** | Sidebar panel: ticket brief + triage for current branch. Click to open ticket. Compliance status inline. | Large |
-| 35 | Feature | **JetBrains plugin** | Same for IntelliJ/PhpStorm/WebStorm/Rider family. | Large |
-| 36 | Feature | **Neovim plugin** | Lua plugin for terminal-native devs. Telescope integration for ticket search. | Medium |
+| 41 | Refactor | **Tracker adapter abstraction** | Pluggable interface so new sources don't fork the whole client. | Medium |
+| 42 | Feature | **GitHub Issues as ticket source** | Large OSS audience. Implement `GitHubAdapter`. | Medium |
+| 43 | Feature | **Linear as ticket source** | Startup audience. Implement `LinearAdapter`. | Medium |
+| 44 | Feature | **Confluence/wiki page fetching** | Fetch referenced Confluence pages and include in brief. | Small |
 
----
-
-## Iteration 10 — Platform Expansion
-
-Multi-tracker, public API, AI features. Full platform play.
+### Iteration 11 — Platform Features
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| 37 | Feature | **Azure DevOps source** | Enterprise TAM expansion. Implement `AzureDevOpsAdapter`. | Medium |
-| 38 | Feature | **ServiceNow source** | Large enterprise ITSM market. Implement `ServiceNowAdapter`. | Medium |
-| 39 | Feature | **"TicketLens for PRs"** | Context-assembly for code review: PR description + linked tickets + diff summary + compliance check. | Large |
-| 40 | Feature | **Public API** | REST API for third-party integrations, webhooks for real-time events, custom dashboard builders. | Large |
-| 41 | Feature | **AI ticket summarization** | LLM-powered summary of long ticket threads. Condense 50 comments into key decisions + open questions. | Medium |
-| 42 | Feature | **AI priority recommendations** | Suggest what to work on next based on urgency signals, deadline proximity, and team bottlenecks. | Medium |
-| 43 | Feature | **SSO (SAML/OIDC)** | Enterprise auth requirement for regulated industries. | Medium |
-| 44 | Feature | **Self-hosted deployment** | Docker image + Helm chart for on-prem deployment. Air-gapped support. | Large |
+| 45 | Feature | **"TicketLens for PRs"** | Context-assembly for code review: PR + linked tickets + diff + compliance. | Large |
+| 46 | Feature | **Public API** | REST API for third-party integrations, webhooks. | Large |
+| 47 | Feature | **AI ticket summarization** | LLM-powered summary of long ticket threads. | Medium |
+| 48 | Feature | **AI priority recommendations** | Suggest what to work on next based on urgency + deadlines. | Medium |
+
+### Iteration 12 — Enterprise
+
+| # | Type | Feature | Detail | Effort |
+|---|------|---------|--------|--------|
+| 49 | Feature | **Azure DevOps source** | Enterprise TAM expansion. | Medium |
+| 50 | Feature | **ServiceNow source** | Large enterprise ITSM market. | Medium |
+| 51 | Feature | **SSO (SAML/OIDC)** | Enterprise auth requirement. | Medium |
+| 52 | Feature | **Self-hosted deployment** | Docker/Helm for regulated industries. | Large |
 
 ---
 
 ## Parked / Revisit Later
 
-Features that were explored and deferred. May resurface based on user demand.
-
 | Feature | Status | Notes |
 |---------|--------|-------|
-| **waitingStatuses filter** | Rolled back (Iteration 2) | Prototype distinguished "waiting on others" from "needs your action." User prefers threshold-based approach. May revisit after real-world usage data from triage. |
+| **waitingStatuses filter** | Rolled back (Iteration 2) | May revisit after real-world triage usage data. |
+| **IDE Plugins (VS Code, JetBrains, Neovim)** | Deferred | Huge effort for a solopreneur. Let community build these after the CLI is established. Consider bounties or plugin grants. |
 
 ---
 
-## Dependency Chain
+## Solopreneur Decision Framework
 
-The critical path through the iterations:
+Before building any feature, ask:
+
+1. **Does it generate revenue?** If no, is it required for a feature that does?
+2. **Does it need infrastructure?** If yes, can I defer it and build a local-only version first?
+3. **Are paying users asking for it?** If no, don't build it yet.
+4. **Can I ship it in < 1 week?** If no, can I break it into smaller pieces?
+
+---
+
+## Critical Path
 
 ```
-Iteration 3: v3 API fix + npm package
-      |
-Iteration 4: Tracker adapter abstraction -> GitHub/Linear sources
-      |
-Iteration 5: Compliance check (uses tracker + VCS)
-      |
-Iteration 6: Cloud backend (stores compliance results + briefs)
-      |
-Iteration 7: Team dashboard (consumes cloud data)
-      |
-Iteration 8: Slack alerts (triggered by dashboard signals)
+Phase A: Launch (Iteration 3)
+    |
+Phase B: Premium CLI — revenue with $0 infra (Iterations 4-5)
+    |
+Phase B.5: Compliance Check — killer Pro feature (Iteration 6)
+    |
+    ===== VALIDATION GATE =====
+    50+ paying users? 10+ teams?
+    |
+Phase C: Cloud + Dashboard + Alerts (Iterations 7-9)
+    |
+Phase D: Multi-tracker + Enterprise (Iterations 10-12)
 ```
 
-Iterations 9 (IDE plugins) and 10 (platform expansion) can be parallelized and reordered based on user demand. IDE plugins can start as early as Iteration 5 since they only need the CLI layer.
+---
+
+## Pricing Tiers
+
+| | Free | Pro ($8/mo) | Team ($15/seat/mo) | Enterprise (custom) |
+|--|------|------------|-------------------|-----------|
+| CLI fetch + triage | Yes | Yes | Yes | Yes |
+| Compliance check | 3/month | Unlimited | Unlimited | Unlimited |
+| Multi-project triage | No | Yes | Yes | Yes |
+| Custom attention rules | No | Yes | Yes | Yes |
+| Scheduled triage | No | Yes | Yes | Yes |
+| Ticket history tracking | No | Yes | Yes | Yes |
+| `--assignee` flag | No | No | Yes | Yes |
+| `--sprint` flag | No | No | Yes | Yes |
+| `--project`/`--label`/`--priority` | No | No | Yes | Yes |
+| Triage export (CSV/JSON) | No | No | Yes | Yes |
+| Brief templates | No | No | Yes | Yes |
+| Response time metrics | No | No | Yes | Yes |
+| Cloud sync (E2EE) | No | Phase C | Phase C | Phase C |
+| Web dashboard | No | Phase C | Phase C | Phase C |
+| Slack/Teams alerts | No | No | Phase C | Phase C |
+| SSO + audit logs | No | No | No | Phase D |
+| Self-hosted | No | No | No | Phase D |
+
+**Phase B revenue (no infra):** Pro at $8/mo + Team at $15/seat/mo, gated by license key via Gumroad/LemonSqueezy.
 
 ---
 
 ## Summary
 
-| Iteration | Theme | Items | Revenue Impact |
-|-----------|-------|-------|---------------|
-| 3 | Launch-Ready | 6 | Unblocks Cloud users (50% of TAM) |
-| 4 | Widen the Funnel | 4 | GitHub/Linear users enter the funnel |
-| 5 | Compliance Check | 5 | Free-to-Pro conversion lever (3/mo cap) |
-| 6 | TicketLens Cloud | 7 | Pro tier revenue ($8/mo) |
-| 7 | Team Dashboard | 5 | Team tier revenue ($15/seat/mo) |
-| 8 | Slack/Teams Alerts | 6 | Team tier stickiness + expansion |
-| 9 | IDE Plugins | 3 | Widens distribution beyond CLI |
-| 10 | Platform Expansion | 8 | Enterprise tier + new markets |
-| Parked | Deferred | 1 | - |
-| **Total** | | **45** | |
+| Phase | Iterations | Items | Timeline | Revenue |
+|-------|-----------|-------|----------|---------|
+| A | 3 | 6 | Weeks 1-4 | $0 (validation) |
+| B | 4-5 | 12 | Months 2-4 | First revenue, $0 infra cost |
+| B.5 | 6 | 5 | Months 3-5 | Primary Pro conversion lever |
+| **GATE** | | | | **50+ Pro, 10+ Teams?** |
+| C | 7-9 | 17 | Months 6-10 | SaaS revenue, hosting costs begin |
+| D | 10-12 | 12 | Month 12+ | Enterprise + multi-tracker |
+| Parked | — | 2 | — | — |
+| **Total** | | **54** | | |
