@@ -194,8 +194,9 @@ describe('assembleTriageSummary', () => {
     // Each link should have ticket key label and bare URL on same line
     const lines = result.split('\n').filter(l => l.includes('browse/PROD-'));
     assert.equal(lines.length, 2, 'Should have 2 link lines');
-    // Should NOT use markdown numbered list format (which Claude Code renders as list items)
-    assert.ok(!lines[0].match(/^\d+\./), 'Links should not use markdown numbered list format');
+    // Should include matching row numbers from the tables
+    assert.ok(lines[0].includes('[1]'), 'First link should have number [1]');
+    assert.ok(lines[1].includes('[2]'), 'Second link should have number [2]');
   });
 
   it('quick links not rendered when baseUrl is missing', () => {

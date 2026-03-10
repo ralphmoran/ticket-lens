@@ -111,7 +111,7 @@ export function assembleTriageSummary(scoredTickets, opts = {}) {
   }
 
   if (browseUrl && allKeys.length > 0) {
-    const links = allKeys.map(k => `${k}: ${browseUrl}${k}`);
+    const links = allKeys.map((k, i) => `[${i + 1}] ${k}: ${browseUrl}${k}`);
     sections.push(`### Quick Links\n\n${links.join('\n')}`);
   }
 
