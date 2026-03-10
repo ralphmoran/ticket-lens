@@ -168,4 +168,41 @@ describe('assembleTriageSummary', () => {
     const result = assembleTriageSummary([]);
     assert.ok(result.includes('All clear'));
   });
+
+  it('aging table numbering continues from needs-response count', () => {
+    const scored = [
+      { ticketKey: 'PROD-100', summary: 'First', status: 'CR', urgency: 'needs-response', lastComment: { author: 'X', body: 'hi', created: '2026-03-05T10:00:00Z' } },
+      { ticketKey: 'PROD-101', summary: 'Second', status: 'CR', urgency: 'needs-response', lastComment: { author: 'Y', body: 'yo', created: '2026-03-05T11:00:00Z' } },
+      { ticketKey: 'PROD-200', summary: 'Stale one', status: 'Dev', urgency: 'aging', daysSinceUpdate: 7 },
+      { ticketKey: 'PROD-201', summary: 'Stale two', status: 'QA', urgency: 'aging', daysSinceUpdate: 10 },
+    ];
+    const result = assembleTriageSummary(scored);
+    // Aging rows should be numbered 3 and 4, not 1 and 2
+    assert.ok(result.includes('| 3 | PROD-200'), 'First aging ticket should be #3');
+    assert.ok(result.includes('| 4 | PROD-201'), 'Second aging ticket should be #4');
+  });
+
+  it('quick links render as bare URLs for terminal clickability', () => {
+    const scored = [
+      { ticketKey: 'PROD-100', summary: 'Bug', status: 'CR', urgency: 'needs-response', lastComment: { author: 'X', body: 'hi', created: '2026-03-05T10:00:00Z' } },
+      { ticketKey: 'PROD-200', summary: 'Stale', status: 'Dev', urgency: 'aging', daysSinceUpdate: 7 },
+    ];
+    const result = assembleTriageSummary(scored, { baseUrl: 'https://jira.example.com' });
+    // URLs should be bare (not inside markdown list syntax) so terminals auto-detect them
+    assert.ok(result.includes('https://jira.example.com/browse/PROD-100'), 'Should include full URL for first ticket');
+    assert.ok(result.includes('https://jira.example.com/browse/PROD-200'), 'Should include full URL for second ticket');
+    // Each link should have ticket key label and bare URL on same line
+    const lines = result.split('\n').filter(l => l.includes('browse/PROD-'));
+    assert.equal(lines.length, 2, 'Should have 2 link lines');
+    // Should NOT use markdown numbered list format (which Claude Code renders as list items)
+    assert.ok(!lines[0].match(/^\d+\./), 'Links should not use markdown numbered list format');
+  });
+
+  it('quick links not rendered when baseUrl is missing', () => {
+    const scored = [
+      { ticketKey: 'PROD-100', summary: 'Bug', status: 'CR', urgency: 'needs-response', lastComment: { author: 'X', body: 'hi', created: '2026-03-05T10:00:00Z' } },
+    ];
+    const result = assembleTriageSummary(scored);
+    assert.ok(!result.includes('Quick Links'), 'No quick links without baseUrl');
+  });
 });

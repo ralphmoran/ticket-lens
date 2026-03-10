@@ -101,16 +101,17 @@ export function assembleTriageSummary(scoredTickets, opts = {}) {
   if (aging.length > 0) {
     const header = '| # | Ticket | Summary | Status | Stale |';
     const sep =    '|---|--------|---------|--------|-------|';
+    const agingOffset = needsResponse.length;
     const rows = aging.map((t, i) => {
       allKeys.push(t.ticketKey);
       const days = t.daysSinceUpdate ?? '?';
-      return `| ${i + 1} | ${t.ticketKey} | ${truncate(t.summary, 60)} | ${t.status} | ${days}d |`;
+      return `| ${agingOffset + i + 1} | ${t.ticketKey} | ${truncate(t.summary, 60)} | ${t.status} | ${days}d |`;
     });
     sections.push(`### Aging — no activity > ${staleDays} days (${aging.length})\n\n${header}\n${sep}\n${rows.join('\n')}`);
   }
 
   if (browseUrl && allKeys.length > 0) {
-    const links = allKeys.map((k, i) => `${i + 1}. ${k}: ${browseUrl}${k}`);
+    const links = allKeys.map(k => `${k}: ${browseUrl}${k}`);
     sections.push(`### Quick Links\n\n${links.join('\n')}`);
   }
 
