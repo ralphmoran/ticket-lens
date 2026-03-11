@@ -1,0 +1,37 @@
+{
+  "name": "ticketlens",
+  "version": "0.1.0",
+  "description": "Developer toolkit that minimizes research time before implementation. Fetches Jira ticket context, linked issues, comments, and code references.",
+  "type": "module",
+  "bin": {
+    "ticketlens": "./bin/ticketlens.mjs"
+  },
+  "files": [
+    "bin/",
+    "skills/jtb/scripts/lib/",
+    "skills/jtb/scripts/fetch-ticket.mjs",
+    "skills/jtb/scripts/fetch-my-tickets.mjs"
+  ],
+  "scripts": {
+    "test": "node --test skills/jtb/scripts/test/*.test.mjs"
+  },
+  "keywords": [
+    "jira",
+    "cli",
+    "developer-tools",
+    "productivity",
+    "ticket",
+    "triage",
+    "context"
+  ],
+  "author": "Ralph Moran",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ralphmoran/ticket-lens.git"
+  },
+  "homepage": "https://github.com/ralphmoran/ticket-lens",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -2,6 +2,23 @@
 
 Developer toolkit that minimizes research time before implementation. Fetches Jira ticket context, linked issues, comments, and code references — then maps them to your local codebase.
 
+## Quick Start
+
+```bash
+npx ticketlens PROJ-123                # Fetch ticket brief
+npx ticketlens PROJ-123 --depth=0      # Target ticket only (fast)
+npx ticketlens triage                   # Scan your assigned tickets
+npx ticketlens triage --profile=myteam  # Explicit profile
+```
+
+Or install globally:
+
+```bash
+npm install -g ticketlens
+ticketlens PROJ-123
+ticketlens triage --stale=3
+```
+
 ## Skills
 
 ### /jtb — Jira TicketBrief
@@ -45,7 +62,7 @@ See [ROADMAP.md](ROADMAP.md) for the full iteration plan (45 features across 10 
 
 **Next up (Iteration 3):**
 - ~~Jira Cloud v3 API migration~~ (done)
-- npm package (`ticketlens`) for easy global install
+- ~~npm package (`ticketlens`) for easy global install~~ (done)
 - Polished README with demo GIFs
 
 **Coming soon:**
