@@ -2,6 +2,8 @@
  * Assembles a normalized ticket into a structured markdown TicketBrief.
  */
 
+import { formatTable } from './table-formatter.mjs';
+
 export function assembleBrief(ticket, codeRefs = null) {
   const sections = [];
   sections.push(`# ${ticket.key}: ${ticket.summary}`);
@@ -79,40 +81,46 @@ export function assembleTriageSummary(scoredTickets, opts = {}) {
   }
 
   const sections = [];
-  sections.push(`## Tickets Needing Your Attention (${actionable.length} found)`);
+  sections.push(`Tickets Needing Your Attention (${actionable.length} found)`);
 
   const needsResponse = actionable.filter(t => t.urgency === 'needs-response');
   const aging = actionable.filter(t => t.urgency === 'aging');
   const allKeys = [];
 
   if (needsResponse.length > 0) {
-    const header = '| # | Ticket | Summary | Status | From | When | Comment |';
-    const sep =    '|---|--------|---------|--------|------|------|---------|';
-    const rows = needsResponse.map((t, i) => {
+    const tableRows = needsResponse.map((t, i) => {
       allKeys.push(t.ticketKey);
       const ago = t.lastComment ? timeAgo(t.lastComment.created) : '';
       const commenter = t.lastComment?.author ?? 'Unknown';
-      const snippet = t.lastComment?.body ? truncate(t.lastComment.body, 80) : '';
-      return `| ${i + 1} | ${t.ticketKey} | ${truncate(t.summary, 60)} | ${t.status} | ${commenter} | ${ago} | ${snippet} |`;
+      const snippet = t.lastComment?.body ? truncate(t.lastComment.body, 60) : '';
+      return [String(i + 1), t.ticketKey, truncate(t.summary, 50), t.status, commenter, ago, snippet];
     });
-    sections.push(`### Needs Response (${needsResponse.length})\n\n${header}\n${sep}\n${rows.join('\n')}`);
+    const table = formatTable(
+      ['#', 'Ticket', 'Summary', 'Status', 'From', 'When', 'Comment'],
+      tableRows,
+      { maxWidths: { 2: 50, 6: 60 } },
+    );
+    sections.push(`Needs Response (${needsResponse.length})\n\n${table}`);
   }
 
   if (aging.length > 0) {
-    const header = '| # | Ticket | Summary | Status | Stale |';
-    const sep =    '|---|--------|---------|--------|-------|';
     const agingOffset = needsResponse.length;
-    const rows = aging.map((t, i) => {
+    const tableRows = aging.map((t, i) => {
       allKeys.push(t.ticketKey);
       const days = t.daysSinceUpdate ?? '?';
-      return `| ${agingOffset + i + 1} | ${t.ticketKey} | ${truncate(t.summary, 60)} | ${t.status} | ${days}d |`;
+      return [String(agingOffset + i + 1), t.ticketKey, truncate(t.summary, 50), t.status, `${days}d`];
     });
-    sections.push(`### Aging — no activity > ${staleDays} days (${aging.length})\n\n${header}\n${sep}\n${rows.join('\n')}`);
+    const table = formatTable(
+      ['#', 'Ticket', 'Summary', 'Status', 'Stale'],
+      tableRows,
+      { maxWidths: { 2: 50 } },
+    );
+    sections.push(`Aging — no activity > ${staleDays} days (${aging.length})\n\n${table}`);
   }
 
   if (browseUrl && allKeys.length > 0) {
     const links = allKeys.map((k, i) => `[${i + 1}] ${k}: ${browseUrl}${k}`);
-    sections.push(`### Quick Links\n\n${links.join('\n')}`);
+    sections.push(`Quick Links\n\n${links.join('\n')}`);
   }
 
   return sections.join('\n\n');

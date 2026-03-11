@@ -145,13 +145,13 @@ describe('assembleTriageSummary', () => {
       },
     ];
     const result = assembleTriageSummary(scored);
-    assert.ok(result.includes('## Tickets Needing Your Attention (2 found)'));
-    assert.ok(result.includes('### Needs Response'));
+    assert.ok(result.includes('Tickets Needing Your Attention (2 found)'));
+    assert.ok(result.includes('Needs Response'));
     assert.ok(result.includes('PROD-100'));
     assert.ok(result.includes('Sarah QA'));
     assert.ok(result.includes('Found edge case'));
     assert.ok(result.includes('Code Review'));
-    assert.ok(result.includes('### Aging'));
+    assert.ok(result.includes('Aging'));
     assert.ok(result.includes('PROD-200'));
     assert.ok(result.includes('8d'));
   });
@@ -178,8 +178,10 @@ describe('assembleTriageSummary', () => {
     ];
     const result = assembleTriageSummary(scored);
     // Aging rows should be numbered 3 and 4, not 1 and 2
-    assert.ok(result.includes('| 3 | PROD-200'), 'First aging ticket should be #3');
-    assert.ok(result.includes('| 4 | PROD-201'), 'Second aging ticket should be #4');
+    const lines = result.split('\n');
+    const agingLines = lines.filter(l => l.includes('PROD-20'));
+    assert.ok(agingLines[0].includes('3'), 'First aging ticket should be #3');
+    assert.ok(agingLines[1].includes('4'), 'Second aging ticket should be #4');
   });
 
   it('quick links render as bare URLs for terminal clickability', () => {
@@ -205,5 +207,16 @@ describe('assembleTriageSummary', () => {
     ];
     const result = assembleTriageSummary(scored);
     assert.ok(!result.includes('Quick Links'), 'No quick links without baseUrl');
+  });
+
+  it('uses plain-text table format (not markdown pipes)', () => {
+    const scored = [
+      { ticketKey: 'PROD-100', summary: 'Bug fix', status: 'CR', urgency: 'aging', daysSinceUpdate: 7 },
+    ];
+    const result = assembleTriageSummary(scored);
+    // Should NOT have markdown table pipes
+    assert.ok(!result.includes('|---|'), 'Should not use markdown table separators');
+    // Should have box-drawing separator
+    assert.ok(result.includes('─'), 'Should use box-drawing characters for separator');
   });
 });
