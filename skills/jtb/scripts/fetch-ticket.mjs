@@ -8,6 +8,7 @@
 import { fetchTicket } from './lib/jira-client.mjs';
 import { extractCodeReferences } from './lib/code-ref-parser.mjs';
 import { assembleBrief } from './lib/brief-assembler.mjs';
+import { styleBrief } from './lib/styled-assembler.mjs';
 import { resolveConnection } from './lib/profile-resolver.mjs';
 
 export async function run(args, env = process.env, fetcher = globalThis.fetch, configDir = undefined) {
@@ -69,7 +70,10 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   const allText = [ticket.description, ...ticket.comments.map(c => c.body)].filter(Boolean).join('\n');
   const codeRefs = extractCodeReferences(allText);
 
-  const brief = assembleBrief(ticket, codeRefs);
+  const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
+  const brief = useStyled
+    ? styleBrief(ticket, codeRefs, { styled: true })
+    : assembleBrief(ticket, codeRefs);
   process.stdout.write(brief + '\n');
 }
 

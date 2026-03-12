@@ -8,6 +8,7 @@
 import { fetchCurrentUser, searchTickets, fetchStatuses } from './lib/jira-client.mjs';
 import { scoreAttention, sortByUrgency } from './lib/attention-scorer.mjs';
 import { assembleTriageSummary } from './lib/brief-assembler.mjs';
+import { styleTriageSummary } from './lib/styled-assembler.mjs';
 import { resolveConnection } from './lib/profile-resolver.mjs';
 
 const DEFAULT_STATUSES = ['In Progress', 'Code Review', 'QA'];
@@ -110,7 +111,10 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   const actionable = scored.filter(s => s.urgency !== 'clear');
   const sorted = sortByUrgency(actionable);
 
-  const summary = assembleTriageSummary(sorted, { staleDays, baseUrl: conn.baseUrl });
+  const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
+  const summary = useStyled
+    ? styleTriageSummary(sorted, { styled: true, staleDays, baseUrl: conn.baseUrl })
+    : assembleTriageSummary(sorted, { staleDays, baseUrl: conn.baseUrl });
   process.stdout.write(summary + '\n');
 }
 
