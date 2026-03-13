@@ -1,0 +1,77 @@
+name: Bug Report
+description: Report something that isn't working correctly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the sections below so we can reproduce and fix it.
+
+  - type: input
+    id: version
+    attributes:
+      label: TicketLens version
+      description: Run `ticketlens --version` or check package.json
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      description: Run `node --version`
+      placeholder: "v22.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: jira-type
+    attributes:
+      label: Jira instance type
+      options:
+        - Jira Cloud
+        - Jira Server/DC
+        - Not applicable
+    validations:
+      required: true
+
+  - type: dropdown
+    id: command
+    attributes:
+      label: Which command?
+      options:
+        - ticketlens <TICKET-KEY> (fetch)
+        - ticketlens triage
+        - /jtb <TICKET-KEY> (Claude Code)
+        - /jtb triage (Claude Code)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug. Include the exact command you ran and the output you got.
+      placeholder: |
+        I ran `ticketlens triage --profile=myprofile` and got:
+        ```
+        Error: ...
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: What should have happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Anything else? OS, terminal, profile config (redact credentials), error logs, etc.

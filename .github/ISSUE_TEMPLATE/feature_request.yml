@@ -1,0 +1,55 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea for TicketLens? We'd love to hear it. Please describe the problem you're trying to solve — not just the solution.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the workflow pain point or missing capability.
+      placeholder: "When I run triage across multiple projects, I have to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How do you think this should work? CLI flags, output format, etc.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Which area?
+      options:
+        - Ticket fetch (brief output)
+        - Triage (attention scanning)
+        - CLI / output formatting
+        - Profile / configuration
+        - Jira compatibility
+        - New tracker support (GitHub Issues, Linear, etc.)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you tried other tools or workarounds for this?
+
+  - type: checkboxes
+    id: dependency-check
+    attributes:
+      label: Dependency check
+      description: TicketLens has zero npm dependencies by design.
+      options:
+        - label: This feature can be implemented without adding npm dependencies
+          required: true
