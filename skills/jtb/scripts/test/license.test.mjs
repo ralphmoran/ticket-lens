@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { readLicense, writeLicense, isLicensed, activateLicense, checkLicense, LICENSE_TIERS } from '../lib/license.mjs';
+import { readLicense, writeLicense, isLicensed, activateLicense, revalidateLicense, checkLicense, LICENSE_TIERS } from '../lib/license.mjs';
 
 let tmpDir;
 
@@ -21,7 +21,7 @@ const validLicense = {
   email: 'dev@example.com',
   validatedAt: new Date().toISOString(),
   expiresAt: new Date(Date.now() + 365 * 86400000).toISOString(),
-  provider: 'gumroad',
+  provider: 'lemonsqueezy',
 };
 
 describe('readLicense', () => {
@@ -124,35 +124,37 @@ describe('activateLicense', () => {
     });
   }
 
-  it('stores license on successful API validation', async () => {
+  it('stores license on successful LemonSqueezy activation', async () => {
     const fetcher = mockFetcher({
       ok: true,
       body: {
-        success: true,
-        purchase: {
-          license_key: 'AAAA-BBBB-CCCC-DDDD',
-          email: 'dev@example.com',
-          variants: '(pro)',
-          subscription_ended_at: null,
-          subscription_cancelled_at: null,
-          recurrence: 'monthly',
+        activated: true,
+        valid: true,
+        license_key: { key: 'AAAA-BBBB-CCCC-DDDD' },
+        instance: { id: 'inst-123' },
+        meta: {
+          variant_name: 'Pro',
+          customer_email: 'dev@example.com',
+          ends_at: null,
         },
       },
     });
-    const result = await activateLicense('AAAA-BBBB-CCCC-DDDD', { configDir: tmpDir, fetcher });
+    const result = await activateLicense('AAAA-BBBB-CCCC-DDDD', { configDir: tmpDir, fetcher, instanceName: 'test-host' });
     assert.equal(result.success, true);
     assert.equal(result.tier, 'pro');
     const stored = readLicense(tmpDir);
     assert.equal(stored.key, 'AAAA-BBBB-CCCC-DDDD');
     assert.equal(stored.tier, 'pro');
+    assert.equal(stored.provider, 'lemonsqueezy');
+    assert.equal(stored.instanceId, 'inst-123');
   });
 
   it('returns error for invalid license key', async () => {
     const fetcher = mockFetcher({
       ok: true,
-      body: { success: false, message: 'That license does not exist.' },
+      body: { activated: false, valid: false, error: 'That license does not exist.' },
     });
-    const result = await activateLicense('INVALID-KEY', { configDir: tmpDir, fetcher });
+    const result = await activateLicense('INVALID-KEY', { configDir: tmpDir, fetcher, instanceName: 'test-host' });
     assert.equal(result.success, false);
     assert.ok(result.error.includes('does not exist'));
     assert.equal(readLicense(tmpDir), null);
@@ -160,47 +162,106 @@ describe('activateLicense', () => {
 
   it('returns error on network failure', async () => {
     const fetcher = async () => { throw new Error('Network timeout'); };
-    const result = await activateLicense('AAAA-BBBB-CCCC-DDDD', { configDir: tmpDir, fetcher });
+    const result = await activateLicense('AAAA-BBBB-CCCC-DDDD', { configDir: tmpDir, fetcher, instanceName: 'test-host' });
     assert.equal(result.success, false);
     assert.ok(result.error.includes('Network timeout'));
   });
 
-  it('extracts team tier from variants', async () => {
+  it('extracts team tier from variant_name', async () => {
     const fetcher = mockFetcher({
       ok: true,
       body: {
-        success: true,
-        purchase: {
-          license_key: 'TEAM-KEY-1234',
-          email: 'lead@company.com',
-          variants: '(team)',
-          subscription_ended_at: null,
-          subscription_cancelled_at: null,
-          recurrence: 'monthly',
+        activated: true,
+        valid: true,
+        license_key: { key: 'TEAM-KEY-1234' },
+        instance: { id: 'inst-456' },
+        meta: {
+          variant_name: 'Team',
+          customer_email: 'lead@company.com',
+          ends_at: null,
         },
       },
     });
-    const result = await activateLicense('TEAM-KEY-1234', { configDir: tmpDir, fetcher });
+    const result = await activateLicense('TEAM-KEY-1234', { configDir: tmpDir, fetcher, instanceName: 'test-host' });
     assert.equal(result.tier, 'team');
   });
 
-  it('defaults to pro tier when variants is empty', async () => {
+  it('defaults to pro tier when variant_name is empty', async () => {
     const fetcher = mockFetcher({
       ok: true,
       body: {
-        success: true,
-        purchase: {
-          license_key: 'SOME-KEY',
-          email: 'dev@example.com',
-          variants: '',
-          subscription_ended_at: null,
-          subscription_cancelled_at: null,
-          recurrence: 'monthly',
+        activated: true,
+        valid: true,
+        license_key: { key: 'SOME-KEY' },
+        instance: { id: 'inst-789' },
+        meta: {
+          variant_name: '',
+          customer_email: 'dev@example.com',
+          ends_at: null,
         },
       },
     });
-    const result = await activateLicense('SOME-KEY', { configDir: tmpDir, fetcher });
+    const result = await activateLicense('SOME-KEY', { configDir: tmpDir, fetcher, instanceName: 'test-host' });
     assert.equal(result.tier, 'pro');
+  });
+
+  it('stores expiresAt when subscription has end date', async () => {
+    const endsAt = '2027-03-12T00:00:00Z';
+    const fetcher = mockFetcher({
+      ok: true,
+      body: {
+        activated: true,
+        valid: true,
+        license_key: { key: 'EXP-KEY' },
+        instance: { id: 'inst-exp' },
+        meta: { variant_name: 'Pro', customer_email: 'dev@example.com', ends_at: endsAt },
+      },
+    });
+    const result = await activateLicense('EXP-KEY', { configDir: tmpDir, fetcher, instanceName: 'test-host' });
+    assert.equal(result.success, true);
+    const stored = readLicense(tmpDir);
+    assert.equal(stored.expiresAt, endsAt);
+  });
+});
+
+describe('revalidateLicense', () => {
+  function mockFetcher(response) {
+    return async () => ({
+      ok: true,
+      json: async () => response,
+    });
+  }
+
+  it('updates validatedAt on successful revalidation', async () => {
+    writeLicense({ ...validLicense, validatedAt: '2026-01-01T00:00:00Z' }, tmpDir);
+    const fetcher = mockFetcher({ valid: true, meta: {} });
+    const result = await revalidateLicense({ configDir: tmpDir, fetcher, instanceName: 'test-host' });
+    assert.equal(result.success, true);
+    const stored = readLicense(tmpDir);
+    assert.notEqual(stored.validatedAt, '2026-01-01T00:00:00Z');
+  });
+
+  it('marks license expired when API says invalid', async () => {
+    writeLicense(validLicense, tmpDir);
+    const fetcher = mockFetcher({ valid: false });
+    const result = await revalidateLicense({ configDir: tmpDir, fetcher, instanceName: 'test-host' });
+    assert.equal(result.success, false);
+    const stored = readLicense(tmpDir);
+    assert.ok(stored.expiresAt);
+  });
+
+  it('returns cached success on network failure', async () => {
+    writeLicense(validLicense, tmpDir);
+    const fetcher = async () => { throw new Error('offline'); };
+    const result = await revalidateLicense({ configDir: tmpDir, fetcher, instanceName: 'test-host' });
+    assert.equal(result.success, true);
+    assert.equal(result.cached, true);
+  });
+
+  it('returns error when no license exists', async () => {
+    const fetcher = mockFetcher({ valid: true });
+    const result = await revalidateLicense({ configDir: tmpDir, fetcher, instanceName: 'test-host' });
+    assert.equal(result.success, false);
   });
 });
 

@@ -64,7 +64,7 @@ Current state: 134 tests, clean architecture, multi-account support, Jira Cloud 
 
 **Goal**: First revenue. Premium features that run 100% locally. No backend needed.
 
-**Monetization**: License key via Gumroad/LemonSqueezy ($0 infrastructure cost). Key stored in `~/.ticketlens/license.json`, validated locally.
+**Monetization**: License key via LemonSqueezy (Merchant of Record — handles tax, invoicing, customer portal). Key stored in `~/.ticketlens/license.json`, validated via LemonSqueezy API with offline grace period. Static landing page on Cloudflare Pages ($0 infra).
 
 **Pro tier ($8/mo):** Multi-project triage, custom attention rules, scheduled triage, ticket history tracking.
 

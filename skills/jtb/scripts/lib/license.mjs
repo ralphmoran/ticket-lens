@@ -36,49 +36,82 @@ export function isLicensed(tier, configDir = DEFAULT_CONFIG_DIR) {
   return actual >= required;
 }
 
-const GUMROAD_VERIFY_URL = 'https://api.gumroad.com/v2/licenses/verify';
+const LEMONSQUEEZY_ACTIVATE_URL = 'https://api.lemonsqueezy.com/v1/licenses/activate';
+const LEMONSQUEEZY_VALIDATE_URL = 'https://api.lemonsqueezy.com/v1/licenses/validate';
 
-function extractTier(variants) {
-  if (!variants) return 'pro';
-  const lower = variants.toLowerCase();
-  if (lower.includes('team')) return 'team';
-  if (lower.includes('pro')) return 'pro';
+function extractTier(meta) {
+  if (!meta) return 'pro';
+  const name = (meta.variant_name || meta.product_name || '').toLowerCase();
+  if (name.includes('team')) return 'team';
   return 'pro';
 }
 
 export async function activateLicense(key, opts = {}) {
-  const { configDir = DEFAULT_CONFIG_DIR, fetcher = globalThis.fetch, productId = 'ticketlens' } = opts;
+  const { configDir = DEFAULT_CONFIG_DIR, fetcher = globalThis.fetch, instanceName } = opts;
+  const instance = instanceName || os.hostname();
 
   try {
-    const res = await fetcher(GUMROAD_VERIFY_URL, {
+    const res = await fetcher(LEMONSQUEEZY_ACTIVATE_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `product_id=${encodeURIComponent(productId)}&license_key=${encodeURIComponent(key)}`,
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ license_key: key, instance_name: instance }),
     });
 
     const data = await res.json();
 
-    if (!data.success) {
-      return { success: false, error: data.message || 'Invalid license key.' };
+    if (!data.activated && !data.valid) {
+      return { success: false, error: data.error || data.message || 'Invalid license key.' };
     }
 
-    const purchase = data.purchase;
-    const tier = extractTier(purchase.variants);
-    const isSubscriptionEnded = !!purchase.subscription_ended_at;
+    const meta = data.meta || {};
+    const tier = extractTier(meta);
 
     const license = {
-      key: purchase.license_key,
+      key: data.license_key?.key || key,
       tier,
-      email: purchase.email,
-      provider: 'gumroad',
+      email: meta.customer_email || null,
+      provider: 'lemonsqueezy',
+      instanceId: data.instance?.id || null,
       validatedAt: new Date().toISOString(),
-      ...(isSubscriptionEnded ? { expiresAt: purchase.subscription_ended_at } : {}),
+      ...(meta.ends_at ? { expiresAt: meta.ends_at } : {}),
     };
 
     writeLicense(license, configDir);
-    return { success: true, tier, email: purchase.email };
+    return { success: true, tier, email: license.email };
   } catch (err) {
     return { success: false, error: err.message };
+  }
+}
+
+export async function revalidateLicense(opts = {}) {
+  const { configDir = DEFAULT_CONFIG_DIR, fetcher = globalThis.fetch, instanceName } = opts;
+  const license = readLicense(configDir);
+  if (!license) return { success: false, error: 'No license found.' };
+
+  const instance = instanceName || os.hostname();
+
+  try {
+    const res = await fetcher(LEMONSQUEEZY_VALIDATE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ license_key: license.key, instance_name: instance }),
+    });
+
+    const data = await res.json();
+
+    if (!data.valid) {
+      license.expiresAt = new Date().toISOString();
+      writeLicense(license, configDir);
+      return { success: false, error: 'License is no longer valid.' };
+    }
+
+    license.validatedAt = new Date().toISOString();
+    if (data.meta?.ends_at) license.expiresAt = data.meta.ends_at;
+    else delete license.expiresAt;
+    writeLicense(license, configDir);
+    return { success: true, tier: license.tier };
+  } catch {
+    return { success: true, tier: license.tier, cached: true };
   }
 }
 

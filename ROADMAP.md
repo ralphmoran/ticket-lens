@@ -42,13 +42,13 @@ Get the product in front of people. Measure demand before building premium featu
 
 ## Phase B — Monetize Without Infrastructure (Months 2-4)
 
-Premium features that run 100% locally. No backend needed. License key via Gumroad/LemonSqueezy ($0 infra cost).
+Premium features that run 100% locally. No backend needed. License key via LemonSqueezy (Merchant of Record, $0 infra cost).
 
 ### Iteration 4 — Premium CLI Features (Pro tier, $8/mo)
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| 8 | Feature | **License key system** | `~/.ticketlens/license.json` with key validation. Buy on Gumroad/LemonSqueezy, paste key. No backend needed. | Small |
+| 8 | ~~Feature~~ | ~~**License key system**~~ | Done. LemonSqueezy API activation + validation. `~/.ticketlens/license.json` with tier hierarchy, expiry, revalidation. CLI: `ticketlens activate <KEY>`, `ticketlens license`. 27 tests. | ~~Small~~ |
 | 9 | Feature | **Multi-project triage** | Triage across ALL profiles at once in a combined view. Devs working across repos need this daily. | Small |
 | 10 | Feature | **Custom attention rules** | User-defined scoring rules in profile config (e.g. "P1 bugs always urgent", "ignore tickets with label=backlog"). | Medium |
 | 11 | Feature | **Scheduled triage (cron)** | Auto-run triage on a schedule, save results to file. Morning triage without remembering to run the command. | Small |
@@ -112,8 +112,8 @@ Build the cloud backend and web dashboard ONLY when paying users demand it.
 | 26 | Feature | **E2EE client library** | Encrypt/decrypt briefs client-side before sync. User holds the key, TicketLens Cloud stores opaque blobs. | Large |
 | 27 | Feature | **Brief sync (push/pull)** | CLI sends encrypted briefs to cloud, pulls on another machine. Conflict resolution: last-write-wins. | Medium |
 | 28 | Feature | **Triage history sync** | Persist triage results across machines. "What did I triage last week?" | Medium |
-| 29 | Feature | **Billing migration (Stripe)** | Move from Gumroad/LemonSqueezy to Stripe for subscription management + usage metering. | Medium |
-| 30 | Feature | **Landing page + signup flow** | Marketing site: problem statement, demo GIFs, pricing table, signup/login. | Medium |
+| 29 | Feature | **Billing migration (Stripe)** | Move from LemonSqueezy to Stripe only if fees justify it at 500+ users. | Medium |
+| 30 | Feature | **Landing page + signup flow** | Marketing site: problem statement, demo GIFs, pricing table. LemonSqueezy checkout overlay for purchases. | Medium |
 
 ### Iteration 8 — Team Dashboard (Team tier)
 
@@ -233,7 +233,7 @@ Phase D: Multi-tracker + Enterprise (Iterations 10-12)
 | SSO + audit logs | No | No | No | Phase D |
 | Self-hosted | No | No | No | Phase D |
 
-**Phase B revenue (no infra):** Pro at $8/mo + Team at $15/seat/mo, gated by license key via Gumroad/LemonSqueezy.
+**Phase B revenue (no infra):** Pro at $8/mo + Team at $15/seat/mo, gated by license key via LemonSqueezy (Merchant of Record). Static landing page on Cloudflare Pages ($0). LemonSqueezy handles checkout, tax, invoicing, and customer portal.
 
 ---
 
