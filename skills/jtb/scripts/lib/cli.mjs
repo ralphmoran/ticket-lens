@@ -20,6 +20,14 @@ export function parseCommand(args) {
     return { command: 'triage', args: args.slice(1) };
   }
 
+  if (first === 'activate') {
+    return { command: 'activate', args: args.slice(1) };
+  }
+
+  if (first === 'license') {
+    return { command: 'license', args: args.slice(1) };
+  }
+
   // Anything that looks like a ticket key or any non-flag arg → fetch
   return { command: 'fetch', args };
 }
