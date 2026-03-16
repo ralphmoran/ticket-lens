@@ -20,10 +20,10 @@ const sampleProfiles = {
       email: 'ralph@acme.com',
       ticketPrefixes: ['ACME', 'OPS'],
     },
-    acme: {
+    forge: {
       baseUrl: 'https://jira.forge.com',
       auth: 'server',
-      ticketPrefixes: ['ADV'],
+      ticketPrefixes: ['PROD'],
     },
   },
   default: 'corenexus',
@@ -32,7 +32,7 @@ const sampleProfiles = {
 const sampleCreds = {
   corenexus: { apiToken: 'token-corenexus' },
   acme: { apiToken: 'token-acme' },
-  acme: { pat: 'pat-forge' },
+  forge: { pat: 'pat-forge' },
 };
 
 describe('profile-resolver', () => {
@@ -80,7 +80,7 @@ describe('profile-resolver', () => {
       const result = resolveConnection('PROD-1234', { configDir });
       assert.equal(result.baseUrl, 'https://jira.forge.com');
       assert.equal(result.pat, 'pat-forge');
-      assert.equal(result.profileName, 'acme');
+      assert.equal(result.profileName, 'forge');
     });
 
     it('resolves by explicit --profile flag override', () => {
@@ -94,9 +94,9 @@ describe('profile-resolver', () => {
 
     it('explicit --profile takes priority over prefix match', () => {
       writeConfig();
-      // CNV1 would match corenexus, but --profile=acme overrides
-      const result = resolveConnection('CNV1-3', { configDir, profileName: 'acme' });
-      assert.equal(result.profileName, 'acme');
+      // CNV1 would match corenexus, but --profile=forge overrides
+      const result = resolveConnection('CNV1-3', { configDir, profileName: 'forge' });
+      assert.equal(result.profileName, 'forge');
       assert.equal(result.baseUrl, 'https://jira.forge.com');
     });
 
@@ -143,6 +143,7 @@ describe('profile-resolver', () => {
       writeConfig();
       const result = resolveConnection('PROD-1234', { configDir });
       assert.equal(result.auth, 'server');
+      assert.equal(result.profileName, 'forge');
     });
 
     it('returns auth as null when falling back to env vars', () => {
