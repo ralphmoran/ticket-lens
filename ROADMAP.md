@@ -40,6 +40,27 @@ Get the product in front of people. Measure demand before building premium featu
 
 ---
 
+## Phase A.5 — Website & First Sale (Week 3-5)
+
+Static landing page + LemonSqueezy checkout overlay + first B2B pitch. No backend. One weekend build, hard constraint.
+
+### Iteration 3.5 — Sales-Ready Website + Pilot Client Pitch
+
+| # | Type | Feature | Detail | Effort |
+|---|------|---------|--------|--------|
+| A1 | Feature | **Triage by assignee (`--assignee`)** | Triage another dev's tickets. Managers check any team member's queue. JQL change, runs locally. Pulled forward for Team-tier value. | Small |
+| A2 | Feature | **Triage by sprint (`--sprint`)** | Triage all tickets in a sprint regardless of assignee. Full sprint visibility. Pulled forward for Team-tier value. | Small |
+| A3 | Chore | **Static landing page** | Single page on Cloudflare Pages: hero + demo GIF, pricing table, security/data statement, ToS/Privacy, LemonSqueezy overlay checkout, "Contact for Team pricing" CTA. One weekend max. | Small |
+| A4 | Chore | **Pilot client pitch** | Live demo on client's Jira + website link + trial license keys. Validate Team-tier willingness, procurement process, seat count. | Small |
+
+**Pilot client pitch checklist:**
+- [ ] Informal conversation with decision-maker (validate interest before building)
+- [ ] Ship `--assignee` and `--sprint` flags
+- [ ] Deploy landing page with pricing + checkout
+- [ ] Formal pitch: live demo + website + trial keys
+
+---
+
 ## Phase B — Monetize Without Infrastructure (Months 2-4)
 
 Premium features that run 100% locally. No backend needed. License key via LemonSqueezy (Merchant of Record, $0 infra cost).
@@ -49,7 +70,7 @@ Premium features that run 100% locally. No backend needed. License key via Lemon
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
 | 8 | ~~Feature~~ | ~~**License key system**~~ | Done. LemonSqueezy API activation + validation. `~/.ticketlens/license.json` with tier hierarchy, expiry, revalidation. CLI: `ticketlens activate <KEY>`, `ticketlens license`. 27 tests. | ~~Small~~ |
-| 9 | Feature | **Multi-project triage** | Triage across ALL profiles at once in a combined view. Devs working across repos need this daily. | Small |
+| 9 | Feature | **Multi-project triage** | Triage across ALL profiles at once in a combined view. Devs working across repos need this daily. Deprioritized — not a deal-closer for first sale. | Small |
 | 10 | Feature | **Custom attention rules** | User-defined scoring rules in profile config (e.g. "P1 bugs always urgent", "ignore tickets with label=backlog"). | Medium |
 | 11 | Feature | **Scheduled triage (cron)** | Auto-run triage on a schedule, save results to file. Morning triage without remembering to run the command. | Small |
 | 12 | Feature | **Ticket history tracking** | Track ticket state over time locally. "This ticket has bounced between CR and Dev 3 times." Stored in `~/.ticketlens/history/`. | Medium |
@@ -58,13 +79,13 @@ Premium features that run 100% locally. No backend needed. License key via Lemon
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| 13 | Feature | **Triage by assignee (`--assignee`)** | Triage another dev's tickets. Managers check any team member's queue. JQL change, runs locally. | Small |
-| 14 | Feature | **Triage by sprint (`--sprint`)** | Triage all tickets in a sprint regardless of assignee. Full sprint visibility. | Small |
 | 15 | Feature | **Triage by project (`--project`)** | Scope triage to a specific Jira project, not just statuses. | Small |
 | 16 | Feature | **Triage by label/priority (`--label`, `--priority`)** | Filter triage to specific labels or priority levels (e.g. only P1/P2). | Small |
 | 17 | Feature | **Triage export (CSV/JSON)** | Export triage results for standups, reports, or piping into other tools. | Small |
 | 18 | Feature | **Brief templates** | Custom output formats per team/project. Configure in profile which sections to include, field ordering, etc. | Small |
 | 19 | Feature | **Response time metrics** | "Your avg response time this week: 4.2 hours." Computed from local triage history. | Medium |
+
+*Note: #13 (`--assignee`) and #14 (`--sprint`) moved to Iteration 3.5 for pilot client pitch.*
 
 ---
 
@@ -113,7 +134,7 @@ Build the cloud backend and web dashboard ONLY when paying users demand it.
 | 27 | Feature | **Brief sync (push/pull)** | CLI sends encrypted briefs to cloud, pulls on another machine. Conflict resolution: last-write-wins. | Medium |
 | 28 | Feature | **Triage history sync** | Persist triage results across machines. "What did I triage last week?" | Medium |
 | 29 | Feature | **Billing migration (Stripe)** | Move from LemonSqueezy to Stripe only if fees justify it at 500+ users. | Medium |
-| 30 | Feature | **Landing page + signup flow** | Marketing site: problem statement, demo GIFs, pricing table. LemonSqueezy checkout overlay for purchases. | Medium |
+| 30 | ~~Feature~~ | ~~**Landing page + signup flow**~~ | Moved to Phase A.5 (Iteration 3.5). Static landing page ships before first sale. | ~~Medium~~ |
 
 ### Iteration 8 — Team Dashboard (Team tier)
 
@@ -197,6 +218,8 @@ Before building any feature, ask:
 ```
 Phase A: Launch (Iteration 3)
     |
+Phase A.5: Website + Pilot Client Pitch (Iteration 3.5)
+    |
 Phase B: Premium CLI — revenue with $0 infra (Iterations 4-5)
     |
 Phase B.5: Compliance Check — killer Pro feature (Iteration 6)
@@ -242,10 +265,11 @@ Phase D: Multi-tracker + Enterprise (Iterations 10-12)
 | Phase | Iterations | Items | Timeline | Revenue |
 |-------|-----------|-------|----------|---------|
 | A | 3 | 7 | Weeks 1-4 | $0 (validation) |
-| B | 4-5 | 12 | Months 2-4 | First revenue, $0 infra cost |
+| A.5 | 3.5 | 4 | Weeks 3-5 | First B2B sale |
+| B | 4-5 | 10 | Months 2-4 | Pro + Team revenue, $0 infra cost |
 | B.5 | 6 | 5 | Months 3-5 | Primary Pro conversion lever |
 | **GATE** | | | | **50+ Pro, 10+ Teams?** |
 | C | 7-9 | 17 | Months 6-10 | SaaS revenue, hosting costs begin |
 | D | 10-12 | 12 | Month 12+ | Enterprise + multi-tracker |
 | Parked | — | 2 | — | — |
-| **Total** | | **55** | | |
+| **Total** | | **57** | | |
