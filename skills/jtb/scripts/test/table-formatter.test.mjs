@@ -71,6 +71,22 @@ describe('formatTable', () => {
     assert.equal(visLens[2], visLens[3], 'Both data rows should have equal visible width');
   });
 
+  it('aligns columns correctly when a cell contains OSC 8 hyperlinks', () => {
+    const linked = '\x1b]8;;https://jira.example.com/browse/PROJ-1\x07PROJ-1\x1b]8;;\x07';
+    const result = formatTable(
+      ['#', 'Ticket'],
+      [
+        ['1', linked],
+        ['2', 'PROJ-200'],
+      ],
+    );
+    const lines = result.split('\n');
+    const stripAll = (s) => s.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g, '');
+    const visLens = lines.map(l => stripAll(l).length);
+    assert.equal(visLens[0], visLens[2], 'Header and hyperlinked row should have equal visible width');
+    assert.equal(visLens[2], visLens[3], 'Both data rows should have equal visible width');
+  });
+
   it('does not truncate ANSI-styled cells based on raw length', () => {
     // A styled cell whose raw length exceeds maxWidth but visible length does not
     const styledShort = '\x1b[31m[NR]\x1b[39m'; // 4 visible chars, 14 raw chars

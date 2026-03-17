@@ -12,6 +12,7 @@ import { parseCommand } from '../skills/jtb/scripts/lib/cli.mjs';
 import { run as runFetch } from '../skills/jtb/scripts/fetch-ticket.mjs';
 import { run as runTriage } from '../skills/jtb/scripts/fetch-my-tickets.mjs';
 import { activateLicense, checkLicense } from '../skills/jtb/scripts/lib/license.mjs';
+import { printHelp } from '../skills/jtb/scripts/lib/help.mjs';
 
 const args = process.argv.slice(2);
 const { command, args: cmdArgs } = parseCommand(args);
@@ -70,42 +71,6 @@ switch (command) {
 
   case 'help':
   default:
-    process.stdout.write(`TicketLens — Developer toolkit for Jira ticket context
-
-Usage:
-  ticketlens <TICKET-KEY> [options]    Fetch ticket brief
-  ticketlens triage [options]          Scan assigned tickets for attention
-  ticketlens activate <KEY>            Activate a license key
-  ticketlens license                   Show current license status
-
-Fetch options:
-  --depth=N          Traversal depth (0=target only, 1=+linked, 2=+linked-of-linked)
-  --profile=NAME     Force a specific Jira profile
-  --styled           Force ANSI-styled output
-  --plain            Force plain markdown output
-
-Triage options:
-  --stale=N          Aging threshold in days (default: 5)
-  --status=X,Y       Override statuses to scan
-  --profile=NAME     Force a specific Jira profile
-  --styled           Force ANSI-styled output
-  --plain            Force plain markdown output
-
-Global options:
-  --help             Show this help
-  --version          Show version
-
-Examples:
-  ticketlens PROJ-123
-  ticketlens PROJ-123 --depth=0 --profile=myteam
-  ticketlens triage --stale=3
-  ticketlens triage --profile=acme
-  ticketlens activate AAAA-BBBB-CCCC-DDDD
-  ticketlens license
-
-Setup:
-  Configure profiles in ~/.ticketlens/profiles.json
-  Or set env vars: JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN
-`);
+    printHelp();
     break;
 }

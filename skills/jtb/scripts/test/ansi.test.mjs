@@ -44,4 +44,18 @@ describe('ansi styling', () => {
     const unique = new Set(results);
     assert.equal(unique.size, 6, 'Each style function should produce a unique result');
   });
+
+  it('link() wraps text in OSC 8 hyperlink when enabled', () => {
+    const s = createStyler({ forceColor: true });
+    const result = s.link('https://example.com', 'click me');
+    assert.ok(result.includes('\x1b]8;;https://example.com\x07'), 'Should contain OSC 8 open');
+    assert.ok(result.includes('click me'), 'Should contain visible text');
+    assert.ok(result.includes('\x1b]8;;\x07'), 'Should contain OSC 8 close');
+  });
+
+  it('link() returns plain text when disabled', () => {
+    const s = createStyler({ noColor: true });
+    const result = s.link('https://example.com', 'click me');
+    assert.equal(result, 'click me', 'Should return plain text when disabled');
+  });
 });

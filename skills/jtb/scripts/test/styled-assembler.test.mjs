@@ -31,18 +31,31 @@ describe('styleTriageSummary', () => {
     assert.ok(result.includes('1 aging'), 'Should show aging count');
   });
 
-  it('shows [NEEDS RESPONSE] flag for needs-response tickets', () => {
-    const tickets = [makeTicket({ urgency: 'needs-response' })];
-    const result = styleTriageSummary(tickets, { styled: false });
-    assert.ok(result.includes('[NEEDS RESPONSE]'), 'Should contain flag');
-    assert.ok(result.includes('PROJ-1'), 'Should contain ticket key');
+  it('shows legend with colored symbols', () => {
+    const tickets = [
+      makeTicket({ urgency: 'needs-response' }),
+      makeTicket({ ticketKey: 'PROJ-2', urgency: 'aging', daysSinceUpdate: 5 }),
+    ];
+    const result = styleTriageSummary(tickets, { styled: true });
+    assert.ok(result.includes('●'), 'Should contain legend dots');
+    assert.ok(result.includes('needs response'), 'Should have needs-response label');
+    assert.ok(result.includes('aging'), 'Should have aging label');
   });
 
-  it('shows [AGING] flag for aging tickets', () => {
+  it('shows ticket key for needs-response tickets (no Flag column)', () => {
+    const tickets = [makeTicket({ urgency: 'needs-response' })];
+    const result = styleTriageSummary(tickets, { styled: false });
+    assert.ok(result.includes('PROJ-1'), 'Should contain ticket key');
+    assert.ok(!result.includes('[NEEDS RESPONSE]'), 'Should NOT contain old flag text');
+    assert.ok(!result.includes('Flag'), 'Should NOT have Flag column header');
+  });
+
+  it('shows ticket key for aging tickets (no Flag column)', () => {
     const tickets = [makeTicket({ urgency: 'aging', daysSinceUpdate: 10 })];
     const result = styleTriageSummary(tickets, { styled: false });
-    assert.ok(result.includes('[AGING]'), 'Should contain aging flag');
+    assert.ok(result.includes('PROJ-1'), 'Should contain ticket key');
     assert.ok(result.includes('10d'), 'Should show stale days');
+    assert.ok(!result.includes('[AGING]'), 'Should NOT contain old flag text');
   });
 
   it('shows all-clear message when no actionable tickets', () => {
@@ -51,32 +64,39 @@ describe('styleTriageSummary', () => {
     assert.ok(result.includes('All clear'), 'Should show all-clear message');
   });
 
-  it('includes Quick Links when baseUrl provided', () => {
+  it('shows base URL pattern once and ticket keys in table when baseUrl provided', () => {
     const tickets = [
       makeTicket({ ticketKey: 'PROJ-1', urgency: 'needs-response' }),
       makeTicket({ ticketKey: 'PROJ-2', urgency: 'aging', daysSinceUpdate: 7 }),
     ];
     const result = styleTriageSummary(tickets, { styled: false, baseUrl: 'https://jira.example.com' });
-    assert.ok(result.includes('Quick Links'), 'Should have Quick Links section');
-    assert.ok(result.includes('https://jira.example.com/browse/PROJ-1'), 'Should have URL for first ticket');
-    assert.ok(result.includes('https://jira.example.com/browse/PROJ-2'), 'Should have URL for second ticket');
+    assert.ok(result.includes('https://jira.example.com/browse/'), 'Should show base URL pattern once');
+    assert.ok(result.includes('PROJ-1'), 'Should have ticket key PROJ-1 in table');
+    assert.ok(result.includes('PROJ-2'), 'Should have ticket key PROJ-2 in table');
+    assert.ok(!result.includes('Quick Links'), 'Should NOT have Quick Links section');
+  });
+
+  it('does not include Quick Links section', () => {
+    const tickets = [makeTicket({ urgency: 'needs-response' })];
+    const result = styleTriageSummary(tickets, { styled: false, baseUrl: 'https://jira.example.com' });
+    assert.ok(!result.includes('Quick Links'), 'Quick Links section should be removed');
   });
 
   it('handles only needs-response tickets (no aging section)', () => {
     const tickets = [makeTicket({ urgency: 'needs-response' })];
     const result = styleTriageSummary(tickets, { styled: false });
-    assert.ok(result.includes('[NEEDS RESPONSE]'));
-    assert.ok(!result.includes('[AGING]'), 'Should not have aging section');
+    assert.ok(result.includes('PROJ-1'));
     assert.ok(result.includes('1 need response'));
-    assert.ok(!result.includes('aging'), 'Summary should not mention aging');
+    // Legend should only show needs-response
+    assert.ok(!result.includes('Stale'), 'Should not have aging table');
   });
 
   it('handles only aging tickets (no needs-response section)', () => {
     const tickets = [makeTicket({ urgency: 'aging', daysSinceUpdate: 6 })];
     const result = styleTriageSummary(tickets, { styled: false });
-    assert.ok(result.includes('[AGING]'));
-    assert.ok(!result.includes('[NEEDS RESPONSE]'), 'Should not have needs-response section');
+    assert.ok(result.includes('PROJ-1'));
     assert.ok(result.includes('1 aging'));
+    assert.ok(!result.includes('Comment'), 'Should not have needs-response table columns');
   });
 });
 

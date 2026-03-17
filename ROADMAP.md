@@ -17,7 +17,7 @@ Get the product in front of people. Measure demand before building premium featu
 | 1 | ~~Bug~~ | ~~**Jira Cloud v3 API migration**~~ | Done. Cloud profiles auto-select v3. ADF-to-text converter added. | ~~Medium~~ |
 | 2 | ~~Bug~~ | ~~**Jira Cloud v3 fetch endpoint**~~ | Done. All endpoints support v3 paths. | ~~Small~~ |
 | 3 | ~~Feature~~ | ~~**npm package (`ticketlens`)**~~ | Done. CLI entry point with `ticketlens PROJ-123` and `ticketlens triage`. Published as npm package. | ~~Medium~~ |
-| 4 | Enhancement | **CLI output UX polish** | Structured sections, prominent attention scores, scannable flags (`[NEEDS RESPONSE]`), triage summary line, TTY detection (styled terminal vs plain for piped/LLM). Zero new deps — raw ANSI via `ansi.mjs`. Upstream dependency for GIF demos. | Small |
+| 4 | ~~Enhancement~~ | ~~**CLI output UX polish**~~ | Done. Session banner (version/profile/server/user in colored box), spinner inside banner, connection status (green/red dot), error classifier with VPN-aware hints, error footer boxes, colored legend (● needs-response / ● aging), interactive triage navigator (arrow keys + Enter to open in browser), profile picker on typo, `--help` with styled output, `--project` alias for `--profile`. Zero new deps. | ~~Small~~ |
 | 5 | Chore | **Polish README with GIF demos** | Record 3 GIFs: ticket fetch, triage scan, depth traversal. First impression for GitHub visitors. | Small |
 | 6 | Chore | **CONTRIBUTING.md + issue templates** | Signals "this is a real project" and invites open-source contributors. | Small |
 | 7 | Chore | **GitHub Discussions enabled** | Community Q&A channel without cluttering Issues. | Small |

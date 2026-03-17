@@ -16,6 +16,9 @@ export function createStyler(opts = {}) {
   const wrap = (open, close) => (text) =>
     enabled ? `${ESC}${open}m${text}${ESC}${close}m` : String(text);
 
+  const link = (url, text) =>
+    enabled ? `\x1b]8;;${url}\x07${text}\x1b]8;;\x07` : String(text);
+
   return {
     bold: wrap(codes.bold[0], codes.bold[1]),
     dim: wrap(codes.dim[0], codes.dim[1]),
@@ -23,6 +26,7 @@ export function createStyler(opts = {}) {
     green: wrap(codes.green[0], codes.green[1]),
     yellow: wrap(codes.yellow[0], codes.yellow[1]),
     cyan: wrap(codes.cyan[0], codes.cyan[1]),
+    link,
     enabled,
   };
 }

@@ -53,7 +53,7 @@ describe('fetch-ticket integration', () => {
     const out = captureOutput();
     try {
       await run([], validEnv, undefined, NO_CONFIG);
-      assert.ok(out.stderr.includes('Missing ticket ID'));
+      assert.ok(out.stderr.includes('TICKET-KEY'), 'Should show help with usage info');
       assert.equal(process.exitCode, 1);
       assert.equal(out.stdout, '');
     } finally {
@@ -105,7 +105,7 @@ describe('fetch-ticket integration', () => {
     try {
       await run(['PROD-1234', '--depth=0'], {}, mockFetch, configDir);
       assert.ok(calls[0].url.startsWith('https://profiled.atlassian.net'));
-      assert.ok(out.stderr.includes('Using profile: testprofile'));
+      assert.ok(out.stderr.includes('testprofile'), 'Banner should include profile name');
     } finally {
       out.restore();
       rmSync(configDir, { recursive: true, force: true });

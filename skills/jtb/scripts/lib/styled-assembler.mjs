@@ -39,20 +39,29 @@ export function styleTriageSummary(scoredTickets, opts = {}) {
   const sections = [];
   sections.push(s.bold(`${actionable.length} tickets need attention`) + ` (${parts.join(', ')})`);
 
-  const allKeys = [];
+  // Legend + base URL hint
+  const legendParts = [];
+  if (needsResponse.length > 0) legendParts.push(`${s.red('●')} needs response`);
+  if (aging.length > 0) legendParts.push(`${s.yellow('●')} aging`);
+  let legend = legendParts.join('    ');
+  if (browseUrl) legend += `\n${s.dim('Open:')} ${browseUrl}${s.dim('<key>')}`;
+  sections.push(legend);
+
+  const ticketCell = (key, colorFn) => {
+    return colorFn('●') + ' ' + key;
+  };
 
   if (needsResponse.length > 0) {
     const tableRows = needsResponse.map((t, i) => {
-      allKeys.push(t.ticketKey);
       const ago = t.lastComment ? timeAgo(t.lastComment.created) : '';
       const commenter = t.lastComment?.author ?? 'Unknown';
-      const snippet = t.lastComment?.body ? truncate(t.lastComment.body, 60) : '';
-      return [String(i + 1), s.red('[NEEDS RESPONSE]'), t.ticketKey, truncate(t.summary, 50), t.status, commenter, ago, snippet];
+      const snippet = t.lastComment?.body ? truncate(t.lastComment.body, 40) : '';
+      return [String(i + 1), ticketCell(t.ticketKey, s.red), truncate(t.summary, 45), t.status, commenter, ago, snippet];
     });
     const table = formatTable(
-      ['#', 'Flag', 'Ticket', 'Summary', 'Status', 'From', 'When', 'Comment'],
+      ['#', 'Ticket', 'Title', 'Status', 'From', 'When', 'Comment'],
       tableRows,
-      { maxWidths: { 3: 50, 7: 60 } },
+      { maxWidths: { 2: 45, 6: 40 } },
     );
     sections.push(table);
   }
@@ -60,21 +69,15 @@ export function styleTriageSummary(scoredTickets, opts = {}) {
   if (aging.length > 0) {
     const agingOffset = needsResponse.length;
     const tableRows = aging.map((t, i) => {
-      allKeys.push(t.ticketKey);
       const days = t.daysSinceUpdate ?? '?';
-      return [String(agingOffset + i + 1), s.yellow('[AGING]'), t.ticketKey, truncate(t.summary, 50), t.status, `${days}d`];
+      return [String(agingOffset + i + 1), ticketCell(t.ticketKey, s.yellow), truncate(t.summary, 45), t.status, `${days}d`];
     });
     const table = formatTable(
-      ['#', 'Flag', 'Ticket', 'Summary', 'Status', 'Stale'],
+      ['#', 'Ticket', 'Title', 'Status', 'Stale'],
       tableRows,
-      { maxWidths: { 3: 50 } },
+      { maxWidths: { 2: 45 } },
     );
     sections.push(table);
-  }
-
-  if (browseUrl && allKeys.length > 0) {
-    const links = allKeys.map((k, i) => `[${i + 1}] ${k}: ${browseUrl}${k}`);
-    sections.push(s.dim('Quick Links') + '\n\n' + links.join('\n'));
   }
 
   return sections.join('\n\n');

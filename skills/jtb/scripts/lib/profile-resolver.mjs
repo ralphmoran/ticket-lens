@@ -9,6 +9,35 @@ import { homedir } from 'node:os';
 
 const DEFAULT_CONFIG_DIR = join(homedir(), '.ticketlens');
 
+/** Simple Levenshtein distance for "did you mean" suggestions. */
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) => i);
+  for (let j = 1; j <= n; j++) {
+    let prev = dp[0];
+    dp[0] = j;
+    for (let i = 1; i <= m; i++) {
+      const tmp = dp[i];
+      dp[i] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[i], dp[i - 1]);
+      prev = tmp;
+    }
+  }
+  return dp[m];
+}
+
+function findClosest(input, candidates) {
+  if (candidates.length === 0) return null;
+  const lower = input.toLowerCase();
+  let best = null;
+  let bestDist = Infinity;
+  for (const c of candidates) {
+    const d = levenshtein(lower, c.toLowerCase());
+    if (d < bestDist) { bestDist = d; best = c; }
+  }
+  // Only suggest if reasonably close (within half the input length + 2)
+  return bestDist <= Math.floor(input.length / 2) + 2 ? best : null;
+}
+
 export function loadProfiles(configDir = DEFAULT_CONFIG_DIR) {
   const profilesPath = join(configDir, 'profiles.json');
   if (!existsSync(profilesPath)) return null;
@@ -58,6 +87,16 @@ export function resolveProfile(ticketKey, opts = {}) {
     return { name: profileName, ...config.profiles[profileName] };
   }
 
+  // 1b. Profile name given but not found — suggest closest match
+  if (profileName) {
+    const available = Object.keys(config.profiles);
+    const suggestion = findClosest(profileName, available);
+    if (opts.onProfileNotFound) {
+      opts.onProfileNotFound({ profileName, suggestion, available });
+    }
+    return null;
+  }
+
   // 2. Match ticket prefix (skip if no ticket key)
   if (ticketKey) {
     const prefix = ticketKey.split('-')[0];
@@ -90,9 +129,9 @@ export function resolveProfile(ticketKey, opts = {}) {
 }
 
 export function resolveConnection(ticketKey, opts = {}) {
-  const { env = process.env, configDir = DEFAULT_CONFIG_DIR, profileName, onWarning, cwd } = opts;
+  const { env = process.env, configDir = DEFAULT_CONFIG_DIR, profileName, onWarning, onProfileNotFound, cwd } = opts;
 
-  const profile = resolveProfile(ticketKey, { profileName, configDir, onWarning, cwd });
+  const profile = resolveProfile(ticketKey, { profileName, configDir, onWarning, onProfileNotFound, cwd });
 
   if (profile) {
     const creds = loadCredentials(configDir);
@@ -109,7 +148,12 @@ export function resolveConnection(ticketKey, opts = {}) {
     };
   }
 
-  // 4. Fall back to env vars
+  // Explicit --profile was given but not found — don't fall back to env vars
+  if (profileName) {
+    return { baseUrl: null, source: 'profile-not-found', profileName };
+  }
+
+  // Fall back to env vars
   return {
     baseUrl: env.JIRA_BASE_URL || null,
     auth: null,

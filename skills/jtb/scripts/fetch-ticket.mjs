@@ -10,34 +10,57 @@ import { extractCodeReferences } from './lib/code-ref-parser.mjs';
 import { assembleBrief } from './lib/brief-assembler.mjs';
 import { styleBrief } from './lib/styled-assembler.mjs';
 import { resolveConnection } from './lib/profile-resolver.mjs';
+import { createSession } from './lib/banner.mjs';
+import { classifyError } from './lib/error-classifier.mjs';
+import { promptProfileSelect } from './lib/profile-picker.mjs';
+import { printFetchHelp } from './lib/help.mjs';
 
 export async function run(args, env = process.env, fetcher = globalThis.fetch, configDir = undefined) {
+  if (args.includes('--help') || args.includes('-h')) {
+    printFetchHelp();
+    return;
+  }
+
   const ticketKey = args.find(a => !a.startsWith('--'));
   if (!ticketKey) {
-    process.stderr.write('Error: Missing ticket ID. Usage: fetch-ticket.mjs TICKET-KEY [--depth=N] [--profile=NAME]\n');
+    printFetchHelp({ stream: process.stderr });
     process.exitCode = 1;
     return;
   }
 
-  const profileArg = args.find(a => a.startsWith('--profile='));
+  const profileArg = args.find(a => a.startsWith('--profile=') || a.startsWith('--project='));
+  if (profileArg && profileArg.startsWith('--project=')) {
+    process.stderr.write(`Hint: --project is not a valid flag. Using --profile=${profileArg.split('=')[1]} instead.\n\n`);
+  }
   const profileName = profileArg ? profileArg.split('=')[1] : undefined;
 
+  let profileError = null;
   const conn = resolveConnection(ticketKey, {
     env,
     configDir,
     profileName,
     onWarning: (w) => process.stderr.write(w + '\n'),
+    onProfileNotFound: (info) => { profileError = info; },
   });
 
   const hasAuth = conn.pat || (conn.email && conn.apiToken);
   if (!conn.baseUrl || !hasAuth) {
-    const missing = [];
-    if (!conn.baseUrl) missing.push('JIRA_BASE_URL');
-    if (!hasAuth) missing.push('JIRA_PAT or (JIRA_EMAIL + JIRA_API_TOKEN)');
-    const hint = conn.source === 'env'
-      ? `Missing env vars: ${missing.join(', ')}`
-      : `Missing config in profile "${conn.profileName}": ${missing.join(', ')}`;
-    process.stderr.write(`Error: ${hint}\n`);
+    if (profileError) {
+      const picked = await promptProfileSelect(profileError);
+      if (picked) {
+        const newArgs = args.filter(a => !a.startsWith('--profile='));
+        newArgs.push(`--profile=${picked}`);
+        return run(newArgs, env, fetcher, configDir);
+      }
+    } else {
+      const missing = [];
+      if (!conn.baseUrl) missing.push('JIRA_BASE_URL');
+      if (!hasAuth) missing.push('JIRA_PAT or (JIRA_EMAIL + JIRA_API_TOKEN)');
+      const hint = conn.source === 'env'
+        ? `Missing env vars: ${missing.join(', ')}`
+        : `Missing config in profile "${conn.profileName}": ${missing.join(', ')}`;
+      process.stderr.write(`Error: ${hint}\n`);
+    }
     process.exitCode = 1;
     return;
   }
@@ -51,9 +74,8 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   // Cloud profiles use v3 API (v2 search is deprecated/410), Server stays on v2
   const apiVersion = conn.auth === 'cloud' ? 3 : 2;
 
-  if (conn.source === 'profile') {
-    process.stderr.write(`Using profile: ${conn.profileName}\n`);
-  }
+  const session = createSession(conn);
+  session.spin(`Connecting to ${session.label}…`);
 
   const depthArg = args.find(a => a.startsWith('--depth='));
   const depth = depthArg ? parseInt(depthArg.split('=')[1], 10) : 1;
@@ -62,10 +84,14 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   try {
     ticket = await fetchTicket(ticketKey, { env: jiraEnv, fetcher, depth, apiVersion });
   } catch (err) {
-    process.stderr.write(`Error: ${err.message}\n`);
+    const classified = classifyError(err, conn);
+    session.failed();
+    session.footer(classified.message, 'error', classified.hint);
     process.exitCode = 1;
     return;
   }
+  session.connected();
+  process.stderr.write('\n');
 
   const allText = [ticket.description, ...ticket.comments.map(c => c.body)].filter(Boolean).join('\n');
   const codeRefs = extractCodeReferences(allText);

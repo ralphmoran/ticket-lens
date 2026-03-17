@@ -3,15 +3,16 @@
  * Uses box-drawing characters for clean rendering without a markdown parser.
  */
 
-// Strip ANSI escape sequences to get the visible (printable) length of a string.
-const ANSI_RE = /\x1b\[[0-9;]*m/g;
-const visibleLength = (str) => str.replace(ANSI_RE, '').length;
+// Strip ANSI SGR sequences and OSC 8 hyperlinks to get visible (printable) length.
+const ESCAPE_RE = /\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g;
+const visibleLength = (str) => str.replace(ESCAPE_RE, '').length;
 
 export function formatTable(headers, rows, opts = {}) {
   const { maxWidths = {} } = opts;
 
-  // Strip control characters (except ANSI escape sequences) that can corrupt table layout.
-  const sanitize = (str) => str.replace(/[\x00-\x08\x0b\x0c\x0e-\x1a\r]/g, '');
+  // Strip control characters that can corrupt table layout.
+  // Preserves \x07 (BEL) used as OSC 8 hyperlink terminator and \x1b used in escape sequences.
+  const sanitize = (str) => str.replace(/[\x00-\x06\x08\x0b\x0c\x0e-\x1a\r]/g, '');
 
   // Apply truncation based on visible length so ANSI-styled cells are not cut mid-sequence.
   const truncate = (str, max) => {
