@@ -3,7 +3,7 @@
  * Resolution order: --profile flag → ticket prefix match → default profile → env vars
  */
 
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -36,6 +36,28 @@ function findClosest(input, candidates) {
   }
   // Only suggest if reasonably close (within half the input length + 2)
   return bestDist <= Math.floor(input.length / 2) + 2 ? best : null;
+}
+
+export function saveDefault(name, configDir = DEFAULT_CONFIG_DIR) {
+  const profilesPath = join(configDir, 'profiles.json');
+  const config = loadProfiles(configDir) || { profiles: {} };
+  config.default = name;
+  writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
+}
+
+export function saveProfile(name, profileData, credData, configDir = DEFAULT_CONFIG_DIR) {
+  mkdirSync(configDir, { recursive: true });
+  const profilesPath = join(configDir, 'profiles.json');
+  const config = loadProfiles(configDir) || { profiles: {} };
+  config.profiles[name] = profileData;
+  writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
+  if (credData && Object.keys(credData).length > 0) {
+    const credPath = join(configDir, 'credentials.json');
+    const creds = loadCredentials(configDir);
+    creds[name] = credData;
+    writeFileSync(credPath, JSON.stringify(creds, null, 2) + '\n', 'utf8');
+    chmodSync(credPath, 0o600);
+  }
 }
 
 export function loadProfiles(configDir = DEFAULT_CONFIG_DIR) {

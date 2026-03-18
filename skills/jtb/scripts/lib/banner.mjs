@@ -63,9 +63,8 @@ export function createSession(conn, { stream = process.stderr } = {}) {
     `  ${s.dim('Server:')}   ${hostname}`,
     `  ${s.dim('User:')}     ${userLabel}`,
   ];
-  // Reserve width for the longest possible status message.
-  const statusSample = `● Connected to ${jiraLabel}.`;
-  const allLines = [...infoLines, '', statusSample];
+  // Reserve width for the longest possible status message (failure is longer than success).
+  const allLines = [...infoLines, '', `● Connection to ${jiraLabel} failed.`];
   const maxVisible = allLines.reduce((max, l) => Math.max(max, visibleLength(l)), 0);
   const innerWidth = maxVisible + 2;
 

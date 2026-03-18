@@ -1,0 +1,469 @@
+/**
+ * ticketlens init — Interactive setup wizard.
+ * Guides the user through configuring one or more Jira profiles.
+ */
+
+import { createInterface } from 'node:readline';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { existsSync, mkdirSync } from 'node:fs';
+import { createStyler } from './ansi.mjs';
+import { createSession } from './banner.mjs';
+import { classifyError } from './error-classifier.mjs';
+import { fetchCurrentUser, fetchStatuses } from './jira-client.mjs';
+import { loadProfiles, saveProfile, saveDefault } from './profile-resolver.mjs';
+import { promptSelect } from './select-prompt.mjs';
+import { runSwitch } from './profile-switcher.mjs';
+
+const DEFAULT_CONFIG_DIR = join(homedir(), '.ticketlens');
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+const visLen = (str) => str.replace(ANSI_RE, '').length;
+
+const SERVER_AUTH_TYPES = [
+  { label: 'PAT  (personal access token)', sublabel: 'Jira Server/DC 8.14+', value: 'pat' },
+  { label: 'Basic  (username + password)', sublabel: 'Jira Server/DC older versions', value: 'basic' },
+];
+
+const RETRY_OPTIONS = [
+  { label: 'Retry',             sublabel: 'Try again — same credentials (e.g. VPN just connected)', value: 'retry' },
+  { label: 'Edit credentials',  sublabel: 'Change email / token',                                   value: 'creds' },
+  { label: 'Edit from URL',     sublabel: 'Change URL, auth type, or credentials',                  value: 'url'   },
+  { label: 'Skip this profile', sublabel: 'Abandon — move to next step',                            value: 'skip'  },
+];
+
+// ── Protocol probe ────────────────────────────────────────────────────────────
+// When the user types a bare hostname (no https:// or http://), try https first
+// then http. Any HTTP response (even 401) means the server is reachable there.
+
+async function probeProtocol(host, { stream, s }) {
+  for (const scheme of ['https', 'http']) {
+    const url = `${scheme}://${host}`;
+    stream.write(`  ${s.dim(`○ Probing ${url}...`)}\n`);
+    try {
+      await globalThis.fetch(`${url}/rest/api/2/serverInfo`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      stream.write('\x1b[A\r\x1b[2K');
+      stream.write(`  ${s.green('✔')} Using ${url}\n`);
+      return url;
+    } catch {
+      stream.write('\x1b[A\r\x1b[2K');
+    }
+  }
+  // Both unreachable — default to https and let the connection test surface the error
+  const fallback = `https://${host}`;
+  stream.write(`  ${s.yellow('~')} Could not probe server — will try ${fallback}\n`);
+  return fallback;
+}
+
+// ── Prompt helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Text prompt. If `defaultValue` is provided, empty input keeps it (shown as [current: …]).
+ */
+async function promptText(label, { validate, defaultValue = '', stream = process.stderr } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  while (true) {
+    const raw = await new Promise(res => {
+      const rl = createInterface({ input: process.stdin, output: stream });
+      rl.question(`  ${label}  `, (a) => { rl.close(); res(a.trim()); });
+    });
+    const answer = raw || defaultValue;
+    if (validate) {
+      const err = validate(answer);
+      if (err) { stream.write(`  ${s.red('✖')} ${err}\n`); continue; }
+    }
+    return answer;
+  }
+}
+
+/**
+ * Masked password prompt. If `existingValue` is provided, Enter with no input keeps it.
+ */
+async function promptSecret(label, { stream = process.stderr, existingValue = '' } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  while (true) {
+    stream.write(`  ${label}  `);
+    const value = await new Promise(res => {
+      let buf = '';
+      const stdin = process.stdin;
+      stdin.setRawMode(true);
+      stdin.resume();
+      stdin.setEncoding('utf8');
+      function onData(char) {
+        if (char === '\r' || char === '\n') {
+          stdin.setRawMode(false);
+          stdin.pause();
+          stdin.removeListener('data', onData);
+          stream.write('\n');
+          res(buf);
+        } else if (char === '\x7f' || char === '\x08') {
+          if (buf.length > 0) { buf = buf.slice(0, -1); stream.write('\b \b'); }
+        } else if (char === '\x03') {
+          process.exit(0);
+        } else {
+          buf += char;
+          stream.write('*');
+        }
+      }
+      stdin.on('data', onData);
+    });
+    if (!value) {
+      if (existingValue) return existingValue; // Enter = keep existing
+      stream.write(`  ${s.red('✖')} Cannot be empty.\n`);
+      continue;
+    }
+    return value;
+  }
+}
+
+function promptYN(question, { stream = process.stderr } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  stream.write(`\n  ${question}  ${s.dim('y/N')}  `);
+  return new Promise(res => {
+    const stdin = process.stdin;
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+    function onData(char) {
+      stdin.setRawMode(false);
+      stdin.pause();
+      stdin.removeListener('data', onData);
+      stream.write('\n');
+      if (char === '\x03') process.exit(0);
+      res(char === 'y' || char === 'Y');
+    }
+    stdin.on('data', onData);
+  });
+}
+
+// ── Main wizard ───────────────────────────────────────────────────────────────
+
+export async function run({ configDir = DEFAULT_CONFIG_DIR } = {}) {
+  const stream = process.stderr;
+  const s = createStyler({ isTTY: stream.isTTY });
+
+  // Ensure cursor is restored and stdin is clean on Ctrl+C at any point
+  function onSigint() {
+    stream.write('\x1b[?25h'); // restore cursor
+    if (process.stdin.isRaw) process.stdin.setRawMode(false);
+    stream.write('\n');
+    process.exit(130);
+  }
+  process.on('SIGINT', onSigint);
+
+  try {
+    await _run({ configDir, stream, s });
+  } finally {
+    process.removeListener('SIGINT', onSigint);
+  }
+}
+
+async function _run({ configDir, stream, s }) {
+  // Welcome box
+  const headerLines = [
+    `${s.bold(s.cyan('◆ TicketLens'))} — Setup Wizard`,
+    `${s.dim("Let's configure your Jira connection.")}`,
+  ];
+  const innerWidth = headerLines.reduce((max, l) => Math.max(max, visLen(l)), 0) + 4;
+  const bc = s.cyan;
+  stream.write('\n');
+  stream.write(bc('╭' + '─'.repeat(innerWidth) + '╮') + '\n');
+  for (const line of headerLines) {
+    const pad = innerWidth - visLen(line) - 1;
+    stream.write(bc('│') + ' ' + line + ' '.repeat(Math.max(0, pad)) + bc('│') + '\n');
+  }
+  stream.write(bc('╰' + '─'.repeat(innerWidth) + '╯') + '\n');
+
+  let addedCount = 0;
+  let addAnother = true;
+
+  while (addAnother) {
+    stream.write('\n');
+
+    // ── Profile name ──────────────────────────────────────────────────────────
+    const profileName = await promptText(s.dim('Profile name') + s.dim('  (e.g. work, acme):'), {
+      stream,
+      validate: (v) => {
+        if (!v) return 'Profile name cannot be empty.';
+        if (!/^[a-z0-9_-]+$/.test(v)) return 'Use lowercase letters, numbers, hyphens, and underscores only.';
+        const current = loadProfiles(configDir);
+        if (current && current.profiles[v]) return `Profile "${v}" already exists. Choose a different name.`;
+        return null;
+      },
+    });
+
+    // ── Setup loop — URL → auth → credentials → test → retry ─────────────────
+    //
+    // startFrom controls which step to resume from on each iteration:
+    //   'url'   — re-prompt URL + auth type, then fall through to creds
+    //   'creds' — re-prompt email/token (pre-populated), then test
+    //   'retry' — skip all prompts, rebuild env from current values, test immediately
+    let connected = false;
+    let baseUrl = '', authType = '', email = '', token = '';
+    let env = {}, apiVersion = 2;
+    let startFrom = 'url';
+
+    setupLoop: while (true) {
+      // ── URL + auth type ────────────────────────────────────────────────────
+      if (startFrom === 'url') {
+        stream.write(`\n  ${s.dim('Jira URL:')}\n\n`);
+        const urlSuggestions = [
+          { label: `https://${profileName}.atlassian.net`, sublabel: 'Cloud · atlassian.net', value: `https://${profileName}.atlassian.net` },
+          { label: `https://jira.${profileName}.com`,      sublabel: 'Server/DC · self-hosted', value: `https://jira.${profileName}.com` },
+          { label: 'Enter a different URL…',               sublabel: 'Type your own',           value: null },
+        ];
+        const urlIndex = await promptSelect(urlSuggestions, { stream, hint: '↑/↓ select   Enter confirm' });
+        if (urlIndex === null) {
+          stream.write(`  ${s.dim('Cancelled.')}\n`);
+          break setupLoop;
+        }
+        let rawUrl;
+        if (urlSuggestions[urlIndex].value === null) {
+          stream.write('\n');
+          const typed = await promptText(
+            s.dim('Jira URL') + s.dim('  (e.g. jira.company.com or https://jira.company.com):'),
+            {
+              stream,
+              defaultValue: baseUrl, // pre-fill with previously typed URL if any
+              validate: (v) => (v ? null : 'URL cannot be empty.'),
+            }
+          );
+          // Auto-detect protocol when the user omits it
+          if (!/^https?:\/\//i.test(typed)) {
+            rawUrl = await probeProtocol(typed.replace(/\/$/, ''), { stream, s });
+          } else {
+            rawUrl = typed;
+            stream.write(`  ${s.green('✔')} ${rawUrl}\n`);
+          }
+        } else {
+          rawUrl = urlSuggestions[urlIndex].value;
+          stream.write(`  ${s.green('✔')} ${rawUrl}\n`);
+        }
+        baseUrl = rawUrl.replace(/\/$/, '');
+
+        const isCloud = /\.atlassian\.net(\/|$)/i.test(baseUrl);
+        if (isCloud) {
+          authType = 'cloud';
+          stream.write(`\n  ${s.green('✔')} Jira Cloud detected — using email + API token\n\n`);
+        } else {
+          stream.write(`\n  ${s.dim('Auth type:')}\n\n`);
+          const serverAuthIndex = await promptSelect(SERVER_AUTH_TYPES, {
+            stream,
+            hint: '↑/↓ select   Enter confirm',
+          });
+          if (serverAuthIndex === null) {
+            stream.write(`  ${s.dim('Cancelled.')}\n`);
+            break setupLoop;
+          }
+          authType = SERVER_AUTH_TYPES[serverAuthIndex].value;
+          stream.write(`  ${s.green('✔')} ${SERVER_AUTH_TYPES[serverAuthIndex].label}\n\n`);
+        }
+        startFrom = 'creds';
+      }
+
+      // ── Email / username + token / password ────────────────────────────────
+      // Pre-populated from previous attempt — Enter keeps the existing value.
+      if (startFrom === 'creds') {
+        if (authType === 'cloud' || authType === 'basic') {
+          const emailHint = email ? s.dim(`  [current: ${email}]`) : '';
+          const emailLabel = (authType === 'cloud' ? s.dim('Email') : s.dim('Username')) + emailHint + s.dim(':');
+          email = await promptText(emailLabel, {
+            stream,
+            defaultValue: email,
+            validate: (v) => {
+              if (!v) return 'Cannot be empty.';
+              if (authType === 'cloud' && !v.includes('@')) return 'Enter a valid email address.';
+              return null;
+            },
+          });
+        }
+        const tokenHint = token ? s.dim('  [keep existing]') : '';
+        const tokenLabel = (authType === 'cloud'
+          ? s.dim('API token')
+          : authType === 'pat'
+            ? s.dim('Personal access token')
+            : s.dim('Password')) + tokenHint + s.dim(':');
+        token = await promptSecret(tokenLabel, { stream, existingValue: token });
+      }
+
+      // ── Test connection ────────────────────────────────────────────────────
+      env = {
+        JIRA_BASE_URL: baseUrl,
+        JIRA_EMAIL: email,
+        JIRA_API_TOKEN: authType !== 'pat' ? token : '',
+        JIRA_PAT: authType === 'pat' ? token : '',
+      };
+      apiVersion = authType === 'cloud' ? 3 : 2;
+
+      const session = createSession({
+        baseUrl,
+        profileName,
+        email: email || undefined,
+        pat: authType === 'pat' ? token : undefined,
+      }, { stream });
+
+      stream.write('\n');
+      session.spin('Testing connection...');
+
+      try {
+        await fetchCurrentUser({ env, apiVersion });
+        session.connected();
+        connected = true;
+        break setupLoop;
+      } catch (err) {
+        session.failed();
+        const classified = classifyError(err, { baseUrl, profileName });
+        session.footer(classified.message, 'error', classified.hint);
+      }
+
+      // ── Retry options ──────────────────────────────────────────────────────
+      stream.write(`\n  ${s.dim('What would you like to do?')}\n\n`);
+      const retryIndex = await promptSelect(RETRY_OPTIONS, { stream, hint: '↑/↓ select   Enter confirm' });
+      if (retryIndex === null || RETRY_OPTIONS[retryIndex].value === 'skip') break setupLoop;
+      startFrom = RETRY_OPTIONS[retryIndex].value;
+    }
+
+    if (connected) {
+      // ── Optional settings ───────────────────────────────────────────────────
+      stream.write(`\n  ${s.dim('──── Optional  (press Enter to skip) ────')}\n\n`);
+
+      // Ticket prefixes
+      const prefixInput = await promptText(
+        s.dim('Ticket prefixes') + s.dim('  (e.g. PROJ,OPS):'), { stream }
+      );
+      const ticketPrefixes = prefixInput
+        ? prefixInput.split(',').map(v => v.trim().toUpperCase()).filter(Boolean)
+        : [];
+
+      // Project paths — validate existence, offer to create missing
+      const pathInput = await promptText(
+        s.dim('Project paths') + s.dim('  (e.g. ~/projects/myapp):'), { stream }
+      );
+      const rawPaths = pathInput
+        ? pathInput.split(',').map(v => v.trim()).filter(Boolean)
+        : [];
+      const projectPaths = [];
+      for (const rawPath of rawPaths) {
+        const expanded = rawPath.startsWith('~')
+          ? join(homedir(), rawPath.slice(1))
+          : rawPath;
+        if (existsSync(expanded)) {
+          projectPaths.push(rawPath);
+          stream.write(`  ${s.green('✔')} ${rawPath}\n`);
+        } else {
+          stream.write(`  ${s.yellow('○')} ${s.dim(rawPath)} — directory not found\n`);
+          const doCreate = await promptYN(`Create ${rawPath}?`, { stream });
+          if (doCreate) {
+            try {
+              mkdirSync(expanded, { recursive: true });
+              projectPaths.push(rawPath);
+              stream.write(`  ${s.green('✔')} Created\n`);
+            } catch (mkErr) {
+              stream.write(`  ${s.red('✖')} Could not create: ${mkErr.message}\n`);
+            }
+          }
+        }
+      }
+
+      // Triage statuses — validate against Jira's actual status names
+      const DEFAULT_TRIAGE = 'In Progress, Code Review, QA';
+      const statusInput = await promptText(
+        s.dim('Triage statuses') + s.dim(`  [default: ${DEFAULT_TRIAGE}]:`), { stream }
+      );
+      let triageStatuses = statusInput
+        ? statusInput.split(',').map(v => v.trim()).filter(Boolean)
+        : DEFAULT_TRIAGE.split(',').map(v => v.trim());
+
+      stream.write(`  ${s.dim('Validating statuses...')}\n`);
+      try {
+        const available = await fetchStatuses({ env, apiVersion });
+        const lowerMap = new Map(available.map(n => [n.toLowerCase(), n]));
+        stream.write('\x1b[A\r\x1b[2K'); // clear "Validating..." line
+        const corrected = [];
+        let hasIssues = false;
+        for (const name of triageStatuses) {
+          if (available.includes(name)) {
+            corrected.push(name);
+          } else {
+            const match = lowerMap.get(name.toLowerCase());
+            if (match) {
+              stream.write(`  ${s.yellow('~')} ${s.dim(name)}  →  ${s.cyan(match)}\n`);
+              corrected.push(match);
+              hasIssues = true;
+            } else {
+              stream.write(`  ${s.red('✖')} ${name}  ${s.dim('(not found in this Jira instance)')}\n`);
+              hasIssues = true;
+            }
+          }
+        }
+        if (!hasIssues) {
+          stream.write(`  ${s.green('✔')} Statuses validated\n`);
+        } else if (corrected.length > 0) {
+          stream.write(`  ${s.dim('Using:')} ${corrected.map(n => s.cyan(n)).join(s.dim(', '))}\n`);
+        }
+        triageStatuses = corrected;
+      } catch {
+        stream.write('\x1b[A\r\x1b[2K'); // clear silently if Jira call fails
+      }
+
+      // ── Save ──────────────────────────────────────────────────────────────
+      const profileData = {
+        baseUrl,
+        auth: authType,
+        ...(email ? { email } : {}),
+        ...(ticketPrefixes.length > 0 ? { ticketPrefixes } : {}),
+        ...(projectPaths.length > 0 ? { projectPaths } : {}),
+        triageStatuses,
+      };
+      const credData = authType === 'pat' ? { pat: token } : { apiToken: token };
+      saveProfile(profileName, profileData, credData, configDir);
+      addedCount++;
+      stream.write(`\n  ${s.green('✔')} Profile ${s.bold(s.cyan(`"${profileName}"`))} saved.\n`);
+    }
+
+    addAnother = await promptYN('Configure another connection?', { stream });
+  }
+
+  if (addedCount === 0) {
+    stream.write(`\n  ${s.dim('No profiles saved. Run')} ${s.cyan('ticketlens init')} ${s.dim('to try again.')}\n\n`);
+    return;
+  }
+
+  // ── Select active profile ─────────────────────────────────────────────────
+  const finalConfig = loadProfiles(configDir);
+  const allNames = finalConfig ? Object.keys(finalConfig.profiles) : [];
+
+  if (allNames.length === 1) {
+    await saveDefault(allNames[0], configDir);
+  } else if (allNames.length > 1) {
+    stream.write(`\n  ${s.dim('Select your active profile:')}\n\n`);
+    await runSwitch({ configDir, stream, testConnection: false });
+  }
+
+  // ── Done ─────────────────────────────────────────────────────────────────
+  const profileWord = addedCount === 1 ? '1 profile' : `${addedCount} profiles`;
+  stream.write(`\n  ${s.green('✔')} ${profileWord} configured.\n\n`);
+
+  // Quick-start panel
+  const cmds = [
+    ['ticketlens triage',   'Scan your assigned tickets'],
+    ['ticketlens PROJ-123', 'Fetch a specific ticket'],
+    ['ticketlens switch',   'Switch active profile'],
+    ['ticketlens --help',   'Full command reference'],
+  ];
+  const cmdWidth = cmds.reduce((max, [c]) => Math.max(max, c.length), 0);
+  const cmdRows = cmds.map(([cmd, desc]) =>
+    `  ${s.bold(s.cyan(cmd.padEnd(cmdWidth)))}   ${s.dim(desc)}`
+  );
+  const QTITLE = ' Quick start ';
+  const contentWidth = cmdRows.reduce((max, r) => Math.max(max, visLen(r)), 0);
+  const qWidth = Math.max(contentWidth + 2, QTITLE.length + 4);
+  const qPad = (r) => ' ' + r + ' '.repeat(Math.max(0, qWidth - visLen(r) - 1));
+  const qTitleFill = qWidth - 1 - QTITLE.length;
+  stream.write(bc('╭') + bc('─') + s.bold(s.cyan(QTITLE)) + bc('─'.repeat(Math.max(0, qTitleFill))) + bc('╮') + '\n');
+  stream.write(bc('│') + qPad('') + bc('│') + '\n');
+  for (const r of cmdRows) stream.write(bc('│') + qPad(r) + bc('│') + '\n');
+  stream.write(bc('│') + qPad('') + bc('│') + '\n');
+  stream.write(bc('╰') + bc('─'.repeat(qWidth)) + bc('╯') + '\n\n');
+}

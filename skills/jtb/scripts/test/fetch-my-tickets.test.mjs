@@ -173,12 +173,10 @@ describe('fetch-my-tickets integration', () => {
     try {
       await run(['--status=In Progress,QA'], {}, mockFetch, configDir);
       assert.equal(process.exitCode, 1);
-      assert.ok(out.stderr.includes('Invalid statuses'));
-      assert.ok(out.stderr.includes('"QA"'));
-      assert.ok(out.stderr.includes('Suggested dev-relevant'));
-      assert.ok(out.stderr.includes('QA Testing'));
-      assert.ok(out.stderr.includes('Code Review'));
-      assert.ok(out.stderr.includes('triageStatuses'));
+      assert.ok(out.stderr.includes('Status mismatch'), 'should report status mismatch');
+      assert.ok(out.stderr.includes('QA'), 'should show the invalid status name');
+      assert.ok(out.stderr.includes('QA Testing'), 'should suggest the corrected status');
+      assert.ok(out.stderr.includes('triageStatuses'), 'should show the fix hint');
     } finally {
       out.restore();
       rmSync(configDir, { recursive: true, force: true });

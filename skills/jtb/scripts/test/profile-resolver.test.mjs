@@ -4,7 +4,8 @@ import { mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveConnection, resolveProfile, resolveProfileByPath, loadProfiles } from '../lib/profile-resolver.mjs';
+import { resolveConnection, resolveProfile, resolveProfileByPath, loadProfiles, saveDefault, saveProfile } from '../lib/profile-resolver.mjs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 
 const sampleProfiles = {
   profiles: {
@@ -256,6 +257,75 @@ describe('profile-resolver', () => {
       writeConfig(profiles, { proj: { apiToken: 'tok1' }, fallback: { apiToken: 'tok2' } });
       const result = resolveProfile(null, { configDir, cwd: '/tmp/random' });
       assert.equal(result.name, 'fallback');
+    });
+  });
+
+  describe('saveDefault', () => {
+    it('writes the default profile name to profiles.json', () => {
+      writeConfig();
+      saveDefault('acme', configDir);
+      const config = loadProfiles(configDir);
+      assert.equal(config.default, 'acme');
+    });
+
+    it('preserves existing profiles when updating default', () => {
+      writeConfig();
+      saveDefault('forge', configDir);
+      const config = loadProfiles(configDir);
+      assert.deepEqual(Object.keys(config.profiles), ['corenexus', 'acme', 'forge']);
+      assert.equal(config.default, 'forge');
+    });
+
+    it('creates profiles.json if it does not exist', () => {
+      saveDefault('newprofile', configDir);
+      const config = loadProfiles(configDir);
+      assert.equal(config.default, 'newprofile');
+    });
+  });
+
+  describe('saveProfile', () => {
+    it('writes a new profile to profiles.json', () => {
+      writeConfig();
+      saveProfile('newco', { baseUrl: 'https://newco.atlassian.net', auth: 'cloud', email: 'dev@newco.com' }, { apiToken: 'tok-new' }, configDir);
+      const config = loadProfiles(configDir);
+      assert.ok(config.profiles['newco']);
+      assert.equal(config.profiles['newco'].baseUrl, 'https://newco.atlassian.net');
+    });
+
+    it('writes credentials to credentials.json', () => {
+      saveProfile('myco', { baseUrl: 'https://myco.atlassian.net', auth: 'cloud', email: 'a@myco.com' }, { apiToken: 'sec-token' }, configDir);
+      const credsPath = join(configDir, 'credentials.json');
+      assert.ok(existsSync(credsPath));
+      const creds = JSON.parse(readFileSync(credsPath, 'utf8'));
+      assert.equal(creds['myco'].apiToken, 'sec-token');
+    });
+
+    it('sets credentials.json to mode 0o600', () => {
+      saveProfile('secure', { baseUrl: 'https://s.atlassian.net', auth: 'cloud', email: 'a@b.com' }, { apiToken: 'tok' }, configDir);
+      const credsPath = join(configDir, 'credentials.json');
+      const mode = statSync(credsPath).mode & 0o777;
+      assert.equal(mode, 0o600);
+    });
+
+    it('does not write credentials.json when credData is empty', () => {
+      saveProfile('nocred', { baseUrl: 'https://n.atlassian.net', auth: 'pat' }, {}, configDir);
+      const credsPath = join(configDir, 'credentials.json');
+      assert.ok(!existsSync(credsPath));
+    });
+
+    it('preserves existing profiles when adding a new one', () => {
+      writeConfig();
+      saveProfile('extra', { baseUrl: 'https://extra.atlassian.net', auth: 'cloud', email: 'x@x.com' }, { apiToken: 'tok-x' }, configDir);
+      const config = loadProfiles(configDir);
+      assert.ok(config.profiles['corenexus']);
+      assert.ok(config.profiles['extra']);
+    });
+
+    it('creates the configDir if it does not exist', () => {
+      const newDir = join(configDir, 'subdir', 'ticketlens');
+      saveProfile('brand-new', { baseUrl: 'https://b.atlassian.net', auth: 'cloud', email: 'b@b.com' }, { apiToken: 't' }, newDir);
+      const config = loadProfiles(newDir);
+      assert.ok(config.profiles['brand-new']);
     });
   });
 });

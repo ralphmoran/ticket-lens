@@ -1,5 +1,6 @@
 import { createStyler } from './ansi.mjs';
 import { execSync } from 'child_process';
+import { runSwitch } from './profile-switcher.mjs';
 
 function truncate(str, max) {
   if (!str) return '';
@@ -171,7 +172,7 @@ export function runInteractiveList(tickets, opts = {}) {
 
     // Footer
     lines.push('');
-    lines.push(s.dim(' \u2191/\u2193 navigate   Enter open in browser   q/Esc exit'));
+    lines.push(s.dim(' \u2191/\u2193 navigate   Enter open in browser   p switch profile   q/Esc exit'));
 
     const clipped = lines.map(l => clipToWidth(l, cols));
     process.stderr.write(clipped.join('\n') + '\n');
@@ -222,6 +223,11 @@ export function runInteractiveList(tickets, opts = {}) {
       }
       if (key === '\r' || key === '\n') { // Enter
         openInBrowser(items[selectedIndex].ticketKey);
+        return;
+      }
+      if (key === 'p' || key === 'P') { // Switch profile
+        cleanup();
+        runSwitch().then(switched => resolve(switched ? 'switch' : undefined));
         return;
       }
     }

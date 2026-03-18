@@ -9,7 +9,7 @@ import { fetchCurrentUser, searchTickets, fetchStatuses } from './lib/jira-clien
 import { scoreAttention, sortByUrgency } from './lib/attention-scorer.mjs';
 import { assembleTriageSummary } from './lib/brief-assembler.mjs';
 import { styleTriageSummary } from './lib/styled-assembler.mjs';
-import { resolveConnection } from './lib/profile-resolver.mjs';
+import { resolveConnection, loadProfiles, saveProfile } from './lib/profile-resolver.mjs';
 import { createSpinner } from './lib/spinner.mjs';
 import { createSession } from './lib/banner.mjs';
 import { classifyError } from './lib/error-classifier.mjs';
@@ -107,30 +107,68 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   } catch (err) {
     scanSpinner.stop();
     if (err.status === 400 && err.detail && /does not exist for the field 'status'/.test(err.detail)) {
-      process.stderr.write(`\nInvalid status in triage config. Fetching available statuses from Jira...\n\n`);
+      const s = session.styler;
+      const out = process.stderr;
+      out.write(`\n  ${s.yellow('○')} Status mismatch — checking Jira...\n`);
       try {
         const available = await fetchStatuses({ env: jiraEnv, fetcher, apiVersion });
-        const invalid = statuses.filter(s => !available.includes(s));
-        const devLike = available.filter(s =>
-          /progress|review|develop|test|qa|blocked|code/i.test(s)
-        );
+        const lowerMap = new Map(available.map(n => [n.toLowerCase(), n]));
 
-        if (invalid.length) {
-          process.stderr.write(`Invalid statuses: ${invalid.map(s => `"${s}"`).join(', ')}\n\n`);
+        // Map each configured status to its best match (exact → case-insensitive → partial)
+        const mappings = statuses.map(name => {
+          if (available.includes(name)) return { input: name, fix: name, ok: true };
+          const caseMatch = lowerMap.get(name.toLowerCase());
+          if (caseMatch) return { input: name, fix: caseMatch, ok: false };
+          const partial = available.find(a =>
+            a.toLowerCase().includes(name.toLowerCase()) ||
+            name.toLowerCase().startsWith(a.toLowerCase().split(' ')[0])
+          );
+          return { input: name, fix: partial || null, ok: false };
+        });
+
+        out.write('\n');
+        for (const m of mappings) {
+          if (m.ok)       out.write(`  ${s.green('✔')} ${m.input}\n`);
+          else if (m.fix) out.write(`  ${s.yellow('~')} ${s.dim(m.input)}  →  ${s.cyan(m.fix)}\n`);
+          else            out.write(`  ${s.red('✖')} ${m.input}  ${s.dim('(not found in this Jira instance)')}\n`);
         }
-        process.stderr.write(`Suggested dev-relevant statuses for this Jira instance:\n`);
-        devLike.forEach(s => process.stderr.write(`  - ${s}\n`));
 
-        process.stderr.write(`\nAll available statuses:\n`);
-        available.forEach(s => process.stderr.write(`  - ${s}\n`));
+        const suggested = mappings.filter(m => m.fix).map(m => m.fix);
 
-        const profileRef = conn.profileName || 'your-profile';
-        const suggested = JSON.stringify(devLike);
-        process.stderr.write(`\nTo fix, add to ~/.ticketlens/profiles.json under "${profileRef}":\n`);
-        process.stderr.write(`  "triageStatuses": ${suggested}\n\n`);
-        process.stderr.write(`Or run with: /jtb triage --status=${devLike.join(',')}\n`);
-      } catch (statusErr) {
-        process.stderr.write(`Could not fetch statuses: ${statusErr.message}\n`);
+        // On TTY: offer to auto-fix the profile and re-run
+        if (suggested.length > 0 && conn.profileName && out.isTTY && process.stdin.setRawMode) {
+          out.write(`\n  Update ${s.cyan(`"${conn.profileName}"`)} with corrected statuses?  ${s.dim('y/N')}  `);
+          const answer = await new Promise(res => {
+            process.stdin.setRawMode(true);
+            process.stdin.resume();
+            process.stdin.setEncoding('utf8');
+            process.stdin.once('data', char => {
+              process.stdin.setRawMode(false);
+              process.stdin.pause();
+              out.write('\n');
+              if (char === '\x03') process.exit(0);
+              res(char === 'y' || char === 'Y');
+            });
+          });
+          if (answer) {
+            const config = loadProfiles(configDir);
+            if (config?.profiles[conn.profileName]) {
+              const updated = { ...config.profiles[conn.profileName], triageStatuses: suggested };
+              saveProfile(conn.profileName, updated, {}, configDir);
+              out.write(`  ${s.green('✔')} Profile updated. Rerunning...\n\n`);
+              return run(args, env, fetcher, configDir);
+            }
+          }
+        }
+
+        // Fallback: show compact fix hint
+        if (suggested.length > 0) {
+          out.write(`\n  ${s.dim('Suggested fix for')} ~/.ticketlens/profiles.json ${s.dim(`→ "${conn.profileName || 'your-profile'}"`)}\n`);
+          out.write(`  ${s.cyan('"triageStatuses"')}: ${JSON.stringify(suggested)}\n\n`);
+          out.write(`  ${s.dim('Or:')} ticketlens triage --status=${suggested.join(',')}\n`);
+        }
+      } catch {
+        out.write(`\n  ${s.dim('Could not fetch available statuses.')}\n`);
       }
       process.exitCode = 1;
       return;
@@ -150,7 +188,11 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   // Interactive mode: TTY + not --plain + not --static
   const wantInteractive = process.stdout.isTTY && !args.includes('--plain') && !args.includes('--static');
   if (wantInteractive && process.stdin.setRawMode) {
-    await runInteractiveList(sorted, { baseUrl: conn.baseUrl, staleDays, styled: true });
+    const result = await runInteractiveList(sorted, { baseUrl: conn.baseUrl, staleDays, styled: true });
+    if (result === 'switch') {
+      const cleanArgs = args.filter(a => !a.startsWith('--profile=') && !a.startsWith('--project='));
+      return run(cleanArgs, env, fetcher, configDir);
+    }
     return;
   }
 

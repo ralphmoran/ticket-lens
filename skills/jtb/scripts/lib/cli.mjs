@@ -20,6 +20,18 @@ export function parseCommand(args) {
     return { command: 'triage', args: args.slice(1) };
   }
 
+  if (first === 'init') {
+    return { command: 'init', args: args.slice(1) };
+  }
+
+  if (first === 'switch') {
+    return { command: 'switch', args: args.slice(1) };
+  }
+
+  if (first === 'config') {
+    return { command: 'config', args: args.slice(1) };
+  }
+
   if (first === 'activate') {
     return { command: 'activate', args: args.slice(1) };
   }

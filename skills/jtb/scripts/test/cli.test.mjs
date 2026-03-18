@@ -41,4 +41,28 @@ describe('parseCommand', () => {
     const result = parseCommand(['--version']);
     assert.equal(result.command, 'version');
   });
+
+  it('routes "init" to init command', () => {
+    const result = parseCommand(['init']);
+    assert.equal(result.command, 'init');
+    assert.deepEqual(result.args, []);
+  });
+
+  it('routes "switch" to switch command', () => {
+    const result = parseCommand(['switch']);
+    assert.equal(result.command, 'switch');
+    assert.deepEqual(result.args, []);
+  });
+
+  it('routes "activate" to activate command', () => {
+    const result = parseCommand(['activate', 'LICENSE-KEY-123']);
+    assert.equal(result.command, 'activate');
+    assert.deepEqual(result.args, ['LICENSE-KEY-123']);
+  });
+
+  it('routes "license" to license command', () => {
+    const result = parseCommand(['license']);
+    assert.equal(result.command, 'license');
+    assert.deepEqual(result.args, []);
+  });
 });

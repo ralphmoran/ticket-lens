@@ -11,6 +11,9 @@ import { createRequire } from 'node:module';
 import { parseCommand } from '../skills/jtb/scripts/lib/cli.mjs';
 import { run as runFetch } from '../skills/jtb/scripts/fetch-ticket.mjs';
 import { run as runTriage } from '../skills/jtb/scripts/fetch-my-tickets.mjs';
+import { run as runInit } from '../skills/jtb/scripts/lib/init-wizard.mjs';
+import { runSwitch } from '../skills/jtb/scripts/lib/profile-switcher.mjs';
+import { run as runConfig } from '../skills/jtb/scripts/lib/config-wizard.mjs';
 import { activateLicense, checkLicense } from '../skills/jtb/scripts/lib/license.mjs';
 import { printHelp } from '../skills/jtb/scripts/lib/help.mjs';
 
@@ -31,6 +34,30 @@ switch (command) {
       process.exitCode = 1;
     });
     break;
+
+  case 'init':
+    runInit().catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+
+  case 'switch':
+    runSwitch().catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+
+  case 'config': {
+    const profileArg = cmdArgs.find(a => a.startsWith('--profile='));
+    const profileName = profileArg ? profileArg.split('=')[1] : undefined;
+    runConfig({ profileName }).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+  }
 
   case 'activate': {
     const key = cmdArgs.find(a => !a.startsWith('--'));

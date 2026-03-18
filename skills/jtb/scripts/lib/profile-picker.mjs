@@ -5,6 +5,7 @@
  */
 
 import { createStyler } from './ansi.mjs';
+import { runRawSelect } from './select-prompt.mjs';
 
 export function promptProfileSelect({ profileName, suggestion, available }, { stream = process.stderr } = {}) {
   const s = createStyler({ isTTY: stream.isTTY });
@@ -27,17 +28,9 @@ export function promptProfileSelect({ profileName, suggestion, available }, { st
     return Promise.resolve(null);
   }
 
-  // Interactive mode
-  let selected = suggestion ? available.indexOf(suggestion) : 0;
-  if (selected < 0) selected = 0;
-  let dynamicLines = 0;
+  const initialIndex = suggestion ? Math.max(0, available.indexOf(suggestion)) : 0;
 
-  function renderList() {
-    // Erase previous dynamic lines
-    for (let i = 0; i < dynamicLines; i++) {
-      stream.write('\x1b[A\r\x1b[2K');
-    }
-
+  function renderFn(selected) {
     const lines = [];
     for (let i = 0; i < available.length; i++) {
       const marker = i === selected ? s.cyan('❯') : ' ';
@@ -46,59 +39,14 @@ export function promptProfileSelect({ profileName, suggestion, available }, { st
     }
     lines.push('');
     lines.push(`  ${s.dim('↑/↓ select   Enter confirm   q/Esc cancel')}`);
-
     stream.write(lines.join('\n') + '\n');
-    dynamicLines = lines.length;
+    return lines.length;
   }
 
-  return new Promise((resolve) => {
-    const stdin = process.stdin;
-    const wasRaw = stdin.isRaw;
-
-    function cleanup() {
-      stream.write('\x1b[?25h'); // show cursor
-      stdin.setRawMode(wasRaw ?? false);
-      stdin.pause();
-      stdin.removeListener('data', onData);
-    }
-
-    function onData(data) {
-      const key = data.toString();
-
-      if (key === '\x03' || key === '\x1b' || key === 'q' || key === 'Q') {
-        cleanup();
-        resolve(null);
-        return;
-      }
-
-      if (key === '\x1b[A') { // Up
-        if (selected > 0) { selected--; renderList(); }
-        return;
-      }
-
-      if (key === '\x1b[B') { // Down
-        if (selected < available.length - 1) { selected++; renderList(); }
-        return;
-      }
-
-      if (key === '\r' || key === '\n') { // Enter
-        cleanup();
-        // Overwrite the list with the confirmed selection
-        for (let i = 0; i < dynamicLines; i++) {
-          stream.write('\x1b[A\r\x1b[2K');
-        }
-        stream.write(`  ${s.green('✔')} Using profile ${s.bold(s.cyan(available[selected]))}\n\n`);
-        resolve(available[selected]);
-        return;
-      }
-    }
-
-    stream.write('\x1b[?25l'); // hide cursor
-    stdin.setRawMode(true);
-    stdin.resume();
-    stdin.setEncoding('utf8');
-    stdin.on('data', onData);
-
-    renderList();
-  });
+  return runRawSelect({ count: available.length, initialIndex, renderFn, stream })
+    .then(index => {
+      if (index === null) return null;
+      stream.write(`  ${s.green('✔')} Using profile ${s.bold(s.cyan(available[index]))}\n\n`);
+      return available[index];
+    });
 }
