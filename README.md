@@ -2,6 +2,22 @@
 
 Developer toolkit that minimizes research time before implementation. Fetches Jira ticket context, linked issues, comments, and code references — then maps them to your local codebase.
 
+## Contents
+
+- [Quick Start](#quick-start)
+- [Commands](#commands)
+  - [ticketlens init — Setup wizard](#ticketlens-init--setup-wizard)
+  - [ticketlens switch — Switch active profile](#ticketlens-switch--switch-active-profile)
+  - [ticketlens config — Edit profile settings](#ticketlens-config--edit-profile-settings)
+  - [ticketlens triage — Ticket attention scanner](#ticketlens-triage--ticket-attention-scanner)
+  - [/jtb — Jira TicketBrief for Claude Code](#jtb--jira-ticketbrief-for-claude-code)
+- [Architecture](#architecture)
+- [Running Tests](#running-tests)
+- [Roadmap](#roadmap)
+- [Known Issues](#known-issues)
+
+---
+
 ## Quick Start
 
 ```bash
@@ -18,7 +34,9 @@ npx ticketlens init
 npx ticketlens PROJ-123
 ```
 
-## Skills
+---
+
+## Commands
 
 ### ticketlens init — Setup wizard
 
@@ -47,6 +65,8 @@ The wizard walks you through each step:
 
 Config is written to `~/.ticketlens/profiles.json` and `credentials.json` (chmod 600). Profiles are only saved on a successful connection test.
 
+---
+
 ### ticketlens switch — Switch active profile
 
 Switch between configured Jira connections without re-running init.
@@ -54,6 +74,8 @@ Switch between configured Jira connections without re-running init.
 ```bash
 ticketlens switch
 ```
+
+---
 
 ### ticketlens config — Edit profile settings
 
@@ -75,14 +97,7 @@ Every field is pre-populated with its current value. Press `Enter` to keep it un
 **Optional section** (ticket prefixes, project paths, triage statuses):
 - Triage statuses use **merge semantics** — typing new statuses *adds* them to the current list rather than replacing it. Partial matching applies: `QA` → `QA Testing`. Existing valid statuses are never removed by this prompt.
 
-### /jtb — Jira TicketBrief
-
-Fetches a Jira ticket's full context and assembles a structured brief for implementation planning.
-
-```
-/jtb TICKET-KEY              # Fetch ticket + linked tickets
-/jtb TICKET-KEY --depth=0    # Target ticket only (fast)
-```
+---
 
 ### ticketlens triage — Ticket attention scanner
 
@@ -113,7 +128,54 @@ In interactive mode (default on TTY):
 
 Confirming rewrites `triageStatuses` in your profile and reruns triage immediately.
 
+---
+
+### /jtb — Jira TicketBrief for Claude Code
+
+`/jtb` is a **Claude Code slash command**. It fetches a Jira ticket's full context — description, comments, linked issues, and code references — and drops a structured implementation brief directly into your Claude session.
+
+> **Note:** `/jtb` requires [Claude Code](https://claude.ai/code). For standalone CLI usage without Claude Code, use `ticketlens` commands above.
+
+#### Installing the Claude Code skill
+
+**Step 1 — Install TicketLens** (if not already):
+
+```bash
+npm install -g ticketlens
+ticketlens init   # configure your Jira connection
+```
+
+**Step 2 — Copy the skill file** to your Claude Code commands directory:
+
+```bash
+# Find where the package installed the skill file
+SKILL=$(npm root -g)/ticketlens/skills/jtb/SKILL.md
+
+# Install it as a Claude Code slash command
+cp "$SKILL" ~/.claude/commands/jtb.md
+```
+
+Or if you cloned the repo directly:
+
+```bash
+cp /path/to/ticket-lens/skills/jtb/SKILL.md ~/.claude/commands/jtb.md
+```
+
+**Step 3 — Restart Claude Code** (or open a new session). The `/jtb` command is now available in any project.
+
+#### Usage in Claude Code
+
+```
+/jtb PROJ-123                    # Fetch ticket + linked issues → enters plan mode
+/jtb PROJ-123 --depth=0          # Target ticket only (fast)
+/jtb PROJ-123 --depth=2          # Include linked-of-linked tickets
+/jtb PROJ-123 --profile=acme     # Force a specific Jira profile
+/jtb triage                      # Scan your assigned tickets
+```
+
 See [skills/jtb/README.md](skills/jtb/README.md) for full setup and usage docs.
+
+---
 
 ## Architecture
 
