@@ -44,6 +44,11 @@ export function parseCommand(args) {
     return { command: 'cache', args: args.slice(1) };
   }
 
+  // "ticket PROJ-123" — accept "ticket" as an alias for the fetch command
+  if (first === 'ticket') {
+    return { command: 'fetch', args: args.slice(1) };
+  }
+
   // Anything that looks like a ticket key or any non-flag arg → fetch
   return { command: 'fetch', args };
 }

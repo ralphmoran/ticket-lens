@@ -38,6 +38,13 @@ function noopStdin() {
   return { isTTY: false, setRawMode: () => {}, resume: () => {}, pause: () => {}, once: () => {} };
 }
 
+function makeProfiles(configDir, profiles) {
+  fs.writeFileSync(
+    path.join(configDir, 'profiles.json'),
+    JSON.stringify({ profiles }, null, 2)
+  );
+}
+
 // ─── parseAge ────────────────────────────────────────────────────────────────
 
 describe('parseAge', () => {
@@ -244,6 +251,96 @@ describe('run — cache clear age filtering', () => {
     const out = captureOutput();
     await run(['clear', '--yes'], { configDir: tmpDir, stdout: out, stderr: out, stdin: noopStdin() });
     assert.ok(out.output.includes('Deleted 2 files'));
+  });
+});
+
+// ─── profile-aware size ───────────────────────────────────────────────────────
+
+describe('run — cache size with profiles', () => {
+  it('shows profile name in size output when profiles.json is present', async () => {
+    makeProfiles(tmpDir, {
+      work:  { ticketPrefixes: ['PROJ'] },
+      advent: { ticketPrefixes: ['ECNT'] },
+    });
+    makeFile(tmpDir, 'PROJ-1', 'a.png', 'x'.repeat(100));
+    makeFile(tmpDir, 'ECNT-1', 'b.png', 'y'.repeat(200));
+    const out = captureOutput();
+    await run(['size'], { configDir: tmpDir, stdout: out, stderr: out, stdin: noopStdin() });
+    assert.ok(out.output.includes('work'),   'should show work profile');
+    assert.ok(out.output.includes('advent'), 'should show advent profile');
+    assert.ok(out.output.includes('PROJ-1'), 'should list PROJ-1 under work');
+    assert.ok(out.output.includes('ECNT-1'), 'should list ECNT-1 under advent');
+  });
+
+  it('groups unconfigured ticket keys separately', async () => {
+    makeProfiles(tmpDir, {
+      work: { ticketPrefixes: ['PROJ'] },
+    });
+    makeFile(tmpDir, 'PROJ-1', 'a.png');
+    makeFile(tmpDir, 'UNKNOWN-99', 'b.png');
+    const out = captureOutput();
+    await run(['size'], { configDir: tmpDir, stdout: out, stderr: out, stdin: noopStdin() });
+    assert.ok(out.output.includes('work'));
+    assert.ok(out.output.includes('unconfigured'));
+    assert.ok(out.output.includes('UNKNOWN-99'));
+  });
+});
+
+// ─── profile-aware clear ──────────────────────────────────────────────────────
+
+describe('run — cache clear with --profile', () => {
+  it('--profile clears only tickets matching that profile\'s prefixes', async () => {
+    makeProfiles(tmpDir, {
+      work:   { ticketPrefixes: ['PROJ'] },
+      advent: { ticketPrefixes: ['ECNT'] },
+    });
+    makeFile(tmpDir, 'PROJ-1', 'a.png');
+    makeFile(tmpDir, 'ECNT-1', 'b.png');
+    const out = captureOutput();
+    await run(['clear', '--profile=work', '--yes'], { configDir: tmpDir, stdout: out, stderr: out, stdin: noopStdin() });
+    const remaining = getCacheEntries(tmpDir);
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0].ticketKey, 'ECNT-1', 'advent ticket should not be touched');
+  });
+
+  it('--profile and --older-than combine: only old files from that profile', async () => {
+    makeProfiles(tmpDir, {
+      work: { ticketPrefixes: ['PROJ'] },
+    });
+    makeFile(tmpDir, 'PROJ-1', 'old.png', 'x', 10);
+    makeFile(tmpDir, 'PROJ-1', 'new.png', 'x', 1);
+    makeFile(tmpDir, 'ECNT-1', 'old.png', 'x', 10);  // different profile — untouched
+    const out = captureOutput();
+    await run(['clear', '--profile=work', '--older-than=7d', '--yes'], { configDir: tmpDir, stdout: out, stderr: out, stdin: noopStdin() });
+    const remaining = getCacheEntries(tmpDir);
+    assert.equal(remaining.length, 2);
+    assert.ok(remaining.some(e => e.ticketKey === 'PROJ-1' && e.filename === 'new.png'));
+    assert.ok(remaining.some(e => e.ticketKey === 'ECNT-1'));
+  });
+
+  it('reports no matches when --profile has no tickets in cache', async () => {
+    makeProfiles(tmpDir, {
+      work: { ticketPrefixes: ['PROJ'] },
+    });
+    makeFile(tmpDir, 'ECNT-1', 'a.png');
+    const out = captureOutput();
+    await run(['clear', '--profile=work', '--yes'], { configDir: tmpDir, stdout: out, stderr: out, stdin: noopStdin() });
+    assert.ok(out.output.includes('No cached files'));
+    assert.equal(getCacheEntries(tmpDir).length, 1, 'ECNT-1 should survive');
+  });
+
+  it('skips profile picker in non-TTY mode and clears all with --yes', async () => {
+    makeProfiles(tmpDir, {
+      work:   { ticketPrefixes: ['PROJ'] },
+      advent: { ticketPrefixes: ['ECNT'] },
+    });
+    makeFile(tmpDir, 'PROJ-1', 'a.png');
+    makeFile(tmpDir, 'ECNT-1', 'b.png');
+    const out = captureOutput();
+    // non-TTY (isTTY:false) → profile picker not shown; --yes → no confirmation
+    await run(['clear', '--yes'], { configDir: tmpDir, stdout: out, stderr: out, stdin: noopStdin() });
+    assert.equal(getCacheEntries(tmpDir).length, 0, 'all files cleared');
+    assert.ok(!out.output.includes('Which profile'), 'no picker output in non-TTY');
   });
 });
 

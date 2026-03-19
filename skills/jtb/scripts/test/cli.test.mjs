@@ -77,4 +77,16 @@ describe('parseCommand', () => {
     assert.equal(result.command, 'cache');
     assert.deepEqual(result.args, ['clear', 'PROJ-123', '--older-than=7d']);
   });
+
+  it('routes "ticket PROJ-123" to fetch command, stripping "ticket" keyword', () => {
+    const result = parseCommand(['ticket', 'PROJ-123']);
+    assert.equal(result.command, 'fetch');
+    assert.deepEqual(result.args, ['PROJ-123']);
+  });
+
+  it('routes "ticket PROJ-123 --depth=0" to fetch command with flags', () => {
+    const result = parseCommand(['ticket', 'PROJ-123', '--depth=0']);
+    assert.equal(result.command, 'fetch');
+    assert.deepEqual(result.args, ['PROJ-123', '--depth=0']);
+  });
 });

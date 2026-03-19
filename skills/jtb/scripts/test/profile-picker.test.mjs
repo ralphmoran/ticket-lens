@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { promptProfileMismatch } from '../lib/profile-picker.mjs';
+import { promptProfileMismatch, promptSwitchProfile, promptMultipleMatches } from '../lib/profile-picker.mjs';
 
 function captureStream() {
   const lines = [];
@@ -56,5 +56,75 @@ describe('promptProfileMismatch', () => {
     assert.equal(result, null);
     assert.ok(out.output.includes('alpha'));
     assert.ok(out.output.includes('beta'));
+  });
+});
+
+describe('promptMultipleMatches', () => {
+  it('mentions the prefix in the header', async () => {
+    const out = captureStream();
+    await promptMultipleMatches('PROJ-123', TWO_PROFILES, { stream: out });
+    assert.ok(out.output.includes('PROJ'));
+  });
+
+  it('lists all matching profiles in non-TTY mode', async () => {
+    const out = captureStream();
+    await promptMultipleMatches('PROJ-123', TWO_PROFILES, { stream: out });
+    assert.ok(out.output.includes('work'));
+    assert.ok(out.output.includes('corenexus'));
+  });
+
+  it('shows baseUrl for each profile', async () => {
+    const out = captureStream();
+    await promptMultipleMatches('PROJ-123', TWO_PROFILES, { stream: out });
+    assert.ok(out.output.includes('work.atlassian.net'));
+    assert.ok(out.output.includes('corenexus.atlassian.net'));
+  });
+
+  it('returns null in non-TTY mode', async () => {
+    const out = captureStream();
+    const result = await promptMultipleMatches('PROJ-123', TWO_PROFILES, { stream: out });
+    assert.equal(result, null);
+  });
+
+  it('shows plural count in header (2 profiles)', async () => {
+    const out = captureStream();
+    await promptMultipleMatches('PROJ-123', TWO_PROFILES, { stream: out });
+    assert.ok(out.output.includes('2 profiles'));
+  });
+
+  it('shows singular count in header (1 profile)', async () => {
+    const out = captureStream();
+    await promptMultipleMatches('PROJ-1', [TWO_PROFILES[0]], { stream: out });
+    assert.ok(out.output.includes('1 profile'));
+  });
+});
+
+describe('promptSwitchProfile', () => {
+  it('lists all profiles in non-TTY mode', async () => {
+    const out = captureStream();
+    await promptSwitchProfile('work', TWO_PROFILES, { stream: out });
+    assert.ok(out.output.includes('work'));
+    assert.ok(out.output.includes('corenexus'));
+  });
+
+  it('shows baseUrl for each profile', async () => {
+    const out = captureStream();
+    await promptSwitchProfile('work', TWO_PROFILES, { stream: out });
+    assert.ok(out.output.includes('work.atlassian.net'));
+    assert.ok(out.output.includes('corenexus.atlassian.net'));
+  });
+
+  it('returns null in non-TTY mode', async () => {
+    const out = captureStream();
+    const result = await promptSwitchProfile('work', TWO_PROFILES, { stream: out });
+    assert.equal(result, null);
+  });
+
+  it('handles profiles with no baseUrl gracefully', async () => {
+    const profiles = [{ name: 'a', baseUrl: null }, { name: 'b', baseUrl: null }];
+    const out = captureStream();
+    const result = await promptSwitchProfile('a', profiles, { stream: out });
+    assert.equal(result, null);
+    assert.ok(out.output.includes('a'));
   });
 });

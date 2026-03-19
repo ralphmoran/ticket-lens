@@ -84,6 +84,51 @@ describe('fetch-ticket integration', () => {
     }
   });
 
+  it('connection failure in non-TTY exits without retry prompt', async () => {
+    // Simulates a network error — non-TTY should exit with code 1, no menu shown
+    const mockFetch = async () => { throw new Error('connect ECONNREFUSED'); };
+    const out = captureOutput();
+    try {
+      await run(['PROD-1234'], validEnv, mockFetch, NO_CONFIG);
+      assert.equal(process.exitCode, 1);
+      // No retry menu characters should appear — stderr is non-TTY
+      assert.ok(!out.stderr.includes('Retry'), 'no retry menu in non-TTY');
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('uses first matching profile when multiple profiles share a prefix (non-TTY)', async () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'ticketlens-'));
+    // Both profiles have 'PROD' prefix — non-TTY skips picker, first match wins
+    writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({
+      profiles: {
+        alpha: { baseUrl: 'https://alpha.atlassian.net', auth: 'cloud', email: 'a@test.com', ticketPrefixes: ['PROD'] },
+        beta:  { baseUrl: 'https://beta.atlassian.net',  auth: 'cloud', email: 'b@test.com', ticketPrefixes: ['PROD'] },
+      },
+      default: 'alpha',
+    }));
+    writeFileSync(join(configDir, 'credentials.json'), JSON.stringify({
+      alpha: { apiToken: 'token-a' },
+      beta:  { apiToken: 'token-b' },
+    }));
+
+    const calls = [];
+    const mockFetch = async (url, opts) => {
+      calls.push(url);
+      return { ok: true, json: async () => cloudFixture };
+    };
+    const out = captureOutput();
+    try {
+      // non-TTY → promptMultipleMatches not triggered → resolveConnection picks alpha (first)
+      await run(['PROD-1234', '--depth=0'], {}, mockFetch, configDir);
+      assert.ok(calls[0].startsWith('https://alpha.atlassian.net'), 'should use first matching profile in non-TTY');
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
   it('shows prefix mismatch warning when resolved profile lacks the ticket prefix', async () => {
     const configDir = mkdtempSync(join(tmpdir(), 'ticketlens-'));
     writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({

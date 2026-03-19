@@ -1,6 +1,6 @@
 /**
  * Cache management for downloaded Jira attachments.
- * Supports: size inspection, selective clearing with age filters.
+ * Supports: size inspection, selective clearing with age/profile filters.
  */
 
 import fs from 'node:fs';
@@ -8,11 +8,16 @@ import path from 'node:path';
 import os from 'node:os';
 import { formatSize } from './attachment-downloader.mjs';
 import { createStyler } from './ansi.mjs';
+import { loadProfiles } from './profile-resolver.mjs';
+import { promptSelect } from './select-prompt.mjs';
 
 export const DEFAULT_CONFIG_DIR = path.join(os.homedir(), '.ticketlens');
 
 // Age unit → days multiplier
 const AGE_UNIT_DAYS = { d: 1, m: 30, y: 365 };
+
+// Sentinel returned by showProfilePicker when the user presses Esc
+const CANCELLED = Symbol('CANCELLED');
 
 /**
  * Parses an age string like "7d", "2m", "1y" into milliseconds.
@@ -85,6 +90,47 @@ export function formatAge(mtimeMs) {
 }
 
 /**
+ * Groups cache entries by profile (inferred from ticket-key prefix → ticketPrefixes map).
+ * Returns sorted array: configured profiles alphabetically, unconfigured last.
+ * Each element: { name: string|null, entries, size, prefixes: string[] }
+ */
+function groupEntriesByProfile(entries, config) {
+  const prefixToProfile = {};
+  for (const [name, p] of Object.entries(config?.profiles ?? {})) {
+    for (const prefix of (p.ticketPrefixes ?? [])) {
+      prefixToProfile[prefix] = name;
+    }
+  }
+
+  const groupMap = {};
+  for (const e of entries) {
+    const prefix = e.ticketKey.split('-')[0];
+    const name = prefixToProfile[prefix] ?? null;
+    const key = name ?? '\x00'; // sort unconfigured last
+    if (!groupMap[key]) groupMap[key] = { name, entries: [], size: 0, prefixes: [] };
+    groupMap[key].entries.push(e);
+    groupMap[key].size += e.size;
+    if (!groupMap[key].prefixes.includes(prefix)) groupMap[key].prefixes.push(prefix);
+  }
+
+  return Object.values(groupMap).sort((a, b) => {
+    if (a.name === null) return 1;
+    if (b.name === null) return -1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/**
+ * Filters entries to only those belonging to the given profile (by ticketPrefixes).
+ * Returns all entries if the profile has no ticketPrefixes configured.
+ */
+function filterEntriesByProfile(entries, profileName, config) {
+  const prefixes = config?.profiles?.[profileName]?.ticketPrefixes ?? [];
+  if (prefixes.length === 0) return entries;
+  return entries.filter(e => prefixes.includes(e.ticketKey.split('-')[0]));
+}
+
+/**
  * Entry point for `ticketlens cache <subcommand> [args]`
  */
 export async function run(args, opts = {}) {
@@ -127,21 +173,31 @@ function runSize(configDir, stdout, s) {
   }
 
   const totalSize = entries.reduce((sum, e) => sum + e.size, 0);
+  const config = loadProfiles(configDir);
+  const groups = groupEntriesByProfile(entries, config);
+  const ticketCount = new Set(entries.map(e => e.ticketKey)).size;
 
-  // Group by ticket
-  const byTicket = {};
-  for (const e of entries) {
-    if (!byTicket[e.ticketKey]) byTicket[e.ticketKey] = { files: 0, size: 0 };
-    byTicket[e.ticketKey].files++;
-    byTicket[e.ticketKey].size += e.size;
+  const lines = [`\n${s.bold('Attachment Cache')} — ${formatSize(totalSize)}, ${plural(entries.length, 'file')} across ${plural(ticketCount, 'ticket')}\n`];
+
+  for (const group of groups) {
+    const profileLabel = group.name ? s.bold(s.cyan(group.name)) : s.dim('(unconfigured)');
+    const prefixList = group.prefixes.sort().join(s.dim(' · '));
+    const summary = `${formatSize(group.size)}, ${plural(group.entries.length, 'file')}`;
+    lines.push(`\n  ${profileLabel}  ${s.dim(prefixList)}  —  ${summary}`);
+
+    // Per-ticket breakdown within this profile
+    const byTicket = {};
+    for (const e of group.entries) {
+      if (!byTicket[e.ticketKey]) byTicket[e.ticketKey] = { files: 0, size: 0 };
+      byTicket[e.ticketKey].files++;
+      byTicket[e.ticketKey].size += e.size;
+    }
+    for (const [ticket, info] of Object.entries(byTicket).sort()) {
+      lines.push(`    ${s.cyan(ticket)}  ${plural(info.files, 'file')}, ${formatSize(info.size)}`);
+    }
   }
 
-  const lines = [`\n${s.bold('Attachment Cache')} — ${formatSize(totalSize)}, ${plural(entries.length, 'file')} across ${plural(Object.keys(byTicket).length, 'ticket')}\n`];
-  for (const [ticket, info] of Object.entries(byTicket).sort()) {
-    lines.push(`  ${s.cyan(ticket)}  ${plural(info.files, 'file')}, ${formatSize(info.size)}`);
-  }
   lines.push(`\n${s.dim(`Cache location: ${path.join(configDir, 'cache')}`)}`);
-
   stdout.write(lines.join('\n') + '\n\n');
 }
 
@@ -150,6 +206,7 @@ function runSize(configDir, stdout, s) {
 async function runClear(args, { configDir, stdin, stdout, stderr, s }) {
   const ticketKey = args.find(a => !a.startsWith('--'));
   const olderThanArg = args.find(a => a.startsWith('--older-than='));
+  const profileArg = args.find(a => a.startsWith('--profile='));
   const forceYes = args.includes('--yes') || args.includes('-y');
 
   let olderThanMs = null;
@@ -164,6 +221,29 @@ async function runClear(args, { configDir, stdin, stdout, stderr, s }) {
   }
 
   let entries = getCacheEntries(configDir, ticketKey ?? null);
+  const config = loadProfiles(configDir);
+
+  // Determine profile filter:
+  // 1. --profile=NAME flag → filter by that profile (no picker)
+  // 2. No ticket / no profile flag / not --yes / TTY → show interactive picker
+  // 3. Otherwise → clear all (existing behaviour)
+  let filterProfileName = profileArg ? profileArg.split('=')[1] : null;
+
+  if (!ticketKey && !filterProfileName && !forceYes && stdout.isTTY && process.stdin.setRawMode) {
+    const groups = groupEntriesByProfile(entries, config);
+    if (groups.length > 1) {
+      const choice = await showProfilePicker(entries, groups, stdout, s);
+      if (choice === CANCELLED) {
+        stdout.write('Aborted — no files were deleted.\n');
+        return;
+      }
+      filterProfileName = choice; // null = All, string = profile name
+    }
+  }
+
+  if (filterProfileName) {
+    entries = filterEntriesByProfile(entries, filterProfileName, config);
+  }
 
   if (olderThanMs !== null) {
     const cutoff = Date.now() - olderThanMs;
@@ -171,9 +251,12 @@ async function runClear(args, { configDir, stdin, stdout, stderr, s }) {
   }
 
   if (entries.length === 0) {
-    const scope = ticketKey ? `for ${s.cyan(ticketKey)}` : 'in the attachment cache';
+    const scopeParts = [];
+    if (filterProfileName) scopeParts.push(`for profile ${s.cyan(filterProfileName)}`);
+    else if (ticketKey) scopeParts.push(`for ${s.cyan(ticketKey)}`);
+    else scopeParts.push('in the attachment cache');
     const ageNote = olderThanArg ? ` older than ${expandAge(olderThanArg.split('=')[1])}` : '';
-    stdout.write(`No cached files${ageNote} found ${scope}.\n`);
+    stdout.write(`No cached files${ageNote} found ${scopeParts.join(' ')}.\n`);
     return;
   }
 
@@ -219,6 +302,36 @@ async function runClear(args, { configDir, stdin, stdout, stderr, s }) {
   }
 
   stdout.write(`${s.bold('✓')} Deleted ${plural(deleted, 'file')}, freed ${formatSize(deletedSize)}.\n`);
+}
+
+// ─── profile picker ───────────────────────────────────────────────────────────
+
+/**
+ * Interactive profile picker for `cache clear`.
+ * Shows "All profiles" plus each profile that has cached files.
+ * Returns: null (All), profileName string, or CANCELLED symbol.
+ */
+async function showProfilePicker(entries, groups, stdout, s) {
+  const totalSize = entries.reduce((sum, e) => sum + e.size, 0);
+
+  stdout.write(`\n  ${s.dim('Which profile cache should be cleared?')}\n\n`);
+
+  // Build the flat list of choices (index 0 = All)
+  const choices = [null, ...groups.map(g => g.name)];
+  const items = [
+    {
+      label: 'All profiles',
+      sublabel: `${formatSize(totalSize)}, ${plural(entries.length, 'file')} — clear everything`,
+    },
+    ...groups.map(g => ({
+      label: g.name ?? '(unconfigured)',
+      sublabel: `${formatSize(g.size)}, ${plural(g.entries.length, 'file')}  ${g.prefixes.sort().join(' · ')}`,
+    })),
+  ];
+
+  const selectedIndex = await promptSelect(items, { stream: stdout });
+  if (selectedIndex === null) return CANCELLED;
+  return choices[selectedIndex]; // null = All, string = profile name
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -267,22 +380,26 @@ function printCacheHelp(stream, s) {
     '',
     `  ${s.bold('SUBCOMMANDS')}`,
     '',
-    `    ${s.cyan('cache size')}                        Show cache disk usage`,
-    `    ${s.cyan('cache clear')}                       Clear all cached files`,
-    `    ${s.cyan('cache clear')} ${s.dim('PROJ-123')}             Clear one ticket's cache`,
-    `    ${s.cyan('cache clear')} ${s.dim('--older-than=7d')}      Clear files older than 7 days`,
-    `    ${s.cyan('cache clear')} ${s.dim('--older-than=1m')}      Clear files older than 1 month`,
-    `    ${s.cyan('cache clear')} ${s.dim('--older-than=1y')}      Clear files older than 1 year`,
+    `    ${s.cyan('cache size')}                              Show cache disk usage, grouped by profile`,
+    `    ${s.cyan('cache clear')}                             Clear files — interactive profile picker in TTY`,
+    `    ${s.cyan('cache clear')} ${s.dim('--profile=NAME')}           Clear one profile's cached files`,
+    `    ${s.cyan('cache clear')} ${s.dim('PROJ-123')}                 Clear one ticket's cache`,
+    `    ${s.cyan('cache clear')} ${s.dim('--older-than=7d')}          Clear files older than 7 days`,
+    `    ${s.cyan('cache clear')} ${s.dim('--older-than=1m')}          Clear files older than 1 month`,
+    `    ${s.cyan('cache clear')} ${s.dim('--older-than=1y')}          Clear files older than 1 year`,
     `    ${s.cyan('cache clear')} ${s.dim('PROJ-123 --older-than=7d')}  Combine ticket + age filter`,
     '',
     `  ${s.bold('FLAGS')}`,
     '',
-    `    ${s.cyan('--older-than')}=${s.dim('Nd|Nm|Ny')}   Age threshold (d=days, m=months, y=years)`,
-    `    ${s.cyan('--yes')}, ${s.cyan('-y')}             Skip confirmation prompt`,
+    `    ${s.cyan('--profile')}=${s.dim('NAME')}      Filter to one profile's tickets`,
+    `    ${s.cyan('--older-than')}=${s.dim('Nd|Nm|Ny')}  Age threshold (d=days, m=months, y=years)`,
+    `    ${s.cyan('--yes')}, ${s.cyan('-y')}           Skip confirmation prompt (also skips profile picker)`,
     '',
     `  ${s.bold('EXAMPLES')}`,
     '',
     `    ${s.dim('$')} ticketlens cache size`,
+    `    ${s.dim('$')} ticketlens cache clear`,
+    `    ${s.dim('$')} ticketlens cache clear --profile=work`,
     `    ${s.dim('$')} ticketlens cache clear --older-than=30d`,
     `    ${s.dim('$')} ticketlens cache clear PROJ-123`,
     `    ${s.dim('$')} ticketlens cache clear --older-than=1m --yes`,

@@ -53,6 +53,61 @@ export function promptProfileSelect({ profileName, suggestion, available }, { st
 }
 
 /**
+ * Prompts the user to choose between multiple profiles that all share the
+ * same ticket prefix. Shown before the fetch attempt when ambiguity exists.
+ *
+ * @param {string} ticketKey   e.g. "PROJ-123"
+ * @param {Array<{name:string, baseUrl:string|null}>} profiles  matching profiles
+ * @param {{ stream?: NodeJS.WriteStream }} [opts]
+ * @returns {Promise<string|null>}   chosen profile name, or null if cancelled
+ */
+export function promptMultipleMatches(ticketKey, profiles, { stream = process.stderr } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const prefix = ticketKey.split('-')[0];
+
+  stream.write('\n');
+  stream.write(`  ${s.yellow('⚡')}  ${s.bold(plural(profiles.length, 'profile'))} are configured for prefix ${s.bold(s.cyan(prefix))}.\n`);
+  stream.write(`\n  ${s.dim(`Which one should handle ${ticketKey}?`)}\n\n`);
+
+  if (!stream.isTTY || !process.stdin.setRawMode) {
+    for (const p of profiles) {
+      const sub = p.baseUrl ? `  ${s.dim(p.baseUrl)}` : '';
+      stream.write(`    ${s.cyan('›')} ${p.name}${sub}\n`);
+    }
+    stream.write('\n');
+    return Promise.resolve(null);
+  }
+
+  function renderFn(selected) {
+    const lines = [];
+    for (let i = 0; i < profiles.length; i++) {
+      const p = profiles[i];
+      const isSelected = i === selected;
+      const marker = isSelected ? s.cyan('❯') : ' ';
+      const label = isSelected ? s.bold(s.cyan(p.name)) : p.name;
+      const sub = p.baseUrl ? `  ${s.dim(p.baseUrl)}` : '';
+      lines.push(`    ${marker} ${label}${sub}`);
+    }
+    lines.push('');
+    lines.push(`  ${s.dim('↑/↓ select   Enter confirm   Esc cancel')}`);
+    stream.write(lines.join('\n') + '\n');
+    return lines.length;
+  }
+
+  return runRawSelect({ count: profiles.length, initialIndex: 0, renderFn, stream })
+    .then(index => {
+      if (index === null) return null;
+      const picked = profiles[index].name;
+      stream.write(`  ${s.green('✔')} Using ${s.bold(s.cyan(picked))}\n\n`);
+      return picked;
+    });
+}
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+/**
  * Prompts the user to pick a profile when the ticket's prefix isn't
  * configured in any profile. The resolved profile is pre-selected.
  *
@@ -107,6 +162,56 @@ export function promptProfileMismatch(ticketKey, currentProfile, profiles, { str
       } else {
         stream.write(`  ${s.green('✔')} Using ${s.bold(s.cyan(picked))} for this fetch\n\n`);
       }
+      return picked;
+    });
+}
+
+/**
+ * Simple profile selector for the connection-retry flow.
+ * No prefix-warning header — just "switch to which profile?".
+ *
+ * @param {string} currentProfile
+ * @param {Array<{name:string, baseUrl:string|null}>} profiles
+ * @param {{ stream?: NodeJS.WriteStream }} [opts]
+ * @returns {Promise<string|null>}
+ */
+export function promptSwitchProfile(currentProfile, profiles, { stream = process.stderr } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+
+  stream.write(`\n  ${s.dim('Switch to which profile?')}\n\n`);
+
+  if (!stream.isTTY || !process.stdin.setRawMode) {
+    for (const p of profiles) {
+      const sub = p.baseUrl ? `  ${s.dim(p.baseUrl)}` : '';
+      stream.write(`    ${s.cyan('›')} ${p.name}${sub}\n`);
+    }
+    stream.write('\n');
+    return Promise.resolve(null);
+  }
+
+  const initialIndex = Math.max(0, profiles.findIndex(p => p.name === currentProfile));
+
+  function renderFn(selected) {
+    const lines = [];
+    for (let i = 0; i < profiles.length; i++) {
+      const p = profiles[i];
+      const isSelected = i === selected;
+      const marker = isSelected ? s.cyan('❯') : ' ';
+      const label = isSelected ? s.bold(s.cyan(p.name)) : p.name;
+      const sub = p.baseUrl ? `  ${s.dim(p.baseUrl)}` : '';
+      lines.push(`    ${marker} ${label}${sub}`);
+    }
+    lines.push('');
+    lines.push(`  ${s.dim('↑/↓ select   Enter confirm   Esc cancel')}`);
+    stream.write(lines.join('\n') + '\n');
+    return lines.length;
+  }
+
+  return runRawSelect({ count: profiles.length, initialIndex, renderFn, stream })
+    .then(index => {
+      if (index === null) return null;
+      const picked = profiles[index].name;
+      stream.write(`  ${s.green('✔')} Switching to ${s.bold(s.cyan(picked))}\n\n`);
       return picked;
     });
 }

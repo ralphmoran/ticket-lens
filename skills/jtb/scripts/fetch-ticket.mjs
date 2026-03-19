@@ -12,9 +12,16 @@ import { styleBrief } from './lib/styled-assembler.mjs';
 import { resolveConnection, loadProfiles } from './lib/profile-resolver.mjs';
 import { createSession } from './lib/banner.mjs';
 import { classifyError } from './lib/error-classifier.mjs';
-import { promptProfileSelect, promptProfileMismatch } from './lib/profile-picker.mjs';
+import { promptProfileSelect, promptProfileMismatch, promptSwitchProfile, promptMultipleMatches } from './lib/profile-picker.mjs';
+import { promptSelect } from './lib/select-prompt.mjs';
 import { printFetchHelp } from './lib/help.mjs';
 import { downloadAttachments } from './lib/attachment-downloader.mjs';
+
+const RETRY_OPTIONS = [
+  { label: 'Retry',          sublabel: 'Try again — e.g. VPN just connected', value: 'retry'  },
+  { label: 'Switch profile', sublabel: 'Use a different Jira profile',         value: 'switch' },
+  { label: 'Cancel',         sublabel: '',                                      value: 'cancel' },
+];
 
 export async function run(args, env = process.env, fetcher = globalThis.fetch, configDir = undefined) {
   if (args.includes('--help') || args.includes('-h')) {
@@ -34,6 +41,21 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
     process.stderr.write(`Hint: --project is not a valid flag. Using --profile=${profileArg.split('=')[1]} instead.\n\n`);
   }
   const profileName = profileArg ? profileArg.split('=')[1] : undefined;
+
+  // When multiple profiles share the same ticket prefix and we're in a TTY,
+  // ask the user to choose rather than silently picking the first match.
+  if (!profileName && process.stderr.isTTY && process.stdin.setRawMode) {
+    const prefix = ticketKey.split('-')[0];
+    const config = loadProfiles(configDir);
+    const multiMatches = Object.entries(config?.profiles ?? {})
+      .filter(([, p]) => p.ticketPrefixes?.includes(prefix))
+      .map(([name, p]) => ({ name, baseUrl: p.baseUrl || null }));
+    if (multiMatches.length > 1) {
+      const picked = await promptMultipleMatches(ticketKey, multiMatches);
+      if (!picked) { process.exitCode = 1; return; }
+      return run([...args, `--profile=${picked}`], env, fetcher, configDir);
+    }
+  }
 
   let profileError = null;
   const conn = resolveConnection(ticketKey, {
@@ -94,20 +116,56 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   const apiVersion = conn.auth === 'cloud' ? 3 : 2;
 
   const session = createSession(conn);
-  session.spin(`Connecting to ${session.label}…`);
 
   const depthArg = args.find(a => a.startsWith('--depth='));
   const depth = depthArg ? parseInt(depthArg.split('=')[1], 10) : 1;
 
+  // Load all profiles once for use in the switch-profile retry option.
+  const allProfiles = Object.entries(loadProfiles(configDir)?.profiles ?? {})
+    .map(([name, p]) => ({ name, baseUrl: p.baseUrl || null }));
+
   let ticket;
-  try {
-    ticket = await fetchTicket(ticketKey, { env: jiraEnv, fetcher, depth, apiVersion });
-  } catch (err) {
-    const classified = classifyError(err, conn);
-    session.failed();
-    session.footer(classified.message, 'error', classified.hint);
-    process.exitCode = 1;
-    return;
+  let isRetry = false;
+  while (true) {
+    session.spin(isRetry ? `Retrying ${session.label}…` : `Connecting to ${session.label}…`);
+    try {
+      ticket = await fetchTicket(ticketKey, { env: jiraEnv, fetcher, depth, apiVersion });
+      break;
+    } catch (err) {
+      const classified = classifyError(err, conn);
+      session.failed();
+      session.footer(classified.message, 'error', classified.hint);
+
+      if (!process.stderr.isTTY || !process.stdin.setRawMode) {
+        process.exitCode = 1;
+        return;
+      }
+
+      process.stderr.write('\n');
+      const retryIndex = await promptSelect(RETRY_OPTIONS, {
+        stream: process.stderr,
+        hint: '↑/↓ select   Enter confirm',
+      });
+
+      if (retryIndex === null || RETRY_OPTIONS[retryIndex].value === 'cancel') {
+        process.exitCode = 1;
+        return;
+      }
+
+      if (RETRY_OPTIONS[retryIndex].value === 'switch') {
+        const picked = await promptSwitchProfile(conn.profileName, allProfiles);
+        if (picked && picked !== conn.profileName) {
+          return run([...args, `--profile=${picked}`], env, fetcher, configDir);
+        }
+        // Cancelled switch — exit
+        process.exitCode = 1;
+        return;
+      }
+
+      // 'retry' — loop with updated spinner message
+      isRetry = true;
+      process.stderr.write('\n');
+    }
   }
   session.connected();
   process.stderr.write('\n');
