@@ -14,6 +14,8 @@ import { classifyError } from './error-classifier.mjs';
 import { fetchCurrentUser, fetchStatuses } from './jira-client.mjs';
 import { loadProfiles, loadCredentials, saveProfile } from './profile-resolver.mjs';
 import { promptSelect } from './select-prompt.mjs';
+import { parseAge } from './cache-manager.mjs';
+import { DEFAULT_BRIEF_TTL } from './brief-cache.mjs';
 
 const DEFAULT_CONFIG_DIR = join(homedir(), '.ticketlens');
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
@@ -431,6 +433,18 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
     }
   }
 
+  // ── Cache TTL ────────────────────────────────────────────────────────────
+  const curTtl = profile.cacheTtl || DEFAULT_BRIEF_TTL;
+  const ttlInput = await promptText(
+    s.dim('Brief cache TTL') + s.dim(`  [current: ${curTtl} — e.g. 4h, 7d, 30d, 0 to disable — Enter to keep]:`),
+    { stream, validate: (v) => {
+      if (!v || v === curTtl) return null;
+      if (v === '0') return null;
+      return parseAge(v) === null ? 'Use a number followed by h, d, w, m, or y (e.g. 4h, 7d, 30d)' : null;
+    } }
+  );
+  const cacheTtl = ttlInput || curTtl;
+
   // ── Save ───────────────────────────────────────────────────────────────────
   const updated = {
     ...profile,
@@ -443,6 +457,8 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   else delete updated.ticketPrefixes;
   if (projectPaths.length > 0) updated.projectPaths = projectPaths;
   else delete updated.projectPaths;
+  if (cacheTtl && cacheTtl !== DEFAULT_BRIEF_TTL) updated.cacheTtl = cacheTtl;
+  else delete updated.cacheTtl;
 
   // Only write credentials file if the token actually changed
   const credData = (token !== existingToken)

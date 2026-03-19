@@ -10,26 +10,26 @@ import { formatSize } from './attachment-downloader.mjs';
 import { createStyler } from './ansi.mjs';
 import { loadProfiles } from './profile-resolver.mjs';
 import { promptSelect } from './select-prompt.mjs';
-import { getBriefCacheEntries, clearBriefCache, briefCacheAge } from './brief-cache.mjs';
+import { getBriefCacheEntries, clearBriefCache, briefCacheAge, DEFAULT_BRIEF_TTL } from './brief-cache.mjs';
 
 export const DEFAULT_CONFIG_DIR = path.join(os.homedir(), '.ticketlens');
 
-// Age unit → days multiplier
-const AGE_UNIT_DAYS = { d: 1, m: 30, y: 365 };
+// Age unit → milliseconds
+const AGE_UNIT_MS = { h: 3600000, d: 86400000, w: 7 * 86400000, m: 30 * 86400000, y: 365 * 86400000 };
 
 // Sentinel returned by showProfilePicker when the user presses Esc
 const CANCELLED = Symbol('CANCELLED');
 
 /**
- * Parses an age string like "7d", "2m", "1y" into milliseconds.
+ * Parses an age string like "4h", "7d", "2w", "2m", "1y" into milliseconds.
  * Returns null on invalid input.
  */
 export function parseAge(str) {
   if (!str) return null;
-  const match = str.match(/^(\d+)(d|m|y)$/);
+  const match = str.match(/^(\d+)(h|d|w|m|y)$/);
   if (!match) return null;
   const [, n, unit] = match;
-  return parseInt(n, 10) * AGE_UNIT_DAYS[unit] * 24 * 60 * 60 * 1000;
+  return parseInt(n, 10) * AGE_UNIT_MS[unit];
 }
 
 /**
@@ -232,7 +232,8 @@ function runSize(configDir, stdout, s, profileName = null) {
       byProfile[e.profileName].push(e);
     }
     for (const [pName, pEntries] of Object.entries(byProfile).sort()) {
-      lines.push(`  ${s.bold(s.cyan(pName))}`);
+      const profileTtl = config?.profiles?.[pName]?.cacheTtl ?? DEFAULT_BRIEF_TTL;
+      lines.push(`  ${s.bold(s.cyan(pName))}  ${s.dim(`TTL: ${profileTtl}`)}`);
       for (const e of pEntries.sort((a, b) => a.ticketKey.localeCompare(b.ticketKey))) {
         const age = e.fetchedAt ? briefCacheAge(e.fetchedAt) : 'unknown';
         const depthLabel = e.depth != null ? `depth ${e.depth}` : '';
@@ -258,7 +259,7 @@ async function runClear(args, { configDir, stdin, stdout, stderr, s }) {
     const ageStr = olderThanArg.split('=')[1];
     olderThanMs = parseAge(ageStr);
     if (olderThanMs === null) {
-      stderr.write(`Invalid --older-than value: "${ageStr}" — expected a number followed by d (days), m (months), or y (years).\nExamples: --older-than=7d  --older-than=2m  --older-than=1y\n`);
+      stderr.write(`Invalid --older-than value: "${ageStr}" — expected a number followed by h, d, w, m, or y.\nExamples: --older-than=7d  --older-than=2w  --older-than=1m  --older-than=1y\n`);
       process.exitCode = 1;
       return;
     }
@@ -407,11 +408,11 @@ function plural(n, word) {
 }
 
 function expandAge(str) {
-  const match = str?.match(/^(\d+)(d|m|y)$/);
+  const match = str?.match(/^(\d+)(h|d|w|m|y)$/);
   if (!match) return str;
   const [, n, unit] = match;
   const num = parseInt(n, 10);
-  const labels = { d: 'day', m: 'month', y: 'year' };
+  const labels = { h: 'hour', d: 'day', w: 'week', m: 'month', y: 'year' };
   return `${num} ${labels[unit]}${num === 1 ? '' : 's'}`;
 }
 
@@ -467,7 +468,7 @@ function printCacheClearHelp(stream, s) {
     `  ${s.bold('OPTIONS')}`,
     '',
     `    ${s.cyan('--profile')}=${s.dim('NAME')}        Filter to one profile's tickets`,
-    `    ${s.cyan('--older-than')}=${s.dim('Nd|Nm|Ny')}  Delete files older than N days / months / years`,
+    `    ${s.cyan('--older-than')}=${s.dim('Nh|Nd|Nw|Nm|Ny')}  Delete files older than N hours / days / weeks / months / years`,
     `    ${s.cyan('--yes')}, ${s.cyan('-y')}             Skip confirmation prompt`,
     `    ${s.cyan('-h')}, ${s.cyan('--help')}            Show this help`,
     '',

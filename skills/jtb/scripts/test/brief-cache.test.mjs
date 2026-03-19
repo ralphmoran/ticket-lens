@@ -95,6 +95,43 @@ describe('writeBriefCache + readBriefCache', () => {
     }
   });
 
+  it('respects a custom ttlMs — serves cache within custom window', () => {
+    const dir = makeTmpDir();
+    try {
+      writeBriefCache('PROJ-123', 'work', 1, SAMPLE_TICKET, dir);
+      // Set fetchedAt to 2 days ago
+      const filePath = briefCachePath('PROJ-123', 'work', dir);
+      const data = JSON.parse(readFileSync(filePath, 'utf8'));
+      data.fetchedAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+      writeFileSync(filePath, JSON.stringify(data));
+      // With 7-day TTL it should still hit
+      const customTtl = 7 * 24 * 60 * 60 * 1000;
+      const result = readBriefCache('PROJ-123', 'work', 1, dir, customTtl);
+      assert.ok(result !== null);
+      assert.deepEqual(result.ticket, SAMPLE_TICKET);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('respects a custom ttlMs — misses cache when beyond custom window', () => {
+    const dir = makeTmpDir();
+    try {
+      writeBriefCache('PROJ-123', 'work', 1, SAMPLE_TICKET, dir);
+      // Set fetchedAt to 10 days ago
+      const filePath = briefCachePath('PROJ-123', 'work', dir);
+      const data = JSON.parse(readFileSync(filePath, 'utf8'));
+      data.fetchedAt = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+      writeFileSync(filePath, JSON.stringify(data));
+      // With 7-day TTL it should miss
+      const customTtl = 7 * 24 * 60 * 60 * 1000;
+      const result = readBriefCache('PROJ-123', 'work', 1, dir, customTtl);
+      assert.equal(result, null);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('handles malformed JSON gracefully', () => {
     const dir = makeTmpDir();
     try {

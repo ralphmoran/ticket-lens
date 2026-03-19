@@ -48,8 +48,16 @@ function makeProfiles(configDir, profiles) {
 // ─── parseAge ────────────────────────────────────────────────────────────────
 
 describe('parseAge', () => {
+  it('parses hours', () => {
+    assert.equal(parseAge('4h'), 4 * 60 * 60 * 1000);
+  });
+
   it('parses days', () => {
     assert.equal(parseAge('7d'), 7 * 24 * 60 * 60 * 1000);
+  });
+
+  it('parses weeks as 7 days', () => {
+    assert.equal(parseAge('2w'), 2 * 7 * 24 * 60 * 60 * 1000);
   });
 
   it('parses months as 30 days', () => {
@@ -62,7 +70,6 @@ describe('parseAge', () => {
 
   it('returns null for invalid format', () => {
     assert.equal(parseAge('7'), null);
-    assert.equal(parseAge('7w'), null);
     assert.equal(parseAge('abc'), null);
     assert.equal(parseAge(''), null);
     assert.equal(parseAge(null), null);

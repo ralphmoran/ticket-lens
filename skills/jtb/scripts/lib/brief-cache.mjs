@@ -12,7 +12,8 @@ import path from 'node:path';
 import os from 'node:os';
 
 export const DEFAULT_CONFIG_DIR = path.join(os.homedir(), '.ticketlens');
-export const BRIEF_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+export const BRIEF_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours (default)
+export const DEFAULT_BRIEF_TTL = '4h'; // human-readable default for display/config
 
 /**
  * Returns the absolute path to the brief cache file for a given ticket + profile.
@@ -27,9 +28,14 @@ export function briefCachePath(ticketKey, profileName, configDir = DEFAULT_CONFI
  * - expired TTL
  * - cached depth is less than the requested depth
  *
+ * @param {string} ticketKey
+ * @param {string|null} profileName
+ * @param {number} depth
+ * @param {string} [configDir]
+ * @param {number} [ttlMs] - override TTL in ms; defaults to BRIEF_TTL_MS (4h)
  * Returns { ticket, fetchedAt, cachedDepth } on hit.
  */
-export function readBriefCache(ticketKey, profileName, depth, configDir = DEFAULT_CONFIG_DIR) {
+export function readBriefCache(ticketKey, profileName, depth, configDir = DEFAULT_CONFIG_DIR, ttlMs = BRIEF_TTL_MS) {
   const filePath = briefCachePath(ticketKey, profileName, configDir);
   if (!fs.existsSync(filePath)) return null;
 
@@ -41,7 +47,7 @@ export function readBriefCache(ticketKey, profileName, depth, configDir = DEFAUL
   }
 
   const age = Date.now() - new Date(data.fetchedAt).getTime();
-  if (age > BRIEF_TTL_MS) return null;
+  if (age > ttlMs) return null;
 
   // Serve cache only if cached depth covers the requested depth
   if ((data.depth ?? 0) < depth) return null;

@@ -139,13 +139,20 @@ ticketlens PROJ-123 --no-cache       # Skip brief cache + force re-download atta
 
 Max 15 tickets fetched at any depth. Circular references are handled automatically.
 
-**Brief caching:** After the first fetch, ticket data is cached locally for 4 hours. Repeat fetches within that window skip the Jira API entirely and show a dim notice on stderr:
+**Brief caching:** After the first fetch, ticket data is cached locally and reused on repeat fetches, skipping the Jira API entirely. A dim notice appears on stderr:
 
 ```
   ○ PROJ-123 · from cache (12m ago)  ·  --no-cache to refresh
 ```
 
 The cache is depth-aware: a cached depth-2 response satisfies a depth-1 or depth-0 request. Pass `--no-cache` to bypass and re-fetch from Jira.
+
+The default TTL is **4 hours**. Set `cacheTtl` in your profile to fit your workflow — ticket reviews that happen weeks or months later benefit from a longer window:
+
+```
+ticketlens config   # set "Brief cache TTL" in the Optional section
+                    # examples: 4h · 1d · 7d · 30d · 0 (disable)
+```
 
 **Multi-profile disambiguation:** When two profiles share a ticket prefix (e.g. both have `PROJ`), an arrow-key selector appears asking which Jira instance to use. Selecting one re-runs with `--profile=NAME`. Once a profile is selected, it is correctly applied even through connection failures and retries.
 
@@ -231,9 +238,9 @@ Before deleting, `cache clear` shows a summary of what will be removed (grouped 
 
 **Cache locations:**
 - Attachments: `~/.ticketlens/cache/TICKET-KEY/` (shared across profiles)
-- Brief cache: `~/.ticketlens/cache/PROFILE/TICKET-KEY/brief.json` (profile-scoped, 4h TTL)
+- Brief cache: `~/.ticketlens/cache/PROFILE/TICKET-KEY/brief.json` (profile-scoped, configurable TTL)
 
-`cache size` shows both sections. `cache clear` removes both attachment files and brief cache entries for the affected tickets. Empty ticket directories are removed automatically.
+`cache size` shows both sections, including the configured TTL per profile. `cache clear` removes both attachment files and brief cache entries for the affected tickets. Empty ticket directories are removed automatically.
 
 ---
 

@@ -16,7 +16,8 @@ import { promptProfileSelect, promptProfileMismatch, promptSwitchProfile, prompt
 import { promptSelect } from './lib/select-prompt.mjs';
 import { printFetchHelp } from './lib/help.mjs';
 import { downloadAttachments } from './lib/attachment-downloader.mjs';
-import { readBriefCache, writeBriefCache, briefCacheAge } from './lib/brief-cache.mjs';
+import { readBriefCache, writeBriefCache, briefCacheAge, BRIEF_TTL_MS } from './lib/brief-cache.mjs';
+import { parseAge } from './lib/cache-manager.mjs';
 import { createStyler } from './lib/ansi.mjs';
 
 const RETRY_OPTIONS = [
@@ -123,10 +124,14 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   const depth = depthArg ? parseInt(depthArg.split('=')[1], 10) : 1;
   const noCache = args.includes('--no-cache');
 
+  // Resolve brief cache TTL: profile setting → default 4h
+  const resolvedProfile = loadProfiles(configDir)?.profiles?.[conn.profileName];
+  const ttlMs = (resolvedProfile?.cacheTtl ? parseAge(resolvedProfile.cacheTtl) : null) ?? BRIEF_TTL_MS;
+
   // ── Brief cache check ──────────────────────────────────────────────────────
   // Skip the Jira API call entirely if we have a fresh cached brief.
   if (!noCache) {
-    const cached = readBriefCache(ticketKey, conn.profileName, depth, configDir);
+    const cached = readBriefCache(ticketKey, conn.profileName, depth, configDir, ttlMs);
     if (cached) {
       const s = createStyler({ isTTY: process.stderr.isTTY });
       const age = briefCacheAge(cached.fetchedAt);

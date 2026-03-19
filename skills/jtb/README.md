@@ -121,6 +121,7 @@ With this setup:
 | `ticketPrefixes` | No | Array of project keys; enables auto-routing `PROJ-123` to this profile |
 | `projectPaths` | No | Array of local paths; profile auto-selected when cwd is inside one of these |
 | `triageStatuses` | No | Jira statuses to scan (default: `["In Progress", "Code Review", "QA"]`) |
+| `cacheTtl` | No | How long fetched ticket briefs are cached locally (default: `"4h"`). Accepts: `4h`, `1d`, `7d`, `2w`, `30d`, `1y`, `0` (disable). Set via `ticketlens config`. |
 
 #### Credentials fields
 
@@ -292,7 +293,7 @@ ticketlens PROJ-123 --no-cache         # Skip brief cache + force re-download at
 
 ## Brief caching
 
-After the first fetch, ticket data is saved locally for 4 hours. Repeat fetches within that window skip the Jira API entirely and show a notice on stderr:
+After the first fetch, ticket data is saved locally and reused on repeat fetches, skipping the Jira API entirely:
 
 ```
   ○ PROJ-123 · from cache (12m ago)  ·  --no-cache to refresh
@@ -300,9 +301,18 @@ After the first fetch, ticket data is saved locally for 4 hours. Repeat fetches 
 
 The cache is depth-aware: a cached depth-2 response satisfies a depth-1 or depth-0 request. Pass `--no-cache` to bypass and re-fetch from Jira.
 
+**TTL is configurable per profile** — the default is 4 hours, but if you revisit tickets weeks or months later, set a longer window:
+
+```bash
+ticketlens config   # set "Brief cache TTL" in the Optional section
+                    # accepted formats: 4h · 1d · 7d · 2w · 30d · 0 (disable)
+```
+
+`cache size` shows the TTL configured for each profile. `--no-cache` always bypasses regardless of TTL.
+
 **Cache locations:**
 - Attachments: `~/.ticketlens/cache/TICKET-KEY/`
-- Brief cache: `~/.ticketlens/cache/PROFILE/TICKET-KEY/brief.json` (profile-scoped, 4h TTL)
+- Brief cache: `~/.ticketlens/cache/PROFILE/TICKET-KEY/brief.json` (profile-scoped, configurable TTL)
 
 ---
 
