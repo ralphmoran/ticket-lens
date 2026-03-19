@@ -157,7 +157,7 @@ describe('run — cache size', () => {
   it('reports empty cache', async () => {
     const out = captureOutput();
     await run(['size'], { configDir: tmpDir, stdout: out, stderr: out, stdin: noopStdin() });
-    assert.ok(out.output.includes('No cached attachments found'));
+    assert.ok(out.output.includes('No cached files found'));
   });
 
   it('reports total size and per-ticket breakdown', async () => {

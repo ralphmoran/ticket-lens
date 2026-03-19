@@ -107,6 +107,8 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
     `${s.dim('Priority:')} ${ticket.priority}`,
     `${s.dim('Assignee:')} ${ticket.assignee ?? 'Unassigned'}`,
   ];
+  if (ticket.created) meta.push(`${s.dim('Created:')} ${ticket.created.split('T')[0]}`);
+  if (ticket.updated) meta.push(`${s.dim('Updated:')} ${ticket.updated.split('T')[0]}`);
   sections.push(meta.join(s.dim('  ·  ')));
 
   // Description

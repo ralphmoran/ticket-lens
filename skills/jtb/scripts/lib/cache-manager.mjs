@@ -10,6 +10,7 @@ import { formatSize } from './attachment-downloader.mjs';
 import { createStyler } from './ansi.mjs';
 import { loadProfiles } from './profile-resolver.mjs';
 import { promptSelect } from './select-prompt.mjs';
+import { getBriefCacheEntries, clearBriefCache, briefCacheAge } from './brief-cache.mjs';
 
 export const DEFAULT_CONFIG_DIR = path.join(os.homedir(), '.ticketlens');
 
@@ -185,34 +186,58 @@ function runSize(configDir, stdout, s, profileName = null) {
     entries = filterEntriesByProfile(entries, profileName, config);
   }
 
-  if (entries.length === 0) {
+  let briefEntries = getBriefCacheEntries(configDir);
+  if (profileName) briefEntries = briefEntries.filter(e => e.profileName === profileName);
+
+  if (entries.length === 0 && briefEntries.length === 0) {
     const hint = profileName ? `profile "${profileName}"` : 'any profile';
-    stdout.write(`No cached attachments found for ${hint}.\n${s.dim('Run ticketlens TICKET-KEY to fetch a ticket and download its attachments.')}\n`);
+    stdout.write(`No cached files found for ${hint}.\n${s.dim('Run ticketlens TICKET-KEY to fetch a ticket.')}\n`);
     return;
   }
 
-  const totalSize = entries.reduce((sum, e) => sum + e.size, 0);
-  const groups = groupEntriesByProfile(entries, config);
-  const ticketCount = new Set(entries.map(e => e.ticketKey)).size;
+  const lines = [];
 
-  const profileScope = profileName ? `  ${s.dim(`(profile: ${profileName})`)}` : '';
-  const lines = [`\n${s.bold('Attachment Cache')}${profileScope} — ${formatSize(totalSize)}, ${plural(entries.length, 'file')} across ${plural(ticketCount, 'ticket')}\n`];
+  if (entries.length > 0) {
+    const totalSize = entries.reduce((sum, e) => sum + e.size, 0);
+    const groups = groupEntriesByProfile(entries, config);
+    const ticketCount = new Set(entries.map(e => e.ticketKey)).size;
 
-  for (const group of groups) {
-    const profileLabel = group.name ? s.bold(s.cyan(group.name)) : s.dim('(unconfigured)');
-    const prefixList = group.prefixes.sort().join(s.dim(' · '));
-    const summary = `${formatSize(group.size)}, ${plural(group.entries.length, 'file')}`;
-    lines.push(`\n  ${profileLabel}  ${s.dim(prefixList)}  —  ${summary}`);
+    const profileScope = profileName ? `  ${s.dim(`(profile: ${profileName})`)}` : '';
+    lines.push(`\n${s.bold('Attachment Cache')}${profileScope} — ${formatSize(totalSize)}, ${plural(entries.length, 'file')} across ${plural(ticketCount, 'ticket')}\n`);
 
-    // Per-ticket breakdown within this profile
-    const byTicket = {};
-    for (const e of group.entries) {
-      if (!byTicket[e.ticketKey]) byTicket[e.ticketKey] = { files: 0, size: 0 };
-      byTicket[e.ticketKey].files++;
-      byTicket[e.ticketKey].size += e.size;
+    for (const group of groups) {
+      const profileLabel = group.name ? s.bold(s.cyan(group.name)) : s.dim('(unconfigured)');
+      const prefixList = group.prefixes.sort().join(s.dim(' · '));
+      const summary = `${formatSize(group.size)}, ${plural(group.entries.length, 'file')}`;
+      lines.push(`\n  ${profileLabel}  ${s.dim(prefixList)}  —  ${summary}`);
+
+      const byTicket = {};
+      for (const e of group.entries) {
+        if (!byTicket[e.ticketKey]) byTicket[e.ticketKey] = { files: 0, size: 0 };
+        byTicket[e.ticketKey].files++;
+        byTicket[e.ticketKey].size += e.size;
+      }
+      for (const [ticket, info] of Object.entries(byTicket).sort()) {
+        lines.push(`    ${s.cyan(ticket)}  ${plural(info.files, 'file')}, ${formatSize(info.size)}`);
+      }
     }
-    for (const [ticket, info] of Object.entries(byTicket).sort()) {
-      lines.push(`    ${s.cyan(ticket)}  ${plural(info.files, 'file')}, ${formatSize(info.size)}`);
+  }
+
+  if (briefEntries.length > 0) {
+    const briefSize = briefEntries.reduce((sum, e) => sum + e.size, 0);
+    lines.push(`\n${s.bold('Brief Cache')} — ${formatSize(briefSize)}, ${plural(briefEntries.length, 'brief')} cached\n`);
+    const byProfile = {};
+    for (const e of briefEntries) {
+      if (!byProfile[e.profileName]) byProfile[e.profileName] = [];
+      byProfile[e.profileName].push(e);
+    }
+    for (const [pName, pEntries] of Object.entries(byProfile).sort()) {
+      lines.push(`  ${s.bold(s.cyan(pName))}`);
+      for (const e of pEntries.sort((a, b) => a.ticketKey.localeCompare(b.ticketKey))) {
+        const age = e.fetchedAt ? briefCacheAge(e.fetchedAt) : 'unknown';
+        const depthLabel = e.depth != null ? `depth ${e.depth}` : '';
+        lines.push(`    ${s.cyan(e.ticketKey)}  ${s.dim(age)}${depthLabel ? s.dim(`  ·  ${depthLabel}`) : ''}`);
+      }
     }
   }
 
@@ -326,6 +351,20 @@ async function runClear(args, { configDir, stdin, stdout, stderr, s }) {
         if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
       } catch { /* dir not empty or already gone */ }
     } catch { /* already deleted */ }
+  }
+
+  // Also remove brief cache for any affected tickets
+  const affectedTickets = [...new Set(entries.map(e => e.ticketKey))];
+  for (const key of affectedTickets) {
+    // Clear brief cache for all profiles that own this ticket key
+    const prefix = key.split('-')[0];
+    for (const [pName, p] of Object.entries(config?.profiles ?? {})) {
+      if (!p.ticketPrefixes || p.ticketPrefixes.includes(prefix)) {
+        clearBriefCache(key, pName, configDir);
+      }
+    }
+    // Also clear the _default profile slot
+    clearBriefCache(key, '_default', configDir);
   }
 
   stdout.write(`${s.bold('✓')} Deleted ${plural(deleted, 'file')}, freed ${formatSize(deletedSize)}.\n`);

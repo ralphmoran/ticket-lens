@@ -16,6 +16,8 @@ import { promptProfileSelect, promptProfileMismatch, promptSwitchProfile, prompt
 import { promptSelect } from './lib/select-prompt.mjs';
 import { printFetchHelp } from './lib/help.mjs';
 import { downloadAttachments } from './lib/attachment-downloader.mjs';
+import { readBriefCache, writeBriefCache, briefCacheAge } from './lib/brief-cache.mjs';
+import { createStyler } from './lib/ansi.mjs';
 
 const RETRY_OPTIONS = [
   { label: 'Retry',          sublabel: 'Try again — e.g. VPN just connected', value: 'retry'  },
@@ -117,10 +119,32 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   // Cloud profiles use v3 API (v2 search is deprecated/410), Server stays on v2
   const apiVersion = conn.auth === 'cloud' ? 3 : 2;
 
-  const session = createSession(conn);
-
   const depthArg = args.find(a => a.startsWith('--depth='));
   const depth = depthArg ? parseInt(depthArg.split('=')[1], 10) : 1;
+  const noCache = args.includes('--no-cache');
+
+  // ── Brief cache check ──────────────────────────────────────────────────────
+  // Skip the Jira API call entirely if we have a fresh cached brief.
+  if (!noCache) {
+    const cached = readBriefCache(ticketKey, conn.profileName, depth, configDir);
+    if (cached) {
+      const s = createStyler({ isTTY: process.stderr.isTTY });
+      const age = briefCacheAge(cached.fetchedAt);
+      process.stderr.write(`  ${s.dim('○')} ${s.dim(`${ticketKey} · from cache (${age})  ·  --no-cache to refresh`)}\n\n`);
+
+      const allText = [cached.ticket.description, ...cached.ticket.comments.map(c => c.body)].filter(Boolean).join('\n');
+      const codeRefs = extractCodeReferences(allText);
+      const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
+      const brief = useStyled
+        ? styleBrief(cached.ticket, codeRefs, { styled: true })
+        : assembleBrief(cached.ticket, codeRefs);
+      process.stdout.write(brief + '\n');
+      return;
+    }
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const session = createSession(conn);
 
   // Load all profiles once for use in the switch-profile retry option.
   const allProfiles = Object.entries(loadProfiles(configDir)?.profiles ?? {})
@@ -172,6 +196,11 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   }
   session.connected();
   process.stderr.write('\n');
+
+  // Save to brief cache for future requests
+  if (!noCache) {
+    writeBriefCache(ticketKey, conn.profileName, depth, ticket, configDir);
+  }
 
   if (!args.includes('--no-attachments')) {
     const downloadable = (ticket.attachments ?? []).filter(a => a.content);
