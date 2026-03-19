@@ -150,7 +150,7 @@ describe('run — cache size', () => {
   it('reports empty cache', async () => {
     const out = captureOutput();
     await run(['size'], { configDir: tmpDir, stdout: out, stderr: out, stdin: noopStdin() });
-    assert.ok(out.output.includes('empty'));
+    assert.ok(out.output.includes('No cached attachments found'));
   });
 
   it('reports total size and per-ticket breakdown', async () => {
@@ -243,7 +243,7 @@ describe('run — cache clear age filtering', () => {
     makeFile(tmpDir, 'PROJ-1', 'b.pdf', 'y'.repeat(500));
     const out = captureOutput();
     await run(['clear', '--yes'], { configDir: tmpDir, stdout: out, stderr: out, stdin: noopStdin() });
-    assert.ok(out.output.includes('Deleted 2 file(s)'));
+    assert.ok(out.output.includes('Deleted 2 files'));
   });
 });
 

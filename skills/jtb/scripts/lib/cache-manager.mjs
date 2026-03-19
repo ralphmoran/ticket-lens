@@ -122,7 +122,7 @@ export async function run(args, opts = {}) {
 function runSize(configDir, stdout, s) {
   const entries = getCacheEntries(configDir);
   if (entries.length === 0) {
-    stdout.write('Cache is empty.\n');
+    stdout.write(`No cached attachments found.\n${s.dim('Run /jtb TICKET-KEY to fetch a ticket and download its attachments.')}\n`);
     return;
   }
 
@@ -136,10 +136,11 @@ function runSize(configDir, stdout, s) {
     byTicket[e.ticketKey].size += e.size;
   }
 
-  const lines = [`\n${s.bold('Cache')} — ${formatSize(totalSize)} across ${entries.length} file(s)\n`];
+  const lines = [`\n${s.bold('Attachment Cache')} — ${formatSize(totalSize)}, ${plural(entries.length, 'file')} across ${plural(Object.keys(byTicket).length, 'ticket')}\n`];
   for (const [ticket, info] of Object.entries(byTicket).sort()) {
-    lines.push(`  ${s.cyan(ticket)}  ${info.files} file(s), ${formatSize(info.size)}`);
+    lines.push(`  ${s.cyan(ticket)}  ${plural(info.files, 'file')}, ${formatSize(info.size)}`);
   }
+  lines.push(`\n${s.dim(`Cache location: ${path.join(configDir, 'cache')}`)}`);
 
   stdout.write(lines.join('\n') + '\n\n');
 }
@@ -153,9 +154,10 @@ async function runClear(args, { configDir, stdin, stdout, stderr, s }) {
 
   let olderThanMs = null;
   if (olderThanArg) {
-    olderThanMs = parseAge(olderThanArg.split('=')[1]);
+    const ageStr = olderThanArg.split('=')[1];
+    olderThanMs = parseAge(ageStr);
     if (olderThanMs === null) {
-      stderr.write(`Invalid --older-than value: "${olderThanArg.split('=')[1]}"\nUse: 7d (days), 2m (months), 1y (years)\n`);
+      stderr.write(`Invalid --older-than value: "${ageStr}" — expected a number followed by d (days), m (months), or y (years).\nExamples: --older-than=7d  --older-than=2m  --older-than=1y\n`);
       process.exitCode = 1;
       return;
     }
@@ -169,8 +171,8 @@ async function runClear(args, { configDir, stdin, stdout, stderr, s }) {
   }
 
   if (entries.length === 0) {
-    const scope = ticketKey ? `for ${ticketKey}` : 'in cache';
-    const ageNote = olderThanArg ? ` older than ${olderThanArg.split('=')[1]}` : '';
+    const scope = ticketKey ? `for ${s.cyan(ticketKey)}` : 'in the attachment cache';
+    const ageNote = olderThanArg ? ` older than ${expandAge(olderThanArg.split('=')[1])}` : '';
     stdout.write(`No cached files${ageNote} found ${scope}.\n`);
     return;
   }
@@ -183,7 +185,7 @@ async function runClear(args, { configDir, stdin, stdout, stderr, s }) {
   }
 
   const totalSize = entries.reduce((sum, e) => sum + e.size, 0);
-  stdout.write(`\n${s.bold('Files to delete:')} ${entries.length} file(s), ${formatSize(totalSize)}\n\n`);
+  stdout.write(`\n${s.bold('Files to delete:')} ${plural(entries.length, 'file')} across ${plural(Object.keys(byTicket).length, 'ticket')}, ${formatSize(totalSize)} total\n\n`);
 
   for (const [ticket, files] of Object.entries(byTicket).sort()) {
     stdout.write(`  ${s.cyan(ticket)}\n`);
@@ -196,7 +198,7 @@ async function runClear(args, { configDir, stdin, stdout, stderr, s }) {
   if (!forceYes) {
     const confirmed = await confirm('Delete these files?', stdin, stdout, s);
     if (!confirmed) {
-      stdout.write('Cancelled.\n');
+      stdout.write('Aborted — no files were deleted.\n');
       return;
     }
   }
@@ -216,17 +218,30 @@ async function runClear(args, { configDir, stdin, stdout, stderr, s }) {
     } catch { /* already deleted */ }
   }
 
-  stdout.write(`Deleted ${deleted} file(s), freed ${formatSize(deletedSize)}.\n`);
+  stdout.write(`${s.bold('✓')} Deleted ${plural(deleted, 'file')}, freed ${formatSize(deletedSize)}.\n`);
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+function expandAge(str) {
+  const match = str?.match(/^(\d+)(d|m|y)$/);
+  if (!match) return str;
+  const [, n, unit] = match;
+  const num = parseInt(n, 10);
+  const labels = { d: 'day', m: 'month', y: 'year' };
+  return `${num} ${labels[unit]}${num === 1 ? '' : 's'}`;
+}
 
 function confirm(question, stdin, stdout, s) {
   return new Promise(resolve => {
     stdout.write(`${question} ${s.dim('y/N')}  `);
 
     if (!stdin.isTTY) {
-      stdout.write('\n');
+      stdout.write(s.dim('(non-interactive — skipping)\n'));
       resolve(false);
       return;
     }
