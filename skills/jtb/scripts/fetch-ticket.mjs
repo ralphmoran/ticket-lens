@@ -9,10 +9,10 @@ import { fetchTicket } from './lib/jira-client.mjs';
 import { extractCodeReferences } from './lib/code-ref-parser.mjs';
 import { assembleBrief } from './lib/brief-assembler.mjs';
 import { styleBrief } from './lib/styled-assembler.mjs';
-import { resolveConnection } from './lib/profile-resolver.mjs';
+import { resolveConnection, loadProfiles } from './lib/profile-resolver.mjs';
 import { createSession } from './lib/banner.mjs';
 import { classifyError } from './lib/error-classifier.mjs';
-import { promptProfileSelect } from './lib/profile-picker.mjs';
+import { promptProfileSelect, promptProfileMismatch } from './lib/profile-picker.mjs';
 import { printFetchHelp } from './lib/help.mjs';
 import { downloadAttachments } from './lib/attachment-downloader.mjs';
 
@@ -64,6 +64,24 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
     }
     process.exitCode = 1;
     return;
+  }
+
+  // If no --profile was given and the resolved profile doesn't have this prefix
+  // configured, prompt the user to pick the right profile.
+  if (!profileName && conn.source === 'profile') {
+    const prefix = ticketKey.split('-')[0];
+    const config = loadProfiles(configDir);
+    const resolvedProfile = config?.profiles[conn.profileName];
+    if (!resolvedProfile?.ticketPrefixes?.includes(prefix)) {
+      const allProfiles = Object.entries(config?.profiles ?? {})
+        .map(([name, p]) => ({ name, baseUrl: p.baseUrl || null }));
+      if (allProfiles.length > 1) {
+        const picked = await promptProfileMismatch(ticketKey, conn.profileName, allProfiles);
+        if (picked && picked !== conn.profileName) {
+          return run([...args, `--profile=${picked}`], env, fetcher, configDir);
+        }
+      }
+    }
   }
 
   // Build env-like object for jira-client compatibility
