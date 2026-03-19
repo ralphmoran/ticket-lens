@@ -3,6 +3,7 @@
  */
 
 import { formatTable } from './table-formatter.mjs';
+import { formatSize } from './attachment-downloader.mjs';
 
 export function assembleBrief(ticket, codeRefs = null) {
   const sections = [];
@@ -55,6 +56,22 @@ export function assembleBrief(ticket, codeRefs = null) {
     if (filled.length > 0) {
       sections.push(`## Code References\n\n${filled.join('\n')}`);
     }
+  }
+
+  if (ticket.attachments?.length > 0) {
+    const lines = ticket.attachments.map(a => {
+      const r = (ticket.localAttachments ?? []).find(x => x.filename === a.filename);
+      const sz = formatSize(a.size);
+      if (r?.localPath) {
+        const note = r.skipReason === 'cached' ? ', cached' : '';
+        return `- \`${r.localPath}\` _(${a.filename}, ${sz}${note})_`;
+      }
+      if (r?.skipReason === 'too-large') return `- ${a.filename} _(${sz} — exceeds 10 MB limit)_`;
+      if (r?.skipReason === 'limit')     return `- ${a.filename} _(${sz} — attachment limit reached)_`;
+      if (r?.skipReason === 'error')     return `- ${a.filename} _(${sz} — download failed: ${r.error})_`;
+      return `- ${a.filename} _(${sz})_`;
+    });
+    sections.push(`## Attachments\n\n${lines.join('\n')}`);
   }
 
   return sections.join('\n\n');

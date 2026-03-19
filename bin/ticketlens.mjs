@@ -15,6 +15,7 @@ import { run as runInit } from '../skills/jtb/scripts/lib/init-wizard.mjs';
 import { runSwitch } from '../skills/jtb/scripts/lib/profile-switcher.mjs';
 import { run as runConfig } from '../skills/jtb/scripts/lib/config-wizard.mjs';
 import { activateLicense, checkLicense } from '../skills/jtb/scripts/lib/license.mjs';
+import { run as runCache } from '../skills/jtb/scripts/lib/cache-manager.mjs';
 import { printHelp } from '../skills/jtb/scripts/lib/help.mjs';
 
 const args = process.argv.slice(2);
@@ -88,6 +89,13 @@ switch (command) {
     }
     break;
   }
+
+  case 'cache':
+    runCache(cmdArgs).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
 
   case 'version': {
     const require = createRequire(import.meta.url);

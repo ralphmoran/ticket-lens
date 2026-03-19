@@ -21,7 +21,8 @@ const baseTicket = {
     { direction: 'outward', linkType: 'Blocks', key: 'PROD-1235', summary: 'Deploy hotfix', status: 'Blocked', type: 'Task' },
   ],
   attachments: [
-    { filename: 'error-screenshot.png', size: 245000 },
+    { id: 'att-1', filename: 'error-screenshot.png', mimeType: 'image/png', size: 245000, content: 'https://jira.example.com/secure/attachment/att-1/error-screenshot.png' },
+    { id: 'att-2', filename: 'spec.pdf', mimeType: 'application/pdf', size: 84000, content: 'https://jira.example.com/secure/attachment/att-2/spec.pdf' },
   ],
 };
 
@@ -106,6 +107,54 @@ describe('assembleBrief', () => {
     assert.ok(result.includes('Deploy the payment fix'));
     assert.ok(result.includes('**PM**'));
     assert.ok(result.includes('Please expedite'));
+  });
+
+  it('renders ## Attachments section with fallback when localAttachments absent', () => {
+    const result = assembleBrief(baseTicket);
+    assert.ok(result.includes('## Attachments'));
+    assert.ok(result.includes('error-screenshot.png'));
+    assert.ok(result.includes('spec.pdf'));
+  });
+
+  it('renders absolute localPath in backticks when downloaded', () => {
+    const ticket = {
+      ...baseTicket,
+      localAttachments: [
+        { filename: 'error-screenshot.png', mimeType: 'image/png', size: 245000, localPath: '/home/user/.ticketlens/cache/PROD-1234/error-screenshot.png', skipped: false, skipReason: null, error: null },
+      ],
+    };
+    const result = assembleBrief(ticket);
+    assert.ok(result.includes('`/home/user/.ticketlens/cache/PROD-1234/error-screenshot.png`'));
+  });
+
+  it('adds "(cached)" note for cache-hit attachments', () => {
+    const ticket = {
+      ...baseTicket,
+      localAttachments: [
+        { filename: 'error-screenshot.png', mimeType: 'image/png', size: 245000, localPath: '/tmp/error-screenshot.png', skipped: true, skipReason: 'cached', error: null },
+      ],
+    };
+    const result = assembleBrief(ticket);
+    assert.ok(result.includes('cached'));
+  });
+
+  it('renders "exceeds 10 MB limit" note for too-large attachments', () => {
+    const ticket = { ...baseTicket, attachments: [{ id: 'a1', filename: 'huge.zip', mimeType: 'application/zip', size: 15 * 1024 * 1024, content: 'https://jira.example.com/huge.zip' }], localAttachments: [{ filename: 'huge.zip', mimeType: 'application/zip', size: 15 * 1024 * 1024, localPath: null, skipped: true, skipReason: 'too-large', error: null }] };
+    const result = assembleBrief(ticket);
+    assert.ok(result.includes('exceeds 10 MB limit'));
+  });
+
+  it('renders "download failed" note for errored attachments', () => {
+    const ticket = { ...baseTicket, attachments: [{ id: 'a1', filename: 'broken.png', mimeType: 'image/png', size: 1000, content: 'https://jira.example.com/broken.png' }], localAttachments: [{ filename: 'broken.png', mimeType: 'image/png', size: 1000, localPath: null, skipped: true, skipReason: 'error', error: 'HTTP 403 (Forbidden)' }] };
+    const result = assembleBrief(ticket);
+    assert.ok(result.includes('download failed'));
+    assert.ok(result.includes('403'));
+  });
+
+  it('omits ## Attachments when attachments array is empty', () => {
+    const ticket = { ...baseTicket, attachments: [] };
+    const result = assembleBrief(ticket);
+    assert.ok(!result.includes('## Attachments'));
   });
 
   it('full assembly produces valid ordered markdown', () => {

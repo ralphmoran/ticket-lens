@@ -63,6 +63,21 @@ Where `$TICKET_KEY` is the first argument (e.g. `PROD-1234`) and `$EXTRA_ARGS` a
 
 The script outputs a structured markdown TicketBrief to stdout. If it fails (exit code 1), show the stderr message to the user.
 
+### Step 2b: Read attached files
+
+Check if the TicketBrief contains an `## Attachments` section. If it does, for each line containing a backtick-quoted absolute path, call the Read tool on that path based on file type:
+
+- **Images** (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`): Read it — Claude receives it as multimodal visual context.
+- **PDFs** (`.pdf`): Read it — Claude receives the extracted text content.
+- **Text files** (`.txt`, `.csv`, `.md`, `.log`): Read it — Claude receives the raw text.
+- **Other files** (`.zip`, `.docx`, `.xlsx`, etc.): Note they exist at the listed path but do not attempt to read them.
+
+Read all eligible files before proceeding. Do not describe images unprompted — hold them in context for Step 5.
+
+If there is no `## Attachments` section, skip this step.
+
+---
+
 ### Step 3: Detect VCS and enrich
 
 Detect the VCS in the current working directory and run enrichment commands:

@@ -46,11 +46,29 @@ describe('normalizeTicket', () => {
     assert.equal(result.linkedIssues[1].key, 'PROD-1100');
   });
 
-  it('extracts attachments with filename and size', () => {
+  it('extracts attachments with id, filename, mimeType, size, and content URL', () => {
     const result = normalizeTicket(cloudFixture);
     assert.equal(result.attachments.length, 2);
-    assert.deepStrictEqual(result.attachments[0], { filename: 'error-screenshot.png', size: 245000 });
-    assert.deepStrictEqual(result.attachments[1], { filename: 'server-log.txt', size: 1200 });
+    assert.equal(result.attachments[0].filename, 'error-screenshot.png');
+    assert.equal(result.attachments[0].mimeType, 'image/png');
+    assert.equal(result.attachments[0].size, 245000);
+    assert.ok(result.attachments[0].content.includes('error-screenshot.png'));
+    assert.ok(result.attachments[0].id != null);
+    assert.equal(result.attachments[1].filename, 'server-log.txt');
+    assert.equal(result.attachments[1].mimeType, 'text/plain');
+  });
+
+  it('normalizeTicket — falls back to null for missing mimeType and content', () => {
+    const raw = {
+      key: 'T-1',
+      fields: {
+        summary: 'Test', issuetype: { name: 'Task' }, status: { name: 'Open' },
+        attachment: [{ id: 'a1', filename: 'file.png', size: 100 }],
+      },
+    };
+    const result = normalizeTicket(raw);
+    assert.equal(result.attachments[0].mimeType, null);
+    assert.equal(result.attachments[0].content, null);
   });
 
   it('handles missing optional fields gracefully', () => {

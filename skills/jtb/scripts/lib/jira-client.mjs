@@ -47,8 +47,11 @@ export function normalizeTicket(raw) {
       };
     }),
     attachments: (f.attachment ?? []).map(a => ({
+      id: a.id ?? null,
       filename: a.filename,
+      mimeType: a.mimeType ?? null,
       size: a.size,
+      content: a.content ?? null,
     })),
   };
 }

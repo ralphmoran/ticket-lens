@@ -14,6 +14,7 @@ import { createSession } from './lib/banner.mjs';
 import { classifyError } from './lib/error-classifier.mjs';
 import { promptProfileSelect } from './lib/profile-picker.mjs';
 import { printFetchHelp } from './lib/help.mjs';
+import { downloadAttachments } from './lib/attachment-downloader.mjs';
 
 export async function run(args, env = process.env, fetcher = globalThis.fetch, configDir = undefined) {
   if (args.includes('--help') || args.includes('-h')) {
@@ -92,6 +93,27 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   }
   session.connected();
   process.stderr.write('\n');
+
+  if (!args.includes('--no-attachments')) {
+    const downloadable = (ticket.attachments ?? []).filter(a => a.content);
+    if (downloadable.length > 0) {
+      const noun = downloadable.length === 1 ? 'attachment' : 'attachments';
+      process.stderr.write(`Downloading ${downloadable.length} ${noun}…\n`);
+      ticket.localAttachments = await downloadAttachments(ticket, {
+        env: jiraEnv,
+        fetcher,
+        noCache: args.includes('--no-cache'),
+        onProgress: (msg) => process.stderr.write(msg + '\n'),
+      });
+      const downloaded = ticket.localAttachments.filter(r => !r.skipped).length;
+      const cached = ticket.localAttachments.filter(r => r.skipReason === 'cached').length;
+      const parts = [];
+      if (downloaded > 0) parts.push(`${downloaded} downloaded`);
+      if (cached > 0) parts.push(`${cached} cached`);
+      if (parts.length > 0) process.stderr.write(`  ✓ ${parts.join(', ')}\n`);
+      process.stderr.write('\n');
+    }
+  }
 
   const allText = [ticket.description, ...ticket.comments.map(c => c.body)].filter(Boolean).join('\n');
   const codeRefs = extractCodeReferences(allText);

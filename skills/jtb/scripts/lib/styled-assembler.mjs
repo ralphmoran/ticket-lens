@@ -1,5 +1,6 @@
 import { createStyler } from './ansi.mjs';
 import { formatTable } from './table-formatter.mjs';
+import { formatSize } from './attachment-downloader.mjs';
 
 function timeAgo(dateStr) {
   if (!dateStr) return '';
@@ -149,6 +150,22 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
     if (filled.length > 0) {
       sections.push(`${s.bold('Code References')}\n${'─'.repeat(40)}\n${filled.join('\n')}`);
     }
+  }
+
+  if (ticket.attachments?.length > 0) {
+    const lines = ticket.attachments.map(a => {
+      const r = (ticket.localAttachments ?? []).find(x => x.filename === a.filename);
+      const sz = formatSize(a.size);
+      if (r?.localPath) {
+        const note = r.skipReason === 'cached' ? s.dim(', cached') : '';
+        return `  ${s.cyan(r.localPath)}${note}  ${s.dim(a.filename + ', ' + sz)}`;
+      }
+      if (r?.skipReason === 'too-large') return `  ${a.filename}  ${s.dim(sz + ' — exceeds 10 MB limit')}`;
+      if (r?.skipReason === 'limit')     return `  ${a.filename}  ${s.dim(sz + ' — attachment limit reached')}`;
+      if (r?.skipReason === 'error')     return `  ${a.filename}  ${s.red('download failed: ' + r.error)}`;
+      return `  ${a.filename}  ${s.dim(sz)}`;
+    });
+    sections.push(`${s.bold('Attachments')}\n${'─'.repeat(40)}\n${lines.join('\n')}`);
   }
 
   return sections.join('\n\n');

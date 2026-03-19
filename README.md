@@ -10,6 +10,7 @@ Developer toolkit that minimizes research time before implementation. Fetches Ji
   - [ticketlens switch — Switch active profile](#ticketlens-switch--switch-active-profile)
   - [ticketlens config — Edit profile settings](#ticketlens-config--edit-profile-settings)
   - [ticketlens triage — Ticket attention scanner](#ticketlens-triage--ticket-attention-scanner)
+  - [ticketlens cache — Attachment cache manager](#ticketlens-cache--attachment-cache-manager)
   - [/jtb — Jira TicketBrief for Claude Code](#jtb--jira-ticketbrief-for-claude-code)
 - [Architecture](#architecture)
 - [Running Tests](#running-tests)
@@ -130,6 +131,29 @@ Confirming rewrites `triageStatuses` in your profile and reruns triage immediate
 
 ---
 
+### ticketlens cache — Attachment cache manager
+
+Inspect and clean up locally cached Jira attachments downloaded by `/jtb`.
+
+```bash
+ticketlens cache size                          # Show total disk usage by ticket
+ticketlens cache clear                         # Clear all cached attachments
+ticketlens cache clear PROJ-123                # Clear one ticket's cache
+ticketlens cache clear --older-than=7d         # Clear files older than 7 days
+ticketlens cache clear --older-than=1m         # Clear files older than 1 month
+ticketlens cache clear --older-than=1y         # Clear files older than 1 year
+ticketlens cache clear PROJ-123 --older-than=7d  # Combine ticket + age filter
+ticketlens cache clear --older-than=30d --yes  # Skip confirmation prompt
+```
+
+Age units: `d` = days, `m` = months (30d), `y` = years (365d).
+
+Before deleting, `cache clear` always shows a summary of what will be removed — grouped by ticket key with file name, size, and download date — then prompts for confirmation. Pass `--yes` / `-y` to skip the prompt in scripts.
+
+Files are cached at `~/.ticketlens/cache/TICKET-KEY/`. Empty ticket directories are automatically removed after their last file is deleted.
+
+---
+
 ### /jtb — Jira TicketBrief for Claude Code
 
 `/jtb` is a **Claude Code slash command**. It fetches a Jira ticket's full context — description, comments, linked issues, and code references — and drops a structured implementation brief directly into your Claude session.
@@ -170,8 +194,32 @@ cp /path/to/ticket-lens/skills/jtb/SKILL.md ~/.claude/commands/jtb.md
 /jtb PROJ-123 --depth=0          # Target ticket only (fast)
 /jtb PROJ-123 --depth=2          # Include linked-of-linked tickets
 /jtb PROJ-123 --profile=acme     # Force a specific Jira profile
+/jtb PROJ-123 --no-attachments   # Skip downloading attachments
+/jtb PROJ-123 --no-cache         # Re-download attachments even if cached
 /jtb triage                      # Scan your assigned tickets
 ```
+
+#### Attachments
+
+When you run `/jtb`, TicketLens automatically downloads all files attached to the ticket — screenshots, mockups, PDFs, logs, CSVs — and caches them locally at `~/.ticketlens/cache/TICKET-KEY/`.
+
+The brief includes an `## Attachments` section listing each file's local path:
+
+```
+## Attachments
+
+- `/Users/you/.ticketlens/cache/PROJ-123/error-screenshot.png` _(error-screenshot.png, 239KB)_
+- `/Users/you/.ticketlens/cache/PROJ-123/spec.pdf` _(spec.pdf, 82KB)_
+- `/Users/you/.ticketlens/cache/PROJ-123/server-log.txt` _(server-log.txt, 1KB)_
+```
+
+Claude Code reads each file as part of the ticket brief workflow (Step 2b):
+- **Images** (PNG, JPEG, GIF, WebP, SVG) — loaded as multimodal visual context
+- **PDFs** — text extracted and read
+- **Text files** (TXT, CSV, MD, LOG) — read as plain text
+- **Other files** (ZIP, DOCX, etc.) — noted as available at the listed path
+
+Files over 10 MB are skipped with a note. Already-cached files are reused on repeat fetches. Use `--no-cache` to force a fresh download.
 
 See [skills/jtb/README.md](skills/jtb/README.md) for full setup and usage docs.
 
@@ -204,6 +252,8 @@ See [ROADMAP.md](ROADMAP.md) for the full iteration plan.
 - ✅ Triage status mismatch auto-fix — case-insensitive + partial matching + interactive profile update
 - ✅ `p` hotkey during triage to switch profiles mid-session
 - ✅ `ticketlens config` — full profile editor: URL, auth type, email, token (with connection test + retry), ticket prefixes, project paths, triage statuses (merge semantics + partial matching)
+- ✅ Attachment download — images, PDFs, and all file types cached locally at `~/.ticketlens/cache/`; Claude Code reads them as visual/text context; `--no-attachments` / `--no-cache` flags
+- ✅ `ticketlens cache` — inspect disk usage (`cache size`) and selectively clear cached attachments by ticket key and/or age (`--older-than=Nd/Nm/Ny`)
 
 **Iteration 3.5 — Next:**
 - README GIF demos (ticket fetch, triage scan)

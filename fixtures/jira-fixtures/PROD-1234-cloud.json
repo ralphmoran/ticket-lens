@@ -2,41 +2,88 @@
   "key": "PROD-1234",
   "fields": {
     "summary": "Fix payment validation on checkout",
-    "issuetype": { "name": "Bug" },
-    "status": { "name": "In Progress" },
-    "priority": { "name": "High" },
-    "assignee": { "displayName": "John Dev", "emailAddress": "john@example.com" },
-    "reporter": { "displayName": "Sarah QA", "emailAddress": "sarah@example.com" },
+    "issuetype": {
+      "name": "Bug"
+    },
+    "status": {
+      "name": "In Progress"
+    },
+    "priority": {
+      "name": "High"
+    },
+    "assignee": {
+      "displayName": "John Dev",
+      "emailAddress": "john@example.com"
+    },
+    "reporter": {
+      "displayName": "Sarah QA",
+      "emailAddress": "sarah@example.com"
+    },
     "description": "The payment validation in /app/modules/Payment/Validator.php is failing for empty carts.\n\nSteps to reproduce:\n1. Go to checkout with an empty cart\n2. Click 'Pay Now'\n3. Server returns 500 instead of validation error\n\nThe issue is in the `validateCart()` method of `Payment_Validator` class. See commit abc1234 for when this was last changed.\n\nRelated branch: feature/PROD-1234-fix-payment\n\nAlso check /app/controllers/CheckoutController.php and src/services/CartService.php",
     "created": "2026-02-25T10:30:00.000+0000",
     "updated": "2026-03-01T14:22:00.000+0000",
     "customfield_10014": "PROD-900",
-    "labels": ["backend", "payments"],
-    "components": [{ "name": "Checkout" }],
+    "labels": [
+      "backend",
+      "payments"
+    ],
+    "components": [
+      {
+        "name": "Checkout"
+      }
+    ],
     "attachment": [
-      { "filename": "error-screenshot.png", "size": 245000, "mimeType": "image/png" },
-      { "filename": "server-log.txt", "size": 1200, "mimeType": "text/plain" }
+      {
+        "filename": "error-screenshot.png",
+        "size": 245000,
+        "mimeType": "image/png",
+        "id": "att-1",
+        "content": "https://jira.example.com/secure/attachment/att-1/error-screenshot.png"
+      },
+      {
+        "filename": "server-log.txt",
+        "size": 1200,
+        "mimeType": "text/plain",
+        "id": "att-2",
+        "content": "https://jira.example.com/secure/attachment/att-2/server-log.txt"
+      }
     ],
     "issuelinks": [
       {
-        "type": { "name": "Blocks", "inward": "is blocked by", "outward": "blocks" },
+        "type": {
+          "name": "Blocks",
+          "inward": "is blocked by",
+          "outward": "blocks"
+        },
         "outwardIssue": {
           "key": "PROD-1235",
           "fields": {
             "summary": "Deploy payment hotfix to production",
-            "status": { "name": "Blocked" },
-            "issuetype": { "name": "Task" }
+            "status": {
+              "name": "Blocked"
+            },
+            "issuetype": {
+              "name": "Task"
+            }
           }
         }
       },
       {
-        "type": { "name": "Relates", "inward": "relates to", "outward": "relates to" },
+        "type": {
+          "name": "Relates",
+          "inward": "relates to",
+          "outward": "relates to"
+        },
         "inwardIssue": {
           "key": "PROD-1100",
           "fields": {
             "summary": "Refactor cart validation logic",
-            "status": { "name": "Done" },
-            "issuetype": { "name": "Story" }
+            "status": {
+              "name": "Done"
+            },
+            "issuetype": {
+              "name": "Story"
+            }
           }
         }
       }
@@ -45,17 +92,26 @@
       "total": 3,
       "comments": [
         {
-          "author": { "displayName": "Sarah QA", "emailAddress": "sarah@example.com" },
-          "body": "I can reproduce this consistently. The Platform_Array helper in /lib/Platform/Array.php might be related — it was changed in r4521.\n\nAlso noticed Application_Payment_Gateway class might need updating.",
+          "author": {
+            "displayName": "Sarah QA",
+            "emailAddress": "sarah@example.com"
+          },
+          "body": "I can reproduce this consistently. The Platform_Array helper in /lib/Platform/Array.php might be related \u2014 it was changed in r4521.\n\nAlso noticed Application_Payment_Gateway class might need updating.",
           "created": "2026-02-26T09:15:00.000+0000"
         },
         {
-          "author": { "displayName": "Mike Lead", "emailAddress": "mike@example.com" },
-          "body": "Confirmed. The root cause is in validateCart() — it doesn't handle the edge case when $items is null vs empty array.\n\nCheck the fix in commit 9f8e7d6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e on branch feature/PROD-1100-cart-refactor.\n\nWe should also look at src/validators/BaseValidator.php and the Zend_Controller_Action base class.",
+          "author": {
+            "displayName": "Mike Lead",
+            "emailAddress": "mike@example.com"
+          },
+          "body": "Confirmed. The root cause is in validateCart() \u2014 it doesn't handle the edge case when $items is null vs empty array.\n\nCheck the fix in commit 9f8e7d6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e on branch feature/PROD-1100-cart-refactor.\n\nWe should also look at src/validators/BaseValidator.php and the Zend_Controller_Action base class.",
           "created": "2026-02-27T11:30:00.000+0000"
         },
         {
-          "author": { "displayName": "John Dev", "emailAddress": "john@example.com" },
+          "author": {
+            "displayName": "John Dev",
+            "emailAddress": "john@example.com"
+          },
           "body": "Working on this now. Will update the Payment\\Validator namespace and add null checks.",
           "created": "2026-02-28T08:00:00.000+0000"
         }

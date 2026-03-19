@@ -40,6 +40,10 @@ export function parseCommand(args) {
     return { command: 'license', args: args.slice(1) };
   }
 
+  if (first === 'cache') {
+    return { command: 'cache', args: args.slice(1) };
+  }
+
   // Anything that looks like a ticket key or any non-flag arg → fetch
   return { command: 'fetch', args };
 }

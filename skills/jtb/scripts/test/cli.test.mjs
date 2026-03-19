@@ -65,4 +65,16 @@ describe('parseCommand', () => {
     assert.equal(result.command, 'license');
     assert.deepEqual(result.args, []);
   });
+
+  it('routes "cache" to cache command', () => {
+    const result = parseCommand(['cache', 'size']);
+    assert.equal(result.command, 'cache');
+    assert.deepEqual(result.args, ['size']);
+  });
+
+  it('routes "cache clear" with flags to cache command', () => {
+    const result = parseCommand(['cache', 'clear', 'PROJ-123', '--older-than=7d']);
+    assert.equal(result.command, 'cache');
+    assert.deepEqual(result.args, ['clear', 'PROJ-123', '--older-than=7d']);
+  });
 });
