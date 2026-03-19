@@ -147,7 +147,7 @@ Max 15 tickets fetched at any depth. Circular references are handled automatical
 
 The cache is depth-aware: a cached depth-2 response satisfies a depth-1 or depth-0 request. Pass `--no-cache` to bypass and re-fetch from Jira.
 
-The default TTL is **4 hours**. Set `cacheTtl` in your profile to fit your workflow — ticket reviews that happen weeks or months later benefit from a longer window:
+The default TTL is **4 hours**. When a cached file is read and found to be expired, it is **deleted automatically** (lazy eviction) — no manual cleanup needed. Set `cacheTtl` in your profile to fit your workflow:
 
 ```
 ticketlens config   # set "Brief cache TTL" in the Optional section

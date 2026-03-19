@@ -301,7 +301,7 @@ After the first fetch, ticket data is saved locally and reused on repeat fetches
 
 The cache is depth-aware: a cached depth-2 response satisfies a depth-1 or depth-0 request. Pass `--no-cache` to bypass and re-fetch from Jira.
 
-**TTL is configurable per profile** — the default is 4 hours, but if you revisit tickets weeks or months later, set a longer window:
+**TTL is configurable per profile** — the default is 4 hours. When an expired file is read, it is **deleted automatically** (lazy eviction), so stale files never accumulate on disk. Set a longer window if you revisit tickets weeks or months later:
 
 ```bash
 ticketlens config   # set "Brief cache TTL" in the Optional section

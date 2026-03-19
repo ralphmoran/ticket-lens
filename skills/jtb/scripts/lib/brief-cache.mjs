@@ -47,7 +47,10 @@ export function readBriefCache(ticketKey, profileName, depth, configDir = DEFAUL
   }
 
   const age = Date.now() - new Date(data.fetchedAt).getTime();
-  if (age > ttlMs) return null;
+  if (age > ttlMs) {
+    try { fs.unlinkSync(filePath); } catch { /* non-fatal */ }
+    return null;
+  }
 
   // Serve cache only if cached depth covers the requested depth
   if ((data.depth ?? 0) < depth) return null;

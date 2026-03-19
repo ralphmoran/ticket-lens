@@ -95,6 +95,22 @@ describe('writeBriefCache + readBriefCache', () => {
     }
   });
 
+  it('deletes the file when TTL is exceeded (lazy eviction)', () => {
+    const dir = makeTmpDir();
+    try {
+      writeBriefCache('PROJ-123', 'work', 1, SAMPLE_TICKET, dir);
+      const filePath = briefCachePath('PROJ-123', 'work', dir);
+      const data = JSON.parse(readFileSync(filePath, 'utf8'));
+      data.fetchedAt = new Date(Date.now() - BRIEF_TTL_MS - 1000).toISOString();
+      writeFileSync(filePath, JSON.stringify(data));
+      assert.ok(existsSync(filePath), 'file should exist before read');
+      readBriefCache('PROJ-123', 'work', 1, dir);
+      assert.ok(!existsSync(filePath), 'file should be deleted after expired read');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('respects a custom ttlMs — serves cache within custom window', () => {
     const dir = makeTmpDir();
     try {
