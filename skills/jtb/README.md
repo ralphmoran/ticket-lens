@@ -163,7 +163,7 @@ Env vars are checked last — profiles.json takes priority when present.
 /jtb PROJ-123 --depth=2             # Deep: linked-of-linked
 /jtb PROJ-123 --profile=client      # Force a specific profile
 /jtb PROJ-123 --no-attachments      # Skip attachment download
-/jtb PROJ-123 --no-cache            # Re-download all attachments
+/jtb PROJ-123 --no-cache            # Skip brief cache + force re-download attachments
 
 # Via CLI directly
 ticketlens PROJ-123
@@ -171,6 +171,8 @@ ticketlens get PROJ-123             # Explicit alias
 ticketlens PROJ-123 --plain         # Plain markdown (pipe-safe, LLM-ready)
 ticketlens PROJ-123 --plain > brief.md
 ```
+
+The brief includes ticket metadata (type, status, priority, assignee, reporter, created date, updated date), description, comments, linked tickets, code references, and attachments.
 
 ### Depth levels
 
@@ -283,19 +285,35 @@ Files over **10 MB** are skipped with a note. Cached files are reused on repeat 
 
 ```bash
 ticketlens PROJ-123 --no-attachments   # Skip download entirely
-ticketlens PROJ-123 --no-cache         # Force re-download (ignore cache)
+ticketlens PROJ-123 --no-cache         # Skip brief cache + force re-download attachments
 ```
+
+---
+
+## Brief caching
+
+After the first fetch, ticket data is saved locally for 4 hours. Repeat fetches within that window skip the Jira API entirely and show a notice on stderr:
+
+```
+  ○ PROJ-123 · from cache (12m ago)  ·  --no-cache to refresh
+```
+
+The cache is depth-aware: a cached depth-2 response satisfies a depth-1 or depth-0 request. Pass `--no-cache` to bypass and re-fetch from Jira.
+
+**Cache locations:**
+- Attachments: `~/.ticketlens/cache/TICKET-KEY/`
+- Brief cache: `~/.ticketlens/cache/PROFILE/TICKET-KEY/brief.json` (profile-scoped, 4h TTL)
 
 ---
 
 ## Cache management
 
 ```bash
-ticketlens cache size                        # Disk usage by profile and ticket
+ticketlens cache size                        # Disk usage — shows both attachment + brief cache
 ticketlens cache size --profile=acme         # Filter to one profile
-ticketlens cache clear                       # Interactive picker
+ticketlens cache clear                       # Interactive picker (removes both)
 ticketlens clear                             # Shorthand alias
-ticketlens cache clear PROJ-123             # Clear one ticket
+ticketlens cache clear PROJ-123             # Clear one ticket (attachments + brief)
 ticketlens cache clear --older-than=7d       # Files older than 7 days
 ticketlens cache clear --profile=acme        # Clear one profile's files
 ticketlens cache clear --older-than=30d --yes   # No confirmation (scripts)

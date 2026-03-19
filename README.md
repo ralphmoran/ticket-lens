@@ -13,7 +13,7 @@ TicketLens is a zero-dependency CLI that fetches full Jira ticket context — de
   - [ticketlens config — Edit profile settings](#ticketlens-config--edit-profile-settings)
   - [ticketlens TICKET-KEY — Fetch a ticket brief](#ticketlens-ticket-key--fetch-a-ticket-brief)
   - [ticketlens triage — Ticket attention scanner](#ticketlens-triage--ticket-attention-scanner)
-  - [ticketlens cache — Attachment cache manager](#ticketlens-cache--attachment-cache-manager)
+  - [ticketlens cache — Cache manager](#ticketlens-cache--cache-manager)
   - [ticketlens license — License status](#ticketlens-license--license-status)
   - [/jtb — Jira TicketBrief for Claude Code](#jtb--jira-ticketbrief-for-claude-code)
 - [All Examples](#all-examples)
@@ -126,7 +126,7 @@ ticketlens PROJ-123 --profile=acme   # Use a specific profile
 ticketlens PROJ-123 --plain          # Plain markdown (no ANSI — pipe-safe, LLM-ready)
 ticketlens PROJ-123 --styled         # Force ANSI color even when piping
 ticketlens PROJ-123 --no-attachments # Skip attachment download
-ticketlens PROJ-123 --no-cache       # Re-download all attachments (ignore cache)
+ticketlens PROJ-123 --no-cache       # Skip brief cache + force re-download attachments
 ```
 
 **Depth levels:**
@@ -138,6 +138,14 @@ ticketlens PROJ-123 --no-cache       # Re-download all attachments (ignore cache
 | `2` | + linked-of-linked: key and summary only |
 
 Max 15 tickets fetched at any depth. Circular references are handled automatically.
+
+**Brief caching:** After the first fetch, ticket data is cached locally for 4 hours. Repeat fetches within that window skip the Jira API entirely and show a dim notice on stderr:
+
+```
+  ○ PROJ-123 · from cache (12m ago)  ·  --no-cache to refresh
+```
+
+The cache is depth-aware: a cached depth-2 response satisfies a depth-1 or depth-0 request. Pass `--no-cache` to bypass and re-fetch from Jira.
 
 **Multi-profile disambiguation:** When two profiles share a ticket prefix (e.g. both have `PROJ`), an arrow-key selector appears asking which Jira instance to use. Selecting one re-runs with `--profile=NAME`. Once a profile is selected, it is correctly applied even through connection failures and retries.
 
@@ -190,9 +198,9 @@ Bot comments (Jira Automation, Jenkins, GitHub Actions, etc.) are automatically 
 
 ---
 
-### ticketlens cache — Attachment cache manager
+### ticketlens cache — Cache manager
 
-Inspect and clean up locally cached Jira attachments.
+Inspect and clean up locally cached ticket data: attachment files and ticket briefs.
 
 ```bash
 ticketlens cache                               # Overview + subcommand hints
@@ -221,7 +229,11 @@ Age units: `d` = days · `m` = months (30d) · `y` = years (365d)
 
 Before deleting, `cache clear` shows a summary of what will be removed (grouped by profile and ticket) and prompts for confirmation. Pass `--yes` / `-y` to skip in scripts.
 
-Files live at `~/.ticketlens/cache/TICKET-KEY/`. Empty ticket directories are removed automatically after their last file is deleted.
+**Cache locations:**
+- Attachments: `~/.ticketlens/cache/TICKET-KEY/` (shared across profiles)
+- Brief cache: `~/.ticketlens/cache/PROFILE/TICKET-KEY/brief.json` (profile-scoped, 4h TTL)
+
+`cache size` shows both sections. `cache clear` removes both attachment files and brief cache entries for the affected tickets. Empty ticket directories are removed automatically.
 
 ---
 
@@ -323,7 +335,7 @@ ticketlens PROJ-123 --profile=acme            # Force a specific Jira profile
 ticketlens PROJ-123 --plain                   # Plain markdown — no color codes
 ticketlens PROJ-123 --styled                  # Force ANSI color even when piping
 ticketlens PROJ-123 --no-attachments          # Skip attachment download entirely
-ticketlens PROJ-123 --no-cache                # Re-download even if already cached
+ticketlens PROJ-123 --no-cache                # Skip brief cache + force re-download attachments
 ticketlens PROJ-123 --depth=2 --profile=acme --plain    # Combine flags freely
 
 # Pipe plain output to clipboard, LLM, or file
