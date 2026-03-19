@@ -84,7 +84,7 @@ export function createSession(conn, { stream = process.stderr } = {}) {
   return {
     /** Render a full pre-connection banner (non-TTY fallback). */
     _plainBanner() {
-      stream.write(`TicketLens v${version} | ${profileLabel} | ${hostname}\n`);
+      stream.write(`[TicketLens v${version}]  profile: ${profileLabel}  server: ${hostname}\n`);
     },
 
     /** Start the header: renders full closed box with spinner on status line. */

@@ -6,15 +6,15 @@
 const TICKET_KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/;
 
 export function parseCommand(args) {
-  if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
+  const first = args[0];
+
+  if (args.length === 0 || first === '--help' || first === '-h') {
     return { command: 'help', args: [] };
   }
 
   if (args.includes('--version') || args.includes('-v')) {
     return { command: 'version', args: [] };
   }
-
-  const first = args[0];
 
   if (first === 'triage') {
     return { command: 'triage', args: args.slice(1) };
@@ -44,9 +44,14 @@ export function parseCommand(args) {
     return { command: 'cache', args: args.slice(1) };
   }
 
-  // "ticket PROJ-123" — accept "ticket" as an alias for the fetch command
-  if (first === 'ticket') {
+  // "get PROJ-123" — alias for the fetch command
+  if (first === 'get') {
     return { command: 'fetch', args: args.slice(1) };
+  }
+
+  // "clear" — shorthand for "cache clear"
+  if (first === 'clear') {
+    return { command: 'cache', args: ['clear', ...args.slice(1)] };
   }
 
   // Anything that looks like a ticket key or any non-flag arg → fetch

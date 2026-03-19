@@ -354,3 +354,46 @@ describe('run — unknown subcommand', () => {
     process.exitCode = 0;
   });
 });
+
+// ─── contextual --help ───────────────────────────────────────────────────────
+
+describe('run — cache size --help', () => {
+  it('shows size-specific help, not full cache overview', async () => {
+    const out = captureOutput();
+    await run(['size', '--help'], { configDir: tmpDir, stdout: out, stderr: captureOutput(), stdin: noopStdin() });
+    assert.ok(out.output.includes('cache size'), 'shows size command');
+    assert.ok(out.output.includes('disk usage'), 'describes what size does');
+    assert.ok(!out.output.includes('cache clear'), 'does not show clear docs');
+    assert.ok(!out.output.includes('--older-than'), 'does not show clear-only flags');
+  });
+
+  it('shows size-specific help for -h shorthand', async () => {
+    const out = captureOutput();
+    await run(['size', '-h'], { configDir: tmpDir, stdout: out, stderr: captureOutput(), stdin: noopStdin() });
+    assert.ok(out.output.includes('cache size'));
+  });
+});
+
+describe('run — cache clear --help', () => {
+  it('shows clear-specific help with its own flags', async () => {
+    const out = captureOutput();
+    await run(['clear', '--help'], { configDir: tmpDir, stdout: out, stderr: captureOutput(), stdin: noopStdin() });
+    assert.ok(out.output.includes('cache clear'), 'shows clear command');
+    assert.ok(out.output.includes('--profile'), 'shows --profile flag');
+    assert.ok(out.output.includes('--older-than'), 'shows --older-than flag');
+    assert.ok(out.output.includes('--yes'), 'shows --yes flag');
+  });
+
+  it('shows clear-specific help for -h shorthand', async () => {
+    const out = captureOutput();
+    await run(['clear', '-h'], { configDir: tmpDir, stdout: out, stderr: captureOutput(), stdin: noopStdin() });
+    assert.ok(out.output.includes('cache clear'));
+  });
+
+  it('shows clear help when --help appears after other args', async () => {
+    const out = captureOutput();
+    await run(['clear', 'PROJ-123', '--help'], { configDir: tmpDir, stdout: out, stderr: captureOutput(), stdin: noopStdin() });
+    assert.ok(out.output.includes('cache clear'));
+    assert.ok(out.output.includes('--older-than'));
+  });
+});

@@ -1,70 +1,76 @@
 # /jtb — Jira TicketBrief for Claude Code
 
-Fetches a Jira ticket's full context and assembles a structured brief for implementation planning.
+Fetches a Jira ticket's full context and assembles a structured brief for implementation planning — directly inside your Claude Code session.
 
 ## Quick Start
 
 ```bash
-ticketlens init    # Guided setup — configure your Jira connection
-ticketlens PROJ-123
-ticketlens triage
+npm install -g ticketlens
+ticketlens init          # Configure your Jira connection
 ```
+
+In Claude Code:
+
+```
+/jtb PROJ-123            # Fetch ticket brief → plan mode
+/jtb triage              # Scan your assigned tickets
+```
+
+---
 
 ## Setup
 
-### Option A: Guided wizard (Recommended)
-
-Run the interactive setup wizard:
+### Option A — Guided wizard (Recommended)
 
 ```bash
 ticketlens init
 ```
 
-The wizard walks you through each step:
+The wizard collects:
 
-1. **Profile name** — a short identifier, e.g. `work`, `acme`, `client`
-2. **Jira URL** — suggestions are offered based on your profile name:
-   - `https://acme.atlassian.net` (Cloud)
-   - `https://jira.acme.com` (Server/DC)
-   - Or type a different URL — bare hostnames (`jira.company.com`) are accepted and auto-probed (`https://` first, then `http://`)
-3. **Auth type** — auto-detected from the URL you chose:
-   - `*.atlassian.net` → Jira Cloud detected, uses email + API token (no manual selection needed)
-   - Any other URL → choose between PAT (Server/DC 8.14+) or Basic auth (username + password)
-4. **Credentials** — email/username and token/password (masked input). Pre-populated on retry so you only change what's wrong.
-5. **Connection test** — live spinner; shows `● Connected` on success or a classified error with actionable hints on failure. On failure, an arrow-key menu offers four options:
+1. **Profile name** — short identifier: `work`, `acme`, `myteam`
+2. **Jira URL** — suggestions offered based on your profile name (e.g. `https://acme.atlassian.net`, `https://jira.acme.com`). Bare hostnames like `jira.acme.com` are accepted — `https://` is probed first, then `http://`.
+3. **Auth type** — auto-detected from your URL:
+   - `*.atlassian.net` → Jira Cloud (email + API token)
+   - Any other hostname → PAT (Server/DC 8.14+) or Basic auth (username + password)
+4. **Credentials** — masked input; pre-populated on retry so you only fix what's wrong
+5. **Live connection test** — shows `● Connected` or a classified error. On failure, a menu offers:
 
-   | Option | Use when |
-   |--------|----------|
+   | Option | When to use |
+   |--------|-------------|
    | **Retry** | VPN just connected, network hiccup |
    | **Edit credentials** | Token or email typo — fields pre-populated |
    | **Edit from URL** | Wrong URL or auth type — re-prompts from URL step |
-   | **Skip** | Give up on this profile |
-6. **Optional settings** — all skippable with Enter:
-   - **Ticket prefixes** (e.g. `PROJ,OPS`) — enables auto-routing: `PROJ-123` resolves to this profile
-   - **Project paths** (e.g. `~/projects/myapp`) — enables cwd-based auto-detection. If a path doesn't exist, you're offered to create it.
-   - **Triage statuses** (default: `In Progress, Code Review, QA`) — validated live against your Jira instance. Case mismatches are auto-corrected (e.g. `"In progress"` → `"In Progress"`).
-7. **Add another?** — repeat the full flow for each Jira instance
-8. **Select active profile** — arrow-key panel if you configured multiple profiles
-9. **Quick start panel** — command reference on completion
+   | **Skip** | Abandon this profile |
 
-On success, config is written to:
+6. **Optional settings** — all skippable with Enter:
+   - **Ticket prefixes** — e.g. `PROJ,OPS` — auto-routes `PROJ-123` to this profile without `--profile`
+   - **Project paths** — e.g. `~/projects/myapp` — auto-selects profile when your cwd is inside this directory
+   - **Triage statuses** — Jira statuses to scan (default: `In Progress, Code Review, QA`). Validated live; case mismatches auto-corrected.
+7. **Add another?** — repeat for each Jira instance
+8. **Select active profile** — arrow-key panel (if more than one configured)
+9. **Quick start panel** — command reference shown on completion
+
+Config is written to:
 - `~/.ticketlens/profiles.json`
 - `~/.ticketlens/credentials.json` (chmod 600)
 
-Profiles are only written on a **successful connection test** — a failed or cancelled test leaves your config untouched.
+Profiles are only written on a **successful connection test**.
 
 #### Cancelling `ticketlens init`
 
 | Step | Key | Result |
 |------|-----|--------|
 | Any text prompt (name, URL, email) | `Ctrl+C` | Exits cleanly, cursor restored |
-| URL / auth type selector | `Esc` or `q` | Shows "Cancelled.", exits gracefully |
-| Token / password prompt | `Ctrl+C` | Exits cleanly, cursor restored |
-| Connection test (spinner) | `Ctrl+C` | Spinner stopped, cursor restored, exits cleanly |
-| "Configure another connection?" | `Ctrl+C` | Exits cleanly |
-| Final profile selector | `Esc` or `q` | Skips setting a default, wizard completes |
+| URL / auth type selector | `Esc` or `q` | Shows "Cancelled.", exits |
+| Token / password prompt | `Ctrl+C` | Exits cleanly |
+| Connection test (spinner) | `Ctrl+C` | Spinner stopped, cursor restored, exits |
+| "Configure another?" | `Ctrl+C` | Exits cleanly |
+| Final profile selector | `Esc` or `q` | Skips default selection, wizard completes |
 
-### Option B: Manual profiles
+---
+
+### Option B — Manual profiles
 
 Create `~/.ticketlens/profiles.json`:
 
@@ -74,21 +80,20 @@ Create `~/.ticketlens/profiles.json`:
     "myteam": {
       "baseUrl": "https://myteam.atlassian.net",
       "auth": "cloud",
-      "email": "you@example.com",
+      "email": "you@myteam.com",
       "ticketPrefixes": ["PROJ", "OPS"],
       "projectPaths": ["~/projects/myteam-app"],
-      "triageStatuses": ["In Progress", "Code Review", "QA"]
+      "triageStatuses": ["In Progress", "Code Review", "QA Testing"]
     },
     "client": {
       "baseUrl": "https://jira.client.com",
       "auth": "server",
-      "email": "username",
-      "ticketPrefixes": ["CLI"],
+      "email": "yourname",
+      "ticketPrefixes": ["ACME", "SHOP"],
       "projectPaths": ["~/projects/client-app"],
-      "triageStatuses": ["In Progress", "In Development", "QA Testing"]
+      "triageStatuses": ["In Progress", "In Development", "QA"]
     }
-  },
-  "default": "myteam"
+  }
 }
 ```
 
@@ -96,178 +101,230 @@ Create `~/.ticketlens/credentials.json` (chmod 600):
 
 ```json
 {
-  "myteam": { "apiToken": "your-cloud-api-token" },
-  "client": { "pat": "your-server-pat" }
+  "myteam": { "apiToken": "your-atlassian-api-token" },
+  "client":  { "pat": "your-jira-server-pat" }
 }
 ```
 
-Tickets are auto-routed by prefix: `PROJ-42` uses "myteam", `CLI-10` uses "client".
+With this setup:
+- `ticketlens PROJ-123` → **myteam** (prefix `PROJ`)
+- `ticketlens ACME-456` → **client** (prefix `ACME`)
+- `ticketlens triage` inside `~/projects/myteam-app` → **myteam** (path match)
 
-#### Profile Fields
+#### Profile fields
 
-| Field | Required | Used By | Description |
-|-------|----------|---------|-------------|
-| `baseUrl` | Yes | both | Jira instance URL |
-| `auth` | Yes | both | `"cloud"` (Basic email+token) or `"server"` (Bearer PAT) or `"basic"` (Basic user+password for pre-8.14 Server) |
-| `email` | Yes | both | Atlassian email (Cloud) or username (Server) |
-| `ticketPrefixes` | No | `/jtb` fetch | Array of Jira project keys; enables auto-routing `PROJ-123` to this profile |
-| `projectPaths` | No | `/jtb triage` | Array of local paths — triage auto-selects profile when your cwd is inside one of these |
-| `triageStatuses` | No | `/jtb triage` | Array of Jira statuses to scan (default: `["In Progress", "Code Review", "QA"]`) |
+| Field | Required | Description |
+|-------|----------|-------------|
+| `baseUrl` | Yes | Jira instance URL |
+| `auth` | Yes | `"cloud"` (email + API token) · `"server"` (Bearer PAT) · `"basic"` (username + password for pre-8.14 Server) |
+| `email` | Yes | Atlassian email (Cloud) or username (Server) |
+| `ticketPrefixes` | No | Array of project keys; enables auto-routing `PROJ-123` to this profile |
+| `projectPaths` | No | Array of local paths; profile auto-selected when cwd is inside one of these |
+| `triageStatuses` | No | Jira statuses to scan (default: `["In Progress", "Code Review", "QA"]`) |
 
-#### Credentials Fields
+#### Credentials fields
 
 | Field | When to use | Description |
 |-------|-------------|-------------|
-| `apiToken` | Jira Cloud | API token from https://id.atlassian.com/manage-profile/security/api-tokens |
-| `pat` | Jira Server/DC 8.14+ | Personal Access Token from Jira profile settings |
+| `apiToken` | Jira Cloud | API token from `https://id.atlassian.com/manage-profile/security/api-tokens` |
+| `pat` | Jira Server/DC 8.14+ | Personal Access Token from Jira → Profile → Personal Access Tokens |
 
-For Jira Server older than 8.14 (no PAT support), use `apiToken` with the user's password and set `auth: "basic"` in the profile.
+For Jira Server older than 8.14 (no PAT support), use `apiToken` with your password and set `auth: "basic"`.
 
-### Option C: Environment Variables
+---
 
-For single-account setups, env vars still work:
+### Option C — Environment variables
+
+For single-account setups or CI:
 
 ```bash
 # Jira Cloud
 export JIRA_BASE_URL="https://yourteam.atlassian.net"
 export JIRA_EMAIL="you@example.com"
-export JIRA_API_TOKEN="your-token"
+export JIRA_API_TOKEN="your-api-token"
 
 # Jira Server / Data Center
 export JIRA_BASE_URL="https://jira.yourcompany.com"
 export JIRA_PAT="your-personal-access-token"
 ```
 
+Env vars are checked last — profiles.json takes priority when present.
+
+---
+
 ## Usage
 
 ### Fetch a ticket brief
 
 ```bash
-/jtb TICKET-KEY              # Fetch ticket + linked tickets (depth 1)
-/jtb TICKET-KEY --depth=0    # Target ticket only (fast)
-/jtb TICKET-KEY --depth=2    # Include linked-of-linked tickets
-/jtb TICKET-KEY --profile=client  # Force a specific profile
+# Via Claude Code slash command
+/jtb PROJ-123                       # Fetch + plan mode (depth 1 default)
+/jtb PROJ-123 --depth=0             # Target ticket only (fastest)
+/jtb PROJ-123 --depth=2             # Deep: linked-of-linked
+/jtb PROJ-123 --profile=client      # Force a specific profile
+/jtb PROJ-123 --no-attachments      # Skip attachment download
+/jtb PROJ-123 --no-cache            # Re-download all attachments
+
+# Via CLI directly
+ticketlens PROJ-123
+ticketlens get PROJ-123             # Explicit alias
+ticketlens PROJ-123 --plain         # Plain markdown (pipe-safe, LLM-ready)
+ticketlens PROJ-123 --plain > brief.md
 ```
+
+### Depth levels
+
+| `--depth` | What's fetched |
+|-----------|----------------|
+| `0` | Target ticket — description, comments, attachments |
+| `1` | + linked tickets — descriptions and comments _(default)_ |
+| `2` | + linked-of-linked — key and summary only |
+
+Max 15 tickets regardless of depth. Circular references handled automatically.
 
 ### Triage — scan tickets needing attention
 
 ```bash
-/jtb triage                          # Auto-detect profile from cwd
-/jtb triage --profile=acme         # Explicit profile
-/jtb triage --stale=3                # Flag tickets with no activity for 3+ days (default: 5)
-/jtb triage --status=CR,QA           # Override statuses to scan
+# Via Claude Code
+/jtb triage
+/jtb triage --profile=acme
+/jtb triage --stale=3
+
+# Via CLI
+ticketlens triage
+ticketlens triage --profile=acme
+ticketlens triage --stale=3                             # Response window: 3 days
+ticketlens triage --status="Code Review,QA Testing"     # Statuses to scan
+ticketlens triage --static                              # No interactive mode
+ticketlens triage --plain                               # Plain markdown output
 ```
 
-Triage scans your assigned tickets and categorizes them:
+**Categories:**
 
-- **Needs Response** — someone commented after you (reviewer, QA, PM waiting for your reply)
-- **Aging** — no activity for N+ days (stalling)
+| Badge | Category | Condition |
+|-------|----------|-----------|
+| `●` red | **Needs response** | Someone else commented within the last N days |
+| `●` yellow | **Aging** | Last activity or comment is N+ days old |
+
+`--stale=N` controls **both** categories. A comment waiting for your reply is "needs response" only while it's within N days old. Once it ages past N days, the ticket automatically downgrades to "aging" — so your red list stays focused on genuinely recent requests.
 
 **Interactive mode keys:** `↑/↓` navigate · `Enter` open in browser · `p` switch profile · `q/Esc` exit
 
-Bot comments (Jira Automation, Jenkins, etc.) are automatically skipped. SVN/Git commit bots are recognized — if the commit author matches your username, it counts as your response.
+Bot comments (Jira Automation, Jenkins, GitHub Actions, Bamboo, etc.) are automatically skipped. VCS commit bots (SVN/Git) are recognized — a commit by your username counts as your own response.
 
-**Status mismatch auto-fix:** If configured statuses don't exactly match your Jira instance (e.g. `"In progress"` vs `"In Progress"`, or `"QA"` vs `"QA Testing"`), triage shows a diff and offers to update your profile automatically:
+**Status mismatch auto-fix:**
 
 ```
   ~ In progress  →  In Progress
   ~ QA           →  QA Testing
 
-  Update "myprofile" with corrected statuses?  y/N
+  Update "myteam" with corrected statuses?  y/N
 ```
 
-Confirming rewrites `triageStatuses` in your profile and reruns triage immediately. Statuses are also validated at the end of `ticketlens init` before saving.
+Confirming **merges** corrections into your profile's `triageStatuses` list (never replaces it) and reruns immediately.
 
-### Switch active profile
-
-```bash
-ticketlens switch
-```
-
-Opens a titled panel listing all configured profiles. The currently active profile is marked with a green `● active` badge. Use arrow keys to navigate, `Enter` to switch, `Esc` to cancel.
-
-On switch: tests the connection live, then updates the active profile in `profiles.json`. Selecting the already-active profile is a no-op (instant dismiss, no reconnection).
+---
 
 ### Edit profile settings
 
 ```bash
-ticketlens config                    # Edit the default profile
-ticketlens config --profile=acme     # Edit a named profile
+ticketlens config                    # Edit the active profile
+ticketlens config --profile=acme     # Edit a specific profile
 ```
 
-Edits any setting on an existing profile. Every field is pre-populated with its current value — press `Enter` to keep it.
+All fields pre-populated. Press `Enter` to keep any value unchanged.
 
-**Connection section:**
+**Optional fields behaviour:**
 
 | Field | Behaviour |
 |-------|-----------|
-| Jira URL | Accepts bare hostnames; `https://` auto-prefixed |
-| Auth type | Selector pre-positioned on current value |
-| Email / Username | Pre-populated; Enter keeps it |
-| Token / PAT / Password | Shows `[keep existing]`; Enter keeps stored credential |
+| Ticket prefixes | **Merge** — new entries are added to the existing list; Enter keeps current |
+| Project paths | New paths validated; missing dirs offered for creation |
+| Triage statuses | **Merge** — new entries added, existing ones never removed; partial matching (`QA` → `QA Testing`) |
 
-If any connection field changes, a live connection test runs with the same retry menu as `ticketlens init`.
+---
 
-**Optional section:**
+### Profile resolution order
 
-| Field | Behaviour |
-|-------|-----------|
-| Ticket prefixes | Full replacement; Enter keeps current |
-| Project paths | Full replacement; new paths validated; missing dirs offered for creation |
-| Triage statuses | **Merge** — new entries are *added* to the current list, never replacing it. Partial matching applies: `QA` → `QA Testing`. Invalid statuses with no match are skipped and reported. |
+| Priority | Method | Example |
+|----------|--------|---------|
+| 1 | `--profile=NAME` flag | `ticketlens PROJ-123 --profile=client` |
+| 2 | Ticket prefix match | `PROJ-123` → prefix `PROJ` → `myteam` |
+| 3 | Project path match | cwd in `~/projects/client-app` → `client` |
+| 4 | Default / first profile | First entry in `profiles.json` |
+| 5 | Environment variables | `JIRA_BASE_URL`, `JIRA_EMAIL`, etc. |
 
-**Triage status merge example:**
+**Multi-profile disambiguation:** If two profiles share a prefix, an arrow-key selector appears. The selected profile is correctly applied through any subsequent retries or switches — selecting a different profile always replaces the previous `--profile=` arg cleanly.
+
+---
+
+## Attachments
+
+TicketLens downloads all files attached to the ticket to `~/.ticketlens/cache/TICKET-KEY/`:
 
 ```
-  Add triage statuses  [current: In Progress, Code Review — Enter to keep]:  QA
-    ~ QA  →  QA Testing
-    Updated list: In Progress, Code Review, QA Testing
+## Attachments
+
+- /Users/you/.ticketlens/cache/PROJ-123/design-mockup.png  (design-mockup.png, 312KB)
+- /Users/you/.ticketlens/cache/PROJ-123/requirements.pdf   (requirements.pdf, 95KB)
+- /Users/you/.ticketlens/cache/PROJ-123/error.log          (error.log, 4KB)
 ```
 
-### Profile Resolution Order
+Claude Code reads each file as context before entering plan mode:
 
-| Priority | Method | Used when |
-|----------|--------|-----------|
-| 1 | `--profile=NAME` flag | Explicit override |
-| 2 | Ticket prefix match | `/jtb PROJ-42` — prefix `PROJ` maps to a profile |
-| 3 | Project path match | `/jtb triage` — cwd matches a profile's `projectPaths` |
-| 4 | Default profile | `"default"` key in profiles.json |
-| 5 | Environment variables | No config files, just env vars |
+| File type | How Claude Code reads it |
+|-----------|--------------------------|
+| PNG, JPEG, GIF, WebP, SVG | Multimodal visual context |
+| PDF | Text extracted and read |
+| TXT, CSV, MD, LOG, JSON | Read as plain text |
+| ZIP, DOCX, XLSX, etc. | Path noted — not read directly |
 
-### What fetch does
-
-1. Fetches the ticket from Jira (description, comments, attachments, links)
-2. Fetches linked tickets with their comments (at depth 1)
-3. Extracts code references (file paths, class names, methods, SHAs, branches)
-4. Detects your VCS (Git/SVN/Hg) and finds related commits/branches
-5. Resolves referenced files in your local repo
-6. Enters plan mode with full context
-
-### Depth levels
-
-| Depth | What's fetched |
-|-------|---------------|
-| 0 | Target ticket only (description, comments, attachments) |
-| 1 | Target + linked tickets with descriptions and comments |
-| 2 | Target + linked + linked-of-linked (key + summary only) |
-
-Max 15 tickets total regardless of depth. Circular references are handled automatically.
-
-## CLI Usage (without Claude Code)
+Files over **10 MB** are skipped with a note. Cached files are reused on repeat fetches.
 
 ```bash
-# Fetch a ticket
-node ~/.agents/skills/jtb/scripts/fetch-ticket.mjs TICKET-KEY [--depth=N] [--profile=NAME]
-
-# Triage
-node ~/.agents/skills/jtb/scripts/fetch-my-tickets.mjs [--stale=N] [--status=X,Y] [--profile=NAME]
+ticketlens PROJ-123 --no-attachments   # Skip download entirely
+ticketlens PROJ-123 --no-cache         # Force re-download (ignore cache)
 ```
+
+---
+
+## Cache management
+
+```bash
+ticketlens cache size                        # Disk usage by profile and ticket
+ticketlens cache size --profile=acme         # Filter to one profile
+ticketlens cache clear                       # Interactive picker
+ticketlens clear                             # Shorthand alias
+ticketlens cache clear PROJ-123             # Clear one ticket
+ticketlens cache clear --older-than=7d       # Files older than 7 days
+ticketlens cache clear --profile=acme        # Clear one profile's files
+ticketlens cache clear --older-than=30d --yes   # No confirmation (scripts)
+```
+
+---
+
+## CLI quick reference
+
+```bash
+ticketlens --help                    # Main help
+ticketlens --version                 # Version
+ticketlens PROJ-123 --help           # Fetch help
+ticketlens triage --help             # Triage help
+ticketlens cache --help              # Cache help
+ticketlens cache size --help         # Cache size help
+ticketlens cache clear --help        # Cache clear help
+```
+
+---
 
 ## Known Issues
 
 None at this time. Previous issues resolved:
-- ~~Jira Cloud v2 API deprecation (410 Gone)~~ — Fixed. Cloud profiles auto-select v3 API endpoints.
+- ~~Jira Cloud v2 API deprecation (410 Gone)~~ — Fixed: Cloud profiles auto-select v3 endpoints.
+- ~~Profile switch infinite loop~~ — Fixed: `--profile=` arg is replaced (not appended) on every re-run.
+- ~~Status auto-fix replacing all statuses~~ — Fixed: Corrections are merged into the existing list.
+- ~~`--stale` flag had no visible effect~~ — Fixed: Affects both "needs response" and "aging" categories.
 
 ## Full Documentation
 
-See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) for architecture, output format, troubleshooting, and contributing guide.
+See [README.md](../../README.md) in the repo root for the complete command reference, all examples, architecture details, and roadmap.

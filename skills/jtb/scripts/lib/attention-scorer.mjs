@@ -84,6 +84,23 @@ export function scoreAttention(ticket, currentUser, opts = {}) {
 
   // Check needs-response: last effective comment is NOT from current user
   if (lastComment && !fromCurrentUser) {
+    const commentDate = lastComment.created ? new Date(lastComment.created) : null;
+    const daysSinceComment = commentDate ? (now - commentDate) / (1000 * 60 * 60 * 24) : 0;
+
+    // If the unanswered comment is older than the stale threshold, treat as aging
+    // rather than urgent — the window to respond promptly has passed.
+    if (daysSinceComment >= staleDays) {
+      return {
+        ticketKey: ticket.key,
+        summary: ticket.summary,
+        status: ticket.status,
+        urgency: 'aging',
+        reason: `${lastComment.author} commented ${Math.floor(daysSinceComment)}d ago`,
+        lastComment,
+        daysSinceUpdate: Math.floor(daysSinceComment),
+      };
+    }
+
     return {
       ticketKey: ticket.key,
       summary: ticket.summary,

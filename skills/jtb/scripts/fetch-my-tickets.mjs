@@ -153,10 +153,14 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
           if (answer) {
             const config = loadProfiles(configDir);
             if (config?.profiles[conn.profileName]) {
-              const updated = { ...config.profiles[conn.profileName], triageStatuses: suggested };
+              const existing = config.profiles[conn.profileName].triageStatuses || [];
+              const merged = [...new Set([...existing, ...suggested])];
+              const updated = { ...config.profiles[conn.profileName], triageStatuses: merged };
               saveProfile(conn.profileName, updated, {}, configDir);
               out.write(`  ${s.green('✔')} Profile updated. Rerunning...\n\n`);
-              return run(args, env, fetcher, configDir);
+              // Strip --status flag so the re-run uses the corrected profile statuses
+              const rerunArgs = args.filter(a => !a.startsWith('--status='));
+              return run(rerunArgs, env, fetcher, configDir);
             }
           }
         }

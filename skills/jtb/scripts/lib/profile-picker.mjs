@@ -34,8 +34,8 @@ export function promptProfileSelect({ profileName, suggestion, available }, { st
   function renderFn(selected) {
     const lines = [];
     for (let i = 0; i < available.length; i++) {
-      const marker = i === selected ? s.cyan('❯') : ' ';
-      const label = i === selected ? s.bold(s.cyan(available[i])) : available[i];
+      const marker = i === selected ? s.blue('❯') : ' ';
+      const label = i === selected ? s.bold(s.blue(available[i])) : available[i];
       lines.push(`    ${marker} ${label}`);
     }
     lines.push('');
@@ -66,15 +66,14 @@ export function promptMultipleMatches(ticketKey, profiles, { stream = process.st
   const prefix = ticketKey.split('-')[0];
 
   stream.write('\n');
-  stream.write(`  ${s.yellow('⚡')}  ${s.bold(plural(profiles.length, 'profile'))} are configured for prefix ${s.bold(s.cyan(prefix))}.\n`);
-  stream.write(`\n  ${s.dim(`Which one should handle ${ticketKey}?`)}\n\n`);
+  stream.write(`  ${s.cyan('●')}  ${s.bold(plural(profiles.length, 'profile'))} match prefix ${s.bold(s.cyan(prefix))} — which should handle ${s.dim(ticketKey)}?\n\n`);
 
   if (!stream.isTTY || !process.stdin.setRawMode) {
     for (const p of profiles) {
       const sub = p.baseUrl ? `  ${s.dim(p.baseUrl)}` : '';
       stream.write(`    ${s.cyan('›')} ${p.name}${sub}\n`);
     }
-    stream.write('\n');
+    stream.write(`\n  ${s.dim(`→ Re-run with --profile=NAME to skip this prompt`)}\n\n`);
     return Promise.resolve(null);
   }
 
@@ -83,10 +82,10 @@ export function promptMultipleMatches(ticketKey, profiles, { stream = process.st
     for (let i = 0; i < profiles.length; i++) {
       const p = profiles[i];
       const isSelected = i === selected;
-      const marker = isSelected ? s.cyan('❯') : ' ';
-      const label = isSelected ? s.bold(s.cyan(p.name)) : p.name;
-      const sub = p.baseUrl ? `  ${s.dim(p.baseUrl)}` : '';
-      lines.push(`    ${marker} ${label}${sub}`);
+      const marker = isSelected ? s.blue('❯') : ' ';
+      const label = isSelected ? s.bold(s.blue(p.name)) : p.name;
+      lines.push(`    ${marker} ${label}`);
+      if (p.baseUrl) lines.push(`      ${s.dim(p.baseUrl)}`);
     }
     lines.push('');
     lines.push(`  ${s.dim('↑/↓ select   Enter confirm   Esc cancel')}`);
@@ -122,7 +121,7 @@ export function promptProfileMismatch(ticketKey, currentProfile, profiles, { str
   const prefix = ticketKey.split('-')[0];
 
   stream.write('\n');
-  stream.write(`  ${s.yellow('⚠')}  Prefix ${s.bold(s.cyan(prefix))} is not configured in any profile.\n`);
+  stream.write(`  ${s.yellow('⚠')}  No profile is configured for ${s.bold(s.cyan(prefix))} tickets.\n`);
   stream.write(`  ${s.dim('Currently using:')} ${s.cyan(currentProfile)}\n`);
   stream.write(`\n  ${s.dim(`Which profile should handle ${ticketKey}?`)}\n\n`);
 
@@ -131,7 +130,7 @@ export function promptProfileMismatch(ticketKey, currentProfile, profiles, { str
       const sub = p.baseUrl ? `  ${s.dim(p.baseUrl)}` : '';
       stream.write(`    ${s.cyan('›')} ${p.name}${sub}\n`);
     }
-    stream.write('\n');
+    stream.write(`\n  ${s.dim(`→ Re-run with --profile=NAME to skip this prompt`)}\n\n`);
     return Promise.resolve(null);
   }
 
@@ -142,13 +141,13 @@ export function promptProfileMismatch(ticketKey, currentProfile, profiles, { str
     for (let i = 0; i < profiles.length; i++) {
       const p = profiles[i];
       const isSelected = i === selected;
-      const marker = isSelected ? s.cyan('❯') : ' ';
-      const label = isSelected ? s.bold(s.cyan(p.name)) : p.name;
-      const sub = p.baseUrl ? `  ${s.dim(p.baseUrl)}` : '';
-      lines.push(`    ${marker} ${label}${sub}`);
+      const marker = isSelected ? s.blue('❯') : ' ';
+      const label = isSelected ? s.bold(s.blue(p.name)) : p.name;
+      lines.push(`    ${marker} ${label}`);
+      if (p.baseUrl) lines.push(`      ${s.dim(p.baseUrl)}`);
     }
     lines.push('');
-    lines.push(`  ${s.dim('↑/↓ select   Enter confirm   Esc keep current')}`);
+    lines.push(`  ${s.dim(`↑/↓ select   Enter confirm   Esc  continue with ${currentProfile}`)}`);
     stream.write(lines.join('\n') + '\n');
     return lines.length;
   }
@@ -185,7 +184,7 @@ export function promptSwitchProfile(currentProfile, profiles, { stream = process
       const sub = p.baseUrl ? `  ${s.dim(p.baseUrl)}` : '';
       stream.write(`    ${s.cyan('›')} ${p.name}${sub}\n`);
     }
-    stream.write('\n');
+    stream.write(`\n  ${s.dim(`→ Re-run with --profile=NAME to specify directly`)}\n\n`);
     return Promise.resolve(null);
   }
 
@@ -196,10 +195,10 @@ export function promptSwitchProfile(currentProfile, profiles, { stream = process
     for (let i = 0; i < profiles.length; i++) {
       const p = profiles[i];
       const isSelected = i === selected;
-      const marker = isSelected ? s.cyan('❯') : ' ';
-      const label = isSelected ? s.bold(s.cyan(p.name)) : p.name;
-      const sub = p.baseUrl ? `  ${s.dim(p.baseUrl)}` : '';
-      lines.push(`    ${marker} ${label}${sub}`);
+      const marker = isSelected ? s.blue('❯') : ' ';
+      const label = isSelected ? s.bold(s.blue(p.name)) : p.name;
+      lines.push(`    ${marker} ${label}`);
+      if (p.baseUrl) lines.push(`      ${s.dim(p.baseUrl)}`);
     }
     lines.push('');
     lines.push(`  ${s.dim('↑/↓ select   Enter confirm   Esc cancel')}`);

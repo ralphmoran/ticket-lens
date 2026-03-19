@@ -1,6 +1,8 @@
 # TicketLens
 
-Developer toolkit that minimizes research time before implementation. Fetches Jira ticket context, linked issues, comments, and code references — then maps them to your local codebase.
+**Stop tab-switching. Start building.**
+
+TicketLens is a zero-dependency CLI that fetches full Jira ticket context — description, comments, linked issues, attachments, and code references — directly into your terminal or Claude Code session.
 
 ## Contents
 
@@ -9,9 +11,14 @@ Developer toolkit that minimizes research time before implementation. Fetches Ji
   - [ticketlens init — Setup wizard](#ticketlens-init--setup-wizard)
   - [ticketlens switch — Switch active profile](#ticketlens-switch--switch-active-profile)
   - [ticketlens config — Edit profile settings](#ticketlens-config--edit-profile-settings)
+  - [ticketlens TICKET-KEY — Fetch a ticket brief](#ticketlens-ticket-key--fetch-a-ticket-brief)
   - [ticketlens triage — Ticket attention scanner](#ticketlens-triage--ticket-attention-scanner)
   - [ticketlens cache — Attachment cache manager](#ticketlens-cache--attachment-cache-manager)
+  - [ticketlens license — License status](#ticketlens-license--license-status)
   - [/jtb — Jira TicketBrief for Claude Code](#jtb--jira-ticketbrief-for-claude-code)
+- [All Examples](#all-examples)
+- [Multi-Profile Setup](#multi-profile-setup)
+- [Profile Resolution Order](#profile-resolution-order)
 - [Architecture](#architecture)
 - [Running Tests](#running-tests)
 - [Roadmap](#roadmap)
@@ -23,7 +30,7 @@ Developer toolkit that minimizes research time before implementation. Fetches Ji
 
 ```bash
 npm install -g ticketlens
-ticketlens init          # Configure your Jira connection (guided wizard)
+ticketlens init          # Guided setup wizard (Jira URL, auth, optional settings)
 ticketlens PROJ-123      # Fetch a ticket brief
 ticketlens triage        # Scan your assigned tickets
 ```
@@ -47,24 +54,27 @@ Interactive wizard that configures your Jira connection. Run this first.
 ticketlens init
 ```
 
-The wizard walks you through each step:
+What the wizard collects:
 
-1. **Profile name** — short identifier: `work`, `acme`, `client`
-2. **Jira URL** — suggestions based on your profile name are offered (e.g. `https://acme.atlassian.net` or `https://jira.acme.com`). Pick one or type your own. Bare hostnames (`jira.company.com`) are accepted — `https://` is probed first, then `http://`.
-3. **Auth type** — auto-detected from your URL:
-   - `*.atlassian.net` → Jira Cloud (email + API token, no prompt needed)
-   - Any other URL → choose between PAT (Server/DC 8.14+) or Basic (username + password)
-4. **Credentials** — email/username and token/password (masked input). Pre-populated on retry so you only fix what's wrong.
-5. **Connection test** — live test with spinner; shows `● Connected` on success or a classified error with hints on failure. On failure, an arrow-key menu offers: **Retry** (VPN just connected), **Edit credentials** (token typo), **Edit from URL** (wrong URL), **Skip**.
-6. **Optional settings** — skip any with Enter:
-   - **Ticket prefixes** — e.g. `PROJ,OPS` — auto-routes `PROJ-123` to this profile
-   - **Project paths** — e.g. `~/projects/myapp` — auto-activates this profile when working in that directory. Missing directories are offered for creation.
-   - **Triage statuses** — Jira statuses to scan (default: `In Progress, Code Review, QA`). Validated live against your Jira instance — case mismatches are auto-corrected.
-7. **Add another?** — repeat for each Jira instance
-8. **Select active profile** — arrow-key panel if you configured more than one
-9. **Quick start panel** — command reference shown on completion
+1. **Profile name** — short identifier: `work`, `acme`, `myteam`
+2. **Jira URL** — suggestions are offered (e.g. `https://acme.atlassian.net`, `https://jira.acme.com`). Bare hostnames like `jira.acme.com` are accepted — `https://` is probed first, then `http://`.
+3. **Auth type** — auto-detected from the URL:
+   - `*.atlassian.net` → Jira Cloud (email + API token)
+   - Any other hostname → PAT (Server/DC 8.14+) or Basic auth (username + password)
+4. **Credentials** — masked input; pre-populated on retry so you only fix what's wrong
+5. **Live connection test** — shows `● Connected` or a classified error. On failure, a menu offers:
+   - **Retry** — e.g. VPN just connected
+   - **Edit credentials** — token or email typo
+   - **Edit from URL** — wrong URL or auth type
+   - **Skip**
+6. **Optional settings** (all skippable with Enter):
+   - **Ticket prefixes** — e.g. `PROJ,OPS` — auto-routes `PROJ-123` to this profile without needing `--profile`
+   - **Project paths** — e.g. `~/projects/myapp` — auto-activates this profile when your terminal is in that directory
+   - **Triage statuses** — Jira statuses to scan (default: `In Progress, Code Review, QA`). Validated live; case mismatches are auto-corrected.
+7. **Add another?** — repeat for each Jira instance you have
+8. **Select active profile** — arrow-key panel (if more than one configured)
 
-Config is written to `~/.ticketlens/profiles.json` and `credentials.json` (chmod 600). Profiles are only saved on a successful connection test.
+Config is written to `~/.ticketlens/profiles.json` and `~/.ticketlens/credentials.json` (chmod 600). Profiles are only saved on a **successful connection test**.
 
 ---
 
@@ -76,27 +86,67 @@ Switch between configured Jira connections without re-running init.
 ticketlens switch
 ```
 
+Opens a titled arrow-key panel listing all configured profiles. The active profile has a green `● active` badge. Selecting a different profile tests the connection live and updates `profiles.json`.
+
 ---
 
 ### ticketlens config — Edit profile settings
 
-Edit any setting on an existing profile — connection details or optional fields — without re-running the full wizard.
+Edit any setting on an existing profile without re-running the full wizard.
 
 ```bash
-ticketlens config                    # Edit the default profile
-ticketlens config --profile=acme     # Edit a named profile
+ticketlens config                    # Edit the default/active profile
+ticketlens config --profile=acme     # Edit a specific profile by name
 ```
 
-Every field is pre-populated with its current value. Press `Enter` to keep it unchanged.
+Every field is pre-populated with its current value — press `Enter` to keep it unchanged.
 
-**Connection section** (URL, auth type, email, token):
-- URL accepts bare hostnames — `jira.company.com` is auto-prefixed with `https://`
-- Auth type shows a selector pre-positioned on the current value
-- Token shows `[keep existing]` — Enter keeps the stored credential
-- Any change triggers a live connection test with the same retry options as `ticketlens init` (Retry / Edit credentials / Edit from URL / Skip)
+**Connection fields** (URL, auth type, email, token):
+- Any change triggers a live connection test with the same retry menu as `ticketlens init`
+- Token shows `[keep existing]` — Enter preserves the stored credential
 
-**Optional section** (ticket prefixes, project paths, triage statuses):
-- Triage statuses use **merge semantics** — typing new statuses *adds* them to the current list rather than replacing it. Partial matching applies: `QA` → `QA Testing`. Existing valid statuses are never removed by this prompt.
+**Optional fields:**
+- **Ticket prefixes** — new entries are **merged** into the existing list (not replaced). Enter keeps the current list.
+- **Project paths** — new paths are validated; missing directories are offered for creation
+- **Triage statuses** — **merge semantics**: new entries are *added*, existing ones are never removed. Partial matching: typing `QA` resolves to `QA Testing` if that's the status in your Jira.
+
+---
+
+### ticketlens TICKET-KEY — Fetch a ticket brief
+
+Fetch a ticket's full context: description, comments, linked issues, attachments, and code references.
+
+```bash
+ticketlens PROJ-123                  # Fetch with defaults (depth 1, styled output)
+ticketlens get PROJ-123              # Same — "get" is an explicit alias
+ticketlens PROJ-123 --depth=0        # Target ticket only (fastest)
+ticketlens PROJ-123 --depth=1        # + linked ticket descriptions and comments
+ticketlens PROJ-123 --depth=2        # + linked-of-linked tickets (thorough)
+ticketlens PROJ-123 --profile=acme   # Use a specific profile
+ticketlens PROJ-123 --plain          # Plain markdown (no ANSI — pipe-safe, LLM-ready)
+ticketlens PROJ-123 --styled         # Force ANSI color even when piping
+ticketlens PROJ-123 --no-attachments # Skip attachment download
+ticketlens PROJ-123 --no-cache       # Re-download all attachments (ignore cache)
+```
+
+**Depth levels:**
+
+| `--depth` | What's included |
+|-----------|-----------------|
+| `0` | Target ticket: description, comments, attachments |
+| `1` | + linked tickets: descriptions and comments _(default)_ |
+| `2` | + linked-of-linked: key and summary only |
+
+Max 15 tickets fetched at any depth. Circular references are handled automatically.
+
+**Multi-profile disambiguation:** When two profiles share a ticket prefix (e.g. both have `PROJ`), an arrow-key selector appears asking which Jira instance to use. Selecting one re-runs with `--profile=NAME`. Once a profile is selected, it is correctly applied even through connection failures and retries.
+
+**On connection failure**, an arrow-key menu offers:
+- **Retry** — try again after connecting VPN, etc.
+- **Switch profile** — pick a different Jira instance and re-run cleanly
+- **Cancel**
+
+**Attachments** are downloaded automatically to `~/.ticketlens/cache/TICKET-KEY/` unless `--no-attachments` is passed. Claude Code reads images (multimodal), PDFs, and text files as part of the brief.
 
 ---
 
@@ -105,169 +155,350 @@ Every field is pre-populated with its current value. Press `Enter` to keep it un
 Scans your assigned tickets and surfaces what needs attention.
 
 ```bash
-ticketlens triage                        # Auto-detect profile from project path
-ticketlens triage --stale=3              # Custom aging threshold (days, default: 5)
-ticketlens triage --status=CR,QA         # Only check specific statuses
-ticketlens triage --profile=acme         # Explicit profile override
+ticketlens triage                                       # Auto-detect profile from cwd
+ticketlens triage --profile=acme                        # Explicit profile
+ticketlens triage --stale=3                             # Aging threshold: 3 days (default: 5)
+ticketlens triage --status="Code Review,QA Testing"     # Override statuses to scan
+ticketlens triage --static                              # Static table (no interactive mode)
+ticketlens triage --plain                               # Plain markdown (for piping / LLM)
 ```
 
-Categorizes tickets as:
-- **Needs response** — someone commented after you (reviewer, QA, PM waiting for reply)
-- **Aging** — no activity for N+ days
+**Categories:**
 
-In interactive mode (default on TTY):
-- `↑/↓` navigate · `Enter` open in browser · `p` switch profile · `q/Esc` exit
+| Badge | Category | Condition |
+|-------|----------|-----------|
+| `●` red | **Needs response** | Someone else commented within the last N days |
+| `●` yellow | **Aging** | Last comment (by anyone) or last update is N+ days old |
 
-**Status mismatch auto-fix:** If your configured statuses don't match Jira's (e.g. case difference: `"In progress"` vs `"In Progress"`), triage shows the diff and offers to update your profile automatically:
+The `--stale=N` threshold controls **both** categories: a comment waiting for your reply is "needs response" only if it arrived within N days. Once it's older than N days, it automatically downgrades to "aging" — so your urgency list stays focused on genuinely recent requests.
+
+**Interactive mode** (default on TTY):
+- `↑/↓` navigate — `Enter` open in browser — `p` switch profile — `q/Esc` exit
+
+**Status mismatch auto-fix:** If configured statuses don't match Jira's (e.g. `"In progress"` vs `"In Progress"`, `"QA"` vs `"QA Testing"`), triage shows a diff and offers to update your profile automatically:
 
 ```
   ~ In progress  →  In Progress
   ~ QA           →  QA Testing
 
-  Update "myprofile" with corrected statuses?  y/N
+  Update "myteam" with corrected statuses?  y/N
 ```
 
-Confirming rewrites `triageStatuses` in your profile and reruns triage immediately.
+Confirming **merges** the corrections into your existing `triageStatuses` list (never replaces it) and reruns triage without the `--status` flag so the updated profile is used.
+
+Bot comments (Jira Automation, Jenkins, GitHub Actions, etc.) are automatically ignored. VCS commit bots (SVN/Git) are recognized — a commit by your username counts as your own response.
 
 ---
 
 ### ticketlens cache — Attachment cache manager
 
-Inspect and clean up locally cached Jira attachments downloaded by `/jtb`.
+Inspect and clean up locally cached Jira attachments.
 
 ```bash
-ticketlens cache size                          # Show total disk usage by ticket
-ticketlens cache clear                         # Clear all cached attachments
-ticketlens cache clear PROJ-123                # Clear one ticket's cache
-ticketlens cache clear --older-than=7d         # Clear files older than 7 days
-ticketlens cache clear --older-than=1m         # Clear files older than 1 month
-ticketlens cache clear --older-than=1y         # Clear files older than 1 year
-ticketlens cache clear PROJ-123 --older-than=7d  # Combine ticket + age filter
-ticketlens cache clear --older-than=30d --yes  # Skip confirmation prompt
+ticketlens cache                               # Overview + subcommand hints
+ticketlens cache --help                        # Detailed help
+
+# Inspect disk usage
+ticketlens cache size                          # Disk usage by profile and ticket
+ticketlens cache size --profile=acme           # Filter to one profile
+ticketlens cache size --help                   # Options
+
+# Clear cached files
+ticketlens cache clear                         # Interactive picker — choose by profile (TTY)
+ticketlens clear                               # Shorthand alias for cache clear
+ticketlens cache clear PROJ-123                # Clear one ticket
+ticketlens cache clear --older-than=7d         # Files older than 7 days
+ticketlens cache clear --older-than=1m         # Files older than 1 month
+ticketlens cache clear --older-than=1y         # Files older than 1 year
+ticketlens cache clear --profile=acme          # Only this profile's files
+ticketlens cache clear PROJ-123 --older-than=7d            # Ticket + age filter
+ticketlens cache clear --profile=acme --older-than=30d     # Profile + age filter
+ticketlens cache clear --older-than=30d --yes              # Skip confirmation
+ticketlens cache clear --help                  # Full options
 ```
 
-Age units: `d` = days, `m` = months (30d), `y` = years (365d).
+Age units: `d` = days · `m` = months (30d) · `y` = years (365d)
 
-Before deleting, `cache clear` always shows a summary of what will be removed — grouped by ticket key with file name, size, and download date — then prompts for confirmation. Pass `--yes` / `-y` to skip the prompt in scripts.
+Before deleting, `cache clear` shows a summary of what will be removed (grouped by profile and ticket) and prompts for confirmation. Pass `--yes` / `-y` to skip in scripts.
 
-Files are cached at `~/.ticketlens/cache/TICKET-KEY/`. Empty ticket directories are automatically removed after their last file is deleted.
+Files live at `~/.ticketlens/cache/TICKET-KEY/`. Empty ticket directories are removed automatically after their last file is deleted.
+
+---
+
+### ticketlens license — License status
+
+```bash
+ticketlens license                # Show license tier and status
+ticketlens activate <LICENSE-KEY> # Activate a license key
+```
+
+Output shows one of three states:
+
+| State | Indicator | Details |
+|-------|-----------|---------|
+| **Free** | `● dim` | Unlock Pro features with a license key |
+| **Active** | `● green` | Tier (pro/team), email, last validated date |
+| **Expired** | `● yellow` | Tier, email, renewal instructions |
 
 ---
 
 ### /jtb — Jira TicketBrief for Claude Code
 
-`/jtb` is a **Claude Code slash command**. It fetches a Jira ticket's full context — description, comments, linked issues, and code references — and drops a structured implementation brief directly into your Claude session.
+`/jtb` is a **Claude Code slash command**. It fetches full ticket context and drops a structured implementation brief directly into your Claude session, then enters plan mode.
 
-> **Note:** `/jtb` requires [Claude Code](https://claude.ai/code). For standalone CLI usage without Claude Code, use `ticketlens` commands above.
+> `/jtb` requires [Claude Code](https://claude.ai/code). For standalone CLI use, the `ticketlens` commands above work independently.
 
-#### Installing the Claude Code skill
-
-**Step 1 — Install TicketLens** (if not already):
+#### Installing the skill
 
 ```bash
+# Step 1 — install TicketLens
 npm install -g ticketlens
-ticketlens init   # configure your Jira connection
-```
+ticketlens init
 
-**Step 2 — Copy the skill file** to your Claude Code commands directory:
-
-```bash
-# Find where the package installed the skill file
+# Step 2 — copy the skill file to Claude Code's commands directory
 SKILL=$(npm root -g)/ticketlens/skills/jtb/SKILL.md
-
-# Install it as a Claude Code slash command
 cp "$SKILL" ~/.claude/commands/jtb.md
+
+# Step 3 — restart Claude Code (or open a new session)
 ```
 
-Or if you cloned the repo directly:
+If you cloned the repo directly:
 
 ```bash
 cp /path/to/ticket-lens/skills/jtb/SKILL.md ~/.claude/commands/jtb.md
 ```
 
-**Step 3 — Restart Claude Code** (or open a new session). The `/jtb` command is now available in any project.
-
-#### Usage in Claude Code
+#### Using /jtb in Claude Code
 
 ```
-/jtb PROJ-123                    # Fetch ticket + linked issues → enters plan mode
+/jtb PROJ-123                    # Fetch ticket + linked issues → plan mode
 /jtb PROJ-123 --depth=0          # Target ticket only (fast)
-/jtb PROJ-123 --depth=2          # Include linked-of-linked tickets
+/jtb PROJ-123 --depth=2          # Deep: linked-of-linked
 /jtb PROJ-123 --profile=acme     # Force a specific Jira profile
-/jtb PROJ-123 --no-attachments   # Skip downloading attachments
-/jtb PROJ-123 --no-cache         # Re-download attachments even if cached
+/jtb PROJ-123 --no-attachments   # Skip attachment download
+/jtb PROJ-123 --no-cache         # Re-download all attachments
 /jtb triage                      # Scan your assigned tickets
 ```
 
-#### Attachments
+#### Attachments in Claude Code
 
-When you run `/jtb`, TicketLens automatically downloads all files attached to the ticket — screenshots, mockups, PDFs, logs, CSVs — and caches them locally at `~/.ticketlens/cache/TICKET-KEY/`.
-
-The brief includes an `## Attachments` section listing each file's local path:
+Attachments are downloaded to `~/.ticketlens/cache/TICKET-KEY/` and listed in the brief:
 
 ```
 ## Attachments
 
-- `/Users/you/.ticketlens/cache/PROJ-123/error-screenshot.png` _(error-screenshot.png, 239KB)_
-- `/Users/you/.ticketlens/cache/PROJ-123/spec.pdf` _(spec.pdf, 82KB)_
-- `/Users/you/.ticketlens/cache/PROJ-123/server-log.txt` _(server-log.txt, 1KB)_
+- /Users/you/.ticketlens/cache/PROJ-123/design-mockup.png  (design-mockup.png, 312KB)
+- /Users/you/.ticketlens/cache/PROJ-123/spec.pdf           (spec.pdf, 95KB)
+- /Users/you/.ticketlens/cache/PROJ-123/server.log         (server.log, 4KB)
 ```
 
-Claude Code reads each file as part of the ticket brief workflow (Step 2b):
-- **Images** (PNG, JPEG, GIF, WebP, SVG) — loaded as multimodal visual context
+Claude Code reads each file as context before planning:
+- **Images** (PNG, JPEG, GIF, WebP, SVG) — multimodal visual context
 - **PDFs** — text extracted and read
 - **Text files** (TXT, CSV, MD, LOG) — read as plain text
-- **Other files** (ZIP, DOCX, etc.) — noted as available at the listed path
+- **Other files** (ZIP, DOCX) — noted as available at the listed path
 
-Files over 10 MB are skipped with a note. Already-cached files are reused on repeat fetches. Use `--no-cache` to force a fresh download.
+Files over 10 MB are skipped. Cached files are reused on repeat fetches (`--no-cache` forces a fresh download).
 
-See [skills/jtb/README.md](skills/jtb/README.md) for full setup and usage docs.
+---
+
+## All Examples
+
+Complete reference of every command and flag combination:
+
+```bash
+# ── First-time setup ─────────────────────────────────────────────────────────
+ticketlens init                               # Guided wizard (recommended)
+ticketlens switch                             # Switch between configured profiles
+ticketlens config                             # Edit the active profile
+ticketlens config --profile=acme              # Edit a specific profile
+
+# ── Fetch a ticket brief ──────────────────────────────────────────────────────
+ticketlens PROJ-123                           # Fetch with defaults (depth 1, styled)
+ticketlens get PROJ-123                       # Explicit alias (same result)
+ticketlens PROJ-123 --depth=0                 # Target ticket only — no linked issues
+ticketlens PROJ-123 --depth=1                 # + linked ticket descriptions and comments
+ticketlens PROJ-123 --depth=2                 # + linked-of-linked (deep scan)
+ticketlens PROJ-123 --profile=acme            # Force a specific Jira profile
+ticketlens PROJ-123 --plain                   # Plain markdown — no color codes
+ticketlens PROJ-123 --styled                  # Force ANSI color even when piping
+ticketlens PROJ-123 --no-attachments          # Skip attachment download entirely
+ticketlens PROJ-123 --no-cache                # Re-download even if already cached
+ticketlens PROJ-123 --depth=2 --profile=acme --plain    # Combine flags freely
+
+# Pipe plain output to clipboard, LLM, or file
+ticketlens PROJ-123 --plain > brief.md
+ticketlens PROJ-123 --plain | pbcopy
+ticketlens PROJ-123 --plain | llm "Summarize this ticket in 3 bullets"
+
+# ── Triage ────────────────────────────────────────────────────────────────────
+ticketlens triage                              # Scan assigned tickets — interactive
+ticketlens triage --profile=acme              # Explicit profile
+ticketlens triage --stale=3                   # Needs-response window: 3 days (default: 5)
+ticketlens triage --stale=10                  # More lenient — only flag very stale tickets
+ticketlens triage --status="Code Review,QA Testing"   # Scan these statuses only
+ticketlens triage --static                    # Static table output (no interactive mode)
+ticketlens triage --plain                     # Plain markdown — pipe to LLM or file
+ticketlens triage --profile=acme --stale=3 --static   # Combine flags
+
+# Pipe triage output
+ticketlens triage --plain > my-tickets.md
+ticketlens triage --plain | llm "Which ticket is most urgent and why?"
+
+# ── Cache management ──────────────────────────────────────────────────────────
+ticketlens cache                              # Show overview + subcommand hints
+ticketlens cache --help                       # Detailed help
+
+ticketlens cache size                         # Disk usage by profile and ticket
+ticketlens cache size --profile=acme          # Filter to one profile only
+ticketlens cache size --help                  # Options
+
+ticketlens cache clear                        # Interactive picker (TTY)
+ticketlens clear                              # Shorthand alias for cache clear
+ticketlens cache clear PROJ-123              # Clear one ticket's cache
+ticketlens cache clear --older-than=7d        # Files older than 7 days
+ticketlens cache clear --older-than=1m        # Files older than 1 month
+ticketlens cache clear --older-than=1y        # Files older than 1 year
+ticketlens cache clear --profile=acme         # Only one profile's files
+ticketlens cache clear PROJ-123 --older-than=7d          # Ticket + age filter
+ticketlens cache clear --profile=acme --older-than=30d   # Profile + age filter
+ticketlens cache clear --older-than=30d --yes            # Skip confirmation (CI/scripts)
+ticketlens cache clear --help                 # Full options
+
+# ── License ────────────────────────────────────────────────────────────────────
+ticketlens license                            # Show license tier and status
+ticketlens activate <LICENSE-KEY>             # Activate a license key
+
+# ── Help and version ──────────────────────────────────────────────────────────
+ticketlens --help                             # Main help
+ticketlens --version                          # Show installed version
+
+ticketlens PROJ-123 --help                    # Fetch subcommand help
+ticketlens triage --help                      # Triage subcommand help
+ticketlens cache --help                       # Cache overview help
+ticketlens cache size --help                  # Cache size help
+ticketlens cache clear --help                 # Cache clear help
+```
+
+---
+
+## Multi-Profile Setup
+
+TicketLens supports multiple Jira instances simultaneously. Profiles are stored in `~/.ticketlens/profiles.json`:
+
+```json
+{
+  "profiles": {
+    "myteam": {
+      "baseUrl": "https://myteam.atlassian.net",
+      "auth": "cloud",
+      "email": "you@myteam.com",
+      "ticketPrefixes": ["PROJ", "OPS"],
+      "projectPaths": ["~/projects/myteam-app"],
+      "triageStatuses": ["In Progress", "Code Review", "QA Testing"]
+    },
+    "client": {
+      "baseUrl": "https://jira.client.com",
+      "auth": "server",
+      "email": "yourname",
+      "ticketPrefixes": ["ACME", "SHOP"],
+      "projectPaths": ["~/projects/client-app"],
+      "triageStatuses": ["In Progress", "In Development", "QA"]
+    }
+  }
+}
+```
+
+Credentials live separately in `~/.ticketlens/credentials.json` (chmod 600):
+
+```json
+{
+  "myteam": { "apiToken": "your-atlassian-api-token" },
+  "client":  { "pat": "your-jira-server-pat" }
+}
+```
+
+With this setup:
+- `ticketlens PROJ-123` → uses **myteam** (prefix match)
+- `ticketlens ACME-456` → uses **client** (prefix match)
+- Running `ticketlens triage` inside `~/projects/myteam-app` → uses **myteam** (path match)
+
+---
+
+## Profile Resolution Order
+
+| Priority | Method | Example |
+|----------|--------|---------|
+| 1 | `--profile=NAME` flag | `ticketlens PROJ-123 --profile=client` |
+| 2 | Ticket prefix match | `ticketlens PROJ-123` → prefix `PROJ` maps to `myteam` |
+| 3 | Project path match | `ticketlens triage` in `~/projects/myteam-app` → `myteam` |
+| 4 | Default / first profile | First entry in `profiles.json` |
+| 5 | Environment variables | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` / `JIRA_PAT` |
 
 ---
 
 ## Architecture
 
-- Zero npm dependencies — Node.js built-ins only
-- Supports Jira Cloud and Jira Server/Data Center
-- VCS-agnostic: Git, SVN, Mercurial
-- All modules TDD with `node:test` + `node:assert`
+- **Zero npm dependencies** — Node.js built-ins only (`node:fs`, `node:path`, `node:http`)
+- **Jira Cloud** (Basic auth email + API token, `/rest/api/3` endpoints, ADF body conversion)
+- **Jira Server/DC** (Bearer PAT or Basic user + password, `/rest/api/2` endpoints)
+- **VCS-agnostic** — detects `.git`, `.svn`, `.hg`; SVN commit bot comments recognized
+- **All modules tested** with `node:test` + `node:assert/strict` (365 tests)
+
+---
 
 ## Running Tests
 
 ```bash
-node --test skills/jtb/scripts/test/*.test.mjs
+node --test 'skills/jtb/scripts/test/*.test.mjs'
 ```
+
+Expected output: all tests pass, zero failures.
+
+---
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the full iteration plan.
+See [ROADMAP.md](ROADMAP.md) for the full feature plan.
 
 **Iteration 3 — Complete:**
-- ✅ Jira Cloud v3 API migration
-- ✅ npm package (`ticketlens`)
-- ✅ CLI UX polish — session banner, spinner, error classifier, interactive triage navigator, profile picker
-- ✅ `ticketlens init` — guided setup wizard with URL suggestions, auth auto-detection, optional fields, live status validation, connection retry menu (Retry / Edit credentials / Edit from URL / Skip), pre-populated fields on retry
-- ✅ Auto HTTP/HTTPS detection — bare hostnames auto-probed (`https://` first, then `http://`)
-- ✅ `ticketlens switch` — titled panel profile switcher
-- ✅ Triage status mismatch auto-fix — case-insensitive + partial matching + interactive profile update
-- ✅ `p` hotkey during triage to switch profiles mid-session
-- ✅ `ticketlens config` — full profile editor: URL, auth type, email, token (with connection test + retry), ticket prefixes, project paths, triage statuses (merge semantics + partial matching)
-- ✅ Attachment download — images, PDFs, and all file types cached locally at `~/.ticketlens/cache/`; Claude Code reads them as visual/text context; `--no-attachments` / `--no-cache` flags
-- ✅ `ticketlens cache` — inspect disk usage (`cache size`) and selectively clear cached attachments by ticket key and/or age (`--older-than=Nd/Nm/Ny`)
+- ✅ Jira Cloud v3 API migration (ADF → plain text conversion)
+- ✅ npm package (`ticketlens`) with `npx` support
+- ✅ Session banner with spinner, connection status dot, error classifier
+- ✅ `ticketlens init` — guided wizard: URL suggestions, auth auto-detection, live connection test, retry menu, optional settings, HTTP/HTTPS auto-probe
+- ✅ `ticketlens switch` — titled panel profile switcher with live connection test
+- ✅ `ticketlens config` — full profile editor with connection retry, prefix/status merge semantics
+- ✅ `ticketlens triage` — interactive navigator, `p` hotkey, status mismatch auto-fix (merge, not replace), `--stale` applies to both needs-response and aging categories
+- ✅ Attachment download — all file types cached locally; Claude Code reads images, PDFs, text
+- ✅ `ticketlens cache` — `size` with `--profile` filter, `clear` with ticket/age/profile filters
+- ✅ `ticketlens license` / `ticketlens activate` — styled license status display
+- ✅ `get` alias — `ticketlens get PROJ-123` as explicit fetch alias
+- ✅ `clear` shorthand — `ticketlens clear` as alias for `ticketlens cache clear`
+- ✅ Profile switch fixed — `--profile=` arg correctly replaced on every re-run (was causing infinite loop)
+- ✅ `--stale` fixed — unanswered comments older than N days now downgrade to "aging"
+- ✅ Contextual `--help` — each subcommand shows its own focused help (not the main help)
 
 **Iteration 3.5 — Next:**
 - README GIF demos (ticket fetch, triage scan)
 - CI badge
-- `--assignee` and `--sprint` flags (Team tier preview)
+- `--assignee` and `--sprint` filter flags
 - Public launch: HN, Reddit, Dev.to
 
 **Coming soon:**
-- Compliance Check — compare ticket requirements against shipped code (primary Pro conversion lever)
+- Compliance Check — compare ticket requirements against shipped code (Pro conversion lever)
 - Multi-project triage, custom attention rules, scheduled triage (Pro tier)
 - TicketLens Cloud — E2EE sync, web dashboard, Slack/Teams alerts (Phase C)
-- GitHub Issues and Linear as ticket sources (Phase D)
+- GitHub Issues and Linear support (Phase D)
+
+---
 
 ## Known Issues
 
 None at this time. Previous issues resolved:
-- ~~Jira Cloud v2 API deprecation (410 Gone)~~ — Fixed in v3 API migration. Cloud profiles now auto-select `/rest/api/3/search/jql`.
+
+- ~~Jira Cloud v2 API deprecation (410 Gone)~~ — Fixed: Cloud profiles auto-select `/rest/api/3`.
+- ~~Profile switch infinite loop~~ — Fixed: `--profile=` arg is now replaced (not appended) on every re-run.
+- ~~Status auto-fix infinite loop~~ — Fixed: Re-run after correction strips `--status` flag; profile statuses are merged (not replaced).
+- ~~Config prefix replacement~~ — Fixed: Editing ticket prefixes merges new entries with existing ones.
+- ~~`--stale` had no effect when all tickets had unanswered comments~~ — Fixed: Unanswered comments older than N days now downgrade to "aging".
+- ~~`cache --help` showed main help~~ — Fixed: Subcommand `--help` flags route to each subcommand's own help.

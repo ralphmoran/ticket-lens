@@ -78,15 +78,51 @@ describe('parseCommand', () => {
     assert.deepEqual(result.args, ['clear', 'PROJ-123', '--older-than=7d']);
   });
 
-  it('routes "ticket PROJ-123" to fetch command, stripping "ticket" keyword', () => {
-    const result = parseCommand(['ticket', 'PROJ-123']);
+  it('routes "get PROJ-123" to fetch command, stripping "get" keyword', () => {
+    const result = parseCommand(['get', 'PROJ-123']);
     assert.equal(result.command, 'fetch');
     assert.deepEqual(result.args, ['PROJ-123']);
   });
 
-  it('routes "ticket PROJ-123 --depth=0" to fetch command with flags', () => {
-    const result = parseCommand(['ticket', 'PROJ-123', '--depth=0']);
+  it('routes "get PROJ-123 --depth=0" to fetch command with flags', () => {
+    const result = parseCommand(['get', 'PROJ-123', '--depth=0']);
     assert.equal(result.command, 'fetch');
     assert.deepEqual(result.args, ['PROJ-123', '--depth=0']);
+  });
+
+  it('routes "clear" to cache clear command', () => {
+    const result = parseCommand(['clear']);
+    assert.equal(result.command, 'cache');
+    assert.deepEqual(result.args, ['clear']);
+  });
+
+  it('routes "clear PROJ-123" to cache clear with ticket arg', () => {
+    const result = parseCommand(['clear', 'PROJ-123']);
+    assert.equal(result.command, 'cache');
+    assert.deepEqual(result.args, ['clear', 'PROJ-123']);
+  });
+
+  it('routes "clear -h" to cache clear help', () => {
+    const result = parseCommand(['clear', '-h']);
+    assert.equal(result.command, 'cache');
+    assert.deepEqual(result.args, ['clear', '-h']);
+  });
+
+  it('routes "cache --help" to cache (not main help)', () => {
+    const result = parseCommand(['cache', '--help']);
+    assert.equal(result.command, 'cache');
+    assert.deepEqual(result.args, ['--help']);
+  });
+
+  it('routes "triage --help" to triage (not main help)', () => {
+    const result = parseCommand(['triage', '--help']);
+    assert.equal(result.command, 'triage');
+    assert.deepEqual(result.args, ['--help']);
+  });
+
+  it('routes "PROJ-123 --help" to fetch (not main help)', () => {
+    const result = parseCommand(['PROJ-123', '--help']);
+    assert.equal(result.command, 'fetch');
+    assert.deepEqual(result.args, ['PROJ-123', '--help']);
   });
 });

@@ -37,8 +37,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.cyan('ticketlens')} triage ${s.dim('[options]')}              Scan your assigned tickets`,
     `    ${s.cyan('ticketlens')} activate ${s.dim('<KEY>')}                Activate a license key`,
     `    ${s.cyan('ticketlens')} license                          Show license status`,
-    `    ${s.cyan('ticketlens')} cache size                        Show attachment cache usage`,
-    `    ${s.cyan('ticketlens')} cache clear ${s.dim('[TICKET] [options]')}  Clear cached attachments`,
+    `    ${s.cyan('ticketlens')} cache ${s.dim('[size|clear]')}                 Manage attachment cache  ${s.dim('(try cache --help)')}`,
     '',
     `  ${s.bold('FETCH OPTIONS')}`,
     '',
@@ -60,7 +59,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `  ${s.bold('EXAMPLES')}`,
     '',
     `    ${s.dim('$')} ticketlens PROJ-123`,
-    `    ${s.dim('$')} ticketlens PROJ-123 --depth=0 --profile=myteam`,
+    `    ${s.dim('$')} ticketlens get PROJ-123 --depth=0 --profile=myteam`,
     `    ${s.dim('$')} ticketlens triage`,
     `    ${s.dim('$')} ticketlens triage --profile=acme --stale=3`,
     `    ${s.dim('$')} ticketlens triage --static`,
@@ -73,7 +72,6 @@ export function printHelp({ stream = process.stdout } = {}) {
     '',
     `    ${s.dim('Or use env vars:')} JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN`,
     '',
-    `  ${s.dim('Docs & issues:')} ${s.cyan('https://github.com/ralphmoran/ticket-lens')}`,
     '',
   ];
 

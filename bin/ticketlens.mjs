@@ -17,6 +17,7 @@ import { run as runConfig } from '../skills/jtb/scripts/lib/config-wizard.mjs';
 import { activateLicense, checkLicense } from '../skills/jtb/scripts/lib/license.mjs';
 import { run as runCache } from '../skills/jtb/scripts/lib/cache-manager.mjs';
 import { printHelp } from '../skills/jtb/scripts/lib/help.mjs';
+import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
 
 const args = process.argv.slice(2);
 const { command, args: cmdArgs } = parseCommand(args);
@@ -61,17 +62,20 @@ switch (command) {
   }
 
   case 'activate': {
+    const s = createStyler({ isTTY: process.stdout.isTTY });
     const key = cmdArgs.find(a => !a.startsWith('--'));
     if (!key) {
-      process.stderr.write('Error: Missing license key. Usage: ticketlens activate <LICENSE-KEY>\n');
+      process.stderr.write(`${s.red('✖')} Missing license key.\n  ${s.dim('Usage:')} ticketlens activate ${s.dim('<LICENSE-KEY>')}\n`);
       process.exitCode = 1;
       break;
     }
     activateLicense(key).then(result => {
       if (result.success) {
-        process.stdout.write(`License activated! Tier: ${result.tier}, Email: ${result.email}\n`);
+        process.stdout.write(`\n  ${s.green('✔')} License activated\n\n`);
+        process.stdout.write(`  ${s.dim('Tier:')}   ${s.bold(s.cyan(result.tier))}\n`);
+        process.stdout.write(`  ${s.dim('Email:')}  ${result.email}\n\n`);
       } else {
-        process.stderr.write(`Activation failed: ${result.error}\n`);
+        process.stderr.write(`\n  ${s.red('✖')} Activation failed: ${result.error}\n\n`);
         process.exitCode = 1;
       }
     });
@@ -79,14 +83,28 @@ switch (command) {
   }
 
   case 'license': {
+    const s = createStyler({ isTTY: process.stdout.isTTY });
     const status = checkLicense();
+    process.stdout.write('\n');
     if (status.active) {
-      process.stdout.write(`Tier: ${status.tier}\nEmail: ${status.email}\nStatus: active\nValidated: ${status.validatedAt}\n`);
+      process.stdout.write(`  ${s.green('●')} ${s.bold('License active')}\n\n`);
+      process.stdout.write(`  ${s.dim('Tier:')}       ${s.bold(s.cyan(status.tier))}\n`);
+      process.stdout.write(`  ${s.dim('Email:')}      ${status.email}\n`);
+      if (status.validatedAt) {
+        const date = status.validatedAt.split('T')[0];
+        process.stdout.write(`  ${s.dim('Validated:')}  ${date}\n`);
+      }
     } else if (status.expired) {
-      process.stdout.write(`Tier: ${status.tier}\nEmail: ${status.email}\nStatus: expired\nRenew at https://ticketlens.dev\n`);
+      process.stdout.write(`  ${s.yellow('●')} ${s.bold('License expired')}\n\n`);
+      process.stdout.write(`  ${s.dim('Tier:')}   ${s.bold(status.tier)}\n`);
+      process.stdout.write(`  ${s.dim('Email:')}  ${status.email}\n\n`);
+      process.stdout.write(`  ${s.dim('Renew:')}  ticketlens activate ${s.dim('<LICENSE-KEY>')}\n`);
     } else {
-      process.stdout.write(`Tier: free\nActivate a license: ticketlens activate <LICENSE-KEY>\n`);
+      process.stdout.write(`  ${s.dim('●')} ${s.bold('Free tier')}\n\n`);
+      process.stdout.write(`  ${s.dim('Unlock Pro features with a license key:')}\n`);
+      process.stdout.write(`    ${s.cyan('ticketlens activate')} ${s.dim('<LICENSE-KEY>')}\n`);
     }
+    process.stdout.write('\n');
     break;
   }
 

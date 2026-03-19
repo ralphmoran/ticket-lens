@@ -119,6 +119,41 @@ describe('scoreAttention', () => {
     });
   });
 
+  describe('stale needs-response downgrade', () => {
+    it('downgrades needs-response to aging when comment is older than staleDays', () => {
+      const ticket = makeTicket({
+        comments: [makeComment({ authorAccountId: 'user-456', author: 'Sarah QA', created: '2026-02-20T10:00:00Z' })],
+      });
+      const result = scoreAttention(ticket, currentUser, { now: NOW, staleDays: 5 });
+      assert.equal(result.urgency, 'aging');
+      assert.ok(result.daysSinceUpdate >= 14);
+    });
+
+    it('keeps needs-response when comment is within staleDays', () => {
+      const ticket = makeTicket({
+        comments: [makeComment({ authorAccountId: 'user-456', author: 'Sarah QA', created: '2026-03-04T10:00:00Z' })],
+      });
+      const result = scoreAttention(ticket, currentUser, { now: NOW, staleDays: 5 });
+      assert.equal(result.urgency, 'needs-response');
+    });
+
+    it('downgrades with custom staleDays=3 when comment is 4 days old', () => {
+      const ticket = makeTicket({
+        comments: [makeComment({ authorAccountId: 'user-456', author: 'Sarah QA', created: '2026-03-02T10:00:00Z' })],
+      });
+      const result = scoreAttention(ticket, currentUser, { now: NOW, staleDays: 3 });
+      assert.equal(result.urgency, 'aging');
+    });
+
+    it('includes reason with commenter name and days in aging downgrade', () => {
+      const ticket = makeTicket({
+        comments: [makeComment({ authorAccountId: 'user-456', author: 'Sarah QA', created: '2026-02-20T10:00:00Z' })],
+      });
+      const result = scoreAttention(ticket, currentUser, { now: NOW, staleDays: 5 });
+      assert.ok(result.reason.includes('Sarah QA'));
+    });
+  });
+
   describe('bot filtering', () => {
     it('skips non-VCS bot comments when determining last commenter', () => {
       const ticket = makeTicket({

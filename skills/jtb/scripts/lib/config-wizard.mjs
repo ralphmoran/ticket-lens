@@ -314,9 +314,13 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
     s.dim('Ticket prefixes') + s.dim(curPrefixes ? `  [current: ${curPrefixes}]:` : '  (e.g. PROJ,OPS — press Enter to skip):'),
     { stream }
   );
-  const ticketPrefixes = prefixInput
-    ? prefixInput.split(',').map(v => v.trim().toUpperCase()).filter(Boolean)
-    : (profile.ticketPrefixes || []);
+  const existing = new Set(profile.ticketPrefixes || []);
+  if (prefixInput) {
+    for (const v of prefixInput.split(',').map(v => v.trim().toUpperCase()).filter(Boolean)) {
+      existing.add(v);
+    }
+  }
+  const ticketPrefixes = [...existing];
 
   // Project paths
   const curPaths = (profile.projectPaths || []).join(', ');

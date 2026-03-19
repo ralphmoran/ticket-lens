@@ -76,12 +76,14 @@ function setupConfig() {
 describe('fetch-my-tickets integration', () => {
   it('outputs triage summary with mocked fetch', async () => {
     const configDir = setupConfig();
+    // Use a comment from 1 day ago so it stays within any default staleDays threshold
+    const recentDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const searchResult = makeSearchResult([
       makeRawTicket('PROD-100', {
         comments: [{
           author: { displayName: 'Sarah QA', accountId: 'user-456', name: 'sqauser' },
           body: 'Please review this PR',
-          created: '2026-03-05T10:00:00Z',
+          created: recentDate,
         }],
       }),
     ]);

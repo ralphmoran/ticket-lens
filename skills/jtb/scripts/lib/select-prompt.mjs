@@ -91,8 +91,8 @@ export function promptSelect(items, opts = {}) {
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const isSelected = i === selected;
-      const marker = isSelected ? s.cyan('❯') : ' ';
-      const label = isSelected ? s.bold(s.cyan(item.label)) : item.label;
+      const marker = isSelected ? s.blue('❯') : ' ';
+      const label = isSelected ? s.bold(s.blue(item.label)) : item.label;
       lines.push(`    ${marker} ${label}`);
       if (item.sublabel) lines.push(`      ${s.dim(item.sublabel)}`);
     }

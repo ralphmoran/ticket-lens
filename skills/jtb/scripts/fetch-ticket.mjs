@@ -53,7 +53,8 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
     if (multiMatches.length > 1) {
       const picked = await promptMultipleMatches(ticketKey, multiMatches);
       if (!picked) { process.exitCode = 1; return; }
-      return run([...args, `--profile=${picked}`], env, fetcher, configDir);
+      const withProfile = [...args.filter(a => !a.startsWith('--profile=')), `--profile=${picked}`];
+      return run(withProfile, env, fetcher, configDir);
     }
   }
 
@@ -100,7 +101,8 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
       if (allProfiles.length > 1) {
         const picked = await promptProfileMismatch(ticketKey, conn.profileName, allProfiles);
         if (picked && picked !== conn.profileName) {
-          return run([...args, `--profile=${picked}`], env, fetcher, configDir);
+          const withProfile = [...args.filter(a => !a.startsWith('--profile=')), `--profile=${picked}`];
+          return run(withProfile, env, fetcher, configDir);
         }
       }
     }
@@ -155,7 +157,8 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
       if (RETRY_OPTIONS[retryIndex].value === 'switch') {
         const picked = await promptSwitchProfile(conn.profileName, allProfiles);
         if (picked && picked !== conn.profileName) {
-          return run([...args, `--profile=${picked}`], env, fetcher, configDir);
+          const withProfile = [...args.filter(a => !a.startsWith('--profile=')), `--profile=${picked}`];
+          return run(withProfile, env, fetcher, configDir);
         }
         // Cancelled switch — exit
         process.exitCode = 1;

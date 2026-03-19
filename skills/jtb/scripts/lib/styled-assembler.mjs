@@ -2,6 +2,13 @@ import { createStyler } from './ansi.mjs';
 import { formatTable } from './table-formatter.mjs';
 import { formatSize } from './attachment-downloader.mjs';
 
+function divWidth() {
+  return Math.min(60, (process.stdout.columns || 80) - 4);
+}
+function halfDivWidth() {
+  return Math.floor(divWidth() / 2);
+}
+
 function timeAgo(dateStr) {
   if (!dateStr) return '';
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -100,11 +107,11 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
     `${s.dim('Priority:')} ${ticket.priority}`,
     `${s.dim('Assignee:')} ${ticket.assignee ?? 'Unassigned'}`,
   ];
-  sections.push(meta.join('  |  '));
+  sections.push(meta.join(s.dim('  ·  ')));
 
   // Description
   if (ticket.description) {
-    sections.push(`${s.bold('Description')}\n${'─'.repeat(40)}\n${ticket.description}`);
+    sections.push(`${s.bold('Description')}\n${s.dim('─'.repeat(divWidth()))}\n${ticket.description}`);
   }
 
   // Comments
@@ -113,7 +120,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
       const date = c.created ? c.created.split('T')[0] : 'unknown';
       return `${s.cyan(c.author)} ${s.dim(`(${date})`)}\n${c.body}`;
     });
-    sections.push(`${s.bold('Comments')}\n${'─'.repeat(40)}\n${commentLines.join('\n\n───\n')}`);
+    sections.push(`${s.bold('Comments')}\n${s.dim('─'.repeat(divWidth()))}\n${commentLines.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
   }
 
   // Linked tickets
@@ -130,7 +137,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
       }
       return parts.join('\n');
     });
-    sections.push(`${s.bold('Linked Tickets')}\n${'─'.repeat(40)}\n${linkedSections.join('\n\n───\n')}`);
+    sections.push(`${s.bold('Linked Tickets')}\n${s.dim('─'.repeat(divWidth()))}\n${linkedSections.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
   }
 
   // Code references
@@ -148,7 +155,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
       .filter(([, items]) => items?.length > 0)
       .map(([label, items]) => `${s.dim(label + ':')} ${items.map(i => s.cyan(i)).join(', ')}`);
     if (filled.length > 0) {
-      sections.push(`${s.bold('Code References')}\n${'─'.repeat(40)}\n${filled.join('\n')}`);
+      sections.push(`${s.bold('Code References')}\n${s.dim('─'.repeat(divWidth()))}\n${filled.join('\n')}`);
     }
   }
 
@@ -165,7 +172,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
       if (r?.skipReason === 'error')     return `  ${a.filename}  ${s.red('download failed: ' + r.error)}`;
       return `  ${a.filename}  ${s.dim(sz)}`;
     });
-    sections.push(`${s.bold('Attachments')}\n${'─'.repeat(40)}\n${lines.join('\n')}`);
+    sections.push(`${s.bold('Attachments')}\n${s.dim('─'.repeat(divWidth()))}\n${lines.join('\n')}`);
   }
 
   return sections.join('\n\n');
