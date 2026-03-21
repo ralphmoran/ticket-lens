@@ -142,6 +142,163 @@ describe('fetch-my-tickets integration', () => {
     }
   });
 
+  it('suggests ticketlens init when no profile and no env vars are configured', async () => {
+    const out = captureOutput();
+    try {
+      await run([], {}, undefined, '/tmp/nonexistent-ticketlens');
+      assert.ok(
+        out.stderr.includes('ticketlens init'),
+        `Expected stderr to mention 'ticketlens init', got: ${out.stderr}`
+      );
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('--project alias hint does not say "not a valid flag" (friendly wording)', async () => {
+    const configDir = setupConfig();
+    const mockFetch = async (url) => {
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) return { ok: true, json: async () => makeSearchResult([]) };
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const out = captureOutput();
+    try {
+      await run(['--project=testprofile'], {}, mockFetch, configDir);
+      assert.ok(
+        !out.stderr.includes('not a valid flag'),
+        `hint must not say "not a valid flag", got: ${out.stderr}`
+      );
+      assert.ok(
+        out.stderr.includes('alias') || out.stderr.includes('recognized'),
+        `hint must confirm --project is recognized as an alias, got: ${out.stderr}`
+      );
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--project alias hint is shown exactly once when profile is not found (no infinite loop)', async () => {
+    // Uses a real config dir but with an unknown profile name — exercises the
+    // "profile not found → exit with error" path. The hint must appear once only.
+    const configDir = setupConfig();
+    const out = captureOutput();
+    try {
+      await run(['--project=nonexistent-profile-xyz'], {}, undefined, configDir);
+      const hintCount = (out.stderr.match(/recognized as alias/g) || []).length;
+      assert.equal(hintCount, 1, `hint must appear exactly once, got ${hintCount} occurrences`);
+      assert.equal(process.exitCode, 1, 'must exit with code 1 when profile is not found');
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('issues fetchCurrentUser and searchTickets concurrently (both in-flight at the same time)', async () => {
+    const configDir = setupConfig();
+    let inFlight = 0;
+    let maxInFlight = 0;
+
+    const mockFetch = async (url) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise(r => setImmediate(r)); // yield to event loop so both can start
+      inFlight--;
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) return { ok: true, json: async () => makeSearchResult([]) };
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const out = captureOutput();
+    try {
+      await run([], {}, mockFetch, configDir);
+      assert.ok(
+        maxInFlight >= 2,
+        `Expected fetchCurrentUser + searchTickets to run concurrently, but max in-flight was ${maxInFlight}`
+      );
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('escapes double-quotes in status values to prevent JQL injection', async () => {
+    const configDir = setupConfig();
+    let capturedJql = '';
+
+    const mockFetch = async (url) => {
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) {
+        capturedJql = new URL(url).searchParams.get('jql') || '';
+        return { ok: true, json: async () => makeSearchResult([]) };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const out = captureOutput();
+    try {
+      // Status name contains an embedded double-quote — classic JQL injection attempt
+      await run(['--status=Normal,Bad"Status'], {}, mockFetch, configDir);
+      // The raw unescaped quote must not appear as a JQL string terminator
+      assert.ok(
+        !capturedJql.match(/"Bad"Status/),
+        `raw unescaped " in status must not appear in JQL, got: ${capturedJql}`
+      );
+      // The escaped form must be present instead
+      assert.ok(
+        capturedJql.includes('\\"'),
+        `embedded " must be escaped as \\" in JQL, got: ${capturedJql}`
+      );
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('errors and suggests closest flag when an unknown flag is passed', async () => {
+    const configDir = setupConfig();
+    const out = captureOutput();
+    try {
+      // --state=5 is a typo of --stale=5; the command must stop, not continue
+      await run(['--state=5'], {}, undefined, configDir);
+      assert.ok(
+        out.stderr.includes('--state'),
+        `should mention the unknown flag --state, got: ${out.stderr}`
+      );
+      assert.ok(
+        out.stderr.includes('--stale'),
+        `should suggest --stale as the closest match, got: ${out.stderr}`
+      );
+      assert.equal(process.exitCode, 1, 'must exit with code 1 so the command does not continue');
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not warn about recognized flags', async () => {
+    const configDir = setupConfig();
+    const mockFetch = async (url) => {
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) return { ok: true, json: async () => makeSearchResult([]) };
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const out = captureOutput();
+    try {
+      await run(['--stale=3', '--plain'], {}, mockFetch, configDir);
+      assert.ok(
+        !out.stderr.includes('Unknown flag'),
+        `known flags must not trigger a warning, got: ${out.stderr}`
+      );
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
   it('suggests valid statuses when search fails due to invalid status', async () => {
     const configDir = setupConfig();
 

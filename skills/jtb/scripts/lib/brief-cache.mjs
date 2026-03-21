@@ -19,7 +19,9 @@ export const DEFAULT_BRIEF_TTL = '4h'; // human-readable default for display/con
  * Returns the absolute path to the brief cache file for a given ticket + profile.
  */
 export function briefCachePath(ticketKey, profileName, configDir = DEFAULT_CONFIG_DIR) {
-  return path.join(configDir, 'cache', profileName || '_default', ticketKey, 'brief.json');
+  const safeProfile = (profileName || '_default').replace(/[^a-zA-Z0-9_\-]/g, '_');
+  const safeKey = ticketKey.replace(/[^a-zA-Z0-9_\-]/g, '_');
+  return path.join(configDir, 'cache', safeProfile, safeKey, 'brief.json');
 }
 
 /**
@@ -66,7 +68,7 @@ export function writeBriefCache(ticketKey, profileName, depth, ticket, configDir
   const filePath = briefCachePath(ticketKey, profileName, configDir);
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify({ fetchedAt: new Date().toISOString(), depth, ticket }, null, 2));
+    fs.writeFileSync(filePath, JSON.stringify({ fetchedAt: new Date().toISOString(), depth, ticket }));
   } catch {
     // Non-fatal
   }

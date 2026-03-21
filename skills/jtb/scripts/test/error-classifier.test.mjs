@@ -126,4 +126,19 @@ describe('classifyError', () => {
     const result = classifyError(err);
     assert.ok(result.message.includes('the Jira server'));
   });
+
+  it('classifies AbortSignal TimeoutError as connection timeout', () => {
+    const cause = new DOMException('signal timed out', 'TimeoutError');
+    const err = new TypeError('fetch aborted');
+    err.cause = cause;
+    const result = classifyError(err, conn);
+    assert.ok(result.message.includes('timed out'), `expected "timed out" in: ${result.message}`);
+    assert.ok(result.hint && result.hint.length > 0, 'hint should be non-empty');
+  });
+
+  it('classifies bare TimeoutError (no wrapper) as connection timeout', () => {
+    const err = new DOMException('signal timed out', 'TimeoutError');
+    const result = classifyError(err, conn);
+    assert.ok(result.message.includes('timed out'), `expected "timed out" in: ${result.message}`);
+  });
 });

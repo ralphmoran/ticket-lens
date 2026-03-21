@@ -308,6 +308,66 @@ describe('fetchTicket', () => {
     });
     assert.equal(calls.length, 2); // A-1 then B-1, no re-fetch of A-1
   });
+
+  it('fetches all sibling linked tickets at depth=1', async () => {
+    // ROOT links to A, B, C — all should be fetched
+    const makeSimple = (key) => ({
+      key,
+      fields: { summary: key, issuetype: { name: 'Task' }, status: { name: 'Open' }, issuelinks: [] },
+    });
+    const root = {
+      key: 'ROOT',
+      fields: {
+        summary: 'Root', issuetype: { name: 'Task' }, status: { name: 'Open' },
+        issuelinks: ['A-1', 'B-1', 'C-1'].map(k => ({
+          type: { name: 'Relates', inward: 'relates to', outward: 'relates to' },
+          outwardIssue: { key: k, fields: { summary: k, status: { name: 'Open' }, issuetype: { name: 'Task' } } },
+        })),
+      },
+    };
+    const fetched = new Set();
+    const mockFetch = async (url) => {
+      const key = url.split('/').pop();
+      fetched.add(key);
+      if (key === 'ROOT') return { ok: true, json: async () => root };
+      return { ok: true, json: async () => makeSimple(key) };
+    };
+    const result = await fetchTicket('ROOT', {
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+      depth: 1,
+    });
+    assert.equal(result.linkedTicketDetails.length, 3, 'all 3 siblings must be fetched');
+    assert.ok(fetched.has('A-1') && fetched.has('B-1') && fetched.has('C-1'));
+  });
+
+  it('does not fetch the same ticket twice when it appears in multiple sibling link lists', async () => {
+    // ROOT → [A, B]; A → [B, C]. B appears in both ROOT's and A's linked list.
+    const makeWithLinks = (key, links) => ({
+      key,
+      fields: {
+        summary: key, issuetype: { name: 'Task' }, status: { name: 'Open' },
+        issuelinks: links.map(k => ({
+          type: { name: 'Relates', inward: 'relates to', outward: 'relates to' },
+          outwardIssue: { key: k, fields: { summary: k, status: { name: 'Open' }, issuetype: { name: 'Task' } } },
+        })),
+      },
+    });
+    const fetchCounts = {};
+    const mockFetch = async (url) => {
+      const key = url.split('/').pop();
+      fetchCounts[key] = (fetchCounts[key] || 0) + 1;
+      if (key === 'ROOT') return { ok: true, json: async () => makeWithLinks('ROOT', ['A-1', 'B-1']) };
+      if (key === 'A-1') return { ok: true, json: async () => makeWithLinks('A-1', ['B-1', 'C-1']) };
+      return { ok: true, json: async () => makeWithLinks(key, []) };
+    };
+    await fetchTicket('ROOT', {
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+      depth: 2,
+    });
+    assert.equal(fetchCounts['B-1'], 1, 'B-1 appears in two link lists but must only be fetched once');
+  });
 });
 
 describe('fetchCurrentUser', () => {
@@ -550,5 +610,77 @@ describe('fetchStatuses', () => {
       apiVersion: 3,
     });
     assert.ok(capturedUrl.includes('/rest/api/3/status'), `Expected v3 URL, got: ${capturedUrl}`);
+  });
+});
+
+describe('request timeouts', () => {
+  const ENV = { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' };
+
+  it('fetchCurrentUser passes AbortSignal to fetcher when timeoutMs is set', async () => {
+    let capturedSignal;
+    const spyFetch = async (_url, opts) => {
+      capturedSignal = opts?.signal;
+      return { ok: true, json: async () => ({ accountId: 'u1', displayName: 'Dev', name: 'dev', emailAddress: 'dev@x.com' }) };
+    };
+    await fetchCurrentUser({ env: ENV, fetcher: spyFetch, timeoutMs: 5000 });
+    assert.ok(capturedSignal instanceof AbortSignal, 'fetchCurrentUser must pass AbortSignal to fetcher');
+  });
+
+  it('searchTickets passes AbortSignal to fetcher when timeoutMs is set', async () => {
+    let capturedSignal;
+    const spyFetch = async (_url, opts) => {
+      capturedSignal = opts?.signal;
+      return { ok: true, json: async () => ({ issues: [] }) };
+    };
+    await searchTickets('project = TEST', { env: ENV, fetcher: spyFetch, timeoutMs: 5000 });
+    assert.ok(capturedSignal instanceof AbortSignal, 'searchTickets must pass AbortSignal to fetcher');
+  });
+
+  it('fetchStatuses passes AbortSignal to fetcher when timeoutMs is set', async () => {
+    let capturedSignal;
+    const spyFetch = async (_url, opts) => {
+      capturedSignal = opts?.signal;
+      return { ok: true, json: async () => [] };
+    };
+    await fetchStatuses({ env: ENV, fetcher: spyFetch, timeoutMs: 5000 });
+    assert.ok(capturedSignal instanceof AbortSignal, 'fetchStatuses must pass AbortSignal to fetcher');
+  });
+
+  it('fetchCurrentUser works without timeoutMs (backward compatible)', async () => {
+    const mockFetch = async () => ({
+      ok: true,
+      json: async () => ({ accountId: 'u1', displayName: 'Dev', name: 'dev', emailAddress: 'dev@x.com' }),
+    });
+    await assert.doesNotReject(() => fetchCurrentUser({ env: ENV, fetcher: mockFetch }));
+  });
+
+  it('fetchCurrentUser includes an AbortSignal by default (no explicit timeoutMs)', async () => {
+    let capturedOpts;
+    const spyFetch = async (_url, opts) => {
+      capturedOpts = opts;
+      return { ok: true, json: async () => ({ accountId: 'u1', displayName: 'Dev', name: 'dev', emailAddress: 'dev@x.com' }) };
+    };
+    await fetchCurrentUser({ env: ENV, fetcher: spyFetch });
+    assert.ok(capturedOpts?.signal instanceof AbortSignal, 'must include AbortSignal even without explicit timeoutMs');
+  });
+
+  it('searchTickets includes an AbortSignal by default (no explicit timeoutMs)', async () => {
+    let capturedOpts;
+    const spyFetch = async (_url, opts) => {
+      capturedOpts = opts;
+      return { ok: true, json: async () => ({ issues: [] }) };
+    };
+    await searchTickets('project = TEST', { env: ENV, fetcher: spyFetch });
+    assert.ok(capturedOpts?.signal instanceof AbortSignal, 'must include AbortSignal even without explicit timeoutMs');
+  });
+
+  it('fetchTicket includes an AbortSignal by default (no explicit timeoutMs)', async () => {
+    let capturedOpts;
+    const spyFetch = async (_url, opts) => {
+      capturedOpts = opts;
+      return { ok: true, json: async () => cloudFixture };
+    };
+    await fetchTicket('PROD-1234', { env: ENV, fetcher: spyFetch, depth: 0 });
+    assert.ok(capturedOpts?.signal instanceof AbortSignal, 'must include AbortSignal even without explicit timeoutMs');
   });
 });

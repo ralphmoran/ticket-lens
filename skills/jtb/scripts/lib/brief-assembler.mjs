@@ -21,7 +21,7 @@ export function assembleBrief(ticket, codeRefs = null) {
   if (ticket.comments?.length > 0) {
     const commentLines = ticket.comments.map(c => {
       const date = c.created ? c.created.split('T')[0] : 'unknown';
-      return `### **${c.author}** (${date})\n\n${c.body}`;
+      return `### **${c.author}** (${date})\n\n${c.body.replace(/\r/g, '')}`;
     });
     sections.push(`## Comments\n\n${commentLines.join('\n\n---\n\n')}`);
   }
@@ -33,7 +33,7 @@ export function assembleBrief(ticket, codeRefs = null) {
       if (lt.comments?.length > 0) {
         const cmts = lt.comments.map(c => {
           const date = c.created ? c.created.split('T')[0] : 'unknown';
-          return `**${c.author}** (${date}): ${c.body}`;
+          return `**${c.author}** (${date}): ${c.body.replace(/\r/g, '')}`;
         });
         parts.push(cmts.join('\n\n'));
       }

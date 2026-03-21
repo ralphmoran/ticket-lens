@@ -1,5 +1,5 @@
 import { createStyler } from './ansi.mjs';
-import { execSync } from 'child_process';
+import { spawn } from 'node:child_process';
 import { runSwitch } from './profile-switcher.mjs';
 
 function truncate(str, max) {
@@ -183,7 +183,12 @@ export function runInteractiveList(tickets, opts = {}) {
     if (!browseUrl) return;
     const url = browseUrl + ticketKey;
     try {
-      execSync(`open ${JSON.stringify(url)}`, { stdio: 'ignore' });
+      const cmd = process.platform === 'darwin' ? 'open'
+        : process.platform === 'win32' ? 'cmd'
+        : 'xdg-open';
+      const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+      const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
+      child.unref();
     } catch {
       // Silently ignore if open fails
     }

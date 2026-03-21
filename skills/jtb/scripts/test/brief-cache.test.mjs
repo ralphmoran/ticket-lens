@@ -29,6 +29,21 @@ describe('briefCachePath', () => {
     const p = briefCachePath('PROJ-123', null, '/home/.ticketlens');
     assert.equal(p, '/home/.ticketlens/cache/_default/PROJ-123/brief.json');
   });
+
+  it('strips path traversal sequences from profileName', () => {
+    const p = briefCachePath('PROJ-123', '../evil', '/home/.ticketlens');
+    assert.ok(!p.includes('..'), `path must not contain .. but got: ${p}`);
+  });
+
+  it('strips path traversal sequences from ticketKey', () => {
+    const p = briefCachePath('../evil/script.sh', 'myprofile', '/home/.ticketlens');
+    assert.ok(!p.includes('..'), `path must not contain .. but got: ${p}`);
+  });
+
+  it('strips slashes from profileName', () => {
+    const p = briefCachePath('PROJ-123', 'a/b', '/home/.ticketlens');
+    assert.ok(!p.replace('/home/.ticketlens', '').includes('/a/b'), `path must not contain raw slash-separated segments: ${p}`);
+  });
 });
 
 describe('writeBriefCache + readBriefCache', () => {

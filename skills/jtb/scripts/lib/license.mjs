@@ -21,6 +21,7 @@ export function writeLicense(data, configDir = DEFAULT_CONFIG_DIR) {
   fs.mkdirSync(configDir, { recursive: true });
   const filePath = path.join(configDir, LICENSE_FILE);
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+  fs.chmodSync(filePath, 0o600);
 }
 
 export function isLicensed(tier, configDir = DEFAULT_CONFIG_DIR) {

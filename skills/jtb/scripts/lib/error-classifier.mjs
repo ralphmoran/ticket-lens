@@ -47,6 +47,15 @@ export function classifyError(err, { baseUrl, profileName } = {}) {
     };
   }
 
+  // AbortSignal.timeout() fires a DOMException with name 'TimeoutError' as err.cause
+  const causeName = (err.cause || err).name;
+  if (causeName === 'TimeoutError') {
+    return {
+      message: `Connection to ${host} timed out`,
+      hint: `The server didn't respond within the allowed time. If ${host} requires a VPN, make sure it's connected.`,
+    };
+  }
+
   if (code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' || code === 'CERT_HAS_EXPIRED' ||
       code === 'DEPTH_ZERO_SELF_SIGNED_CERT' || code === 'ERR_TLS_CERT_ALTNAME_INVALID' ||
       code === 'SELF_SIGNED_CERT_IN_CHAIN') {

@@ -289,3 +289,16 @@ describe('checkLicense', () => {
     assert.equal(status.expired, true);
   });
 });
+
+describe('writeLicense — file permissions', () => {
+  it('writes license.json with mode 0o600', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tl-lic-perm-'));
+    try {
+      writeLicense({ key: 'test-key', tier: 'pro', validatedAt: new Date().toISOString() }, dir);
+      const mode = fs.statSync(path.join(dir, 'license.json')).mode & 0o777;
+      assert.equal(mode, 0o600, `license.json must be chmod 600, got ${mode.toString(8)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

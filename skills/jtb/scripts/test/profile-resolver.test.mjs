@@ -327,5 +327,20 @@ describe('profile-resolver', () => {
       const config = loadProfiles(newDir);
       assert.ok(config.profiles['brand-new']);
     });
+
+    it('writes profiles.json with mode 0o600', () => {
+      saveProfile('sec-test', { baseUrl: 'https://s.atlassian.net', auth: 'cloud', email: 'sec@s.com' }, {}, configDir);
+      const mode = statSync(join(configDir, 'profiles.json')).mode & 0o777;
+      assert.equal(mode, 0o600, `profiles.json must be chmod 600, got ${mode.toString(8)}`);
+    });
+  });
+
+  describe('saveDefault', () => {
+    it('writes profiles.json with mode 0o600', () => {
+      writeConfig();
+      saveDefault('corenexus', configDir);
+      const mode = statSync(join(configDir, 'profiles.json')).mode & 0o777;
+      assert.equal(mode, 0o600, `profiles.json must be chmod 600 after saveDefault, got ${mode.toString(8)}`);
+    });
   });
 });

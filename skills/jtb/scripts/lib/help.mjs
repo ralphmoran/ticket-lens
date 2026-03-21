@@ -23,6 +23,13 @@ export function printHelp({ stream = process.stdout } = {}) {
   const s = createStyler({ isTTY });
   const v = getVersion();
 
+  // Column targets (visible chars):
+  //   USAGE: command portion = 36, so descriptions always start at the same column
+  //   OPTIONS: flag portion = 19, so descriptions always start at the same column
+  //
+  // Spaces after each item are computed as: target - visibleWidth(item)
+  // ANSI codes (s.cyan, s.dim) add invisible bytes — they do NOT affect visible width.
+
   const lines = [
     '',
     `  ${s.bold(s.cyan('◆ TicketLens'))} ${s.dim(`v${v}`)}`,
@@ -30,19 +37,28 @@ export function printHelp({ stream = process.stdout } = {}) {
     '',
     `  ${s.bold('USAGE')}`,
     '',
-    `    ${s.cyan('ticketlens')} init                             Configure Jira connections`,
-    `    ${s.cyan('ticketlens')} switch                           Switch active profile`,
-    `    ${s.cyan('ticketlens')} config ${s.dim('[--profile=NAME]')}         Edit profile settings`,
-    `    ${s.cyan('ticketlens')} ${s.dim('<TICKET-KEY>')} ${s.dim('[options]')}      Fetch a ticket brief`,
-    `    ${s.cyan('ticketlens')} triage ${s.dim('[options]')}              Scan your assigned tickets`,
-    `    ${s.cyan('ticketlens')} activate ${s.dim('<KEY>')}                Activate a license key`,
-    `    ${s.cyan('ticketlens')} license                          Show license status`,
-    `    ${s.cyan('ticketlens')} cache ${s.dim('[size|clear]')}                 Manage attachment cache  ${s.dim('(try cache --help)')}`,
+    // visible widths: "ticketlens init"=15, "switch"=17, "config [--profile=NAME]"=34,
+    // "<TICKET-KEY> [options]"=33, "triage [options]"=27, "activate <KEY>"=25,
+    // "license"=18, "cache [size|clear]"=29  →  target=36
+    // Groups: Setup ─── Daily use ─── Account / Maintenance
+    `    ${s.cyan('ticketlens')} init                     Configure Jira connections`,
+    `    ${s.cyan('ticketlens')} switch                   Switch active profile`,
+    `    ${s.cyan('ticketlens')} config ${s.dim('[--profile=NAME]')}  Edit profile settings`,
+    '',
+    `    ${s.cyan('ticketlens')} ${s.dim('<TICKET-KEY>')} ${s.dim('[options]')}   Fetch a ticket brief`,
+    `    ${s.cyan('ticketlens')} get ${s.dim('<TICKET-KEY>')}         Same as above ${s.dim('(explicit alias)')}`,
+    `    ${s.cyan('ticketlens')} triage ${s.dim('[options]')}         Scan your assigned tickets`,
+    '',
+    `    ${s.cyan('ticketlens')} activate ${s.dim('<KEY>')}           Activate a license key`,
+    `    ${s.cyan('ticketlens')} license                  Show license status`,
+    `    ${s.cyan('ticketlens')} cache ${s.dim('[size|clear]')}       Manage attachment cache  ${s.dim('(try cache --help)')}`,
     '',
     `  ${s.bold('FETCH OPTIONS')}`,
     '',
+    // visible widths: "--profile=NAME"=14, "--depth=N"=9, "--plain"=7, "--styled"=8,
+    // "--no-attachments"=16, "--no-cache"=10  →  target=19
     `    ${s.cyan('--profile')}=${s.dim('NAME')}     Use a specific Jira profile`,
-    `    ${s.cyan('--depth')}=${s.dim('N')}         Traversal depth ${s.dim('(0=ticket only, 1=+linked, 2=deep)')}`,
+    `    ${s.cyan('--depth')}=${s.dim('N')}          Traversal depth ${s.dim('(0=ticket only, 1=+linked, 2=deep)')}`,
     `    ${s.cyan('--plain')}            Plain markdown output ${s.dim('(for piping / LLM)')}`,
     `    ${s.cyan('--styled')}           Force ANSI-styled output`,
     `    ${s.cyan('--no-attachments')}   Skip downloading attachments`,
@@ -50,9 +66,11 @@ export function printHelp({ stream = process.stdout } = {}) {
     '',
     `  ${s.bold('TRIAGE OPTIONS')}`,
     '',
+    // visible widths: "--profile=NAME"=14, "--stale=N"=9, "--status=X,Y"=12,
+    // "--static"=8, "--plain"=7  →  target=19
     `    ${s.cyan('--profile')}=${s.dim('NAME')}     Use a specific Jira profile`,
-    `    ${s.cyan('--stale')}=${s.dim('N')}         Aging threshold in days ${s.dim('(default: 5)')}`,
-    `    ${s.cyan('--status')}=${s.dim('X,Y')}      Override statuses to scan`,
+    `    ${s.cyan('--stale')}=${s.dim('N')}          Aging threshold in days ${s.dim('(default: 5)')}`,
+    `    ${s.cyan('--status')}=${s.dim('X,Y')}       Override statuses to scan`,
     `    ${s.cyan('--static')}           Static table output ${s.dim('(skip interactive mode)')}`,
     `    ${s.cyan('--plain')}            Plain markdown output ${s.dim('(for piping / LLM)')}`,
     '',
@@ -90,7 +108,9 @@ export function printFetchHelp({ stream = process.stdout } = {}) {
     `  ${s.bold('OPTIONS')}`,
     '',
     `    ${s.cyan('--profile')}=${s.dim('NAME')}     Use a specific Jira profile`,
-    `    ${s.cyan('--depth')}=${s.dim('N')}         Traversal depth ${s.dim('(default: 1)')}`,
+    // visible widths: "--profile=NAME"=14, "--depth=N"=9, "--plain"=7, "--styled"=8,
+    // "--no-attachments"=16, "--no-cache"=10, "-h, --help"=10  →  target=19
+    `    ${s.cyan('--depth')}=${s.dim('N')}          Traversal depth ${s.dim('(default: 1)')}`,
     `                       ${s.dim('0 = target ticket only')}`,
     `                       ${s.dim('1 = + linked ticket details')}`,
     `                       ${s.dim('2 = + linked-of-linked')}`,
@@ -98,7 +118,7 @@ export function printFetchHelp({ stream = process.stdout } = {}) {
     `    ${s.cyan('--styled')}           Force ANSI-styled output`,
     `    ${s.cyan('--no-attachments')}   Skip downloading attachments`,
     `    ${s.cyan('--no-cache')}         Re-download attachments even if cached`,
-    `    ${s.cyan('-h')}, ${s.cyan('--help')}        Show this help`,
+    `    ${s.cyan('-h')}, ${s.cyan('--help')}         Show this help`,
     '',
     `  ${s.bold('EXAMPLES')}`,
     '',
@@ -121,12 +141,14 @@ export function printTriageHelp({ stream = process.stdout } = {}) {
     '',
     `  ${s.bold('OPTIONS')}`,
     '',
+    // visible widths: "--profile=NAME"=14, "--stale=N"=9, "--status=X,Y"=12,
+    // "--static"=8, "--plain"=7, "-h, --help"=10  →  target=19
     `    ${s.cyan('--profile')}=${s.dim('NAME')}     Use a specific Jira profile`,
-    `    ${s.cyan('--stale')}=${s.dim('N')}         Aging threshold in days ${s.dim('(default: 5)')}`,
-    `    ${s.cyan('--status')}=${s.dim('X,Y')}      Override statuses to scan`,
+    `    ${s.cyan('--stale')}=${s.dim('N')}          Aging threshold in days ${s.dim('(default: 5)')}`,
+    `    ${s.cyan('--status')}=${s.dim('X,Y')}       Override statuses to scan`,
     `    ${s.cyan('--static')}           Static table output ${s.dim('(skip interactive mode)')}`,
     `    ${s.cyan('--plain')}            Plain markdown output`,
-    `    ${s.cyan('-h')}, ${s.cyan('--help')}        Show this help`,
+    `    ${s.cyan('-h')}, ${s.cyan('--help')}         Show this help`,
     '',
     `  ${s.bold('EXAMPLES')}`,
     '',
@@ -139,6 +161,7 @@ export function printTriageHelp({ stream = process.stdout } = {}) {
     '',
     `    ${s.dim('↑/↓')}    Navigate tickets`,
     `    ${s.dim('Enter')}  Open ticket in browser`,
+    `    ${s.dim('p')}      Switch profile`,
     `    ${s.dim('q/Esc')}  Exit`,
     '',
   ];

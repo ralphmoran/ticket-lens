@@ -148,7 +148,8 @@ describe('downloadAttachments — happy path', () => {
       capturedHeaders = opts.headers;
       return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('x').buffer };
     };
-    const ticket = makeTicket([makeAttachment()]);
+    // Content URL must share origin with JIRA_BASE_URL to pass SSRF guard
+    const ticket = makeTicket([makeAttachment({ content: 'https://j.com/secure/att-1/file.png' })]);
     await downloadAttachments(ticket, { env: { JIRA_BASE_URL: 'https://j.com', JIRA_PAT: 'mytoken' }, fetcher, configDir: tmpDir });
     assert.equal(capturedHeaders.Authorization, 'Bearer mytoken');
   });
@@ -159,7 +160,8 @@ describe('downloadAttachments — happy path', () => {
       capturedHeaders = opts.headers;
       return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('x').buffer };
     };
-    const ticket = makeTicket([makeAttachment()]);
+    // Content URL must share origin with JIRA_BASE_URL to pass SSRF guard
+    const ticket = makeTicket([makeAttachment({ content: 'https://j.com/secure/att-1/file.png' })]);
     await downloadAttachments(ticket, { env: { JIRA_BASE_URL: 'https://j.com', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok123' }, fetcher, configDir: tmpDir });
     const expected = 'Basic ' + Buffer.from('user@example.com:tok123').toString('base64');
     assert.equal(capturedHeaders.Authorization, expected);
@@ -242,6 +244,45 @@ describe('downloadAttachments — limit', () => {
     const result = await downloadAttachments(makeTicket(attachments), { env: ENV, fetcher: makeFetcher(), configDir: tmpDir });
     const limitSkipped = result.filter(r => r.skipReason === 'limit');
     assert.equal(limitSkipped.length, 2);
+  });
+});
+
+// ─── SSRF protection ─────────────────────────────────────────────────────────
+
+describe('downloadAttachments — SSRF protection', () => {
+  it('does not send auth headers to attachment URLs from a different origin', async () => {
+    let capturedHeaders = null;
+    const spyFetcher = async (_url, opts) => {
+      capturedHeaders = opts?.headers ?? {};
+      return { ok: true, statusText: 'OK', arrayBuffer: async () => new ArrayBuffer(4) };
+    };
+    const ticket = makeTicket([makeAttachment({ content: 'https://evil.com/steal-creds' })]);
+    await downloadAttachments(ticket, { env: ENV, fetcher: spyFetcher, configDir: tmpDir });
+    assert.ok(
+      !capturedHeaders?.Authorization,
+      'must NOT send Authorization header to a different origin'
+    );
+  });
+
+  it('sends auth headers to attachment URLs from the same Jira origin', async () => {
+    let capturedHeaders = null;
+    const spyFetcher = async (_url, opts) => {
+      capturedHeaders = opts?.headers ?? {};
+      return { ok: true, statusText: 'OK', arrayBuffer: async () => new ArrayBuffer(4) };
+    };
+    const ticket = makeTicket([makeAttachment({ content: 'https://jira.example.com/secure/att-1/screenshot.png' })]);
+    await downloadAttachments(ticket, { env: ENV, fetcher: spyFetcher, configDir: tmpDir });
+    assert.ok(
+      capturedHeaders?.Authorization,
+      'must send Authorization header to the same Jira origin'
+    );
+  });
+
+  it('marks cross-origin attachment as skipped with ssrf-blocked reason', async () => {
+    const ticket = makeTicket([makeAttachment({ content: 'https://evil.com/file.png' })]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher: makeFetcher(), configDir: tmpDir });
+    assert.equal(result.length, 1);
+    assert.equal(result[0].skipReason, 'ssrf-blocked');
   });
 });
 

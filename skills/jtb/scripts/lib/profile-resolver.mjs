@@ -43,6 +43,7 @@ export function saveDefault(name, configDir = DEFAULT_CONFIG_DIR) {
   const config = loadProfiles(configDir) || { profiles: {} };
   config.default = name;
   writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
+  chmodSync(profilesPath, 0o600);
 }
 
 export function saveProfile(name, profileData, credData, configDir = DEFAULT_CONFIG_DIR) {
@@ -51,6 +52,7 @@ export function saveProfile(name, profileData, credData, configDir = DEFAULT_CON
   const config = loadProfiles(configDir) || { profiles: {} };
   config.profiles[name] = profileData;
   writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
+  chmodSync(profilesPath, 0o600);
   if (credData && Object.keys(credData).length > 0) {
     const credPath = join(configDir, 'credentials.json');
     const creds = loadCredentials(configDir);

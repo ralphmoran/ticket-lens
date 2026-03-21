@@ -258,6 +258,18 @@ describe('assembleTriageSummary', () => {
     assert.ok(!result.includes('Quick Links'), 'No quick links without baseUrl');
   });
 
+  it('strips carriage returns from comment bodies in plain brief', () => {
+    const ticket = {
+      ...baseTicket,
+      comments: [
+        { author: 'Alice', body: 'Line one\r\nLine two\r\nLine three', created: '2026-01-01T00:00:00Z' },
+      ],
+    };
+    const result = assembleBrief(ticket);
+    assert.ok(!result.includes('\r'), 'plain brief must not contain carriage returns');
+    assert.ok(result.includes('Line one\nLine two\nLine three'), 'CR should be stripped, LF preserved');
+  });
+
   it('uses plain-text table format (not markdown pipes)', () => {
     const scored = [
       { ticketKey: 'PROD-100', summary: 'Bug fix', status: 'CR', urgency: 'aging', daysSinceUpdate: 7 },

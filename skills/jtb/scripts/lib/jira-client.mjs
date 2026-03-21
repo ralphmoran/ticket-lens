@@ -65,12 +65,14 @@ export function buildAuthHeader(env) {
 }
 
 export async function fetchCurrentUser(opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, apiVersion = 2 } = opts;
+  const { env = process.env, fetcher = globalThis.fetch, apiVersion = 2, timeoutMs = 10_000 } = opts;
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
   const url = `${baseUrl}/rest/api/${apiVersion}/myself`;
-  const response = await fetcher(url, { headers });
+  const fetchOpts = { headers };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+  const response = await fetcher(url, fetchOpts);
 
   if (!response.ok) {
     throw new Error(`Jira API error ${response.status} (${response.statusText}) fetching current user`);
@@ -86,12 +88,14 @@ export async function fetchCurrentUser(opts = {}) {
 }
 
 export async function fetchStatuses(opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, apiVersion = 2 } = opts;
+  const { env = process.env, fetcher = globalThis.fetch, apiVersion = 2, timeoutMs = 10_000 } = opts;
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
   const url = `${baseUrl}/rest/api/${apiVersion}/status`;
-  const response = await fetcher(url, { headers });
+  const fetchOpts = { headers };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+  const response = await fetcher(url, fetchOpts);
 
   if (!response.ok) {
     throw new Error(`Jira API error ${response.status} (${response.statusText}) fetching statuses`);
@@ -102,7 +106,7 @@ export async function fetchStatuses(opts = {}) {
 }
 
 export async function searchTickets(jql, opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, maxResults = 50, apiVersion = 2 } = opts;
+  const { env = process.env, fetcher = globalThis.fetch, maxResults = 50, apiVersion = 2, timeoutMs = 10_000 } = opts;
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
@@ -110,7 +114,9 @@ export async function searchTickets(jql, opts = {}) {
   const params = new URLSearchParams({ jql, fields, maxResults: String(maxResults) });
   const endpoint = apiVersion >= 3 ? `/rest/api/3/search/jql` : `/rest/api/2/search`;
   const url = `${baseUrl}${endpoint}?${params}`;
-  const response = await fetcher(url, { headers });
+  const fetchOpts = { headers };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+  const response = await fetcher(url, fetchOpts);
 
   if (!response.ok) {
     let detail = '';
@@ -126,12 +132,14 @@ export async function searchTickets(jql, opts = {}) {
 }
 
 export async function fetchTicket(ticketKey, opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, depth = 1, apiVersion = 2, _visited = new Set(), _currentDepth = 0 } = opts;
+  const { env = process.env, fetcher = globalThis.fetch, depth = 1, apiVersion = 2, timeoutMs = 10_000, _visited = new Set(), _currentDepth = 0 } = opts;
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
   const url = `${baseUrl}/rest/api/${apiVersion}/issue/${ticketKey}`;
-  const response = await fetcher(url, { headers });
+  const fetchOpts = { headers };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+  const response = await fetcher(url, fetchOpts);
 
   if (!response.ok) {
     throw new Error(`Jira API error ${response.status} (${response.statusText}) fetching ${ticketKey}`);
@@ -142,20 +150,19 @@ export async function fetchTicket(ticketKey, opts = {}) {
   _visited.add(ticketKey);
 
   if (_currentDepth < depth) {
+    const MAX_TICKETS = 15;
     const linkedKeys = ticket.linkedIssues
       .map(l => l.key)
-      .filter(k => !_visited.has(k));
+      .filter(k => !_visited.has(k))
+      .slice(0, Math.max(0, MAX_TICKETS - _visited.size));
 
-    const MAX_TICKETS = 15;
-    ticket.linkedTicketDetails = [];
+    // Pre-mark all siblings before launching parallel fetches to prevent duplicate fetches
+    // when the same key appears in multiple link lists at the same depth.
+    linkedKeys.forEach(k => _visited.add(k));
 
-    for (const linkedKey of linkedKeys) {
-      if (_visited.size >= MAX_TICKETS) break;
-      const linkedTicket = await fetchTicket(linkedKey, {
-        env, fetcher, depth, apiVersion, _visited, _currentDepth: _currentDepth + 1,
-      });
-      ticket.linkedTicketDetails.push(linkedTicket);
-    }
+    ticket.linkedTicketDetails = await Promise.all(
+      linkedKeys.map(k => fetchTicket(k, { ...opts, _visited, _currentDepth: _currentDepth + 1 }))
+    );
   }
 
   return ticket;

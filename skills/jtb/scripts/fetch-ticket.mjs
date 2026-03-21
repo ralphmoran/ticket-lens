@@ -15,6 +15,7 @@ import { classifyError } from './lib/error-classifier.mjs';
 import { promptProfileSelect, promptProfileMismatch, promptSwitchProfile, promptMultipleMatches } from './lib/profile-picker.mjs';
 import { promptSelect } from './lib/select-prompt.mjs';
 import { printFetchHelp } from './lib/help.mjs';
+import { handleUnknownFlags } from './lib/arg-validator.mjs';
 import { downloadAttachments } from './lib/attachment-downloader.mjs';
 import { readBriefCache, writeBriefCache, briefCacheAge, BRIEF_TTL_MS } from './lib/brief-cache.mjs';
 import { parseAge } from './lib/cache-manager.mjs';
@@ -39,11 +40,23 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
     return;
   }
 
-  const profileArg = args.find(a => a.startsWith('--profile=') || a.startsWith('--project='));
-  if (profileArg && profileArg.startsWith('--project=')) {
-    process.stderr.write(`Hint: --project is not a valid flag. Using --profile=${profileArg.split('=')[1]} instead.\n\n`);
+  // Normalize --project= alias once at entry so all recursive calls only see --profile=
+  const projectArg = args.find(a => a.startsWith('--project='));
+  if (projectArg) {
+    process.stderr.write(`Hint: --project recognized as alias for --profile=${projectArg.split('=')[1]}\n\n`);
+    args = args.map(a => a.startsWith('--project=') ? `--profile=${a.split('=')[1]}` : a);
   }
+
+  const profileArg = args.find(a => a.startsWith('--profile='));
   const profileName = profileArg ? profileArg.split('=')[1] : undefined;
+
+  const validatedArgs = await handleUnknownFlags(
+    args,
+    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth='],
+    { hints: ['--stale=', '--status=', '--static'] } // triage-only flags — shown as hints, not applied
+  );
+  if (validatedArgs === null) { process.exitCode = 1; return; }
+  args = validatedArgs;
 
   // When multiple profiles share the same ticket prefix and we're in a TTY,
   // ask the user to choose rather than silently picking the first match.
@@ -86,7 +99,9 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
       const hint = conn.source === 'env'
         ? `Missing env vars: ${missing.join(', ')}`
         : `Missing config in profile "${conn.profileName}": ${missing.join(', ')}`;
-      process.stderr.write(`Error: ${hint}\n`);
+      const noProfiles = !loadProfiles(configDir)?.profiles;
+      const initHint = noProfiles ? '\nRun `ticketlens init` to set up your connection.' : '';
+      process.stderr.write(`Error: ${hint}${initHint}\n`);
     }
     process.exitCode = 1;
     return;

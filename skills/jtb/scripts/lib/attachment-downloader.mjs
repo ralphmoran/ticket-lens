@@ -65,6 +65,16 @@ export async function downloadAttachments(ticket, opts = {}) {
       continue;
     }
 
+    // SSRF protection: only send auth headers to the configured Jira origin
+    let contentOrigin;
+    try { contentOrigin = new URL(a.content).origin; } catch { contentOrigin = null; }
+    const jiraOrigin = env.JIRA_BASE_URL ? new URL(env.JIRA_BASE_URL).origin : null;
+    if (!contentOrigin || contentOrigin !== jiraOrigin) {
+      onProgress?.(`  blocked   ${a.filename} (cross-origin URL rejected)`);
+      results.push(makeResult(a, null, 'ssrf-blocked', null));
+      continue;
+    }
+
     onProgress?.(`  download  ${a.filename}`);
 
     try {

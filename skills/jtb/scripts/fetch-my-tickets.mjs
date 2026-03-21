@@ -16,6 +16,7 @@ import { classifyError } from './lib/error-classifier.mjs';
 import { runInteractiveList } from './lib/interactive-list.mjs';
 import { promptProfileSelect } from './lib/profile-picker.mjs';
 import { printTriageHelp } from './lib/help.mjs';
+import { handleUnknownFlags } from './lib/arg-validator.mjs';
 
 const DEFAULT_STATUSES = ['In Progress', 'Code Review', 'QA'];
 
@@ -24,11 +25,23 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
     printTriageHelp();
     return;
   }
-  const profileArg = args.find(a => a.startsWith('--profile=') || a.startsWith('--project='));
-  if (profileArg && profileArg.startsWith('--project=')) {
-    process.stderr.write(`Hint: --project is not a valid flag. Using --profile=${profileArg.split('=')[1]} instead.\n\n`);
+  // Normalize --project= alias once at entry so all recursive calls only see --profile=
+  const projectArg = args.find(a => a.startsWith('--project='));
+  if (projectArg) {
+    process.stderr.write(`Hint: --project recognized as alias for --profile=${projectArg.split('=')[1]}\n\n`);
+    args = args.map(a => a.startsWith('--project=') ? `--profile=${a.split('=')[1]}` : a);
   }
+
+  const profileArg = args.find(a => a.startsWith('--profile='));
   const profileName = profileArg ? profileArg.split('=')[1] : undefined;
+
+  const validatedArgs = await handleUnknownFlags(
+    args,
+    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status='],
+    { hints: ['--depth=', '--no-attachments', '--no-cache'] } // fetch-only flags — shown as hints, not applied
+  );
+  if (validatedArgs === null) { process.exitCode = 1; return; }
+  args = validatedArgs;
 
   const staleArg = args.find(a => a.startsWith('--stale='));
   const staleDays = staleArg ? parseInt(staleArg.split('=')[1], 10) : 5;
@@ -57,9 +70,11 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
         return run(newArgs, env, fetcher, configDir);
       }
     } else {
-      process.stderr.write(
-        'Error: Could not determine Jira profile. Use --profile=NAME or add projectPaths to ~/.ticketlens/profiles.json\n'
-      );
+      const noProfiles = !loadProfiles(configDir)?.profiles;
+      const msg = noProfiles
+        ? 'Error: Could not determine Jira profile.\nRun `ticketlens init` to set up your connection.'
+        : 'Error: Could not determine Jira profile. Use --profile=NAME or add projectPaths to ~/.ticketlens/profiles.json';
+      process.stderr.write(msg + '\n');
     }
     process.exitCode = 1;
     return;
@@ -78,13 +93,22 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
     ? statusArg.split('=')[1].split(',').map(s => s.trim())
     : conn.triageStatuses || DEFAULT_STATUSES;
 
+  // Build JQL before any I/O — pure computation, no dependency on currentUser
+  const statusList = statuses.map(s => `"${s.replace(/"/g, '\\"')}"`).join(',');
+  const jql = `assignee = currentUser() AND status IN (${statusList}) ORDER BY updated DESC`;
+
   const session = createSession(conn);
   session.spin(`Connecting to ${session.label}…`);
 
+  // Fire both requests concurrently — they are independent of each other
+  const userPromise = fetchCurrentUser({ env: jiraEnv, fetcher, apiVersion });
+  const ticketsPromise = searchTickets(jql, { env: jiraEnv, fetcher, apiVersion });
+
   let currentUser;
   try {
-    currentUser = await fetchCurrentUser({ env: jiraEnv, fetcher, apiVersion });
+    currentUser = await userPromise;
   } catch (err) {
+    ticketsPromise.catch(() => {}); // prevent unhandled rejection — we're bailing on the user request
     const classified = classifyError(err, conn);
     session.failed();
     session.footer(classified.message, 'error', classified.hint);
@@ -95,15 +119,12 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   session.connected();
   process.stderr.write('\n');
 
-  const statusList = statuses.map(s => `"${s}"`).join(',');
-  const jql = `assignee = currentUser() AND status IN (${statusList}) ORDER BY updated DESC`;
-
   const scanSpinner = createSpinner('Scanning tickets…');
   scanSpinner.start();
 
   let tickets;
   try {
-    tickets = await searchTickets(jql, { env: jiraEnv, fetcher, apiVersion });
+    tickets = await ticketsPromise;
   } catch (err) {
     scanSpinner.stop();
     if (err.status === 400 && err.detail && /does not exist for the field 'status'/.test(err.detail)) {

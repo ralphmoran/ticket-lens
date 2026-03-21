@@ -21,13 +21,20 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 
 ## Prerequisites
 
-The following env vars must be set:
+TicketLens supports two connection methods — check in this order:
 
+**1. Profile config (recommended):** If `~/.ticketlens/profiles.json` exists, no env vars
+are needed. Profile resolution is automatic (by ticket prefix, project path, or `--profile`).
+Setup via `ticketlens init`.
+
+**2. Env var fallback:** If no profile config exists, these must be set:
 - `JIRA_BASE_URL` — e.g. `https://yourteam.atlassian.net`
 - **Cloud:** `JIRA_EMAIL` + `JIRA_API_TOKEN`
 - **Server/DC:** `JIRA_PAT`
 
-If any are missing, stop and tell the user which vars to set.
+If neither profiles nor env vars are configured, tell the user:
+"No Jira connection found. Run `ticketlens init` to set up your connection,
+or set JIRA_BASE_URL + auth credentials as environment variables."
 
 ## Workflow
 

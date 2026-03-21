@@ -469,7 +469,8 @@ With this setup:
 ## Running Tests
 
 ```bash
-node --test 'skills/jtb/scripts/test/*.test.mjs'
+cd skills/jtb/scripts
+node --test
 ```
 
 Expected output: all tests pass, zero failures.
@@ -491,11 +492,15 @@ See [ROADMAP.md](ROADMAP.md) for the full feature plan.
 - ✅ Attachment download — all file types cached locally; Claude Code reads images, PDFs, text
 - ✅ `ticketlens cache` — `size` with `--profile` filter, `clear` with ticket/age/profile filters
 - ✅ `ticketlens license` / `ticketlens activate` — styled license status display
-- ✅ `get` alias — `ticketlens get PROJ-123` as explicit fetch alias
+- ✅ `get` alias — `ticketlens get PROJ-123` as explicit fetch alias; listed in USAGE section
 - ✅ `clear` shorthand — `ticketlens clear` as alias for `ticketlens cache clear`
 - ✅ Profile switch fixed — `--profile=` arg correctly replaced on every re-run (was causing infinite loop)
 - ✅ `--stale` fixed — unanswered comments older than N days now downgrade to "aging"
 - ✅ Contextual `--help` — each subcommand shows its own focused help (not the main help)
+- ✅ Security hardening — SSRF protection on attachment downloads, JQL injection prevention, path traversal sanitization on cache keys, `chmod 600` on all credential files
+- ✅ Request timeouts — 10s `AbortSignal.timeout` applied by default to all API calls; timeout errors show as styled "Connection timed out" box (not a raw crash)
+- ✅ Unknown flag detection — unrecognized flags stop the CLI with a "Did you mean?" suggestion and interactive `y/N` fix prompt; cross-command hints (e.g. `--depth` suggested in triage, `--stale` suggested in fetch)
+- ✅ Concurrent promise guard — parallel triage startup (`userPromise` + `ticketsPromise`) guarded against unhandled rejection on early bail
 
 **Iteration 3.5 — Next:**
 - README GIF demos (ticket fetch, triage scan)
@@ -521,3 +526,5 @@ None at this time. Previous issues resolved:
 - ~~Config prefix replacement~~ — Fixed: Editing ticket prefixes merges new entries with existing ones.
 - ~~`--stale` had no effect when all tickets had unanswered comments~~ — Fixed: Unanswered comments older than N days now downgrade to "aging".
 - ~~`cache --help` showed main help~~ — Fixed: Subcommand `--help` flags route to each subcommand's own help.
+- ~~Unhandled rejection crash on triage timeout~~ — Fixed: concurrent `userPromise`/`ticketsPromise` now guarded with `.catch(()=>{})` on early bail; timeout errors show styled error box.
+- ~~Unknown flags silently passed through~~ — Fixed: unrecognized flags stop the CLI with a "Did you mean?" suggestion and `y/N` interactive fix.

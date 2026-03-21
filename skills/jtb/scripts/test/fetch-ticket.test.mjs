@@ -72,6 +72,19 @@ describe('fetch-ticket integration', () => {
     }
   });
 
+  it('suggests ticketlens init when no profile and no env vars are configured', async () => {
+    const out = captureOutput();
+    try {
+      await run(['PROD-1234'], {}, undefined, NO_CONFIG);
+      assert.ok(
+        out.stderr.includes('ticketlens init'),
+        `Expected stderr to mention 'ticketlens init', got: ${out.stderr}`
+      );
+    } finally {
+      out.restore();
+    }
+  });
+
   it('API failure outputs error to stderr and sets exit code 1', async () => {
     const mockFetch = async () => ({ ok: false, status: 500, statusText: 'Internal Server Error' });
     const out = captureOutput();
