@@ -85,6 +85,7 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
     env,
     configDir,
     profileName,
+    cwd: process.cwd(),
     onWarning: (w) => process.stderr.write(w + '\n'),
     onProfileNotFound: (info) => { profileError = info; },
   });

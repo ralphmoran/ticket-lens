@@ -3,12 +3,24 @@
  * from Jira ticket text (descriptions, comments).
  */
 
+// Module-level constants — compiled once, reused across all calls
+const RE_FILE_PATHS    = /(?:^|[\s,;(])((?:\/|[a-zA-Z0-9_.-]+\/)[a-zA-Z0-9_.\/-]*\.[a-zA-Z0-9]+)/gm;
+const RE_METHODS       = /\b([a-zA-Z_][a-zA-Z0-9_]*)\(\)/g;
+const RE_CLASSES       = /\b([A-Z][a-zA-Z0-9]*(?:_[A-Z][a-zA-Z0-9]*)+)\b/g;
+const RE_SHA_FULL      = /\b([0-9a-f]{40})\b/g;
+const RE_SHA_SHORT     = /\b([0-9a-f]{7})\b/g;
+const RE_SHA_HAS_DIGIT = /[0-9]/;
+const RE_SHA_HAS_ALPHA = /[a-f]/;
+const RE_SVN           = /\b(r\d+)\b/g;
+const RE_BRANCHES      = /\b((?:feature|bugfix|hotfix|release|fix)\/[a-zA-Z0-9_.-]+-[a-zA-Z0-9_.-]+(?:-[a-zA-Z0-9_.-]+)*)\b/g;
+const RE_NAMESPACES    = /\b([A-Z][a-zA-Z0-9]*(?:\\[A-Z][a-zA-Z0-9]*)+)\b/g;
+
 export function extractFilePaths(text) {
   if (!text) return [];
-  const pattern = /(?:^|[\s,;(])((?:\/|[a-zA-Z0-9_.-]+\/)[a-zA-Z0-9_.\/-]*\.[a-zA-Z0-9]+)/gm;
   const results = [];
   let match;
-  while ((match = pattern.exec(text)) !== null) {
+  RE_FILE_PATHS.lastIndex = 0;
+  while ((match = RE_FILE_PATHS.exec(text)) !== null) {
     results.push(match[1]);
   }
   return [...new Set(results)];
@@ -16,10 +28,10 @@ export function extractFilePaths(text) {
 
 export function extractMethodNames(text) {
   if (!text) return [];
-  const pattern = /\b([a-zA-Z_][a-zA-Z0-9_]*)\(\)/g;
   const results = [];
   let match;
-  while ((match = pattern.exec(text)) !== null) {
+  RE_METHODS.lastIndex = 0;
+  while ((match = RE_METHODS.exec(text)) !== null) {
     results.push(match[1]);
   }
   return [...new Set(results)];
@@ -28,10 +40,10 @@ export function extractMethodNames(text) {
 export function extractClassNames(text) {
   if (!text) return [];
   // Matches PascalCase names (MyClass) and underscore-separated (Zend_Controller_Action)
-  const pattern = /\b([A-Z][a-zA-Z0-9]*(?:_[A-Z][a-zA-Z0-9]*)+)\b/g;
   const results = [];
   let match;
-  while ((match = pattern.exec(text)) !== null) {
+  RE_CLASSES.lastIndex = 0;
+  while ((match = RE_CLASSES.exec(text)) !== null) {
     results.push(match[1]);
   }
   return [...new Set(results)];
@@ -40,16 +52,15 @@ export function extractClassNames(text) {
 export function extractShas(text) {
   if (!text) return [];
   const results = [];
-  // 40-char full SHAs first
-  const fullPattern = /\b([0-9a-f]{40})\b/g;
   let match;
-  while ((match = fullPattern.exec(text)) !== null) {
+  RE_SHA_FULL.lastIndex = 0;
+  while ((match = RE_SHA_FULL.exec(text)) !== null) {
     results.push(match[1]);
   }
   // 7-char short SHAs (must contain at least one digit and one letter to avoid false positives)
-  const shortPattern = /\b([0-9a-f]{7})\b/g;
-  while ((match = shortPattern.exec(text)) !== null) {
-    if (/[0-9]/.test(match[1]) && /[a-f]/.test(match[1])) {
+  RE_SHA_SHORT.lastIndex = 0;
+  while ((match = RE_SHA_SHORT.exec(text)) !== null) {
+    if (RE_SHA_HAS_DIGIT.test(match[1]) && RE_SHA_HAS_ALPHA.test(match[1])) {
       results.push(match[1]);
     }
   }
@@ -58,10 +69,10 @@ export function extractShas(text) {
 
 export function extractSvnRevisions(text) {
   if (!text) return [];
-  const pattern = /\b(r\d+)\b/g;
   const results = [];
   let match;
-  while ((match = pattern.exec(text)) !== null) {
+  RE_SVN.lastIndex = 0;
+  while ((match = RE_SVN.exec(text)) !== null) {
     results.push(match[1]);
   }
   return [...new Set(results)];
@@ -69,10 +80,10 @@ export function extractSvnRevisions(text) {
 
 export function extractBranches(text) {
   if (!text) return [];
-  const pattern = /\b((?:feature|bugfix|hotfix|release|fix)\/[a-zA-Z0-9_.-]+-[a-zA-Z0-9_.-]+(?:-[a-zA-Z0-9_.-]+)*)\b/g;
   const results = [];
   let match;
-  while ((match = pattern.exec(text)) !== null) {
+  RE_BRANCHES.lastIndex = 0;
+  while ((match = RE_BRANCHES.exec(text)) !== null) {
     results.push(match[1]);
   }
   return [...new Set(results)];
@@ -80,10 +91,10 @@ export function extractBranches(text) {
 
 export function extractNamespaces(text) {
   if (!text) return [];
-  const pattern = /\b([A-Z][a-zA-Z0-9]*(?:\\[A-Z][a-zA-Z0-9]*)+)\b/g;
   const results = [];
   let match;
-  while ((match = pattern.exec(text)) !== null) {
+  RE_NAMESPACES.lastIndex = 0;
+  while ((match = RE_NAMESPACES.exec(text)) !== null) {
     results.push(match[1]);
   }
   return [...new Set(results)];

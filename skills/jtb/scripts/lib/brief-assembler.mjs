@@ -147,7 +147,7 @@ export function assembleTriageSummary(scoredTickets, opts = {}) {
 
 function truncate(str, max) {
   if (!str) return '';
-  const oneLine = str.replace(/\n/g, ' ').trim();
+  const oneLine = str.replace(/[\r\n]+/g, ' ').trim();
   if (oneLine.length <= max) return oneLine;
   return oneLine.slice(0, max - 3) + '...';
 }

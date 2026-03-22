@@ -19,6 +19,7 @@ TicketLens is a zero-dependency CLI that fetches full Jira ticket context — de
   - [ticketlens init — Setup wizard](#ticketlens-init--setup-wizard)
   - [ticketlens switch — Switch active profile](#ticketlens-switch--switch-active-profile)
   - [ticketlens config — Edit profile settings](#ticketlens-config--edit-profile-settings)
+  - [ticketlens profiles — List configured profiles](#ticketlens-profiles--list-configured-profiles)
   - [ticketlens TICKET-KEY — Fetch a ticket brief](#ticketlens-ticket-key--fetch-a-ticket-brief)
   - [ticketlens triage — Ticket attention scanner](#ticketlens-triage--ticket-attention-scanner)
   - [ticketlens delete — Remove a profile](#ticketlens-delete--remove-a-profile)
@@ -120,6 +121,30 @@ Every field is pre-populated with its current value — press `Enter` to keep it
 - **Ticket prefixes** — new entries are **merged** into the existing list (not replaced). Enter keeps the current list.
 - **Project paths** — new paths are validated; missing directories are offered for creation
 - **Triage statuses** — **merge semantics**: new entries are *added*, existing ones are never removed. Partial matching: typing `QA` resolves to `QA Testing` if that's the status in your Jira.
+
+---
+
+### ticketlens profiles — List configured profiles
+
+List all configured Jira profiles and identify the active one.
+
+```bash
+ticketlens profiles          # Styled table (auto-detects TTY)
+ticketlens ls                # Shorthand alias
+ticketlens profiles --plain  # Tab-separated output (scripts / pipes)
+```
+
+Each row shows: profile name · Jira URL · auth type · ticket prefixes.
+
+The active profile is marked with `●`. Active = the profile set by `ticketlens switch`, or the first profile in the file if none has been explicitly selected.
+
+```bash
+# Example output
+  ● myteam   https://myteam.atlassian.net   cloud    PROJ, OPS
+  ○ client   https://jira.client.com        server   ACME, SHOP
+
+  Active: myteam  ·  ticketlens switch  ·  ticketlens config --profile=NAME
+```
 
 ---
 
@@ -351,6 +376,9 @@ Complete reference of every command and flag combination:
 ```bash
 # ── First-time setup ─────────────────────────────────────────────────────────
 ticketlens init                               # Guided wizard (recommended)
+ticketlens profiles                           # List all configured profiles
+ticketlens ls                                 # Shorthand for profiles
+ticketlens profiles --plain                   # Tab-separated (scripts / pipes)
 ticketlens switch                             # Switch between configured profiles
 ticketlens config                             # Edit the active profile
 ticketlens config --profile=acme              # Edit a specific profile

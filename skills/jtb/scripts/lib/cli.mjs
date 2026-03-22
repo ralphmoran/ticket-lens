@@ -48,6 +48,10 @@ export function parseCommand(args) {
     return { command: 'delete', args: args.slice(1) };
   }
 
+  if (first === 'profiles' || first === 'ls') {
+    return { command: 'profiles', args: args.slice(1) };
+  }
+
   // "get PROJ-123" — alias for the fetch command
   if (first === 'get') {
     return { command: 'fetch', args: args.slice(1) };

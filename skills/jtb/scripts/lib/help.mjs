@@ -38,12 +38,13 @@ export function printHelp({ stream = process.stdout } = {}) {
     `  ${s.bold('USAGE')}`,
     '',
     // visible widths: "ticketlens init"=15, "switch"=17, "config [--profile=NAME]"=34,
-    // "<TICKET-KEY> [options]"=33, "triage [options]"=27, "activate <KEY>"=25,
-    // "license"=18, "cache [size|clear]"=29  →  target=36
+    // "profiles"=19, "<TICKET-KEY> [options]"=33, "triage [options]"=27,
+    // "activate <KEY>"=25, "license"=18, "cache [size|clear]"=29  →  target=36
     // Groups: Setup ─── Daily use ─── Account / Maintenance
     `    ${s.cyan('ticketlens')} init                     Configure Jira connections`,
     `    ${s.cyan('ticketlens')} switch                   Switch active profile`,
     `    ${s.cyan('ticketlens')} config ${s.dim('[--profile=NAME]')}  Edit profile settings`,
+    `    ${s.cyan('ticketlens')} profiles                 List all configured profiles  ${s.dim('(alias: ls)')}`,
     '',
     `    ${s.cyan('ticketlens')} ${s.dim('<TICKET-KEY>')} ${s.dim('[options]')}   Fetch a ticket brief`,
     `    ${s.cyan('ticketlens')} get ${s.dim('<TICKET-KEY>')}         Same as above ${s.dim('(explicit alias)')}`,
@@ -130,6 +131,54 @@ export function printFetchHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('$')} ticketlens PROJ-123 --profile=acme --depth=2`,
     '',
   ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printProfiles({ stream = process.stdout, config, plain = false } = {}) {
+  const isTTY = !plain && stream.isTTY;
+  const s = createStyler({ isTTY });
+  const profiles = config?.profiles || {};
+  const names = Object.keys(profiles);
+
+  if (names.length === 0) {
+    stream.write(`\n  No profiles configured.\n  Run ${s.cyan('ticketlens init')} to set one up.\n\n`);
+    return;
+  }
+
+  // Active = explicitly set default, else first profile in file
+  const active = config?.default || names[0];
+  const defaultIsExplicit = !!config?.default;
+
+  if (plain) {
+    for (const name of names) {
+      const p = profiles[name];
+      stream.write(`${name}\t${name === active ? 'active' : 'inactive'}\t${p.baseUrl || ''}\t${p.auth || 'cloud'}\t${(p.ticketPrefixes || []).join(',')}\n`);
+    }
+    return;
+  }
+
+  const nameW = Math.max(...names.map(n => n.length)) + 1;
+  const urlW  = Math.max(...names.map(n => (profiles[n].baseUrl || '').length));
+
+  const lines = [''];
+  for (const name of names) {
+    const p = profiles[name];
+    const isActive = name === active;
+    const indicator = isActive ? s.green('●') : s.dim('○');
+    const nameStr   = isActive ? s.bold(name.padEnd(nameW)) : s.dim(name.padEnd(nameW));
+    const url       = (p.baseUrl || '').padEnd(urlW + 2);
+    const auth      = (p.auth || 'cloud').padEnd(8);
+    const prefixes  = (p.ticketPrefixes || []).join(', ') || s.dim('(none)');
+    lines.push(`  ${indicator} ${nameStr}${url}${auth}${prefixes}`);
+  }
+  lines.push('');
+
+  const activeNote = defaultIsExplicit
+    ? `${s.dim('Active:')} ${s.cyan(active)}`
+    : `${s.dim('Active:')} ${s.cyan(active)} ${s.dim('(first — run ticketlens switch to set default)')}`;
+  lines.push(`  ${activeNote}  ${s.dim('·  ticketlens switch  ·  ticketlens config --profile=NAME')}`);
+  lines.push('');
+
   stream.write(lines.join('\n') + '\n');
 }
 

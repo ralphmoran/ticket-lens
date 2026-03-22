@@ -17,7 +17,7 @@ import { run as runConfig } from '../skills/jtb/scripts/lib/config-wizard.mjs';
 import { activateLicense, checkLicense } from '../skills/jtb/scripts/lib/license.mjs';
 import { deleteProfile, loadProfiles } from '../skills/jtb/scripts/lib/profile-resolver.mjs';
 import { run as runCache } from '../skills/jtb/scripts/lib/cache-manager.mjs';
-import { printHelp } from '../skills/jtb/scripts/lib/help.mjs';
+import { printHelp, printProfiles } from '../skills/jtb/scripts/lib/help.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
 
 const args = process.argv.slice(2);
@@ -152,6 +152,13 @@ switch (command) {
       process.stderr.write(`${s.red('✖')} Could not delete profile "${profileName}".\n`);
       process.exitCode = 1;
     }
+    break;
+  }
+
+  case 'profiles': {
+    const plain = cmdArgs.includes('--plain');
+    const config = loadProfiles();
+    printProfiles({ config, plain });
     break;
   }
 
