@@ -1,6 +1,10 @@
 # TicketLens
 
 [![Tests](https://github.com/ralphmoran/ticket-lens/actions/workflows/test.yml/badge.svg)](https://github.com/ralphmoran/ticket-lens/actions/workflows/test.yml)
+[![npm version](https://img.shields.io/npm/v/ticketlens.svg)](https://www.npmjs.com/package/ticketlens)
+[![npm downloads](https://img.shields.io/npm/dm/ticketlens.svg)](https://www.npmjs.com/package/ticketlens)
+[![Node.js >=18](https://img.shields.io/node/v/ticketlens.svg)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Jira CLI for developers — stop tab-switching, start building.**
 
@@ -28,6 +32,8 @@ TicketLens is a zero-dependency CLI that fetches full Jira ticket context — de
 - [Running Tests](#running-tests)
 - [Roadmap](#roadmap)
 - [Known Issues](#known-issues)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
@@ -179,6 +185,8 @@ ticketlens triage                                       # Auto-detect profile fr
 ticketlens triage --profile=acme                        # Explicit profile
 ticketlens triage --stale=3                             # Aging threshold: 3 days (default: 5)
 ticketlens triage --status="Code Review,QA Testing"     # Override statuses to scan
+ticketlens triage --assignee="Jane Dev"                 # View another dev's tickets  [Team]
+ticketlens triage --sprint="Sprint 12"                  # Filter by sprint name  [Team]
 ticketlens triage --static                              # Static table (no interactive mode)
 ticketlens triage --plain                               # Plain markdown (for piping / LLM)
 ```
@@ -373,6 +381,9 @@ ticketlens triage --stale=10                  # More lenient — only flag very 
 ticketlens triage --status="Code Review,QA Testing"   # Scan these statuses only
 ticketlens triage --static                    # Static table output (no interactive mode)
 ticketlens triage --plain                     # Plain markdown — pipe to LLM or file
+ticketlens triage --assignee="Jane Dev"               # View another dev's tickets [Team]
+ticketlens triage --sprint="Sprint 12"                # Filter by sprint name [Team]
+ticketlens triage --assignee="Jane Dev" --sprint="Sprint 12"  # Combined [Team]
 ticketlens triage --profile=acme --stale=3 --static   # Combine flags
 
 # Pipe triage output
@@ -398,6 +409,9 @@ ticketlens cache clear PROJ-123 --older-than=7d          # Ticket + age filter
 ticketlens cache clear --profile=acme --older-than=30d   # Profile + age filter
 ticketlens cache clear --older-than=30d --yes            # Skip confirmation (CI/scripts)
 ticketlens cache clear --help                 # Full options
+
+# ── Profile management ────────────────────────────────────────────────────────
+ticketlens delete <PROFILE-NAME>              # Remove a profile (prompts y/N in TTY)
 
 # ── License ────────────────────────────────────────────────────────────────────
 ticketlens license                            # Show license tier and status
@@ -484,8 +498,7 @@ With this setup:
 ## Running Tests
 
 ```bash
-cd skills/jtb/scripts
-node --test
+npm test
 ```
 
 Expected output: all tests pass, zero failures.
@@ -517,10 +530,15 @@ See [ROADMAP.md](ROADMAP.md) for the full feature plan.
 - ✅ Unknown flag detection — unrecognized flags stop the CLI with a "Did you mean?" suggestion and interactive `y/N` fix prompt; cross-command hints (e.g. `--depth` suggested in triage, `--stale` suggested in fetch)
 - ✅ Concurrent promise guard — parallel triage startup (`userPromise` + `ticketsPromise`) guarded against unhandled rejection on early bail
 
-**Iteration 3.5 — Next:**
+**Iteration 3.5 — Complete:**
+- ✅ CI pipeline (GitHub Actions, Node 20+22 matrix)
+- ✅ `--assignee=NAME` and `--sprint=NAME` filter flags (Team tier)
+- ✅ `ticketlens delete` — remove a profile with y/N confirmation
+- ✅ Ticket key validation — invalid keys rejected with clear error
+- ✅ CI badge in README
+
+**Next up:**
 - README GIF demos (ticket fetch, triage scan)
-- CI badge
-- `--assignee` and `--sprint` filter flags
 - Public launch: HN, Reddit, Dev.to
 
 **Coming soon:**
@@ -543,3 +561,27 @@ None at this time. Previous issues resolved:
 - ~~`cache --help` showed main help~~ — Fixed: Subcommand `--help` flags route to each subcommand's own help.
 - ~~Unhandled rejection crash on triage timeout~~ — Fixed: concurrent `userPromise`/`ticketsPromise` now guarded with `.catch(()=>{})` on early bail; timeout errors show styled error box.
 - ~~Unknown flags silently passed through~~ — Fixed: unrecognized flags stop the CLI with a "Did you mean?" suggestion and `y/N` interactive fix.
+
+---
+
+## Contributing
+
+Bug reports and feature requests are welcome — open an issue on [GitHub](https://github.com/ralphmoran/ticket-lens/issues).
+
+Pull requests for bug fixes are appreciated. For larger changes, open an issue first to discuss the approach.
+
+**Development setup:**
+
+```bash
+git clone https://github.com/ralphmoran/ticket-lens.git
+cd ticket-lens
+npm test          # Run the test suite (Node 18+ required)
+```
+
+There are no build steps and no npm dependencies to install. All modules use `node:` built-ins only.
+
+---
+
+## License
+
+[MIT](LICENSE) © Ralph Moran
