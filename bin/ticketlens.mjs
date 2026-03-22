@@ -15,7 +15,8 @@ import { run as runInit } from '../skills/jtb/scripts/lib/init-wizard.mjs';
 import { runSwitch } from '../skills/jtb/scripts/lib/profile-switcher.mjs';
 import { run as runConfig } from '../skills/jtb/scripts/lib/config-wizard.mjs';
 import { activateLicense, checkLicense } from '../skills/jtb/scripts/lib/license.mjs';
-import { deleteProfile, loadProfiles } from '../skills/jtb/scripts/lib/profile-resolver.mjs';
+import { deleteProfile, loadProfiles, saveDefault } from '../skills/jtb/scripts/lib/profile-resolver.mjs';
+import { promptSelect } from '../skills/jtb/scripts/lib/select-prompt.mjs';
 import { run as runCache } from '../skills/jtb/scripts/lib/cache-manager.mjs';
 import { printHelp, printProfiles } from '../skills/jtb/scripts/lib/help.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
@@ -158,7 +159,71 @@ switch (command) {
   case 'profiles': {
     const plain = cmdArgs.includes('--plain');
     const config = loadProfiles();
-    printProfiles({ config, plain });
+    const names = Object.keys(config?.profiles || {});
+
+    // Non-TTY or --plain: static list, no interaction
+    if (plain || !process.stdin.isTTY || !process.stdin.setRawMode) {
+      printProfiles({ config, plain });
+      break;
+    }
+
+    // TTY: interactive profile quick-launcher
+    const s = createStyler({ isTTY: process.stderr.isTTY });
+
+    if (names.length === 0) {
+      printProfiles({ config });
+      break;
+    }
+
+    // Step 1 — select profile (skip if only one)
+    let selectedProfile;
+    if (names.length === 1) {
+      selectedProfile = names[0];
+      process.stderr.write(`\n  ${s.dim('Profile:')} ${s.bold(s.cyan(selectedProfile))}\n`);
+    } else {
+      const active = config?.default || names[0];
+      const profileItems = names.map(name => {
+        const p = config.profiles[name];
+        const activeTag = name === active ? '  ● active' : '';
+        return { label: name, sublabel: (p.baseUrl || '') + activeTag };
+      });
+
+      process.stderr.write(`\n  ${s.dim('Select a profile:')}\n`);
+      const profileIdx = await promptSelect(profileItems, {
+        hint: '↑/↓ select   Enter confirm   Esc cancel',
+      });
+      if (profileIdx === null) break;
+      selectedProfile = names[profileIdx];
+    }
+
+    // Step 2 — select action
+    const ACTION_ITEMS = [
+      { label: 'Triage',        sublabel: 'scan assigned tickets' },
+      { label: 'Edit config',   sublabel: 'modify profile settings' },
+      { label: 'Set as active', sublabel: 'make this the default profile' },
+      { label: 'Cancel' },
+    ];
+
+    process.stderr.write(`\n  ${s.dim(`${s.cyan(selectedProfile)} — what do you want to do?`)}\n`);
+    const actionIdx = await promptSelect(ACTION_ITEMS, {
+      hint: '↑/↓ select   Enter confirm   Esc cancel',
+    });
+    if (actionIdx === null || actionIdx === 3) break;
+
+    if (actionIdx === 0) {
+      await runTriage([`--profile=${selectedProfile}`]).catch(err => {
+        process.stderr.write(`Error: ${err.message}\n`);
+        process.exitCode = 1;
+      });
+    } else if (actionIdx === 1) {
+      await runConfig({ profileName: selectedProfile }).catch(err => {
+        process.stderr.write(`Error: ${err.message}\n`);
+        process.exitCode = 1;
+      });
+    } else if (actionIdx === 2) {
+      saveDefault(selectedProfile);
+      process.stdout.write(`  ${s.green('✔')} ${s.bold(selectedProfile)} is now the active profile.\n`);
+    }
     break;
   }
 

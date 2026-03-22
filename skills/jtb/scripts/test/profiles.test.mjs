@@ -105,6 +105,32 @@ describe('printProfiles — --plain mode', () => {
   });
 });
 
+describe('printProfiles — (no) active indicator when default key absent', () => {
+  it('uses first profile as active when config.default is not set', () => {
+    const config = {
+      profiles: {
+        first:  { baseUrl: 'https://a.atlassian.net', auth: 'cloud' },
+        second: { baseUrl: 'https://b.atlassian.net', auth: 'cloud' },
+      },
+    };
+    const out = capture(config);
+    // Active note must name "first" (no config.default)
+    assert.ok(out.includes('first'), 'first profile must be shown as active');
+  });
+
+  it('uses config.default as active when set', () => {
+    const config = {
+      default: 'second',
+      profiles: {
+        first:  { baseUrl: 'https://a.atlassian.net', auth: 'cloud' },
+        second: { baseUrl: 'https://b.atlassian.net', auth: 'cloud' },
+      },
+    };
+    const out = capture(config);
+    assert.ok(out.includes('second'), 'config.default profile must be shown as active');
+  });
+});
+
 describe('cli.mjs — profiles command routing', () => {
   it('routes "profiles" to profiles command', () => {
     const { command } = parseCommand(['profiles']);
