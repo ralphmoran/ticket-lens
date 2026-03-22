@@ -14,8 +14,7 @@ import { fetchCurrentUser, fetchStatuses } from './jira-client.mjs';
 import { loadProfiles, saveProfile, saveDefault } from './profile-resolver.mjs';
 import { promptSelect } from './select-prompt.mjs';
 import { runSwitch } from './profile-switcher.mjs';
-
-const DEFAULT_CONFIG_DIR = join(homedir(), '.ticketlens');
+import { DEFAULT_CONFIG_DIR } from './config.mjs';
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 const visLen = (str) => str.replace(ANSI_RE, '').length;
 

@@ -1,24 +1,7 @@
 import { createStyler } from './ansi.mjs';
 import { spawn } from 'node:child_process';
 import { runSwitch } from './profile-switcher.mjs';
-
-function truncate(str, max) {
-  if (!str) return '';
-  const oneLine = str.replace(/[\r\n]+/g, ' ').trim();
-  if (oneLine.length <= max) return oneLine;
-  return oneLine.slice(0, max - 3) + '...';
-}
-
-function timeAgo(dateStr) {
-  if (!dateStr) return '';
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
+import { timeAgo, truncate } from './config.mjs';
 
 const ESCAPE_RE = /\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g;
 const visLen = (str) => str.replace(ESCAPE_RE, '').length;

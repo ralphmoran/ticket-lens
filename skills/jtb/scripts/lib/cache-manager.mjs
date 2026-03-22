@@ -5,14 +5,12 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { formatSize } from './attachment-downloader.mjs';
 import { createStyler } from './ansi.mjs';
 import { loadProfiles } from './profile-resolver.mjs';
 import { promptSelect } from './select-prompt.mjs';
 import { getBriefCacheEntries, clearBriefCache, briefCacheAge, DEFAULT_BRIEF_TTL } from './brief-cache.mjs';
-
-export const DEFAULT_CONFIG_DIR = path.join(os.homedir(), '.ticketlens');
+import { DEFAULT_CONFIG_DIR } from './config.mjs';
 
 // Age unit → milliseconds
 const AGE_UNIT_MS = { h: 3600000, d: 86400000, w: 7 * 86400000, m: 30 * 86400000, y: 365 * 86400000 };

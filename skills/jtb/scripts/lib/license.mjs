@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { DEFAULT_CONFIG_DIR } from './config.mjs';
 
 export const LICENSE_TIERS = { free: 0, pro: 1, team: 2 };
-
-const DEFAULT_CONFIG_DIR = path.join(os.homedir(), '.ticketlens');
 const LICENSE_FILE = 'license.json';
 
 export function readLicense(configDir = DEFAULT_CONFIG_DIR) {

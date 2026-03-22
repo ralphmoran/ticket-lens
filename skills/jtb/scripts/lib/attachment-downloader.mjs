@@ -6,10 +6,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { buildAuthHeader } from './jira-client.mjs';
-
-export const DEFAULT_CONFIG_DIR = path.join(os.homedir(), '.ticketlens');
+import { DEFAULT_CONFIG_DIR } from './config.mjs';
 const MAX_ATTACHMENTS = 20;
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 

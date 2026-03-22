@@ -16,8 +16,7 @@ import { loadProfiles, loadCredentials, saveProfile } from './profile-resolver.m
 import { promptSelect } from './select-prompt.mjs';
 import { parseAge } from './cache-manager.mjs';
 import { DEFAULT_BRIEF_TTL } from './brief-cache.mjs';
-
-const DEFAULT_CONFIG_DIR = join(homedir(), '.ticketlens');
+import { DEFAULT_CONFIG_DIR } from './config.mjs';
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 const visLen = (str) => str.replace(ANSI_RE, '').length;
 

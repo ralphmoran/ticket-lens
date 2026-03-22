@@ -2,21 +2,8 @@
  * Styled help output for TicketLens CLI.
  */
 
-import { readFileSync } from 'node:fs';
 import { createStyler } from './ansi.mjs';
-
-let _version;
-function getVersion() {
-  if (_version) return _version;
-  try {
-    const pkgPath = new URL('../../../../package.json', import.meta.url);
-    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
-    _version = pkg.version || '0.0.0';
-  } catch {
-    _version = '0.0.0';
-  }
-  return _version;
-}
+import { getVersion } from './config.mjs';
 
 export function printHelp({ stream = process.stdout } = {}) {
   const isTTY = stream.isTTY;

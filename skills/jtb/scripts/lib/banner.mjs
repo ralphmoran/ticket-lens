@@ -4,8 +4,8 @@
  * Writes to stderr so stdout stays clean for piped output.
  */
 
-import { readFileSync } from 'node:fs';
 import { createStyler } from './ansi.mjs';
+import { getVersion } from './config.mjs';
 
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 const visibleLength = (str) => str.replace(ANSI_RE, '').length;
@@ -13,18 +13,6 @@ const visibleLength = (str) => str.replace(ANSI_RE, '').length;
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const SPINNER_INTERVAL = 80;
 
-let _version;
-function getVersion() {
-  if (_version) return _version;
-  try {
-    const pkgPath = new URL('../../../../package.json', import.meta.url);
-    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
-    _version = pkg.version || '0.0.0';
-  } catch {
-    _version = '0.0.0';
-  }
-  return _version;
-}
 
 function buildBox(lines, { s, borderColor = 'cyan' }) {
   const maxVisible = lines.reduce((max, l) => Math.max(max, visibleLength(l)), 0);

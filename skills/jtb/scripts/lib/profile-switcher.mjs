@@ -3,15 +3,12 @@
  * Used by `ticketlens switch` subcommand and as the final step in `ticketlens init`.
  */
 
-import { join } from 'node:path';
-import { homedir } from 'node:os';
 import { createStyler } from './ansi.mjs';
 import { fetchCurrentUser } from './jira-client.mjs';
 import { classifyError } from './error-classifier.mjs';
 import { loadProfiles, loadCredentials, saveDefault } from './profile-resolver.mjs';
 import { runRawSelect } from './select-prompt.mjs';
-
-const DEFAULT_CONFIG_DIR = join(homedir(), '.ticketlens');
+import { DEFAULT_CONFIG_DIR } from './config.mjs';
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 const visLen = (str) => str.replace(ANSI_RE, '').length;
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];

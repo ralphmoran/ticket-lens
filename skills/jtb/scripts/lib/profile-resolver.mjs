@@ -6,8 +6,7 @@
 import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-
-const DEFAULT_CONFIG_DIR = join(homedir(), '.ticketlens');
+import { DEFAULT_CONFIG_DIR } from './config.mjs';
 
 /** Simple Levenshtein distance for "did you mean" suggestions. */
 function levenshtein(a, b) {

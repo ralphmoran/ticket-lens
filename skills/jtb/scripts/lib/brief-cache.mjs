@@ -9,9 +9,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
-
-export const DEFAULT_CONFIG_DIR = path.join(os.homedir(), '.ticketlens');
+import { DEFAULT_CONFIG_DIR } from './config.mjs';
 export const BRIEF_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours (default)
 export const DEFAULT_BRIEF_TTL = '4h'; // human-readable default for display/config
 
