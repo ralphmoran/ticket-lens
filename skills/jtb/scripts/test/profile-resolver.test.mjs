@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveConnection, resolveProfile, resolveProfileByPath, loadProfiles, saveDefault, saveProfile, deleteProfile } from '../lib/profile-resolver.mjs';
+import { resolveConnection, resolveProfile, resolveProfileByPath, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache } from '../lib/profile-resolver.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 
 const sampleProfiles = {
@@ -390,5 +390,94 @@ describe('profile-resolver', () => {
       const mode = statSync(join(configDir, 'profiles.json')).mode & 0o777;
       assert.equal(mode, 0o600, `profiles.json must be chmod 600 after delete, got ${mode.toString(8)}`);
     });
+  });
+});
+
+// ─── Cache memoization ────────────────────────────────────────────────────────
+
+describe('loadProfiles — cache', () => {
+  let dir;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'jtb-cache-'));
+    invalidateProfilesCache(dir);
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+    invalidateProfilesCache(dir);
+  });
+
+  it('returns same object reference on repeated calls (cache hit)', () => {
+    writeFileSync(join(dir, 'profiles.json'), JSON.stringify({ profiles: { x: { baseUrl: 'https://a.com' } } }));
+    const first = loadProfiles(dir);
+    const second = loadProfiles(dir);
+    assert.strictEqual(first, second, 'repeated loadProfiles should return same cached object');
+  });
+
+  it('different configDirs are cached independently', () => {
+    const dir2 = mkdtempSync(join(tmpdir(), 'jtb-cache2-'));
+    try {
+      writeFileSync(join(dir, 'profiles.json'), JSON.stringify({ profiles: { a: { baseUrl: 'https://a.com' } } }));
+      writeFileSync(join(dir2, 'profiles.json'), JSON.stringify({ profiles: { b: { baseUrl: 'https://b.com' } } }));
+      const r1 = loadProfiles(dir);
+      const r2 = loadProfiles(dir2);
+      assert.ok(r1.profiles.a, 'dir should have profile a');
+      assert.ok(r2.profiles.b, 'dir2 should have profile b');
+      assert.ok(!r1.profiles.b, 'dir should not see dir2 profiles');
+    } finally {
+      rmSync(dir2, { recursive: true, force: true });
+      invalidateProfilesCache(dir2);
+    }
+  });
+
+  it('saveProfile invalidates cache — subsequent loadProfiles returns fresh data', () => {
+    writeFileSync(join(dir, 'profiles.json'), JSON.stringify({ profiles: { old: { baseUrl: 'https://old.com' } } }));
+    loadProfiles(dir); // prime cache
+    saveProfile('new', { baseUrl: 'https://new.com' }, {}, dir);
+    const fresh = loadProfiles(dir);
+    assert.ok(fresh.profiles.new, 'loadProfiles must return newly saved profile after saveProfile');
+  });
+
+  it('saveDefault invalidates cache — subsequent loadProfiles returns updated default', () => {
+    writeFileSync(join(dir, 'profiles.json'), JSON.stringify({ profiles: { p: { baseUrl: 'https://x.com' } } }));
+    loadProfiles(dir); // prime cache
+    saveDefault('p', dir);
+    const fresh = loadProfiles(dir);
+    assert.equal(fresh.default, 'p');
+  });
+
+  it('deleteProfile invalidates cache — deleted profile not visible after delete', () => {
+    writeFileSync(join(dir, 'profiles.json'), JSON.stringify({ profiles: { gone: { baseUrl: 'https://gone.com' } } }));
+    loadProfiles(dir); // prime cache
+    deleteProfile('gone', dir);
+    const fresh = loadProfiles(dir);
+    assert.ok(!fresh?.profiles?.gone, 'deleted profile must not appear after deleteProfile');
+  });
+});
+
+describe('loadCredentials — cache', () => {
+  let dir;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'jtb-cred-'));
+    invalidateProfilesCache(dir);
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+    invalidateProfilesCache(dir);
+  });
+
+  it('returns same object reference on repeated calls (cache hit)', () => {
+    writeFileSync(join(dir, 'credentials.json'), JSON.stringify({ p: { apiToken: 'tok' } }));
+    const first = loadCredentials(dir);
+    const second = loadCredentials(dir);
+    assert.strictEqual(first, second);
+  });
+
+  it('saveProfile invalidates credentials cache', () => {
+    writeFileSync(join(dir, 'profiles.json'), JSON.stringify({ profiles: {} }));
+    writeFileSync(join(dir, 'credentials.json'), JSON.stringify({}));
+    loadCredentials(dir); // prime cache
+    saveProfile('p', { baseUrl: 'https://x.com' }, { apiToken: 'new-tok' }, dir);
+    const fresh = loadCredentials(dir);
+    assert.equal(fresh.p.apiToken, 'new-tok');
   });
 });

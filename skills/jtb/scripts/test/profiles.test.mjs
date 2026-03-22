@@ -53,7 +53,7 @@ describe('printProfiles — multiple profiles', () => {
     default: 'client',
     profiles: {
       myteam: { baseUrl: 'https://myteam.atlassian.net', auth: 'cloud', ticketPrefixes: ['PROJ'] },
-      client: { baseUrl: 'https://jira.client.com', auth: 'server', ticketPrefixes: ['ACME'] },
+      client: { baseUrl: 'https://jira.client.com', auth: 'server', ticketPrefixes: ['ACME'], triageStatuses: ['In Progress', 'In Review'] },
     },
   };
 
@@ -69,10 +69,18 @@ describe('printProfiles — multiple profiles', () => {
     assert.ok(out.includes('client'), 'active profile name must appear');
   });
 
-  it('shows auth types', () => {
+  it('shows column headers', () => {
     const out = capture(config);
-    assert.ok(out.includes('cloud'));
-    assert.ok(out.includes('server'));
+    assert.ok(out.includes('Profile'), 'header must include Profile');
+    assert.ok(out.includes('URL'),      'header must include URL');
+    assert.ok(out.includes('Prefixes'), 'header must include Prefixes');
+    assert.ok(out.includes('Statuses'), 'header must include Statuses');
+  });
+
+  it('shows triageStatuses values in Statuses column', () => {
+    const out = capture(config);
+    assert.ok(out.includes('In Progress'));
+    assert.ok(out.includes('In Review'));
   });
 });
 
@@ -98,10 +106,11 @@ describe('printProfiles — --plain mode', () => {
     assert.ok(out.includes('inactive'), 'inactive profile must be flagged');
   });
 
-  it('includes URL and auth in plain output', () => {
+  it('includes URL and statuses columns in plain output', () => {
     const out = capture(config, { plain: true });
     assert.ok(out.includes('https://myteam.atlassian.net'));
-    assert.ok(out.includes('cloud'));
+    // active/inactive status flag in second column
+    assert.ok(out.includes('active'));
   });
 });
 

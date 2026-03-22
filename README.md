@@ -134,11 +134,13 @@ ticketlens ls                # Shorthand alias
 ticketlens profiles --plain  # Tab-separated output (scripts / pipes)
 ```
 
-Each row shows: profile name · Jira URL · auth type · ticket prefixes. The active profile is marked with `●`.
+Output is a four-column table. The active profile is marked with `●`.
 
 ```
-  ● myteam   https://myteam.atlassian.net   cloud    PROJ, OPS
-  ○ client   https://jira.client.com        server   ACME, SHOP
+    Profile    URL                              Prefixes     Statuses
+    ───────    ───                              ────────     ────────
+  ● myteam    https://myteam.atlassian.net      PROJ, OPS    In Progress, Code Review
+  ○ client    https://jira.client.com           ACME, SHOP   In Progress, QA
 
   Active: myteam  ·  ticketlens switch  ·  ticketlens config --profile=NAME
 ```
@@ -226,6 +228,7 @@ The `--stale=N` threshold controls **both** categories: a comment waiting for yo
 
 **Interactive mode** (default on TTY):
 - `↑/↓` navigate — `Enter` open in browser — `p` switch profile — `q/Esc` exit
+- Columns adapt to terminal width: narrow terminals show key/title/status only; wider terminals progressively add From, When, and Detail columns
 
 **Status mismatch auto-fix:** If configured statuses don't match Jira's (e.g. `"In progress"` vs `"In Progress"`, `"QA"` vs `"QA Testing"`), triage shows a diff and offers to update your profile automatically:
 
@@ -563,6 +566,10 @@ See [ROADMAP.md](ROADMAP.md) for the full feature plan.
 - ✅ `ticketlens delete` — remove a profile with y/N confirmation
 - ✅ Ticket key validation — invalid keys rejected with clear error
 - ✅ CI badge in README
+- ✅ `ticketlens profiles` — columnar table with headers (Profile | URL | Prefixes | Statuses)
+- ✅ Responsive triage table — columns adapt to terminal width (narrow/medium/wide breakpoints)
+- ✅ Parallel attachment downloads — batched in groups of 3; order preserved
+- ✅ Profile data memoized — `profiles.json` and `credentials.json` read once per run instead of 5–6×; auto-invalidated on every write
 
 **Next up:**
 - README GIF demos (ticket fetch, triage scan)

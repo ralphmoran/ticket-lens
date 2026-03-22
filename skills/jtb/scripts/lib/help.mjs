@@ -121,6 +121,12 @@ export function printFetchHelp({ stream = process.stdout } = {}) {
   stream.write(lines.join('\n') + '\n');
 }
 
+const ANSI_RE_HELP = /\x1b\[[0-9;]*m/g;
+function padRightVis(str, len) {
+  const vis = str.replace(ANSI_RE_HELP, '').length;
+  return str + ' '.repeat(Math.max(0, len - vis));
+}
+
 export function printProfiles({ stream = process.stdout, config, plain = false } = {}) {
   const isTTY = !plain && stream.isTTY;
   const s = createStyler({ isTTY });
@@ -136,27 +142,49 @@ export function printProfiles({ stream = process.stdout, config, plain = false }
   const active = config?.default || names[0];
   const defaultIsExplicit = !!config?.default;
 
+  const getData = (name) => {
+    const p = profiles[name];
+    return {
+      prefixes: (p.ticketPrefixes || []).join(', ') || '—',
+      statuses: (p.triageStatuses || []).join(', ') || '—',
+      url: p.baseUrl || '',
+    };
+  };
+
   if (plain) {
     for (const name of names) {
-      const p = profiles[name];
-      stream.write(`${name}\t${name === active ? 'active' : 'inactive'}\t${p.baseUrl || ''}\t${p.auth || 'cloud'}\t${(p.ticketPrefixes || []).join(',')}\n`);
+      const { url, prefixes, statuses } = getData(name);
+      stream.write(`${name}\t${name === active ? 'active' : 'inactive'}\t${url}\t${prefixes}\t${statuses}\n`);
     }
     return;
   }
 
-  const nameW = Math.max(...names.map(n => n.length)) + 1;
-  const urlW  = Math.max(...names.map(n => (profiles[n].baseUrl || '').length));
+  const MAX_STATUS_W = 45;
+  const nameW   = Math.max('Profile'.length, ...names.map(n => n.length));
+  const urlW    = Math.max('URL'.length,     ...names.map(n => getData(n).url.length));
+  const prefW   = Math.max('Prefixes'.length, ...names.map(n => getData(n).prefixes.length));
 
-  const lines = [''];
+  // Header + separator (4 chars before name = 2 leading + indicator + space)
+  const hdr = `    ${padRightVis('Profile', nameW + 2)}${padRightVis('URL', urlW + 2)}${padRightVis('Prefixes', prefW + 2)}Statuses`;
+  const sep = `    ${'─'.repeat(nameW).padEnd(nameW + 2)}${'─'.repeat(urlW).padEnd(urlW + 2)}${'─'.repeat(prefW).padEnd(prefW + 2)}${'─'.repeat('Statuses'.length)}`;
+
+  const lines = ['', s.dim(hdr), s.dim(sep)];
+
   for (const name of names) {
-    const p = profiles[name];
+    const { url, prefixes, statuses } = getData(name);
     const isActive = name === active;
     const indicator = isActive ? s.green('●') : s.dim('○');
-    const nameStr   = isActive ? s.bold(name.padEnd(nameW)) : s.dim(name.padEnd(nameW));
-    const url       = (p.baseUrl || '').padEnd(urlW + 2);
-    const auth      = (p.auth || 'cloud').padEnd(8);
-    const prefixes  = (p.ticketPrefixes || []).join(', ') || s.dim('(none)');
-    lines.push(`  ${indicator} ${nameStr}${url}${auth}${prefixes}`);
+    const nameStyled = isActive ? s.bold(s.cyan(name)) : name;
+    const statusDisplay = statuses.length > MAX_STATUS_W
+      ? statuses.slice(0, MAX_STATUS_W - 1) + '…'
+      : statuses;
+    lines.push(
+      `  ${indicator} ` +
+      padRightVis(nameStyled, nameW + 2) +
+      url.padEnd(urlW + 2) +
+      prefixes.padEnd(prefW + 2) +
+      statusDisplay
+    );
   }
   lines.push('');
 

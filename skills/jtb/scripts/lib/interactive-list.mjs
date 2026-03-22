@@ -50,38 +50,49 @@ export function runInteractiveList(tickets, opts = {}) {
   let scrollTop = 0;
   let dynamicLineCount = 0; // track how many lines the dynamic section used last render
 
-  const COL = { flag: 1, key: 12, title: 55, status: 14, from: 14, when: 8, detail: 55 };
+  // Responsive column layout — re-evaluated on every render so terminal resizes are handled.
+  // Wide (≥150): all columns. Medium (≥100): no detail. Narrow (<100): key+title+status only.
+  function getColLayout() {
+    const w = process.stdout.columns || 120;
+    if (w >= 150) return { key: 12, title: 45, status: 14, from: 14, when: 8, detail: 35 };
+    if (w >= 100) return { key: 12, title: 35, status: 14, from: 14, when: 8, detail: 0  };
+    return            { key: 10, title: Math.max(20, w - 36), status: 12, from: 0, when: 0, detail: 0 };
+  }
 
   function buildRow(ticket, index) {
+    const COL = getColLayout();
     const isSelected = index === selectedIndex;
-    const isNeedsResponse = ticket.urgency === 'needs-response';
+    const isNR = ticket.urgency === 'needs-response';
 
-    const dot = isNeedsResponse ? s.red('\u25cf') : s.yellow('\u25cf');
-    const key = padRight(ticket.ticketKey, COL.key);
-    const title = padRight(truncate(ticket.summary, COL.title), COL.title);
+    const dot    = isNR ? s.red('\u25cf') : s.yellow('\u25cf');
+    const key    = padRight(ticket.ticketKey, COL.key);
+    const title  = padRight(truncate(ticket.summary, COL.title), COL.title);
     const status = padRight(ticket.status, COL.status);
 
-    let from, when, detail;
-    if (isNeedsResponse) {
-      from = padRight(ticket.lastComment?.author ?? 'Unknown', COL.from);
-      when = padRight(ticket.lastComment ? timeAgo(ticket.lastComment.created) : '', COL.when);
-      detail = ticket.lastComment?.body ? s.dim(truncate(ticket.lastComment.body, COL.detail)) : '';
-    } else {
-      const days = ticket.daysSinceUpdate ?? '?';
-      from = padRight('', COL.from);
-      when = padRight('', COL.when);
-      detail = s.dim(`${days}d stale`);
+    const parts = [`  ${dot}`, key, title, status];
+
+    if (COL.from > 0) {
+      const from = padRight(isNR ? (ticket.lastComment?.author ?? 'Unknown') : '', COL.from);
+      const when = padRight(isNR && ticket.lastComment ? timeAgo(ticket.lastComment.created) : '', COL.when);
+      parts.push(from, when);
     }
 
-    const line = `  ${dot}   ${key}   ${title}   ${status}   ${from}   ${when}   ${detail}`;
-
-    if (isSelected) {
-      return `\x1b[7m${line}\x1b[27m`;
+    if (COL.detail > 0) {
+      const detail = isNR
+        ? (ticket.lastComment?.body ? s.dim(truncate(ticket.lastComment.body, COL.detail)) : '')
+        : s.dim(`${ticket.daysSinceUpdate ?? '?'}d stale`);
+      parts.push(detail);
+    } else if (COL.from === 0 && !isNR) {
+      // Narrow, no detail col: append stale days compactly after status
+      parts.push(s.dim(`${ticket.daysSinceUpdate ?? '?'}d`));
     }
-    return line;
+
+    const line = parts.join('   ');
+    return isSelected ? `\x1b[7m${line}\x1b[27m` : line;
   }
 
   function writeHeader() {
+    const COL = getColLayout();
     const lines = [];
 
     // Title
@@ -96,11 +107,21 @@ export function runInteractiveList(tickets, opts = {}) {
     if (aging.length > 0) lines.push(` ${s.yellow('\u25cf')} aging`);
     lines.push('');
 
-    // Column headers + separator
-    const hdr = `  ${padRight('', COL.flag)}   ${padRight('Ticket', COL.key)}   ${padRight('Title', COL.title)}   ${padRight('Status', COL.status)}   ${padRight('From', COL.from)}   ${padRight('When', COL.when)}   Detail`;
-    const sep = `  ${'\u2500'.repeat(COL.flag)}   ${'\u2500'.repeat(COL.key)}   ${'\u2500'.repeat(COL.title)}   ${'\u2500'.repeat(COL.status)}   ${'\u2500'.repeat(COL.from)}   ${'\u2500'.repeat(COL.when)}   ${'\u2500'.repeat(COL.detail)}`;
-    lines.push(s.dim(hdr));
-    lines.push(s.dim(sep));
+    // Column headers + separator — mirrors buildRow column visibility
+    const hdrParts = [`  ${padRight('', 1)}`, padRight('Ticket', COL.key), padRight('Title', COL.title), padRight('Status', COL.status)];
+    const sepParts = [`  ${'\u2500'.repeat(1)}`, '\u2500'.repeat(COL.key), '\u2500'.repeat(COL.title), '\u2500'.repeat(COL.status)];
+
+    if (COL.from > 0) {
+      hdrParts.push(padRight('From', COL.from), padRight('When', COL.when));
+      sepParts.push('\u2500'.repeat(COL.from), '\u2500'.repeat(COL.when));
+    }
+    if (COL.detail > 0) {
+      hdrParts.push('Detail');
+      sepParts.push('\u2500'.repeat(COL.detail));
+    }
+
+    lines.push(s.dim(hdrParts.join('   ')));
+    lines.push(s.dim(sepParts.join('   ')));
 
     const cols = process.stdout.columns || 120;
     process.stderr.write(lines.map(l => clipToWidth(l, cols)).join('\n') + '\n');

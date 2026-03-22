@@ -286,6 +286,48 @@ describe('downloadAttachments — SSRF protection', () => {
   });
 });
 
+// ─── Parallel downloads ──────────────────────────────────────────────────────
+
+describe('downloadAttachments — parallel downloads', () => {
+  it('runs up to 3 downloads concurrently within a batch', async () => {
+    const attachments = Array.from({ length: 3 }, (_, i) =>
+      makeAttachment({ filename: `p-${i}.png`, content: `https://jira.example.com/p-${i}.png` })
+    );
+
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    const fetcher = async (_url) => {
+      concurrent++;
+      maxConcurrent = Math.max(maxConcurrent, concurrent);
+      await new Promise(res => setImmediate(res)); // yield so all 3 start before any resolves
+      concurrent--;
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer(Buffer.from('x')) };
+    };
+
+    await downloadAttachments(makeTicket(attachments), { env: ENV, fetcher, configDir: tmpDir });
+    assert.equal(maxConcurrent, 3);
+  });
+
+  it('preserves result order when downloads complete out of order', async () => {
+    const attachments = Array.from({ length: 4 }, (_, i) =>
+      makeAttachment({ filename: `img-${i}.png`, content: `https://jira.example.com/img-${i}.png` })
+    );
+
+    // Later indices resolve faster (reverse completion order)
+    const fetcher = async (url) => {
+      const i = parseInt(url.match(/img-(\d+)/)[1]);
+      await new Promise(res => setTimeout(res, (4 - i) * 10));
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer(Buffer.from(`d${i}`)) };
+    };
+
+    const result = await downloadAttachments(makeTicket(attachments), { env: ENV, fetcher, configDir: tmpDir });
+    assert.equal(result.length, 4);
+    for (let i = 0; i < 4; i++) {
+      assert.ok(result[i].localPath?.endsWith(`img-${i}.png`), `result[${i}] should be img-${i}.png`);
+    }
+  });
+});
+
 // ─── formatSize ──────────────────────────────────────────────────────────────
 
 describe('formatSize', () => {

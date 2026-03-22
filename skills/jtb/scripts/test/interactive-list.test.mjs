@@ -7,6 +7,23 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(__dirname, '../lib/interactive-list.mjs'), 'utf8');
 
+describe('interactive-list responsive layout', () => {
+  it('writeHeader calls getColLayout() for responsive column widths', () => {
+    const headerFn = src.match(/function writeHeader\(\)[\s\S]*?^\s{2}\}/m)?.[0] ?? '';
+    assert.ok(
+      headerFn.includes('getColLayout()'),
+      'writeHeader must call getColLayout() to adapt to terminal width'
+    );
+  });
+
+  it('no hardcoded COL.flag reference (removed legacy fixed-width layout)', () => {
+    assert.ok(
+      !src.includes('COL.flag'),
+      'COL.flag was a hardcoded column width — must be removed in favour of getColLayout()'
+    );
+  });
+});
+
 describe('interactive-list security', () => {
   it('does not use execSync (shell injection risk)', () => {
     assert.ok(

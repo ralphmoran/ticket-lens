@@ -37,12 +37,23 @@ function findClosest(input, candidates) {
   return bestDist <= Math.floor(input.length / 2) + 2 ? best : null;
 }
 
+// Module-level cache keyed by configDir — avoids redundant readFileSync+JSON.parse per run.
+// Invalidated automatically by every write function.
+const _profilesCache = new Map();
+const _credentialsCache = new Map();
+
+export function invalidateProfilesCache(configDir = DEFAULT_CONFIG_DIR) {
+  _profilesCache.delete(configDir);
+  _credentialsCache.delete(configDir);
+}
+
 export function saveDefault(name, configDir = DEFAULT_CONFIG_DIR) {
   const profilesPath = join(configDir, 'profiles.json');
   const config = loadProfiles(configDir) || { profiles: {} };
   config.default = name;
   writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
   chmodSync(profilesPath, 0o600);
+  invalidateProfilesCache(configDir);
 }
 
 export function saveProfile(name, profileData, credData, configDir = DEFAULT_CONFIG_DIR) {
@@ -59,6 +70,7 @@ export function saveProfile(name, profileData, credData, configDir = DEFAULT_CON
     writeFileSync(credPath, JSON.stringify(creds, null, 2) + '\n', 'utf8');
     chmodSync(credPath, 0o600);
   }
+  invalidateProfilesCache(configDir);
 }
 
 export function deleteProfile(name, configDir = DEFAULT_CONFIG_DIR) {
@@ -83,19 +95,29 @@ export function deleteProfile(name, configDir = DEFAULT_CONFIG_DIR) {
     }
   }
 
+  invalidateProfilesCache(configDir);
   return { deleted: true };
 }
 
 export function loadProfiles(configDir = DEFAULT_CONFIG_DIR) {
+  if (_profilesCache.has(configDir)) return _profilesCache.get(configDir);
   const profilesPath = join(configDir, 'profiles.json');
   if (!existsSync(profilesPath)) return null;
-  return JSON.parse(readFileSync(profilesPath, 'utf8'));
+  const data = JSON.parse(readFileSync(profilesPath, 'utf8'));
+  _profilesCache.set(configDir, data);
+  return data;
 }
 
 export function loadCredentials(configDir = DEFAULT_CONFIG_DIR) {
+  if (_credentialsCache.has(configDir)) return _credentialsCache.get(configDir);
   const credPath = join(configDir, 'credentials.json');
-  if (!existsSync(credPath)) return {};
-  return JSON.parse(readFileSync(credPath, 'utf8'));
+  if (!existsSync(credPath)) {
+    _credentialsCache.set(configDir, {});
+    return {};
+  }
+  const data = JSON.parse(readFileSync(credPath, 'utf8'));
+  _credentialsCache.set(configDir, data);
+  return data;
 }
 
 export function expandTilde(p) {
