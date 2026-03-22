@@ -129,23 +129,12 @@ Every field is pre-populated with its current value — press `Enter` to keep it
 List all configured Jira profiles and identify the active one.
 
 ```bash
-ticketlens profiles          # List profiles — interactive in TTY, static otherwise
+ticketlens profiles          # List all configured profiles
 ticketlens ls                # Shorthand alias
 ticketlens profiles --plain  # Tab-separated output (scripts / pipes)
 ```
 
-**In a TTY**, `ticketlens profiles` is an interactive profile quick-launcher:
-
-1. **Select a profile** with `↑/↓ Enter` — shows name + Jira URL + active badge
-2. **Select an action:**
-   - `Triage` — scan assigned tickets with this profile
-   - `Edit config` — modify this profile's settings
-   - `Set as active` — make this the default profile
-   - `Cancel`
-
-The selected profile is passed as `--profile=NAME` to the action. It does **not** change your active profile unless you explicitly choose "Set as active".
-
-**In non-TTY / `--plain` mode**, shows a static aligned table:
+Each row shows: profile name · Jira URL · auth type · ticket prefixes. The active profile is marked with `●`.
 
 ```
   ● myteam   https://myteam.atlassian.net   cloud    PROJ, OPS
@@ -154,7 +143,7 @@ The selected profile is passed as `--profile=NAME` to the action. It does **not*
   Active: myteam  ·  ticketlens switch  ·  ticketlens config --profile=NAME
 ```
 
-The active profile is marked with `●`. Active = the profile set by `ticketlens switch`, or the first profile in the file if none has been explicitly selected.
+Active = the profile set by `ticketlens switch`, or the first profile in the file if none has been explicitly selected.
 
 ---
 
