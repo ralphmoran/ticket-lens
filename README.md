@@ -1,5 +1,7 @@
 # TicketLens
 
+[![Tests](https://github.com/ralphmoran/ticket-lens/actions/workflows/test.yml/badge.svg)](https://github.com/ralphmoran/ticket-lens/actions/workflows/test.yml)
+
 **Jira CLI for developers — stop tab-switching, start building.**
 
 TicketLens is a zero-dependency CLI that fetches full Jira ticket context — description, comments, linked issues, attachments, and code references — directly into your terminal or Claude Code session.
