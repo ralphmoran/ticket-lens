@@ -23,6 +23,29 @@ describe('printHelp — main USAGE', () => {
   });
 });
 
+describe('printTriageHelp — Team tier flags', () => {
+  it('documents --assignee flag with [Team] badge', () => {
+    const out = captureHelp(printTriageHelp);
+    assert.ok(out.includes('--assignee'), 'triage --help must document --assignee flag');
+    assert.ok(out.includes('[Team]'), 'triage --help must show [Team] badge for gated flags');
+  });
+
+  it('documents --sprint flag with [Team] badge', () => {
+    const out = captureHelp(printTriageHelp);
+    assert.ok(out.includes('--sprint'), 'triage --help must document --sprint flag');
+  });
+
+  it('main --help documents --assignee in TRIAGE OPTIONS', () => {
+    const out = captureHelp(printHelp);
+    assert.ok(out.includes('--assignee'), 'main --help must include --assignee in triage options');
+  });
+
+  it('main --help documents --sprint in TRIAGE OPTIONS', () => {
+    const out = captureHelp(printHelp);
+    assert.ok(out.includes('--sprint'), 'main --help must include --sprint in triage options');
+  });
+});
+
 describe('printTriageHelp — interactive mode keys', () => {
   it('documents the p hotkey for profile switching', () => {
     const out = captureHelp(printTriageHelp);

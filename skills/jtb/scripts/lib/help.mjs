@@ -67,10 +67,12 @@ export function printHelp({ stream = process.stdout } = {}) {
     `  ${s.bold('TRIAGE OPTIONS')}`,
     '',
     // visible widths: "--profile=NAME"=14, "--stale=N"=9, "--status=X,Y"=12,
-    // "--static"=8, "--plain"=7  →  target=19
+    // "--assignee=NAME"=15, "--sprint=NAME"=13, "--static"=8, "--plain"=7  →  target=19
     `    ${s.cyan('--profile')}=${s.dim('NAME')}     Use a specific Jira profile`,
     `    ${s.cyan('--stale')}=${s.dim('N')}          Aging threshold in days ${s.dim('(default: 5)')}`,
     `    ${s.cyan('--status')}=${s.dim('X,Y')}       Override statuses to scan`,
+    `    ${s.cyan('--assignee')}=${s.dim('NAME')}    Triage another dev's tickets  ${s.dim('[Team]')}`,
+    `    ${s.cyan('--sprint')}=${s.dim('NAME')}      Filter by sprint name  ${s.dim('[Team]')}`,
     `    ${s.cyan('--static')}           Static table output ${s.dim('(skip interactive mode)')}`,
     `    ${s.cyan('--plain')}            Plain markdown output ${s.dim('(for piping / LLM)')}`,
     '',
@@ -142,10 +144,12 @@ export function printTriageHelp({ stream = process.stdout } = {}) {
     `  ${s.bold('OPTIONS')}`,
     '',
     // visible widths: "--profile=NAME"=14, "--stale=N"=9, "--status=X,Y"=12,
-    // "--static"=8, "--plain"=7, "-h, --help"=10  →  target=19
+    // "--assignee=NAME"=15, "--sprint=NAME"=13, "--static"=8, "--plain"=7, "-h, --help"=10  →  target=19
     `    ${s.cyan('--profile')}=${s.dim('NAME')}     Use a specific Jira profile`,
     `    ${s.cyan('--stale')}=${s.dim('N')}          Aging threshold in days ${s.dim('(default: 5)')}`,
     `    ${s.cyan('--status')}=${s.dim('X,Y')}       Override statuses to scan`,
+    `    ${s.cyan('--assignee')}=${s.dim('NAME')}    Triage another dev's tickets  ${s.dim('[Team]')}`,
+    `    ${s.cyan('--sprint')}=${s.dim('NAME')}      Filter by sprint name  ${s.dim('[Team]')}`,
     `    ${s.cyan('--static')}           Static table output ${s.dim('(skip interactive mode)')}`,
     `    ${s.cyan('--plain')}            Plain markdown output`,
     `    ${s.cyan('-h')}, ${s.cyan('--help')}         Show this help`,
@@ -155,6 +159,7 @@ export function printTriageHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('$')} ticketlens triage`,
     `    ${s.dim('$')} ticketlens triage --profile=acme`,
     `    ${s.dim('$')} ticketlens triage --stale=3 --status="Code Review,QA Testing"`,
+    `    ${s.dim('$')} ticketlens triage --assignee="Jane Dev" --sprint="Sprint 12"`,
     `    ${s.dim('$')} ticketlens triage --static`,
     '',
     `  ${s.bold('INTERACTIVE MODE')}`,

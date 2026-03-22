@@ -278,6 +278,157 @@ describe('fetch-my-tickets integration', () => {
     }
   });
 
+  it('--assignee flag uses assignee name in JQL instead of currentUser()', async () => {
+    const configDir = setupConfig();
+    // Write a team license so the flag is not gated
+    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    let capturedJql = '';
+
+    const mockFetch = async (url) => {
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) {
+        capturedJql = new URL(url).searchParams.get('jql') || '';
+        return { ok: true, json: async () => makeSearchResult([]) };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const out = captureOutput();
+    try {
+      await run(['--assignee=Jane Dev'], {}, mockFetch, configDir);
+      assert.ok(capturedJql.includes('Jane Dev'), `JQL must include the assignee name, got: ${capturedJql}`);
+      assert.ok(!capturedJql.includes('currentUser()'), `JQL must not use currentUser() when --assignee is set, got: ${capturedJql}`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--sprint flag appends sprint clause to JQL', async () => {
+    const configDir = setupConfig();
+    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    let capturedJql = '';
+
+    const mockFetch = async (url) => {
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) {
+        capturedJql = new URL(url).searchParams.get('jql') || '';
+        return { ok: true, json: async () => makeSearchResult([]) };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const out = captureOutput();
+    try {
+      await run(['--sprint=Sprint 12'], {}, mockFetch, configDir);
+      assert.ok(capturedJql.includes('sprint'), `JQL must include sprint clause, got: ${capturedJql}`);
+      assert.ok(capturedJql.includes('Sprint 12'), `JQL must include sprint name, got: ${capturedJql}`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--assignee and --sprint together produce correct combined JQL', async () => {
+    const configDir = setupConfig();
+    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    let capturedJql = '';
+
+    const mockFetch = async (url) => {
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) {
+        capturedJql = new URL(url).searchParams.get('jql') || '';
+        return { ok: true, json: async () => makeSearchResult([]) };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const out = captureOutput();
+    try {
+      await run(['--assignee=Jane Dev', '--sprint=Sprint 12'], {}, mockFetch, configDir);
+      assert.ok(capturedJql.includes('Jane Dev'), `JQL must include assignee name, got: ${capturedJql}`);
+      assert.ok(capturedJql.includes('Sprint 12'), `JQL must include sprint name, got: ${capturedJql}`);
+      assert.ok(!capturedJql.includes('currentUser()'), `JQL must not use currentUser(), got: ${capturedJql}`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--assignee is blocked without a Team license', async () => {
+    const configDir = setupConfig();
+    // No license.json → free tier
+
+    const out = captureOutput();
+    try {
+      await run(['--assignee=Jane Dev'], {}, undefined, configDir);
+      assert.ok(out.stderr.includes('Team license'), `must mention Team license requirement, got: ${out.stderr}`);
+      assert.equal(process.exitCode, 1, 'must exit with code 1 when license is insufficient');
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--sprint is blocked without a Team license', async () => {
+    const configDir = setupConfig();
+    // No license.json → free tier
+
+    const out = captureOutput();
+    try {
+      await run(['--sprint=Sprint 12'], {}, undefined, configDir);
+      assert.ok(out.stderr.includes('Team license'), `must mention Team license requirement, got: ${out.stderr}`);
+      assert.equal(process.exitCode, 1, 'must exit with code 1 when license is insufficient');
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--assignee escapes embedded double-quotes for JQL safety', async () => {
+    const configDir = setupConfig();
+    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    let capturedJql = '';
+
+    const mockFetch = async (url) => {
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) {
+        capturedJql = new URL(url).searchParams.get('jql') || '';
+        return { ok: true, json: async () => makeSearchResult([]) };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const out = captureOutput();
+    try {
+      await run(['--assignee=Bad"Name'], {}, mockFetch, configDir);
+      assert.ok(!capturedJql.match(/"Bad"Name/), `raw unescaped " must not appear in JQL, got: ${capturedJql}`);
+      assert.ok(capturedJql.includes('\\"'), `embedded " must be escaped as \\" in JQL, got: ${capturedJql}`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--assignee and --sprint are recognized as valid flags (no unknown flag warning)', async () => {
+    const configDir = setupConfig();
+    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    const mockFetch = async (url) => {
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) return { ok: true, json: async () => makeSearchResult([]) };
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+
+    const out = captureOutput();
+    try {
+      await run(['--assignee=Jane Dev', '--sprint=Sprint 12'], {}, mockFetch, configDir);
+      assert.ok(!out.stderr.includes('Unknown flag'), `--assignee and --sprint must not trigger unknown flag warning, got: ${out.stderr}`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
   it('does not warn about recognized flags', async () => {
     const configDir = setupConfig();
     const mockFetch = async (url) => {

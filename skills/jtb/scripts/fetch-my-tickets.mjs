@@ -17,8 +17,13 @@ import { runInteractiveList } from './lib/interactive-list.mjs';
 import { promptProfileSelect } from './lib/profile-picker.mjs';
 import { printTriageHelp } from './lib/help.mjs';
 import { handleUnknownFlags } from './lib/arg-validator.mjs';
+import { isLicensed } from './lib/license.mjs';
 
 const DEFAULT_STATUSES = ['In Progress', 'Code Review', 'QA'];
+
+function escapeJql(s) {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
 
 export async function run(args, env = process.env, fetcher = globalThis.fetch, configDir = undefined) {
   if (args.includes('--help') || args.includes('-h')) {
@@ -37,7 +42,7 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status='],
+    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=', '--assignee=', '--sprint='],
     { hints: ['--depth=', '--no-attachments', '--no-cache'] } // fetch-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
@@ -47,6 +52,21 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   const staleDays = staleArg ? parseInt(staleArg.split('=')[1], 10) : 5;
 
   const statusArg = args.find(a => a.startsWith('--status='));
+  const assigneeArg = args.find(a => a.startsWith('--assignee='));
+  const sprintArg = args.find(a => a.startsWith('--sprint='));
+
+  // Team-tier gate: --assignee and --sprint require a Team license
+  if ((assigneeArg || sprintArg) && !isLicensed('team', configDir)) {
+    process.stderr.write(
+      'Error: --assignee and --sprint require a Team license.\n' +
+      'Run `ticketlens activate <KEY>` to upgrade.\n'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const assigneeName = assigneeArg ? assigneeArg.split('=').slice(1).join('=') : null;
+  const sprintName   = sprintArg   ? sprintArg.split('=').slice(1).join('=')   : null;
 
   const cwd = process.cwd();
   let profileError = null;
@@ -94,8 +114,10 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
     : conn.triageStatuses || DEFAULT_STATUSES;
 
   // Build JQL before any I/O — pure computation, no dependency on currentUser
-  const statusList = statuses.map(s => `"${s.replace(/"/g, '\\"')}"`).join(',');
-  const jql = `assignee = currentUser() AND status IN (${statusList}) ORDER BY updated DESC`;
+  const statusList    = statuses.map(s => `"${escapeJql(s)}"`).join(',');
+  const assigneeClause = assigneeName ? `assignee = "${escapeJql(assigneeName)}"` : `assignee = currentUser()`;
+  const sprintClause   = sprintName   ? ` AND sprint = "${escapeJql(sprintName)}"` : '';
+  const jql = `${assigneeClause} AND status IN (${statusList})${sprintClause} ORDER BY updated DESC`;
 
   const session = createSession(conn);
   session.spin(`Connecting to ${session.label}…`);
@@ -206,7 +228,16 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
 
   scanSpinner.stop();
 
-  const scored = tickets.map(t => scoreAttention(t, currentUser, { staleDays }));
+  // When viewing another dev's tickets, score from their perspective (they need to respond)
+  const effectiveUser = assigneeName
+    ? { displayName: assigneeName, name: null, accountId: null, emailAddress: null }
+    : currentUser;
+
+  if (assigneeName) {
+    process.stderr.write(`Viewing ${assigneeName}'s tickets\n\n`);
+  }
+
+  const scored = tickets.map(t => scoreAttention(t, effectiveUser, { staleDays }));
   const actionable = scored.filter(s => s.urgency !== 'clear');
   const sorted = sortByUrgency(actionable);
 
