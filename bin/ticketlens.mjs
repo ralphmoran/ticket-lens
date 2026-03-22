@@ -15,6 +15,7 @@ import { run as runInit } from '../skills/jtb/scripts/lib/init-wizard.mjs';
 import { runSwitch } from '../skills/jtb/scripts/lib/profile-switcher.mjs';
 import { run as runConfig } from '../skills/jtb/scripts/lib/config-wizard.mjs';
 import { activateLicense, checkLicense } from '../skills/jtb/scripts/lib/license.mjs';
+import { deleteProfile, loadProfiles } from '../skills/jtb/scripts/lib/profile-resolver.mjs';
 import { run as runCache } from '../skills/jtb/scripts/lib/cache-manager.mjs';
 import { printHelp } from '../skills/jtb/scripts/lib/help.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
@@ -105,6 +106,52 @@ switch (command) {
       process.stdout.write(`    ${s.cyan('ticketlens activate')} ${s.dim('<LICENSE-KEY>')}\n`);
     }
     process.stdout.write('\n');
+    break;
+  }
+
+  case 'delete': {
+    const s = createStyler({ isTTY: process.stderr.isTTY });
+    const profileName = cmdArgs.find(a => !a.startsWith('--'));
+    if (!profileName) {
+      process.stderr.write(`${s.red('✖')} Missing profile name.\n  ${s.dim('Usage:')} ticketlens delete ${s.dim('<PROFILE-NAME>')}\n`);
+      process.exitCode = 1;
+      break;
+    }
+    const profiles = loadProfiles();
+    if (!profiles?.profiles[profileName]) {
+      process.stderr.write(`${s.red('✖')} Profile "${profileName}" not found.\n`);
+      const names = Object.keys(profiles?.profiles || {});
+      if (names.length > 0) process.stderr.write(`  ${s.dim('Profiles:')} ${names.join(', ')}\n`);
+      process.exitCode = 1;
+      break;
+    }
+    // Confirmation prompt on TTY
+    if (process.stdin.isTTY && process.stdin.setRawMode) {
+      process.stderr.write(`  Delete profile ${s.cyan(s.bold(profileName))}? This cannot be undone.  ${s.dim('y/N')}  `);
+      const answer = await new Promise(res => {
+        process.stdin.setRawMode(true);
+        process.stdin.resume();
+        process.stdin.setEncoding('utf8');
+        process.stdin.once('data', char => {
+          process.stdin.setRawMode(false);
+          process.stdin.pause();
+          process.stderr.write('\n');
+          if (char === '\x03') process.exit(0);
+          res(char === 'y' || char === 'Y');
+        });
+      });
+      if (!answer) {
+        process.stderr.write(`  ${s.dim('Cancelled.')}\n`);
+        break;
+      }
+    }
+    const result = deleteProfile(profileName);
+    if (result.deleted) {
+      process.stdout.write(`  ${s.green('✔')} Profile ${s.bold(profileName)} deleted.\n`);
+    } else {
+      process.stderr.write(`${s.red('✖')} Could not delete profile "${profileName}".\n`);
+      process.exitCode = 1;
+    }
     break;
   }
 

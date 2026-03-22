@@ -136,7 +136,7 @@ export async function fetchTicket(ticketKey, opts = {}) {
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
-  const url = `${baseUrl}/rest/api/${apiVersion}/issue/${ticketKey}`;
+  const url = `${baseUrl}/rest/api/${apiVersion}/issue/${encodeURIComponent(ticketKey)}`;
   const fetchOpts = { headers };
   if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
   const response = await fetcher(url, fetchOpts);

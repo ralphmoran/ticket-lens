@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveConnection, resolveProfile, resolveProfileByPath, loadProfiles, saveDefault, saveProfile } from '../lib/profile-resolver.mjs';
+import { resolveConnection, resolveProfile, resolveProfileByPath, loadProfiles, saveDefault, saveProfile, deleteProfile } from '../lib/profile-resolver.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 
 const sampleProfiles = {
@@ -341,6 +341,54 @@ describe('profile-resolver', () => {
       saveDefault('corenexus', configDir);
       const mode = statSync(join(configDir, 'profiles.json')).mode & 0o777;
       assert.equal(mode, 0o600, `profiles.json must be chmod 600 after saveDefault, got ${mode.toString(8)}`);
+    });
+  });
+
+  describe('deleteProfile', () => {
+    it('removes profile from profiles.json', () => {
+      writeConfig();
+      deleteProfile('acme', configDir);
+      const config = loadProfiles(configDir);
+      assert.ok(!config.profiles.acme, 'acme must be removed');
+      assert.ok(config.profiles.corenexus, 'other profiles must remain');
+    });
+
+    it('removes credential entry from credentials.json', () => {
+      writeConfig();
+      writeFileSync(join(configDir, 'credentials.json'), JSON.stringify({
+        corenexus: { apiToken: 'token-a' },
+        acme:      { apiToken: 'token-b' },
+      }), 'utf8');
+      deleteProfile('acme', configDir);
+      const creds = JSON.parse(readFileSync(join(configDir, 'credentials.json'), 'utf8'));
+      assert.ok(!creds.acme, 'acme credential must be removed');
+      assert.ok(creds.corenexus, 'other credentials must remain');
+    });
+
+    it('clears default when deleting the default profile', () => {
+      writeConfig(); // default is 'corenexus'
+      deleteProfile('corenexus', configDir);
+      const config = loadProfiles(configDir);
+      assert.ok(!config.default, 'default must be cleared when its profile is deleted');
+    });
+
+    it('returns { deleted: false, reason: "not-found" } for unknown profile', () => {
+      writeConfig();
+      const result = deleteProfile('nonexistent', configDir);
+      assert.deepEqual(result, { deleted: false, reason: 'not-found' });
+    });
+
+    it('returns { deleted: true } on success', () => {
+      writeConfig();
+      const result = deleteProfile('acme', configDir);
+      assert.deepEqual(result, { deleted: true });
+    });
+
+    it('writes profiles.json with mode 0o600 after delete', () => {
+      writeConfig();
+      deleteProfile('acme', configDir);
+      const mode = statSync(join(configDir, 'profiles.json')).mode & 0o777;
+      assert.equal(mode, 0o600, `profiles.json must be chmod 600 after delete, got ${mode.toString(8)}`);
     });
   });
 });

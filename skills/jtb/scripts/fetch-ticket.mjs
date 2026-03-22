@@ -16,6 +16,7 @@ import { promptProfileSelect, promptProfileMismatch, promptSwitchProfile, prompt
 import { promptSelect } from './lib/select-prompt.mjs';
 import { printFetchHelp } from './lib/help.mjs';
 import { handleUnknownFlags } from './lib/arg-validator.mjs';
+import { TICKET_KEY_PATTERN } from './lib/cli.mjs';
 import { downloadAttachments } from './lib/attachment-downloader.mjs';
 import { readBriefCache, writeBriefCache, briefCacheAge, BRIEF_TTL_MS } from './lib/brief-cache.mjs';
 import { parseAge } from './lib/cache-manager.mjs';
@@ -36,6 +37,11 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   const ticketKey = args.find(a => !a.startsWith('--'));
   if (!ticketKey) {
     printFetchHelp({ stream: process.stderr });
+    process.exitCode = 1;
+    return;
+  }
+  if (!TICKET_KEY_PATTERN.test(ticketKey)) {
+    process.stderr.write(`Error: "${ticketKey}" is not a valid ticket key. Expected format: PROJ-123\n`);
     process.exitCode = 1;
     return;
   }

@@ -3,7 +3,7 @@
  * Routes arguments to the appropriate subcommand.
  */
 
-const TICKET_KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/;
+export const TICKET_KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/;
 
 export function parseCommand(args) {
   const first = args[0];
@@ -42,6 +42,10 @@ export function parseCommand(args) {
 
   if (first === 'cache') {
     return { command: 'cache', args: args.slice(1) };
+  }
+
+  if (first === 'delete') {
+    return { command: 'delete', args: args.slice(1) };
   }
 
   // "get PROJ-123" — alias for the fetch command

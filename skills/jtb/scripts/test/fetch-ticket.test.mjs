@@ -49,6 +49,29 @@ describe('fetch-ticket integration', () => {
     }
   });
 
+  it('rejects invalid ticket key format with clear error', async () => {
+    const out = captureOutput();
+    try {
+      await run(['not-a-ticket'], validEnv, undefined, NO_CONFIG);
+      assert.ok(out.stderr.includes('not a valid ticket key'), `should reject invalid format, got: ${out.stderr}`);
+      assert.ok(out.stderr.includes('PROJ-123'), 'should show expected format');
+      assert.equal(process.exitCode, 1);
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('rejects lowercase ticket key', async () => {
+    const out = captureOutput();
+    try {
+      await run(['proj-123'], validEnv, undefined, NO_CONFIG);
+      assert.ok(out.stderr.includes('not a valid ticket key'), `should reject lowercase key, got: ${out.stderr}`);
+      assert.equal(process.exitCode, 1);
+    } finally {
+      out.restore();
+    }
+  });
+
   it('missing ticket ID outputs error to stderr and sets exit code 1', async () => {
     const out = captureOutput();
     try {

@@ -1,8 +1,10 @@
 # TicketLens
 
-**Stop tab-switching. Start building.**
+**Jira CLI for developers — stop tab-switching, start building.**
 
 TicketLens is a zero-dependency CLI that fetches full Jira ticket context — description, comments, linked issues, attachments, and code references — directly into your terminal or Claude Code session.
+
+> **Your Jira data never leaves your machine.** TicketLens calls the Jira API directly from your computer. No cloud backend, no data relay, no third-party servers. Credentials stay in `~/.ticketlens/credentials.json` (chmod 600). Cached briefs stay in `~/.ticketlens/cache/`. Nothing is ever uploaded.
 
 ## Contents
 
@@ -13,6 +15,7 @@ TicketLens is a zero-dependency CLI that fetches full Jira ticket context — de
   - [ticketlens config — Edit profile settings](#ticketlens-config--edit-profile-settings)
   - [ticketlens TICKET-KEY — Fetch a ticket brief](#ticketlens-ticket-key--fetch-a-ticket-brief)
   - [ticketlens triage — Ticket attention scanner](#ticketlens-triage--ticket-attention-scanner)
+  - [ticketlens delete — Remove a profile](#ticketlens-delete--remove-a-profile)
   - [ticketlens cache — Cache manager](#ticketlens-cache--cache-manager)
   - [ticketlens license — License status](#ticketlens-license--license-status)
   - [/jtb — Jira TicketBrief for Claude Code](#jtb--jira-ticketbrief-for-claude-code)
@@ -261,6 +264,16 @@ Output shows one of three states:
 
 ---
 
+### ticketlens delete — Remove a profile
+
+```bash
+ticketlens delete <PROFILE-NAME>   # Permanently removes profile + credentials
+```
+
+Prompts for confirmation in TTY. Removes the profile from `profiles.json` and its credentials from `credentials.json`. If the deleted profile was the default, the default is cleared (next run will use prefix/path matching or prompt).
+
+---
+
 ### /jtb — Jira TicketBrief for Claude Code
 
 `/jtb` is a **Claude Code slash command**. It fetches full ticket context and drops a structured implementation brief directly into your Claude session, then enters plan mode.
@@ -462,7 +475,7 @@ With this setup:
 - **Jira Cloud** (Basic auth email + API token, `/rest/api/3` endpoints, ADF body conversion)
 - **Jira Server/DC** (Bearer PAT or Basic user + password, `/rest/api/2` endpoints)
 - **VCS-agnostic** — detects `.git`, `.svn`, `.hg`; SVN commit bot comments recognized
-- **All modules tested** with `node:test` + `node:assert/strict` (365 tests)
+- **All modules tested** with `node:test` + `node:assert/strict` — run `npm test` to see current count
 
 ---
 

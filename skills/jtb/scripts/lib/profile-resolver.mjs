@@ -62,6 +62,31 @@ export function saveProfile(name, profileData, credData, configDir = DEFAULT_CON
   }
 }
 
+export function deleteProfile(name, configDir = DEFAULT_CONFIG_DIR) {
+  const profilesPath = join(configDir, 'profiles.json');
+  const config = loadProfiles(configDir);
+  if (!config?.profiles[name]) return { deleted: false, reason: 'not-found' };
+
+  delete config.profiles[name];
+  if (config.default === name) delete config.default;
+
+  writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
+  chmodSync(profilesPath, 0o600);
+
+  // Remove credentials entry
+  const credPath = join(configDir, 'credentials.json');
+  if (existsSync(credPath)) {
+    const creds = loadCredentials(configDir);
+    if (creds[name]) {
+      delete creds[name];
+      writeFileSync(credPath, JSON.stringify(creds, null, 2) + '\n', 'utf8');
+      chmodSync(credPath, 0o600);
+    }
+  }
+
+  return { deleted: true };
+}
+
 export function loadProfiles(configDir = DEFAULT_CONFIG_DIR) {
   const profilesPath = join(configDir, 'profiles.json');
   if (!existsSync(profilesPath)) return null;

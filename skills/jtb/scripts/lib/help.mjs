@@ -49,6 +49,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.cyan('ticketlens')} get ${s.dim('<TICKET-KEY>')}         Same as above ${s.dim('(explicit alias)')}`,
     `    ${s.cyan('ticketlens')} triage ${s.dim('[options]')}         Scan your assigned tickets`,
     '',
+    `    ${s.cyan('ticketlens')} delete ${s.dim('<PROFILE-NAME>')}     Remove a profile`,
     `    ${s.cyan('ticketlens')} activate ${s.dim('<KEY>')}           Activate a license key`,
     `    ${s.cyan('ticketlens')} license                  Show license status`,
     `    ${s.cyan('ticketlens')} cache ${s.dim('[size|clear]')}       Manage attachment cache  ${s.dim('(try cache --help)')}`,

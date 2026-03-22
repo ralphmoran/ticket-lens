@@ -1,7 +1,7 @@
 {
   "name": "ticketlens",
   "version": "0.1.0",
-  "description": "Developer toolkit that minimizes research time before implementation. Fetches Jira ticket context, linked issues, comments, and code references.",
+  "description": "Jira CLI for developers — fetch ticket context, triage your queue, and stop tab-switching. Zero dependencies, all local.",
   "type": "module",
   "bin": {
     "ticketlens": "./bin/ticketlens.mjs"
