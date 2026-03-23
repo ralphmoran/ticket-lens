@@ -272,4 +272,29 @@ describe('fetch-ticket integration', () => {
       rmSync(configDir, { recursive: true, force: true });
     }
   });
+
+  it('--depth=2 is blocked without a Pro license', async () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'tl-depth-gate-'));
+    const out = captureOutput();
+    try {
+      await run(['PROD-1234', '--depth=2'], validEnv, undefined, configDir);
+      assert.ok(out.stderr.includes('Pro'), 'must mention Pro tier requirement');
+      assert.equal(process.exitCode, 1, 'must exit with code 1');
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--depth=1 is allowed without a Pro license', async () => {
+    const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
+    const out = captureOutput();
+    try {
+      await run(['PROD-1234', '--depth=1'], validEnv, mockFetch, NO_CONFIG);
+      // Depth 1 is free — should not show upgrade prompt
+      assert.ok(!out.stderr.includes('requires Pro'), 'depth=1 must not trigger upgrade prompt');
+    } finally {
+      out.restore();
+    }
+  });
 });

@@ -21,6 +21,7 @@ import { downloadAttachments } from './lib/attachment-downloader.mjs';
 import { readBriefCache, writeBriefCache, briefCacheAge, BRIEF_TTL_MS } from './lib/brief-cache.mjs';
 import { parseAge } from './lib/cache-manager.mjs';
 import { createStyler } from './lib/ansi.mjs';
+import { isLicensed, showUpgradePrompt } from './lib/license.mjs';
 
 const RETRY_OPTIONS = [
   { label: 'Retry',          sublabel: 'Try again — e.g. VPN just connected', value: 'retry'  },
@@ -144,6 +145,14 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
 
   const depthArg = args.find(a => a.startsWith('--depth='));
   const depth = depthArg ? parseInt(depthArg.split('=')[1], 10) : 1;
+
+  // Pro gate: --depth=2 (deep traversal) requires a Pro license
+  if (depth > 1 && !isLicensed('pro', configDir)) {
+    showUpgradePrompt('pro', '--depth=2');
+    process.exitCode = 1;
+    return;
+  }
+
   const noCache = args.includes('--no-cache');
 
   // Resolve brief cache TTL: profile setting → default 4h

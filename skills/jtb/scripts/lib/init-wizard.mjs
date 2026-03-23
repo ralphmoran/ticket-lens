@@ -247,17 +247,18 @@ async function _run({ configDir, stream, s }) {
         ? prefixInput.split(',').map(v => v.trim().toUpperCase()).filter(Boolean)
         : [];
 
-      // Project paths — validate existence, offer to create missing
+      // Project path (single — used for auto-profile detection from cwd)
+      const home = homedir();
+      const cwd = process.cwd();
+      const cwdDisplay = cwd.startsWith(home) ? '~' + cwd.slice(home.length) : cwd;
       const pathInput = await promptText(
-        s.dim('Project paths') + s.dim('  (e.g. ~/projects/myapp):'), { stream }
+        s.dim('Project path') + s.dim(`  [cwd: ${cwdDisplay}]:`), { stream }
       );
-      const rawPaths = pathInput
-        ? pathInput.split(',').map(v => v.trim()).filter(Boolean)
-        : [];
+      const rawPath = pathInput.trim() || cwdDisplay;
       const projectPaths = [];
-      for (const rawPath of rawPaths) {
+      if (rawPath) {
         const expanded = rawPath.startsWith('~')
-          ? join(homedir(), rawPath.slice(1))
+          ? join(home, rawPath.slice(1))
           : rawPath;
         if (existsSync(expanded)) {
           projectPaths.push(rawPath);

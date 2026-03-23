@@ -241,21 +241,20 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   }
   const ticketPrefixes = [...existing];
 
-  // Project paths
-  const curPaths = (profile.projectPaths || []).join(', ');
+  // Project path (single — used for auto-profile detection from cwd)
+  const home = homedir();
+  const cwd = process.cwd();
+  const cwdDisplay = cwd.startsWith(home) ? '~' + cwd.slice(home.length) : cwd;
+  const curPath = (profile.projectPaths || [])[0] || '';
   const pathInput = await promptText(
-    s.dim('Project paths') + s.dim(curPaths ? `  [current: ${curPaths}]:` : '  (e.g. ~/projects/myapp — press Enter to skip):'),
+    s.dim('Project path') + s.dim(curPath ? `  [current: ${curPath}]:` : `  [cwd: ${cwdDisplay}]:`),
     { stream }
   );
-  const rawPaths = pathInput
-    ? pathInput.split(',').map(v => v.trim()).filter(Boolean)
-    : (profile.projectPaths || []);
+  const rawPath = pathInput.trim() || curPath || cwdDisplay;
 
-  const existingPaths = new Set(profile.projectPaths || []);
   const projectPaths = [];
-  for (const rawPath of rawPaths) {
-    if (existingPaths.has(rawPath)) { projectPaths.push(rawPath); continue; }
-    const expanded = rawPath.startsWith('~') ? join(homedir(), rawPath.slice(1)) : rawPath;
+  if (rawPath) {
+    const expanded = rawPath.startsWith('~') ? join(home, rawPath.slice(1)) : rawPath;
     if (existsSync(expanded)) {
       projectPaths.push(rawPath);
       stream.write(`  ${s.green('✔')} ${rawPath}\n`);
