@@ -247,10 +247,10 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   const cwdDisplay = cwd.startsWith(home) ? '~' + cwd.slice(home.length) : cwd;
   const curPath = (profile.projectPaths || [])[0] || '';
   const pathInput = await promptText(
-    s.dim('Project path') + s.dim(curPath ? `  [current: ${curPath}]:` : `  [cwd: ${cwdDisplay}]:`),
+    s.dim('Project path') + s.dim(curPath ? `  [current: ${curPath}]:` : `  [${cwdDisplay}]:`),
     { stream }
   );
-  const rawPath = pathInput.trim() || curPath || cwdDisplay;
+  const rawPath = (pathInput.trim() || curPath || cwdDisplay).replace(/\/+$/, '');
 
   const projectPaths = [];
   if (rawPath) {

@@ -252,9 +252,9 @@ async function _run({ configDir, stream, s }) {
       const cwd = process.cwd();
       const cwdDisplay = cwd.startsWith(home) ? '~' + cwd.slice(home.length) : cwd;
       const pathInput = await promptText(
-        s.dim('Project path') + s.dim(`  [cwd: ${cwdDisplay}]:`), { stream }
+        s.dim('Project path') + s.dim(`  [${cwdDisplay}]:`), { stream }
       );
-      const rawPath = pathInput.trim() || cwdDisplay;
+      const rawPath = (pathInput.trim() || cwdDisplay).replace(/\/+$/, '');
       const projectPaths = [];
       if (rawPath) {
         const expanded = rawPath.startsWith('~')

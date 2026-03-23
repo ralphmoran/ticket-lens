@@ -112,7 +112,7 @@ describe('fetch-ticket integration', () => {
     const mockFetch = async () => ({ ok: false, status: 500, statusText: 'Internal Server Error' });
     const out = captureOutput();
     try {
-      await run(['PROD-1234'], validEnv, mockFetch, NO_CONFIG);
+      await run(['PROD-1234', '--no-cache'], validEnv, mockFetch, NO_CONFIG);
       assert.ok(out.stderr.includes('500'));
       assert.equal(process.exitCode, 1);
     } finally {
@@ -125,7 +125,7 @@ describe('fetch-ticket integration', () => {
     const mockFetch = async () => { throw new Error('connect ECONNREFUSED'); };
     const out = captureOutput();
     try {
-      await run(['PROD-1234'], validEnv, mockFetch, NO_CONFIG);
+      await run(['PROD-1234', '--no-cache'], validEnv, mockFetch, NO_CONFIG);
       assert.equal(process.exitCode, 1);
       // No retry menu characters should appear — stderr is non-TTY
       assert.ok(!out.stderr.includes('Retry'), 'no retry menu in non-TTY');
