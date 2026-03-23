@@ -1,16 +1,32 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
+import { createStyler } from './ansi.mjs';
 
 export const LICENSE_TIERS = { free: 0, pro: 1, team: 2 };
 const LICENSE_FILE = 'license.json';
+const REVALIDATION_DAYS = 7;   // attempt background revalidation after this many days
+const GRACE_DAYS = 30;          // treat license as invalid if not revalidated within this window
+const UPGRADE_URL = 'https://ticketlens.dev/pricing';
+
+const ANSI_RE_LIC = /\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g;
+const visLen = (s) => s.replace(ANSI_RE_LIC, '').length;
+function padInner(str, width) {
+  return str + ' '.repeat(Math.max(0, width - visLen(str)));
+}
 
 export function readLicense(configDir = DEFAULT_CONFIG_DIR) {
   const filePath = path.join(configDir, LICENSE_FILE);
   try {
-    const raw = fs.readFileSync(filePath, 'utf8');
-    return JSON.parse(raw);
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const { sig, ...payload } = data;
+    // Legacy unsigned files are trusted; will be re-signed on next write
+    if (!sig) return payload;
+    const expected = crypto.createHmac('sha256', payload.key || '')
+      .update(JSON.stringify(payload)).digest('hex');
+    return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)) ? payload : null;
   } catch {
     return null;
   }
@@ -19,7 +35,10 @@ export function readLicense(configDir = DEFAULT_CONFIG_DIR) {
 export function writeLicense(data, configDir = DEFAULT_CONFIG_DIR) {
   fs.mkdirSync(configDir, { recursive: true });
   const filePath = path.join(configDir, LICENSE_FILE);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+  const { sig: _, ...payload } = data; // strip any existing sig before re-signing
+  const mac = crypto.createHmac('sha256', payload.key || '')
+    .update(JSON.stringify(payload)).digest('hex');
+  fs.writeFileSync(filePath, JSON.stringify({ ...payload, sig: mac }), 'utf8');
   fs.chmodSync(filePath, 0o600);
 }
 
@@ -30,10 +49,54 @@ export function isLicensed(tier, configDir = DEFAULT_CONFIG_DIR) {
   const license = readLicense(configDir);
   if (!license) return false;
 
+  // Hard expiry — subscription cancelled, confirmed by server
   if (license.expiresAt && new Date(license.expiresAt) < new Date()) return false;
+
+  // Offline grace period — reject if not revalidated within GRACE_DAYS
+  if (license.validatedAt) {
+    const daysSince = (Date.now() - new Date(license.validatedAt)) / 86400000;
+    if (daysSince > GRACE_DAYS) return false;
+  }
 
   const actual = LICENSE_TIERS[license.tier] ?? 0;
   return actual >= required;
+}
+
+/**
+ * Fire-and-forget background revalidation. Call at CLI startup; never awaited.
+ * Silently updates license.json when the validation window has elapsed.
+ */
+export function revalidateIfStale(opts = {}) {
+  const { configDir = DEFAULT_CONFIG_DIR, fetcher = globalThis.fetch } = opts;
+  const license = readLicense(configDir);
+  if (!license?.key || !license?.validatedAt) return;
+  const daysSince = (Date.now() - new Date(license.validatedAt)) / 86400000;
+  if (daysSince < REVALIDATION_DAYS) return;
+  revalidateLicense({ configDir, fetcher }).catch(() => {});
+}
+
+/**
+ * Styled upsell prompt — written to stderr, never pollutes stdout.
+ */
+export function showUpgradePrompt(requiredTier, featureFlag, { stream = process.stderr } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const tier = requiredTier.charAt(0).toUpperCase() + requiredTier.slice(1);
+  const W = 44; // inner width
+  const bc = (t) => s.dim(t);
+
+  const featureLine = padInner(` ${s.yellow('◆')} ${s.bold(featureFlag)} requires ${s.bold(s.cyan(tier))}`, W);
+  const upgradeLine = padInner(`  ${s.dim('Upgrade:')}  ${s.link(UPGRADE_URL, s.cyan(UPGRADE_URL))}`, W);
+  const activateLine = padInner(`  ${s.dim('Or run:')}   ${s.dim('ticketlens activate <KEY>')}`, W);
+  const blank = ' '.repeat(W);
+
+  stream.write('\n');
+  stream.write(`  ${bc('┌' + '─'.repeat(W) + '┐')}\n`);
+  stream.write(`  ${bc('│')}${featureLine}${bc('│')}\n`);
+  stream.write(`  ${bc('│')}${blank}${bc('│')}\n`);
+  stream.write(`  ${bc('│')}${upgradeLine}${bc('│')}\n`);
+  stream.write(`  ${bc('│')}${activateLine}${bc('│')}\n`);
+  stream.write(`  ${bc('└' + '─'.repeat(W) + '┘')}\n`);
+  stream.write('\n');
 }
 
 const LEMONSQUEEZY_ACTIVATE_URL = 'https://api.lemonsqueezy.com/v1/licenses/activate';

@@ -17,7 +17,7 @@ import { runInteractiveList } from './lib/interactive-list.mjs';
 import { promptProfileSelect } from './lib/profile-picker.mjs';
 import { printTriageHelp } from './lib/help.mjs';
 import { handleUnknownFlags } from './lib/arg-validator.mjs';
-import { isLicensed } from './lib/license.mjs';
+import { isLicensed, showUpgradePrompt, revalidateIfStale } from './lib/license.mjs';
 
 const DEFAULT_STATUSES = ['In Progress', 'Code Review', 'QA'];
 
@@ -48,6 +48,9 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   if (validatedArgs === null) { process.exitCode = 1; return; }
   args = validatedArgs;
 
+  // Fire-and-forget: silently refresh license.json if >7 days since last validation
+  revalidateIfStale({ configDir, fetcher });
+
   const staleArg = args.find(a => a.startsWith('--stale='));
   const staleDays = staleArg ? parseInt(staleArg.split('=')[1], 10) : 5;
 
@@ -57,10 +60,7 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
 
   // Team-tier gate: --assignee and --sprint require a Team license
   if ((assigneeArg || sprintArg) && !isLicensed('team', configDir)) {
-    process.stderr.write(
-      'Error: --assignee and --sprint require a Team license.\n' +
-      'Run `ticketlens activate <KEY>` to upgrade.\n'
-    );
+    showUpgradePrompt('team', assigneeArg ? '--assignee' : '--sprint');
     process.exitCode = 1;
     return;
   }

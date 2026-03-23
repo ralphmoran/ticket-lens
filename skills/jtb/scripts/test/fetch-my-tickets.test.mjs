@@ -362,7 +362,7 @@ describe('fetch-my-tickets integration', () => {
     const out = captureOutput();
     try {
       await run(['--assignee=Jane Dev'], {}, undefined, configDir);
-      assert.ok(out.stderr.includes('Team license'), `must mention Team license requirement, got: ${out.stderr}`);
+      assert.ok(out.stderr.includes('Team'), `must mention Team tier requirement, got: ${out.stderr}`);
       assert.equal(process.exitCode, 1, 'must exit with code 1 when license is insufficient');
     } finally {
       out.restore();
@@ -377,7 +377,7 @@ describe('fetch-my-tickets integration', () => {
     const out = captureOutput();
     try {
       await run(['--sprint=Sprint 12'], {}, undefined, configDir);
-      assert.ok(out.stderr.includes('Team license'), `must mention Team license requirement, got: ${out.stderr}`);
+      assert.ok(out.stderr.includes('Team'), `must mention Team tier requirement, got: ${out.stderr}`);
       assert.equal(process.exitCode, 1, 'must exit with code 1 when license is insufficient');
     } finally {
       out.restore();

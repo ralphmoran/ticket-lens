@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { readLicense, writeLicense, isLicensed, activateLicense, revalidateLicense, checkLicense, LICENSE_TIERS } from '../lib/license.mjs';
+import { readLicense, writeLicense, isLicensed, activateLicense, revalidateLicense, checkLicense, revalidateIfStale, showUpgradePrompt, LICENSE_TIERS } from '../lib/license.mjs';
 
 let tmpDir;
 
@@ -287,6 +287,94 @@ describe('checkLicense', () => {
     assert.equal(status.tier, 'pro');
     assert.equal(status.active, false);
     assert.equal(status.expired, true);
+  });
+});
+
+describe('readLicense — HMAC verification', () => {
+  it('returns signed payload when sig is valid', () => {
+    writeLicense(validLicense, tmpDir);
+    const result = readLicense(tmpDir);
+    assert.equal(result?.key, validLicense.key);
+    assert.equal(result?.tier, validLicense.tier);
+    assert.equal(result?.sig, undefined, 'sig must not be exposed in returned payload');
+  });
+
+  it('returns null when license tier is tampered after signing', () => {
+    writeLicense(validLicense, tmpDir);
+    const filePath = path.join(tmpDir, 'license.json');
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    raw.tier = 'team'; // tamper: elevate tier without re-signing
+    fs.writeFileSync(filePath, JSON.stringify(raw));
+    assert.equal(readLicense(tmpDir), null);
+  });
+
+  it('trusts unsigned legacy files (no sig field)', () => {
+    fs.writeFileSync(path.join(tmpDir, 'license.json'), JSON.stringify(validLicense));
+    const result = readLicense(tmpDir);
+    assert.equal(result?.tier, 'pro');
+  });
+});
+
+describe('isLicensed — grace period', () => {
+  it('returns false when validatedAt is older than 30 days', () => {
+    const staleDate = new Date(Date.now() - 31 * 86400000).toISOString();
+    writeLicense({ ...validLicense, validatedAt: staleDate }, tmpDir);
+    assert.equal(isLicensed('pro', tmpDir), false);
+  });
+
+  it('returns true when validatedAt is within 30 days', () => {
+    const recentDate = new Date(Date.now() - 29 * 86400000).toISOString();
+    writeLicense({ ...validLicense, validatedAt: recentDate }, tmpDir);
+    assert.equal(isLicensed('pro', tmpDir), true);
+  });
+});
+
+describe('revalidateIfStale', () => {
+  it('does not call fetcher when no license exists', () => {
+    let called = false;
+    const fetcher = async () => { called = true; return { json: async () => ({}) }; };
+    revalidateIfStale({ configDir: tmpDir, fetcher });
+    assert.equal(called, false);
+  });
+
+  it('does not call fetcher when validatedAt is within 7 days', () => {
+    writeLicense({ ...validLicense, validatedAt: new Date().toISOString() }, tmpDir);
+    let called = false;
+    const fetcher = async () => { called = true; return { json: async () => ({}) }; };
+    revalidateIfStale({ configDir: tmpDir, fetcher });
+    assert.equal(called, false);
+  });
+
+  it('fires revalidateLicense when validatedAt is older than 7 days', async () => {
+    const staleDate = new Date(Date.now() - 8 * 86400000).toISOString();
+    writeLicense({ ...validLicense, validatedAt: staleDate }, tmpDir);
+    let called = false;
+    const fetcher = async () => {
+      called = true;
+      return { json: async () => ({ valid: true, meta: {} }) };
+    };
+    revalidateIfStale({ configDir: tmpDir, fetcher });
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.ok(called, 'fetcher should be called for stale license');
+  });
+});
+
+describe('showUpgradePrompt', () => {
+  it('writes styled upgrade box to the provided stream', () => {
+    let out = '';
+    const stream = { write: (s) => { out += s; }, isTTY: false };
+    showUpgradePrompt('team', '--assignee', { stream });
+    assert.ok(out.includes('Team'), 'should mention required tier');
+    assert.ok(out.includes('--assignee'), 'should mention the feature flag');
+    assert.ok(out.includes('ticketlens activate'), 'should include activation command');
+  });
+
+  it('writes styled upgrade box for pro tier', () => {
+    let out = '';
+    const stream = { write: (s) => { out += s; }, isTTY: false };
+    showUpgradePrompt('pro', '--compliance', { stream });
+    assert.ok(out.includes('Pro'));
+    assert.ok(out.includes('--compliance'));
   });
 });
 
