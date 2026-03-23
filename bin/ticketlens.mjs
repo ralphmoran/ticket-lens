@@ -14,7 +14,7 @@ import { run as runTriage } from '../skills/jtb/scripts/fetch-my-tickets.mjs';
 import { run as runInit } from '../skills/jtb/scripts/lib/init-wizard.mjs';
 import { runSwitch } from '../skills/jtb/scripts/lib/profile-switcher.mjs';
 import { run as runConfig } from '../skills/jtb/scripts/lib/config-wizard.mjs';
-import { activateLicense, checkLicense } from '../skills/jtb/scripts/lib/license.mjs';
+import { activateLicense, checkLicense, revalidateIfStale } from '../skills/jtb/scripts/lib/license.mjs';
 import { deleteProfile, loadProfiles } from '../skills/jtb/scripts/lib/profile-resolver.mjs';
 import { run as runCache } from '../skills/jtb/scripts/lib/cache-manager.mjs';
 import { printHelp, printProfiles } from '../skills/jtb/scripts/lib/help.mjs';
@@ -22,6 +22,9 @@ import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
 
 const args = process.argv.slice(2);
 const { command, args: cmdArgs } = parseCommand(args);
+
+// Fire-and-forget: silently refresh license.json at startup if >7 days since last validation
+revalidateIfStale();
 
 switch (command) {
   case 'fetch':
@@ -86,15 +89,30 @@ switch (command) {
   case 'license': {
     const s = createStyler({ isTTY: process.stdout.isTTY });
     const status = checkLicense();
+    const daysSinceVal = status.validatedAt
+      ? (Date.now() - new Date(status.validatedAt)) / 86400000
+      : Infinity;
+    // Grace period: treat as inactive if not revalidated within 30 days
+    const graceExpired = daysSinceVal > 30;
     process.stdout.write('\n');
-    if (status.active) {
+    if (status.active && !graceExpired) {
       process.stdout.write(`  ${s.green('●')} ${s.bold('License active')}\n\n`);
       process.stdout.write(`  ${s.dim('Tier:')}       ${s.bold(s.cyan(status.tier))}\n`);
       process.stdout.write(`  ${s.dim('Email:')}      ${status.email}\n`);
       if (status.validatedAt) {
         const date = status.validatedAt.split('T')[0];
         process.stdout.write(`  ${s.dim('Validated:')}  ${date}\n`);
+        if (daysSinceVal > 7) {
+          const days = Math.floor(daysSinceVal);
+          process.stdout.write(`  ${s.yellow('⚠')}  ${s.dim(`Revalidation pending — last checked ${days} day${days === 1 ? '' : 's'} ago`)}\n`);
+          process.stdout.write(`     ${s.dim('Run:')} ticketlens activate ${s.dim('<KEY>')} ${s.dim('to refresh')}\n`);
+        }
       }
+    } else if (graceExpired) {
+      process.stdout.write(`  ${s.red('●')} ${s.bold('License inactive')}\n\n`);
+      process.stdout.write(`  ${s.dim('Tier:')}   ${s.bold(status.tier)}\n`);
+      process.stdout.write(`  ${s.dim('Email:')}  ${status.email}\n\n`);
+      process.stdout.write(`  ${s.dim('Not revalidated in 30+ days. Run:')} ticketlens activate ${s.dim('<KEY>')}\n`);
     } else if (status.expired) {
       process.stdout.write(`  ${s.yellow('●')} ${s.bold('License expired')}\n\n`);
       process.stdout.write(`  ${s.dim('Tier:')}   ${s.bold(status.tier)}\n`);
