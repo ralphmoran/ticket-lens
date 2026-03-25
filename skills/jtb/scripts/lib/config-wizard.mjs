@@ -17,6 +17,7 @@ import { parseAge } from './cache-manager.mjs';
 import { DEFAULT_BRIEF_TTL } from './brief-cache.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { visLen, SERVER_AUTH_TYPES, promptText, promptSecret, promptYN } from './prompt-helpers.mjs';
+import { isLicensed } from './license.mjs';
 
 const RETRY_OPTIONS = [
   { label: 'Retry',             sublabel: 'Try again — same credentials (e.g. VPN just connected)', value: 'retry' },
@@ -349,17 +350,22 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
     }
   }
 
-  // ── Cache TTL ────────────────────────────────────────────────────────────
-  const curTtl = profile.cacheTtl || DEFAULT_BRIEF_TTL;
-  const ttlInput = await promptText(
-    s.dim('Brief cache TTL') + s.dim(`  [current: ${curTtl} — e.g. 4h, 7d, 30d, 0 to disable — Enter to keep]:`),
-    { stream, validate: (v) => {
-      if (!v || v === curTtl) return null;
-      if (v === '0') return null;
-      return parseAge(v) === null ? 'Use a number followed by h, d, w, m, or y (e.g. 4h, 7d, 30d)' : null;
-    } }
-  );
-  const cacheTtl = ttlInput || curTtl;
+  // ── Cache TTL (Pro feature) ───────────────────────────────────────────────
+  let cacheTtl = DEFAULT_BRIEF_TTL;
+  if (isLicensed('pro', configDir)) {
+    const curTtl = profile.cacheTtl || DEFAULT_BRIEF_TTL;
+    const ttlInput = await promptText(
+      s.dim('Brief cache TTL') + s.dim(`  [current: ${curTtl} — e.g. 4h, 7d, 30d, 0 to disable — Enter to keep]:`),
+      { stream, validate: (v) => {
+        if (!v || v === curTtl) return null;
+        if (v === '0') return null;
+        return parseAge(v) === null ? 'Use a number followed by h, d, w, m, or y (e.g. 4h, 7d, 30d)' : null;
+      } }
+    );
+    cacheTtl = ttlInput || curTtl;
+  } else {
+    stream.write(`  ${s.dim('○')} Brief cache TTL: ${s.dim('4h')}  ${s.dim('·')}  ${s.cyan('Pro')} ${s.dim('unlocks configurable TTL → ticketlens.dev/pricing')}\n`);
+  }
 
   // ── Save ───────────────────────────────────────────────────────────────────
   const updated = {

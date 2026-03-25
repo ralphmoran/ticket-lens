@@ -4,10 +4,16 @@ import { formatSize } from './attachment-downloader.mjs';
 import { timeAgo, truncate } from './config.mjs';
 
 function divWidth() {
-  return Math.min(60, (process.stdout.columns || 80) - 4);
+  return 30;
 }
 function halfDivWidth() {
-  return Math.floor(divWidth() / 2);
+  return 15;
+}
+function statusColor(s, status) {
+  const st = (status || '').toLowerCase();
+  if (/done|closed|resolved|complete/.test(st)) return s.green(status);
+  if (/progress|review|testing|qa/.test(st)) return s.yellow(status);
+  return status;
 }
 
 export function styleTriageSummary(scoredTickets, opts = {}) {
@@ -28,7 +34,7 @@ export function styleTriageSummary(scoredTickets, opts = {}) {
   if (aging.length > 0) parts.push(`${aging.length} aging`);
 
   const sections = [];
-  sections.push(s.bold(`${actionable.length} tickets need attention`) + ` (${parts.join(', ')})`);
+  sections.push(s.bold(`${actionable.length} tickets need attention`) + ' ' + s.dim(`(${parts.join(', ')})`) );
 
   // Legend + base URL hint
   const legendParts = [];
@@ -81,12 +87,12 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
   const sections = [];
 
   // Header: ticket key + summary
-  sections.push(s.bold(`${ticket.key}: ${ticket.summary}`));
+  sections.push(s.bold(s.cyan(`${ticket.key}: ${ticket.summary}`)));
 
   // Metadata line
   const meta = [
     `${s.dim('Type:')} ${ticket.type}`,
-    `${s.dim('Status:')} ${ticket.status}`,
+    `${s.dim('Status:')} ${statusColor(s, ticket.status)}`,
     `${s.dim('Priority:')} ${ticket.priority}`,
     `${s.dim('Assignee:')} ${ticket.assignee ?? 'Unassigned'}`,
   ];
@@ -96,7 +102,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
 
   // Description
   if (ticket.description) {
-    sections.push(`${s.bold('Description')}\n${s.dim('─'.repeat(divWidth()))}\n${ticket.description}`);
+    sections.push(`${s.bold(s.cyan('Description'))}\n${s.dim('─'.repeat(divWidth()))}\n${ticket.description}`);
   }
 
   // Comments
@@ -105,13 +111,13 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
       const date = c.created ? c.created.split('T')[0] : 'unknown';
       return `${s.cyan(c.author)} ${s.dim(`(${date})`)}\n${c.body}`;
     });
-    sections.push(`${s.bold('Comments')}\n${s.dim('─'.repeat(divWidth()))}\n${commentLines.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
+    sections.push(`${s.bold(s.cyan('Comments'))}\n${s.dim('─'.repeat(divWidth()))}\n${commentLines.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
   }
 
   // Linked tickets
   if (ticket.linkedTicketDetails?.length > 0) {
     const linkedSections = ticket.linkedTicketDetails.map(lt => {
-      const parts = [`${s.cyan(lt.key)}: ${lt.summary}`, `${s.dim('Type:')} ${lt.type} | ${s.dim('Status:')} ${lt.status}`];
+      const parts = [`${s.cyan(lt.key)}: ${lt.summary}`, `${s.dim('Type:')} ${lt.type} | ${s.dim('Status:')} ${statusColor(s, lt.status)}`];
       if (lt.description) parts.push(lt.description);
       if (lt.comments?.length > 0) {
         const cmts = lt.comments.map(c => {
@@ -122,7 +128,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
       }
       return parts.join('\n');
     });
-    sections.push(`${s.bold('Linked Tickets')}\n${s.dim('─'.repeat(divWidth()))}\n${linkedSections.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
+    sections.push(`${s.bold(s.cyan('Linked Tickets'))}\n${s.dim('─'.repeat(divWidth()))}\n${linkedSections.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
   }
 
   // Code references
@@ -140,7 +146,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
       .filter(([, items]) => items?.length > 0)
       .map(([label, items]) => `${s.dim(label + ':')} ${items.map(i => s.cyan(i)).join(', ')}`);
     if (filled.length > 0) {
-      sections.push(`${s.bold('Code References')}\n${s.dim('─'.repeat(divWidth()))}\n${filled.join('\n')}`);
+      sections.push(`${s.bold(s.cyan('Code References'))}\n${s.dim('─'.repeat(divWidth()))}\n${filled.join('\n')}`);
     }
   }
 
@@ -157,7 +163,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
       if (r?.skipReason === 'error')     return `  ${a.filename}  ${s.red('download failed: ' + r.error)}`;
       return `  ${a.filename}  ${s.dim(sz)}`;
     });
-    sections.push(`${s.bold('Attachments')}\n${s.dim('─'.repeat(divWidth()))}\n${lines.join('\n')}`);
+    sections.push(`${s.bold(s.cyan('Attachments'))}\n${s.dim('─'.repeat(divWidth()))}\n${lines.join('\n')}`);
   }
 
   return sections.join('\n\n');

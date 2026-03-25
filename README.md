@@ -184,12 +184,7 @@ Max 15 tickets fetched at any depth. Circular references are handled automatical
 
 The cache is depth-aware: a cached depth-2 response satisfies a depth-1 or depth-0 request. Pass `--no-cache` to bypass and re-fetch from Jira.
 
-The default TTL is **4 hours**. When a cached file is read and found to be expired, it is **deleted automatically** (lazy eviction) — no manual cleanup needed. Set `cacheTtl` in your profile to fit your workflow:
-
-```
-ticketlens config   # set "Brief cache TTL" in the Optional section
-                    # examples: 4h · 1d · 7d · 30d · 0 (disable)
-```
+The default TTL is **4 hours** (fixed for the free tier). **Pro subscribers** can configure a custom TTL per profile via `ticketlens config` — the "Brief cache TTL" field in the Optional section accepts values like `4h`, `1d`, `7d`, `30d`, or `0` to disable caching entirely. Free users always use the 4h default.
 
 **Multi-profile disambiguation:** When two profiles share a ticket prefix (e.g. both have `PROJ`), an arrow-key selector appears asking which Jira instance to use. Selecting one re-runs with `--profile=NAME`. Once a profile is selected, it is correctly applied even through connection failures and retries.
 
@@ -576,9 +571,9 @@ See [ROADMAP.md](ROADMAP.md) for the full feature plan.
 - Public launch: HN, Reddit, Dev.to
 
 **Coming soon:**
-- Compliance Check — compare ticket requirements against shipped code (Pro conversion lever)
-- Multi-project triage, custom attention rules, scheduled triage (Pro tier)
-- TicketLens Cloud — E2EE sync, web dashboard, Slack/Teams alerts (Phase C)
+- AI ticket summary, compliance check, scheduled triage digest (Pro tier)
+- Team triage dashboard, Slack/Teams alerts, triage export (Team tier)
+- TicketLens Cloud — E2EE brief sync, multi-machine context (Phase C)
 - GitHub Issues and Linear support (Phase D)
 
 ---

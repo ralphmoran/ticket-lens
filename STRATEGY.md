@@ -99,19 +99,22 @@ If yes: proceed to Phase C. If no: iterate on Phase B, double down on marketing,
 |--|------|------------|-------------------|-----------|
 | CLI (fetch + triage) | Yes | Yes | Yes | Yes |
 | Compliance check | 3/month | Unlimited | Unlimited | Unlimited |
+| AI ticket summary | No | Yes | Yes | Yes |
+| Configurable cache TTL | No | Yes | Yes | Yes |
+| Depth-2 traversal | No | Yes | Yes | Yes |
+| Scheduled triage digest | No | Yes | Yes | Yes |
 | Multi-project triage | No | Yes | Yes | Yes |
 | Custom attention rules | No | Yes | Yes | Yes |
-| Scheduled triage | No | Yes | Yes | Yes |
 | Ticket history tracking | No | Yes | Yes | Yes |
 | `--assignee` flag | No | No | Yes | Yes |
 | `--sprint` flag | No | No | Yes | Yes |
 | `--project`/`--label`/`--priority` | No | No | Yes | Yes |
 | Triage export (CSV/JSON) | No | No | Yes | Yes |
+| Team triage dashboard | No | No | Yes | Yes |
+| Slack/Teams alerts | No | No | Yes | Yes |
 | Brief templates | No | No | Yes | Yes |
 | Response time metrics | No | No | Yes | Yes |
 | Cloud sync (E2EE) | No | Phase C | Phase C | Phase C |
-| Web dashboard | No | Phase C | Phase C | Phase C |
-| Slack/Teams alerts | No | No | Phase C | Phase C |
 | SSO + audit logs | No | No | No | Phase D |
 | Self-hosted deployment | No | No | No | Phase D |
 

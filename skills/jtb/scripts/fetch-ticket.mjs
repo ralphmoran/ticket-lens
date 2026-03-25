@@ -155,9 +155,11 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
 
   const noCache = args.includes('--no-cache');
 
-  // Resolve brief cache TTL: profile setting → default 4h
+  // Resolve brief cache TTL: configurable for Pro tier only, else fixed 4h default
   const resolvedProfile = loadProfiles(configDir)?.profiles?.[conn.profileName];
-  const ttlMs = (resolvedProfile?.cacheTtl ? parseAge(resolvedProfile.cacheTtl) : null) ?? BRIEF_TTL_MS;
+  const ttlMs = (resolvedProfile?.cacheTtl && isLicensed('pro', configDir))
+    ? (parseAge(resolvedProfile.cacheTtl) ?? BRIEF_TTL_MS)
+    : BRIEF_TTL_MS;
 
   // ── Brief cache check ──────────────────────────────────────────────────────
   // Skip the Jira API call entirely if we have a fresh cached brief.
