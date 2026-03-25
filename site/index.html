@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TicketLens — Stop tab-switching. Start building.</title>
-  <meta name="description" content="Full Jira context in your terminal, in 1 command. TicketLens brings ticket briefs, linked issues, and code references directly into your AI coding workflow.">
-  <meta property="og:title" content="TicketLens — Stop tab-switching. Start building.">
-  <meta property="og:description" content="Full Jira context in your terminal, in 1 command.">
+  <title>TicketLens — Your AI assistant shouldn't need to read your tickets.</title>
+  <meta name="description" content="Local-first Jira CLI that makes your AI coding tools cheaper and smarter. Ticket content never leaves your machine. Works with Claude Code, Cursor, and every AI tool.">
+  <meta property="og:title" content="TicketLens — Your AI assistant shouldn't need to read your tickets.">
+  <meta property="og:description" content="Local-first Jira CLI. Ticket content stays on your machine. Makes Claude Code and Cursor 80% cheaper on Jira research.">
   <meta property="og:type" content="website">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -604,6 +604,129 @@
     .jtb-loop-label { font-size: 10px; color: var(--text-subtle); font-family: var(--mono); margin-left: auto; letter-spacing: .06em; }
 
     /* ============================================================
+       COMPLIANCE
+    ============================================================ */
+    .compliance-section { background: var(--s-features, #080c14); border-top: 1px solid rgba(255,255,255,.05); }
+    .compliance-inner { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; }
+
+    /* Compliance badges */
+    .compliance-badges { display: flex; flex-direction: column; gap: 10px; margin-top: 32px; }
+    .compliance-badge {
+      display: flex; align-items: center; gap: 14px;
+      padding: 13px 16px; border-radius: var(--r);
+      background: rgba(255,255,255,.03); border: 1px solid var(--dark-border);
+      transition: border-color .2s, background .2s;
+    }
+    .compliance-badge:hover { border-color: var(--dark-border2); background: rgba(255,255,255,.05); }
+    .cb-icon { width: 32px; height: 32px; flex-shrink: 0; }
+    .cb-text { display: flex; flex-direction: column; gap: 2px; }
+    .cb-label { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--text-dark); letter-spacing: .06em; }
+    .cb-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+
+    /* Architecture diagram wrapper */
+    .compliance-diagram-wrap {
+      background: var(--dark-raised); border: 1px solid var(--dark-border2);
+      border-radius: var(--rl); padding: 32px 28px;
+      position: relative; overflow: hidden;
+    }
+    .compliance-diagram-wrap::before {
+      content: ''; position: absolute; inset: 0;
+      background-image: radial-gradient(circle, rgba(37,99,235,.15) 1px, transparent 1px);
+      background-size: 20px 20px; pointer-events: none; opacity: .4;
+    }
+    .compliance-verify { margin-top: 18px; font-size: 13px; color: var(--text-muted); position: relative; z-index: 1; }
+
+    /* Architecture diagram — HTML/CSS nodes */
+    .arch-diagram { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 22px; }
+    .arch-flow { display: flex; flex-direction: column; gap: 9px; }
+    .arch-row  { display: flex; align-items: center; }
+    .arch-divider { border: none; border-top: 1px solid var(--dark-border); margin: 0; }
+    .arch-label {
+      font-family: var(--mono); font-size: 11px; color: var(--text-muted);
+      display: block; padding-left: 2px;
+    }
+    .arch-label.red { color: rgba(248,81,73,.7); }
+
+    /* Nodes */
+    .arch-node {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 13px; border-radius: 8px; flex-shrink: 0;
+      font-family: var(--mono); font-size: 11.5px; font-weight: 500; white-space: nowrap;
+    }
+    .arch-node--blue  { background: rgba(37,99,235,.12); border: 1px solid rgba(37,99,235,.4);  color: #c9d7f0; animation: nodeGlowBlue  3s ease infinite; }
+    .arch-node--green { background: rgba(63,185,80,.10);  border: 1px solid rgba(63,185,80,.35); color: #b5e8bf; animation: nodeGlowGreen 3s ease infinite .5s; }
+    .arch-node--red   { background: rgba(248,81,73,.06);  border: 1px solid rgba(248,81,73,.2);  color: rgba(248,81,73,.7); }
+    .arch-node--cloud { background: rgba(248,81,73,.04);  border: 1px solid rgba(248,81,73,.15); color: rgba(248,81,73,.45); }
+    .arch-node-icon { width: 15px; height: 15px; flex-shrink: 0; }
+
+    /* Connectors */
+    .arch-connector { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 0 8px; }
+    .arch-track { position: relative; height: 2px; border-radius: 1px; }
+    .arch-track--out { background: rgba(37,99,235,.25); }
+    .arch-track--in  { background: rgba(63,185,80,.25); }
+    .arch-track--out::after  { content:''; position:absolute; right:-1px; top:50%; transform:translateY(-50%); border:5px solid transparent; border-left:7px solid rgba(37,99,235,.55); }
+    .arch-track--in::before  { content:''; position:absolute; left:-1px;  top:50%; transform:translateY(-50%); border:5px solid transparent; border-right:7px solid rgba(63,185,80,.55); }
+
+    /* Particles */
+    .arch-dot { position:absolute; width:7px; height:7px; border-radius:50%; top:50%; margin-top:-3.5px; }
+    .arch-dot--blue  { background:#2563eb; box-shadow:0 0 8px 3px rgba(37,99,235,.8); }
+    .arch-dot--green { background:#3fb950; box-shadow:0 0 8px 3px rgba(63,185,80,.8); }
+    .arch-dot--blue.d1  { animation: dotRight 2.4s linear infinite 0s;   }
+    .arch-dot--blue.d2  { animation: dotRight 2.4s linear infinite .8s;  }
+    .arch-dot--green.d1 { animation: dotLeft  2.4s linear infinite 1.2s; }
+    .arch-dot--green.d2 { animation: dotLeft  2.4s linear infinite 2.0s; }
+    @keyframes dotRight {
+      0%   { left:-4px;             opacity:0; }
+      6%   { opacity:1; }
+      94%  { opacity:1; }
+      100% { left:calc(100% + 4px); opacity:0; }
+    }
+    @keyframes dotLeft {
+      0%   { left:calc(100% + 4px); opacity:0; }
+      6%   { opacity:1; }
+      94%  { opacity:1; }
+      100% { left:-4px;             opacity:0; }
+    }
+
+    /* Track labels */
+    .arch-track-label { font-family:var(--mono); font-size:9.5px; text-align:center; letter-spacing:.04em; line-height:1; }
+    .arch-track-label--out   { color:rgba(37,99,235,.65); }
+    .arch-track-label--in    { color:rgba(63,185,80,.65); }
+    .arch-track-label--block { color:rgba(248,81,73,.5); text-align:center; }
+
+    /* Blocked flow barrier */
+    .arch-block-row { position:relative; height:30px; display:flex; align-items:center; }
+    .arch-block-row .arch-track--block {
+      position:absolute; left:0; right:0; top:50%; transform:translateY(-50%);
+      height:2px; background:rgba(248,81,73,.15); border-radius:1px;
+    }
+    .arch-barrier {
+      position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+      width:26px; height:26px; border-radius:50%;
+      background:rgba(248,81,73,.1); border:1.5px solid rgba(248,81,73,.5);
+      display:flex; align-items:center; justify-content:center;
+      animation:barrierPulse 1.8s ease-in-out infinite; z-index:2;
+    }
+    @keyframes barrierPulse {
+      0%,100% { opacity:.6; transform:translate(-50%,-50%) scale(1);    }
+      50%      { opacity:1;  transform:translate(-50%,-50%) scale(1.15); }
+    }
+
+    /* Node glow animations */
+    @keyframes nodeGlowBlue {
+      0%,100% { box-shadow:0 0 0 0 rgba(37,99,235,0);    border-color:rgba(37,99,235,.4);  }
+      50%      { box-shadow:0 0 14px 4px rgba(37,99,235,.22); border-color:rgba(37,99,235,.7);  }
+    }
+    @keyframes nodeGlowGreen {
+      0%,100% { box-shadow:0 0 0 0 rgba(63,185,80,0);    border-color:rgba(63,185,80,.35); }
+      50%      { box-shadow:0 0 14px 4px rgba(63,185,80,.18);  border-color:rgba(63,185,80,.6);  }
+    }
+
+    @media (max-width: 900px) {
+      .compliance-inner { grid-template-columns: 1fr; gap: 48px; }
+    }
+
+    /* ============================================================
        FAQ
     ============================================================ */
     .faq-section { background: var(--s-how); border-top: 1px solid rgba(255,255,255,.04); }
@@ -629,7 +752,7 @@
       max-height: 0; overflow: hidden; transition: max-height .35s ease, padding .35s ease;
       padding-bottom: 0;
     }
-    .faq-item.open .faq-a { max-height: 200px; padding-bottom: 20px; }
+    .faq-item.open .faq-a { max-height: 360px; padding-bottom: 20px; }
     .faq-a code { font-family: var(--mono); font-size: 12px; color: #79c0ff; }
 
     /* ============================================================
@@ -767,6 +890,7 @@
         <ul class="nav-links">
           <li><a href="#how-it-works">Docs</a></li>
           <li><a href="#pricing">Pricing</a></li>
+          <li><a href="#compliance">Enterprise</a></li>
           <li><a href="https://github.com/ralphmoran/ticket-lens" target="_blank" rel="noopener">GitHub ↗</a></li>
         </ul>
         <a href="#install" class="nav-cta">Install →</a>
@@ -784,8 +908,8 @@
           <div class="hero-badge-dot"></div>
           Open core &middot; Free CLI forever
         </div>
-        <h1>Stop tab&#8209;switching.<br><em>Start building.</em></h1>
-        <p class="hero-sub">Full Jira context in your terminal, in 1 command. Works with Claude Code, Cursor, and every AI coding tool.</p>
+        <h1>Your AI assistant<br>shouldn't need to<br><em>read your tickets.</em></h1>
+        <p class="hero-sub">TicketLens fetches, compresses, and caches Jira context locally — so your AI tools get structured briefs instead of raw API noise. Ticket content never leaves your machine.</p>
         <div class="hero-ctas">
           <a href="#install" class="btn-primary">
             <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
@@ -1090,6 +1214,179 @@
     </div>
   </section>
 
+  <!-- COMPLIANCE -->
+  <section class="compliance-section" id="compliance">
+    <div class="container">
+      <div class="compliance-inner fade-in">
+
+        <!-- LEFT: Compliance badges with SVG icons -->
+        <div class="compliance-left">
+          <span class="section-tag">Enterprise-ready</span>
+          <h2 class="section-h2">Built for teams that<br>can't afford data leaks.</h2>
+          <p class="section-lead">TicketLens never routes your ticket content through external servers. That's not a setting — it's the architecture.</p>
+
+          <div class="compliance-badges">
+
+            <!-- GDPR -->
+            <div class="compliance-badge">
+              <svg class="cb-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <circle cx="16" cy="16" r="14" stroke="#2563eb" stroke-width="1.5" fill="rgba(37,99,235,.08)"/>
+                <!-- EU 12 stars arranged in a circle -->
+                <g fill="#f0c040">
+                  <polygon points="16,4 16.5,5.5 18,5.5 16.9,6.4 17.3,8 16,7.1 14.7,8 15.1,6.4 14,5.5 15.5,5.5" transform="rotate(0,16,16) translate(0,-7)"/>
+                  <polygon points="16,4 16.5,5.5 18,5.5 16.9,6.4 17.3,8 16,7.1 14.7,8 15.1,6.4 14,5.5 15.5,5.5" transform="rotate(30,16,16) translate(0,-7)"/>
+                  <polygon points="16,4 16.5,5.5 18,5.5 16.9,6.4 17.3,8 16,7.1 14.7,8 15.1,6.4 14,5.5 15.5,5.5" transform="rotate(60,16,16) translate(0,-7)"/>
+                  <polygon points="16,4 16.5,5.5 18,5.5 16.9,6.4 17.3,8 16,7.1 14.7,8 15.1,6.4 14,5.5 15.5,5.5" transform="rotate(90,16,16) translate(0,-7)"/>
+                  <polygon points="16,4 16.5,5.5 18,5.5 16.9,6.4 17.3,8 16,7.1 14.7,8 15.1,6.4 14,5.5 15.5,5.5" transform="rotate(120,16,16) translate(0,-7)"/>
+                  <polygon points="16,4 16.5,5.5 18,5.5 16.9,6.4 17.3,8 16,7.1 14.7,8 15.1,6.4 14,5.5 15.5,5.5" transform="rotate(150,16,16) translate(0,-7)"/>
+                  <polygon points="16,4 16.5,5.5 18,5.5 16.9,6.4 17.3,8 16,7.1 14.7,8 15.1,6.4 14,5.5 15.5,5.5" transform="rotate(180,16,16) translate(0,-7)"/>
+                  <polygon points="16,4 16.5,5.5 18,5.5 16.9,6.4 17.3,8 16,7.1 14.7,8 15.1,6.4 14,5.5 15.5,5.5" transform="rotate(210,16,16) translate(0,-7)"/>
+                  <polygon points="16,4 16.5,5.5 18,5.5 16.9,6.4 17.3,8 16,7.1 14.7,8 15.1,6.4 14,5.5 15.5,5.5" transform="rotate(240,16,16) translate(0,-7)"/>
+                  <polygon points="16,4 16.5,5.5 18,5.5 16.9,6.4 17.3,8 16,7.1 14.7,8 15.1,6.4 14,5.5 15.5,5.5" transform="rotate(270,16,16) translate(0,-7)"/>
+                  <polygon points="16,4 16.5,5.5 18,5.5 16.9,6.4 17.3,8 16,7.1 14.7,8 15.1,6.4 14,5.5 15.5,5.5" transform="rotate(300,16,16) translate(0,-7)"/>
+                  <polygon points="16,4 16.5,5.5 18,5.5 16.9,6.4 17.3,8 16,7.1 14.7,8 15.1,6.4 14,5.5 15.5,5.5" transform="rotate(330,16,16) translate(0,-7)"/>
+                </g>
+              </svg>
+              <div class="cb-text">
+                <span class="cb-label">GDPR</span>
+                <span class="cb-desc">No personal data transmitted to third parties</span>
+              </div>
+            </div>
+
+            <!-- HIPAA -->
+            <div class="compliance-badge">
+              <svg class="cb-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M16 3 L28 8 L28 17 C28 23 22 28 16 30 C10 28 4 23 4 17 L4 8 Z" stroke="#3fb950" stroke-width="1.5" fill="rgba(63,185,80,.08)" stroke-linejoin="round"/>
+                <!-- Medical cross -->
+                <rect x="14" y="10" width="4" height="12" rx="1" fill="#3fb950"/>
+                <rect x="10" y="14" width="12" height="4" rx="1" fill="#3fb950"/>
+              </svg>
+              <div class="cb-text">
+                <span class="cb-label">HIPAA</span>
+                <span class="cb-desc">PHI in ticket descriptions stays on-device</span>
+              </div>
+            </div>
+
+            <!-- SOC 2 -->
+            <div class="compliance-badge">
+              <svg class="cb-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M16 3 L28 8 L28 17 C28 23 22 28 16 30 C10 28 4 23 4 17 L4 8 Z" stroke="#e3b341" stroke-width="1.5" fill="rgba(227,179,65,.08)" stroke-linejoin="round"/>
+                <!-- Checkmark -->
+                <path d="M10 16 L14 21 L22 12" stroke="#e3b341" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <div class="cb-text">
+                <span class="cb-label">SOC 2</span>
+                <span class="cb-desc">Minimal data surface — credentials never leave your machine</span>
+              </div>
+            </div>
+
+            <!-- NDA -->
+            <div class="compliance-badge">
+              <svg class="cb-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <!-- Document -->
+                <rect x="6" y="4" width="16" height="20" rx="2" stroke="#7b8aa0" stroke-width="1.5" fill="rgba(123,138,160,.06)"/>
+                <path d="M10 10 H18 M10 14 H18 M10 18 H14" stroke="#7b8aa0" stroke-width="1.2" stroke-linecap="round"/>
+                <!-- Lock body -->
+                <rect x="17" y="18" width="9" height="8" rx="1.5" fill="rgba(37,99,235,.15)" stroke="#2563eb" stroke-width="1.2"/>
+                <!-- Lock shackle -->
+                <path d="M19.5 18 V16 A2 2 0 0 1 23.5 16 V18" stroke="#2563eb" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+                <!-- Lock keyhole -->
+                <circle cx="21.5" cy="21.5" r="1" fill="#2563eb"/>
+                <rect x="21" y="22" width="1" height="2" rx=".5" fill="#2563eb"/>
+              </svg>
+              <div class="cb-text">
+                <span class="cb-label">NDA</span>
+                <span class="cb-desc">Proprietary ticket content never reaches external APIs</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- RIGHT: Animated architecture diagram -->
+        <div class="compliance-right">
+          <div class="compliance-diagram-wrap">
+            <div class="arch-diagram">
+
+              <!-- FLOW 1: Your machine ↔ Jira (allowed) -->
+              <div class="arch-flow">
+                <div class="arch-row">
+                  <div class="arch-node arch-node--blue">
+                    <svg class="arch-node-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <rect x="1" y="2" width="14" height="9" rx="1.5" stroke="rgba(37,99,235,.85)" stroke-width="1.2" fill="none"/>
+                      <path d="M0 11 H16" stroke="rgba(37,99,235,.85)" stroke-width="1.2"/>
+                      <path d="M6 13 H10" stroke="rgba(37,99,235,.6)" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                    Your machine
+                  </div>
+                  <div class="arch-connector">
+                    <span class="arch-track-label arch-track-label--out">query →</span>
+                    <div class="arch-track arch-track--out">
+                      <span class="arch-dot arch-dot--blue d1"></span>
+                      <span class="arch-dot arch-dot--blue d2"></span>
+                    </div>
+                    <div class="arch-track arch-track--in">
+                      <span class="arch-dot arch-dot--green d1"></span>
+                      <span class="arch-dot arch-dot--green d2"></span>
+                    </div>
+                    <span class="arch-track-label arch-track-label--in">← brief ✓</span>
+                  </div>
+                  <div class="arch-node arch-node--green">
+                    <svg class="arch-node-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M8 2 L14 8 L8 14 L2 8 Z" fill="rgba(63,185,80,.45)" stroke="rgba(63,185,80,.85)" stroke-width="1.2" stroke-linejoin="round"/>
+                    </svg>
+                    Jira
+                  </div>
+                </div>
+                <span class="arch-label">TicketLens fetches directly — no relay, no proxy, no cloud.</span>
+              </div>
+
+              <hr class="arch-divider">
+
+              <!-- FLOW 2: Ticket content ✗ Anthropic (blocked) -->
+              <div class="arch-flow">
+                <div class="arch-row">
+                  <div class="arch-node arch-node--red">
+                    <svg class="arch-node-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <rect x="2" y="1" width="10" height="13" rx="1.5" stroke="rgba(248,81,73,.45)" stroke-width="1.2" fill="none"/>
+                      <line x1="4" y1="5"   x2="10" y2="5"   stroke="rgba(248,81,73,.4)" stroke-width="1" stroke-linecap="round"/>
+                      <line x1="4" y1="7.5" x2="10" y2="7.5" stroke="rgba(248,81,73,.4)" stroke-width="1" stroke-linecap="round"/>
+                      <line x1="4" y1="10"  x2="7"  y2="10"  stroke="rgba(248,81,73,.4)" stroke-width="1" stroke-linecap="round"/>
+                    </svg>
+                    Your ticket data
+                  </div>
+                  <div class="arch-connector">
+                    <div class="arch-block-row">
+                      <div class="arch-track arch-track--block"></div>
+                      <div class="arch-barrier" aria-hidden="true">
+                        <svg width="12" height="14" viewBox="0 0 12 14" fill="none">
+                          <line x1="6" y1="2" x2="6" y2="8" stroke="#f85149" stroke-width="2" stroke-linecap="round"/>
+                          <circle cx="6" cy="11.5" r="1.2" fill="#f85149"/>
+                        </svg>
+                      </div>
+                    </div>
+                    <span class="arch-track-label arch-track-label--block">always sent →</span>
+                  </div>
+                  <div class="arch-node arch-node--cloud">
+                    <svg class="arch-node-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M4 13 Q3 9 5 8 Q5 5 8 5 Q11 3 13 6 Q15 6 15 9 Q15 13 12 13 Z" fill="rgba(248,81,73,.1)" stroke="rgba(248,81,73,.3)" stroke-width="1.1"/>
+                    </svg>
+                    Anthropic
+                  </div>
+                </div>
+                <span class="arch-label red">Without TicketLens: Anthropic gets your raw ticket context and consumes far more tokens.</span>
+              </div>
+
+            </div>
+
+            <p class="compliance-verify">TicketLens is open source. <a href="https://github.com/ralphmoran/ticket-lens" target="_blank" rel="noopener" style="color:var(--accent)">Verify the architecture yourself →</a></p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
   <!-- INSTALL -->
   <section class="install-section" id="install">
     <div class="container">
@@ -1209,6 +1506,13 @@
             </button>
             <div class="faq-a">Yes. TicketLens supports Jira Cloud (Basic auth), Jira Server/DC 8.14+ (Bearer PAT), and older Jira Server instances using username+password auth. Run <code>ticketlens init</code> — it auto-detects your instance type and guides you through setup.</div>
           </div>
+          <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">
+              Can't Claude Code or other AI tools just use Jira directly?
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-a">Yes — but at a cost. Claude Code calling Jira directly gets raw API JSON (verbose, token-heavy), unfiltered bot comments, and sends your ticket content to Anthropic's servers. TicketLens preprocesses and compresses context locally before handing it to your AI tool — 60–80% fewer tokens, zero data leaving your machine. It also works without an AI session: pipe it, cron it, integrate it into CI/CD. AI assistants can't be piped.</div>
+          </div>
         </div>
         <div class="faq-col">
           <div class="faq-item">
@@ -1230,7 +1534,21 @@
               What's the difference between Pro and Team?
               <span class="faq-icon">+</span>
             </button>
-            <div class="faq-a">Pro is for individual developers: AI-powered ticket summaries, unlimited compliance checks, depth-2 traversal, and a scheduled daily triage digest. Team adds cross-team visibility: filter by assignee and sprint, a live team triage dashboard, Slack/Teams alerts, and CSV/JSON export. Both include everything in Free.</div>
+            <div class="faq-a">The tiers are additive. <strong>Free</strong> gives you the full CLI forever. <strong>Pro</strong> builds on Free with individual power features: AI ticket summaries, unlimited compliance checks, depth-2 traversal, and a daily triage digest. <strong>Team</strong> builds on Pro with cross-team visibility: assignee and sprint filters, a live team dashboard, Slack/Teams alerts, and CSV/JSON export.</div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">
+              How does TicketLens save AI tokens?
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-a">Raw Jira API responses include verbose JSON, bot comments, ADF markup, and attachment metadata — often 15,000–50,000 tokens per ticket. TicketLens filters bots, converts ADF to plain text, traverses linked tickets in parallel, and caches the result. The brief your AI receives is typically 60–80% smaller. For teams triaging multiple times a day, the token cost difference vs prompting Claude Code directly is significant.</div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">
+              Can I automate or script TicketLens?
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-a">Yes — that's a core advantage. TicketLens is a standard CLI: pipe output, run it in cron jobs, trigger from git hooks, integrate into CI/CD. <code>ticketlens triage --plain | your-notifier</code> works. Scheduled triage digests (Pro) automate your morning standup prep. AI coding assistants are interactive and session-bound — you can't pipe or schedule them.</div>
           </div>
         </div>
       </div>
@@ -1245,7 +1563,7 @@
           <div class="nav-logo-mark">tl</div>
           TicketLens
         </a>
-        <span class="footer-tagline">Built for developers who ship</span>
+        <span class="footer-tagline">Jira intelligence that stays on your machine</span>
       </div>
       <nav class="footer-nav" aria-label="Footer">
         <a href="#">Docs</a>

@@ -62,6 +62,10 @@ export function parseCommand(args) {
     return { command: 'cache', args: ['clear', ...args.slice(1)] };
   }
 
+  if (first === 'schedule') {
+    return { command: 'schedule', args: args.slice(1) };
+  }
+
   // Anything that looks like a ticket key or any non-flag arg → fetch
   return { command: 'fetch', args };
 }

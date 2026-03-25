@@ -194,6 +194,29 @@ switch (command) {
     break;
   }
 
+  case 'schedule': {
+    const s = createStyler({ isTTY: process.stdout.isTTY });
+    const bc = s.dim;
+    const lines = [
+      `${s.dim('○')} Scheduled triage digest`,
+      '',
+      'Get a 7am summary of tickets needing your',
+      'attention — delivered by email, every morning.',
+      '',
+      `Pro feature → ${s.cyan('ticketlens.io/upgrade')}`,
+      `Or: ${s.dim('ticketlens activate <LICENSE-KEY>')}`,
+    ];
+    const ANSI_RE = /\x1b\[[0-9;]*m/g;
+    const visibleLength = (str) => str.replace(ANSI_RE, '').length;
+    const innerWidth = lines.reduce((max, l) => Math.max(max, visibleLength(l)), 0) + 2;
+    const pad = (line) => ' ' + line + ' '.repeat(Math.max(0, innerWidth - visibleLength(line) - 1));
+    const top = bc('┌' + '─'.repeat(innerWidth) + '┐');
+    const bot = bc('└' + '─'.repeat(innerWidth) + '┘');
+    const body = lines.map(l => bc('│') + pad(l) + bc('│')).join('\n');
+    process.stdout.write('\n' + top + '\n' + body + '\n' + bot + '\n\n');
+    break;
+  }
+
   case 'help':
   default:
     printHelp();

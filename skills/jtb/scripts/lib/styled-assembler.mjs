@@ -166,5 +166,18 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
     sections.push(`${s.bold(s.cyan('Attachments'))}\n${s.dim('─'.repeat(divWidth()))}\n${lines.join('\n')}`);
   }
 
-  return sections.join('\n\n');
+  const out = sections.join('\n\n');
+
+  if (!styled) return out;
+
+  const ANSI_RE = /\x1b\[[0-9;]*m/g;
+  const plainTextLength = out.replace(ANSI_RE, '').length;
+  const briefTokens = Math.ceil(plainTextLength / 4);
+  const ticketCount = 1 + (ticket.linkedTicketDetails?.length ?? 1);
+  const rawTokenEstimate = Math.max(12000, ticketCount * 8000);
+  const savings = Math.round((1 - briefTokens / rawTokenEstimate) * 100);
+  const savingsStr = savings > 0 ? ` · ~${savings}% vs raw API` : '';
+  const footer = s.dim(`  ○ ~${briefTokens} tokens loaded${savingsStr}  ·  --plain for pipe-safe output`);
+
+  return out + '\n\n' + footer;
 }

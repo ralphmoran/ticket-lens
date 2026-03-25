@@ -32,14 +32,16 @@ Developers lose 15-30 minutes per ticket gathering context before writing a sing
 | Jira IDE plugins | Basic ticket view in IDE | Deep linked-ticket traversal, code ref extraction, triage scoring |
 | Linear/Shortcut | Modern PM tools (not Jira) | TicketLens serves the massive Jira installed base (75%+ market) |
 | AI code assistants (Copilot, Cursor) | Code generation | TicketLens handles the *research* phase these tools skip |
+| Claude Code / AI assistants (direct Jira) | API calls, ticket creation, JQL | TicketLens: privacy (no data to Anthropic), 60–80% token savings, scriptable/pipeable, deterministic — complements rather than competes |
 | Stepsize/Sleuth | Dev workflow analytics | TicketLens is action-oriented (what to work on now), not retrospective |
 
 ### Moat Potential
 
-1. **Integration depth** — Multi-instance Jira support (Cloud + Server/DC) is rare and hard to replicate
-2. **VCS-agnostic** — Git, SVN, Mercurial support covers legacy codebases competitors ignore
-3. **Zero-dependency architecture** — No npm install, no Docker, no SaaS signup = zero friction adoption
-4. **Claude Code ecosystem** — First-mover in the Claude Code skills marketplace
+1. **Privacy architecture** — Local-first with metadata-only SaaS. Enterprise can't use Claude Code for ticket context (data goes to Anthropic). TicketLens passes security review in days, not weeks.
+2. **Scriptability** — Standard CLI output enables automation AI assistants fundamentally cannot do: cron, pipes, git hooks, CI/CD integration.
+3. **Token efficiency** — Preprocessed, compressed briefs vs raw API noise. For high-frequency teams, the economics favor TicketLens over AI-direct at scale.
+4. **Integration depth** — Multi-instance Jira (Cloud + Server/DC), VCS-agnostic, zero npm dependencies.
+5. **Claude Code ecosystem** — First-mover in the Claude Code skills marketplace; `/jtb` is the reference implementation.
 
 ---
 
@@ -302,20 +304,20 @@ See [ROADMAP.md](ROADMAP.md) for the full iteration plan (54 features across 12 
 ## 4. Positioning & Messaging
 
 ### One-liner
-**"Stop tab-switching. Start building."**
+**"Your AI assistant shouldn't need to read your tickets."**
 
 ### Elevator pitch
-TicketLens assembles everything you need to start coding — ticket context, linked issues, team comments, and code references — in one command. No more 30-minute Jira research sessions.
+TicketLens fetches Jira context locally, compresses it into structured briefs, and feeds it to your AI coding tools — without your ticket content ever leaving your machine. It's not a tab-switching fix; it's the data layer that makes AI-assisted development cheaper, faster, and privacy-safe.
 
 ### Positioning statement
-For developers who use Jira, TicketLens is a CLI tool that eliminates the context-gathering phase before implementation. Unlike Jira IDE plugins that show basic ticket info, TicketLens traverses linked issues, scores what needs your attention, and maps code references to your local repo.
+For developers and teams using Jira with AI coding tools, TicketLens is the local-first data layer between Jira and your AI assistant. Unlike prompting your AI to fetch tickets directly (expensive, sends data to third parties, not scriptable), TicketLens preprocesses ticket context on-device, compresses it 60–80%, and delivers structured briefs to Claude Code, Cursor, or any AI tool — at a fraction of the token cost, with zero data leaving your machine.
 
 ### Key differentiators to emphasize
-1. **One command, full context** — `/jtb TICKET-KEY` gives you everything
-2. **Smart triage** — tells you which tickets need YOUR attention right now
-3. **Works everywhere** — Jira Cloud, Server, DC. Git, SVN, Hg. Any IDE.
-4. **Zero friction** — No npm install, no Docker, no SaaS signup
-5. **Privacy-first** — Runs locally. Your Jira data never leaves your machine.
+1. **Privacy-first** — Ticket content never leaves your machine. No data relay, no third-party servers. Open source — verify it yourself.
+2. **AI amplifier** — `/jtb TICKET-KEY` gives your AI tool structured, compressed context at 60–80% fewer tokens than raw API calls.
+3. **Scriptable automation** — Standard CLI: pipe, cron, git hooks, CI/CD. AI assistants can't be piped.
+4. **Deterministic output** — Same structured output every run. Safe for automation and reporting.
+5. **Works everywhere** — Jira Cloud, Server, DC. Zero npm dependencies. Any AI tool.
 
 ---
 

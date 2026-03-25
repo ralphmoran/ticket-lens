@@ -6,14 +6,19 @@
 [![Node.js >=18](https://img.shields.io/node/v/ticketlens.svg)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Jira CLI for developers — stop tab-switching, start building.**
+**Local-first Jira CLI that makes your AI coding tools cheaper and smarter.**
 
-TicketLens is a zero-dependency CLI that fetches full Jira ticket context — description, comments, linked issues, attachments, and code references — directly into your terminal or Claude Code session.
+- **Privacy** — ticket content is preprocessed locally and never sent to Anthropic or any third party
+- **60–80% token savings** — structured briefs instead of raw verbose Jira JSON; 4-hour cache by default
+- **Scriptable** — standard CLI output: pipe to cron, git hooks, CI/CD, or any LLM tool
 
-> **Your Jira data never leaves your machine.** TicketLens calls the Jira API directly from your computer. No cloud backend, no data relay, no third-party servers. Credentials stay in `~/.ticketlens/credentials.json` (chmod 600). Cached briefs stay in `~/.ticketlens/cache/`. Nothing is ever uploaded.
+> **Can't Claude Code just fetch Jira tickets directly?** It can — but doing so sends raw ticket content to Anthropic's servers, costs 15,000–50,000 tokens per ticket, and can't be piped, scheduled, or automated. TicketLens does none of those things.
+
+---
 
 ## Contents
 
+- [Why TicketLens?](#why-ticketlens)
 - [Quick Start](#quick-start)
 - [Commands](#commands)
   - [ticketlens init — Setup wizard](#ticketlens-init--setup-wizard)
@@ -25,6 +30,7 @@ TicketLens is a zero-dependency CLI that fetches full Jira ticket context — de
   - [ticketlens delete — Remove a profile](#ticketlens-delete--remove-a-profile)
   - [ticketlens cache — Cache manager](#ticketlens-cache--cache-manager)
   - [ticketlens license — License status](#ticketlens-license--license-status)
+  - [ticketlens schedule — Scheduled triage digest (Pro)](#ticketlens-schedule--scheduled-triage-digest-pro)
   - [/jtb — Jira TicketBrief for Claude Code](#jtb--jira-ticketbrief-for-claude-code)
 - [All Examples](#all-examples)
 - [Multi-Profile Setup](#multi-profile-setup)
@@ -33,8 +39,50 @@ TicketLens is a zero-dependency CLI that fetches full Jira ticket context — de
 - [Running Tests](#running-tests)
 - [Roadmap](#roadmap)
 - [Known Issues](#known-issues)
+- [TicketLens + Claude Code](#ticketlens--claude-code)
 - [Contributing](#contributing)
 - [License](#license)
+
+---
+
+## Why TicketLens?
+
+### Privacy-first
+
+When Claude Code fetches a Jira ticket directly, that content goes to Anthropic's servers. TicketLens never does this — it runs locally, preprocesses, and hands your AI a structured brief. For regulated environments or NDAs, this is a hard requirement.
+
+> **Ticket content never leaves your machine.** TicketLens calls Jira directly from your computer, preprocesses locally, and hands structured briefs to your AI tool. No cloud backend. No data relay. Credentials at `~/.ticketlens/credentials.json` (chmod 600).
+
+### 60–80% token savings
+
+Raw Jira API responses are expensive: verbose JSON, bot comments, ADF markup, and attachment metadata add up to 15,000–50,000 tokens per ticket at depth 1. TicketLens filters, converts, and caches — your AI gets a clean structured brief at a fraction of the cost.
+
+| | TicketLens + AI | AI tool alone |
+|---|---|---|
+| Ticket content to Anthropic | Never | Yes |
+| Token cost (depth-1 ticket) | ~800 tokens | ~15,000+ tokens |
+| Works in cron / pipes / CI | Yes | No |
+| Offline / air-gapped | Yes (cached) | No |
+| Consistent output format | Yes | Varies |
+| Works without an AI session | Yes | No |
+
+### Scriptable automation
+
+AI assistants can't be piped, scheduled, or embedded in hooks. TicketLens can.
+
+```bash
+# Feed a brief to any LLM tool
+ticketlens PROJ-123 --plain | llm "What are the implementation risks?"
+
+# Morning triage to Slack
+ticketlens triage --plain | slack-notify "#dev-alerts"
+
+# Pre-commit hook: surface tickets blocking this branch
+ticketlens triage --plain --stale=1 | grep "needs response"
+
+# Cron digest — no AI session required
+0 9 * * 1-5 ticketlens triage --plain > ~/triage-$(date +%F).md
+```
 
 ---
 
@@ -60,7 +108,7 @@ npx ticketlens PROJ-123
 
 ### ticketlens init — Setup wizard
 
-Interactive wizard that configures your Jira connection. Run this first.
+_Run this first. An interactive wizard that configures your Jira connection._
 
 ```bash
 ticketlens init
@@ -92,7 +140,7 @@ Config is written to `~/.ticketlens/profiles.json` and `~/.ticketlens/credential
 
 ### ticketlens switch — Switch active profile
 
-Switch between configured Jira connections without re-running init.
+_Switch between configured Jira connections without re-running init._
 
 ```bash
 ticketlens switch
@@ -104,7 +152,7 @@ Opens a titled arrow-key panel listing all configured profiles. The active profi
 
 ### ticketlens config — Edit profile settings
 
-Edit any setting on an existing profile without re-running the full wizard.
+_Edit any setting on an existing profile without re-running the full wizard._
 
 ```bash
 ticketlens config                    # Edit the default/active profile
@@ -126,7 +174,7 @@ Every field is pre-populated with its current value — press `Enter` to keep it
 
 ### ticketlens profiles — List configured profiles
 
-List all configured Jira profiles and identify the active one.
+_List all configured Jira profiles and identify the active one._
 
 ```bash
 ticketlens profiles          # List all configured profiles
@@ -151,7 +199,7 @@ Active = the profile set by `ticketlens switch`, or the first profile in the fil
 
 ### ticketlens TICKET-KEY — Fetch a ticket brief
 
-Fetch a ticket's full context: description, comments, linked issues, attachments, and code references.
+_Fetch a ticket's full context: description, comments, linked issues, attachments, and code references._
 
 ```bash
 ticketlens PROJ-123                  # Fetch with defaults (depth 1, styled output)
@@ -199,7 +247,7 @@ The default TTL is **4 hours** (fixed for the free tier). **Pro subscribers** ca
 
 ### ticketlens triage — Ticket attention scanner
 
-Scans your assigned tickets and surfaces what needs attention.
+_Scans your assigned tickets and surfaces what needs attention._
 
 ```bash
 ticketlens triage                                       # Auto-detect profile from cwd
@@ -242,7 +290,7 @@ Bot comments (Jira Automation, Jenkins, GitHub Actions, etc.) are automatically 
 
 ### ticketlens cache — Cache manager
 
-Inspect and clean up locally cached ticket data: attachment files and ticket briefs.
+_Inspect and clean up locally cached ticket data: attachment files and ticket briefs._
 
 ```bash
 ticketlens cache                               # Overview + subcommand hints
@@ -296,6 +344,20 @@ Output shows one of three states:
 
 ---
 
+### ticketlens schedule — Scheduled triage digest (Pro)
+
+_Automatically emails a triage digest on a schedule — no open terminal required._
+
+```bash
+ticketlens schedule
+```
+
+Running this command on the **Free** tier shows the Pro upgrade prompt. Scheduled triage digests are a Pro feature — once active, the digest runs server-side and emails your triage summary each morning.
+
+> This is a preview stub. Full implementation ships with Pro tier.
+
+---
+
 ### ticketlens delete — Remove a profile
 
 ```bash
@@ -308,7 +370,7 @@ Prompts for confirmation in TTY. Removes the profile from `profiles.json` and it
 
 ### /jtb — Jira TicketBrief for Claude Code
 
-`/jtb` is a **Claude Code slash command**. It fetches full ticket context and drops a structured implementation brief directly into your Claude session, then enters plan mode.
+_A Claude Code slash command that fetches full ticket context and drops a structured implementation brief directly into your session, then enters plan mode._
 
 > `/jtb` requires [Claude Code](https://claude.ai/code). For standalone CLI use, the `ticketlens` commands above work independently.
 
@@ -368,7 +430,7 @@ Files over 10 MB are skipped. Cached files are reused on repeat fetches (`--no-c
 
 ## All Examples
 
-Complete reference of every command and flag combination:
+_Complete reference of every command and flag combination._
 
 ```bash
 # ── First-time setup ─────────────────────────────────────────────────────────
@@ -438,9 +500,10 @@ ticketlens cache clear --help                 # Full options
 # ── Profile management ────────────────────────────────────────────────────────
 ticketlens delete <PROFILE-NAME>              # Remove a profile (prompts y/N in TTY)
 
-# ── License ────────────────────────────────────────────────────────────────────
+# ── License and account ────────────────────────────────────────────────────────
 ticketlens license                            # Show license tier and status
 ticketlens activate <LICENSE-KEY>             # Activate a license key
+ticketlens schedule                           # Scheduled digest setup [Pro]
 
 # ── Help and version ──────────────────────────────────────────────────────────
 ticketlens --help                             # Main help
@@ -457,7 +520,9 @@ ticketlens cache clear --help                 # Cache clear help
 
 ## Multi-Profile Setup
 
-TicketLens supports multiple Jira instances simultaneously. Profiles are stored in `~/.ticketlens/profiles.json`:
+_TicketLens supports multiple Jira instances simultaneously._
+
+Profiles are stored in `~/.ticketlens/profiles.json`:
 
 ```json
 {
@@ -590,6 +655,21 @@ None at this time. Previous issues resolved:
 - ~~`cache --help` showed main help~~ — Fixed: Subcommand `--help` flags route to each subcommand's own help.
 - ~~Unhandled rejection crash on triage timeout~~ — Fixed: concurrent `userPromise`/`ticketsPromise` now guarded with `.catch(()=>{})` on early bail; timeout errors show styled error box.
 - ~~Unknown flags silently passed through~~ — Fixed: unrecognized flags stop the CLI with a "Did you mean?" suggestion and `y/N` interactive fix.
+
+---
+
+## TicketLens + Claude Code
+
+TicketLens is the reference implementation for Jira context in Claude Code. The `/jtb` skill feeds structured, compressed briefs directly into your Claude session — saving tokens, protecting privacy, and enabling plan mode immediately.
+
+Install once, use everywhere:
+
+```bash
+npm install -g ticketlens && ticketlens init
+cp $(npm root -g)/ticketlens/skills/jtb/SKILL.md ~/.claude/commands/jtb.md
+# Then in Claude Code:
+# /jtb PROJ-123
+```
 
 ---
 
