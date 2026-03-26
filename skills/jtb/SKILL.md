@@ -57,7 +57,10 @@ Where `$EXTRA_ARGS` are any flags passed (e.g. `--stale=3 --status=QA --profile=
 
 ### Step 1: Validate environment
 
-Check that `JIRA_BASE_URL` and auth vars are set. If not, list the missing vars and stop.
+Follow the Prerequisites section above:
+- If `~/.ticketlens/profiles.json` exists → proceed to Step 2. No env vars needed.
+- If no profile exists → check `JIRA_BASE_URL` and auth vars. If missing, list them and stop.
+- If neither is configured → tell the user: "No Jira connection found. Run `ticketlens init` to set up your connection, or set `JIRA_BASE_URL` + auth credentials as environment variables."
 
 ### Step 2: Fetch the ticket
 

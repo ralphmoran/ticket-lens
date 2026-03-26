@@ -19,6 +19,7 @@
 ## Contents
 
 - [Why TicketLens?](#why-ticketlens)
+- [Demos](#demos)
 - [Quick Start](#quick-start)
 - [Commands](#commands)
   - [ticketlens init — Setup wizard](#ticketlens-init--setup-wizard)
@@ -83,6 +84,24 @@ ticketlens triage --plain --stale=1 | grep "needs response"
 # Cron digest — no AI session required
 0 9 * * 1-5 ticketlens triage --plain > ~/triage-$(date +%F).md
 ```
+
+---
+
+## Demos
+
+<details>
+<summary><strong>Ticket fetch</strong> — <code>ticketlens PROJ-123</code></summary>
+
+_GIF coming soon — run `vhs docs/demos/fetch.tape` to generate locally ([instructions](docs/demos/README.md))_
+
+</details>
+
+<details>
+<summary><strong>Triage scan</strong> — <code>ticketlens triage</code></summary>
+
+_GIF coming soon — run `vhs docs/demos/triage.tape` to generate locally ([instructions](docs/demos/README.md))_
+
+</details>
 
 ---
 
