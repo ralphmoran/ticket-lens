@@ -4,6 +4,7 @@
 
 import { formatTable } from './table-formatter.mjs';
 import { formatSize } from './attachment-downloader.mjs';
+import { timeAgo, truncate, stripCr } from './config.mjs';
 
 export function assembleBrief(ticket, codeRefs = null) {
   const sections = [];
@@ -78,8 +79,6 @@ export function assembleBrief(ticket, codeRefs = null) {
 
   return sections.join('\n\n');
 }
-
-import { timeAgo, truncate, stripCr } from './config.mjs';
 
 export function assembleTriageSummary(scoredTickets, opts = {}) {
   const { staleDays = 5, baseUrl } = opts;
