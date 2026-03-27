@@ -170,6 +170,13 @@ describe('assembleBrief', () => {
     assert.ok(descIdx < commentsIdx);
     assert.ok(commentsIdx < codeIdx);
   });
+
+  it('strips carriage returns from description', () => {
+    const ticket = { ...baseTicket, description: 'Line one\r\nLine two\r\nLine three' };
+    const result = assembleBrief(ticket);
+    assert.ok(!result.includes('\r'), 'plain brief must not contain carriage returns');
+    assert.ok(result.includes('Line one'), 'description content must be preserved');
+  });
 });
 
 describe('assembleTriageSummary', () => {

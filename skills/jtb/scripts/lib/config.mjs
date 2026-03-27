@@ -43,3 +43,9 @@ export function truncate(str, max) {
   if (oneLine.length <= max) return oneLine;
   return oneLine.slice(0, max - 3) + '...';
 }
+
+/** Strip carriage returns, preserving all other whitespace. */
+export function stripCr(str) {
+  if (!str) return '';
+  return str.replace(/\r/g, '');
+}

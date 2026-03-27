@@ -1,7 +1,7 @@
 import { createStyler } from './ansi.mjs';
 import { formatTable } from './table-formatter.mjs';
 import { formatSize } from './attachment-downloader.mjs';
-import { timeAgo, truncate } from './config.mjs';
+import { timeAgo, truncate, stripCr } from './config.mjs';
 
 function divWidth() {
   return 30;
@@ -102,14 +102,14 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
 
   // Description
   if (ticket.description) {
-    sections.push(`${s.bold(s.cyan('Description'))}\n${s.dim('─'.repeat(divWidth()))}\n${ticket.description}`);
+    sections.push(`${s.bold(s.cyan('Description'))}\n${s.dim('─'.repeat(divWidth()))}\n${stripCr(ticket.description)}`);
   }
 
   // Comments
   if (ticket.comments?.length > 0) {
     const commentLines = ticket.comments.map(c => {
       const date = c.created ? c.created.split('T')[0] : 'unknown';
-      return `${s.cyan(c.author)} ${s.dim(`(${date})`)}\n${c.body}`;
+      return `${s.cyan(c.author)} ${s.dim(`(${date})`)}\n${stripCr(c.body)}`;
     });
     sections.push(`${s.bold(s.cyan('Comments'))}\n${s.dim('─'.repeat(divWidth()))}\n${commentLines.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
   }
@@ -118,11 +118,11 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
   if (ticket.linkedTicketDetails?.length > 0) {
     const linkedSections = ticket.linkedTicketDetails.map(lt => {
       const parts = [`${s.cyan(lt.key)}: ${lt.summary}`, `${s.dim('Type:')} ${lt.type} | ${s.dim('Status:')} ${statusColor(s, lt.status)}`];
-      if (lt.description) parts.push(lt.description);
+      if (lt.description) parts.push(stripCr(lt.description));
       if (lt.comments?.length > 0) {
         const cmts = lt.comments.map(c => {
           const date = c.created ? c.created.split('T')[0] : 'unknown';
-          return `${s.cyan(c.author)} ${s.dim(`(${date})`)}: ${c.body}`;
+          return `${s.cyan(c.author)} ${s.dim(`(${date})`)}: ${stripCr(c.body)}`;
         });
         parts.push(cmts.join('\n'));
       }

@@ -15,7 +15,7 @@ export function assembleBrief(ticket, codeRefs = null) {
   sections.push(meta.join(' | '));
 
   if (ticket.description) {
-    sections.push(`## Description\n\n${ticket.description}`);
+    sections.push(`## Description\n\n${stripCr(ticket.description)}`);
   }
 
   if (ticket.comments?.length > 0) {
@@ -29,7 +29,7 @@ export function assembleBrief(ticket, codeRefs = null) {
   if (ticket.linkedTicketDetails?.length > 0) {
     const linkedSections = ticket.linkedTicketDetails.map(lt => {
       const parts = [`### ${lt.key}: ${lt.summary}`, `**Type:** ${lt.type} | **Status:** ${lt.status}`];
-      if (lt.description) parts.push(lt.description);
+      if (lt.description) parts.push(stripCr(lt.description));
       if (lt.comments?.length > 0) {
         const cmts = lt.comments.map(c => {
           const date = c.created ? c.created.split('T')[0] : 'unknown';
@@ -79,7 +79,7 @@ export function assembleBrief(ticket, codeRefs = null) {
   return sections.join('\n\n');
 }
 
-import { timeAgo, truncate } from './config.mjs';
+import { timeAgo, truncate, stripCr } from './config.mjs';
 
 export function assembleTriageSummary(scoredTickets, opts = {}) {
   const { staleDays = 5, baseUrl } = opts;

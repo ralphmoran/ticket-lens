@@ -170,4 +170,13 @@ describe('styleBrief', () => {
     assert.ok(result.includes('Linked Tickets'), 'Should have Linked Tickets section');
     assert.ok(result.includes('PROD-200'), 'Should include linked ticket key');
   });
+
+  it('strips carriage returns from comment bodies', () => {
+    const ticket = makeBriefTicket({
+      comments: [{ author: 'Alice', body: 'Good fix\r\nNeeds review', created: '2026-01-01T00:00:00.000Z' }],
+    });
+    const result = styleBrief(ticket, null, { styled: false });
+    assert.ok(!result.includes('\r'), 'styled brief must not contain carriage returns');
+    assert.ok(result.includes('Good fix'), 'comment content must be preserved');
+  });
 });
