@@ -12,12 +12,14 @@
 
 Output docs/demos/fetch.gif
 
-Set FontSize 13
-Set Width 600
-Set Height 400
+Set FontSize 14
+Set Width 1200
+Set Height 700
+Set Padding 20
 Set Theme "Dracula"
 Set CursorBlink false
 Set TypingSpeed 60ms
+Set Framerate 30
 
 # Short pause before starting
 Sleep 800ms
