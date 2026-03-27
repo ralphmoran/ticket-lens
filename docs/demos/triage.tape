@@ -14,7 +14,12 @@ Output docs/demos/triage.gif
 Set FontSize 14
 Set Width 1200
 Set Height 700
-Set Padding 20
+Set Padding 40
+Set Margin 20
+Set MarginFill "#1e1f29"
+Set WindowBar Colorful
+Set WindowBarSize 40
+Set BorderRadius 12
 Set Theme "Dracula"
 Set CursorBlink false
 Set TypingSpeed 60ms
