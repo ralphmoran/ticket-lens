@@ -1,107 +1,38 @@
+<div align="center">
+
 # TicketLens
 
-[![Tests](https://github.com/ralphmoran/ticket-lens/actions/workflows/test.yml/badge.svg)](https://github.com/ralphmoran/ticket-lens/actions/workflows/test.yml)
-[![npm version](https://img.shields.io/npm/v/ticketlens.svg)](https://www.npmjs.com/package/ticketlens)
-[![npm downloads](https://img.shields.io/npm/dm/ticketlens.svg)](https://www.npmjs.com/package/ticketlens)
-[![Node.js >=18](https://img.shields.io/node/v/ticketlens.svg)](https://nodejs.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<div align="center">
+  <img src="https://img.shields.io/npm/v/ticketlens?style=flat-square&color=6c63ff&label=version" />
+  <img src="https://img.shields.io/npm/dm/ticketlens?style=flat-square&color=06b6d4&label=downloads" />
+  <img src="https://github.com/ralphmoran/ticket-lens/actions/workflows/test.yml/badge.svg?style=flat-square" />
+  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" />
+  <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square" />
+</div>
 
-**Local-first Jira CLI that makes your AI coding tools cheaper and smarter.**
+</div>
 
-- **Privacy** — ticket content is preprocessed locally and never sent to Anthropic or any third party
-- **60–80% token savings** — structured briefs instead of raw verbose Jira JSON; 4-hour cache by default
-- **Scriptable** — standard CLI output: pipe to cron, git hooks, CI/CD, or any LLM tool
+> Your AI assistant shouldn't need to read your tickets.
 
-> **Can't Claude Code just fetch Jira tickets directly?** It can — but doing so sends raw ticket content to Anthropic's servers, costs 15,000–50,000 tokens per ticket, and can't be piped, scheduled, or automated. TicketLens does none of those things.
+<div align="center"><img src="docs/demos/fetch.gif" alt="ticketlens CNV1-2 demo" width="700" /></div>
 
 ---
 
-## Contents
+## What is TicketLens?
 
-- [Why TicketLens?](#why-ticketlens)
-- [Demos](#demos)
-- [Quick Start](#quick-start)
-- [Commands](#commands)
-  - [ticketlens init — Setup wizard](#ticketlens-init--setup-wizard)
-  - [ticketlens switch — Switch active profile](#ticketlens-switch--switch-active-profile)
-  - [ticketlens config — Edit profile settings](#ticketlens-config--edit-profile-settings)
-  - [ticketlens profiles — List configured profiles](#ticketlens-profiles--list-configured-profiles)
-  - [ticketlens TICKET-KEY — Fetch a ticket brief](#ticketlens-ticket-key--fetch-a-ticket-brief)
-  - [ticketlens triage — Ticket attention scanner](#ticketlens-triage--ticket-attention-scanner)
-  - [ticketlens delete — Remove a profile](#ticketlens-delete--remove-a-profile)
-  - [ticketlens cache — Cache manager](#ticketlens-cache--cache-manager)
-  - [ticketlens license — License status](#ticketlens-license--license-status)
-  - [ticketlens schedule — Scheduled triage digest (Pro)](#ticketlens-schedule--scheduled-triage-digest-pro)
-  - [/jtb — Jira TicketBrief for Claude Code](#jtb--jira-ticketbrief-for-claude-code)
-- [All Examples](#all-examples)
-- [Multi-Profile Setup](#multi-profile-setup)
-- [Profile Resolution Order](#profile-resolution-order)
-- [Architecture](#architecture)
-- [Running Tests](#running-tests)
-- [Roadmap](#roadmap)
-- [Known Issues](#known-issues)
-- [TicketLens + Claude Code](#ticketlens--claude-code)
-- [Contributing](#contributing)
-- [License](#license)
+TicketLens is a local-first Jira CLI that preprocesses ticket context on your machine and hands your AI tools a clean, compressed brief — instead of dumping raw Jira API JSON into your session. It supports Jira Cloud, Server, and Data Center, works with any AI tool that accepts text, and runs independently of any AI session.
+
+Zero npm dependencies. Node.js built-ins only.
 
 ---
 
 ## Why TicketLens?
 
-### Privacy-first
-
-When Claude Code fetches a Jira ticket directly, that content goes to Anthropic's servers. TicketLens never does this — it runs locally, preprocesses, and hands your AI a structured brief. For regulated environments or NDAs, this is a hard requirement.
-
-> **Ticket content never leaves your machine.** TicketLens calls Jira directly from your computer, preprocesses locally, and hands structured briefs to your AI tool. No cloud backend. No data relay. Credentials at `~/.ticketlens/credentials.json` (chmod 600).
-
-### 60–80% token savings
-
-Raw Jira API responses are expensive: verbose JSON, bot comments, ADF markup, and attachment metadata add up to 15,000–50,000 tokens per ticket at depth 1. TicketLens filters, converts, and caches — your AI gets a clean structured brief at a fraction of the cost.
-
-| | TicketLens + AI | AI tool alone |
-|---|---|---|
-| Ticket content to Anthropic | Never | Yes |
-| Token cost (depth-1 ticket) | ~800 tokens | ~15,000+ tokens |
-| Works in cron / pipes / CI | Yes | No |
-| Offline / air-gapped | Yes (cached) | No |
-| Consistent output format | Yes | Varies |
-| Works without an AI session | Yes | No |
-
-### Scriptable automation
-
-AI assistants can't be piped, scheduled, or embedded in hooks. TicketLens can.
-
-```bash
-# Feed a brief to any LLM tool
-ticketlens CNV1-2 --plain | llm "What are the implementation risks?"
-
-# Morning triage to Slack
-ticketlens triage --plain | slack-notify "#dev-alerts"
-
-# Pre-commit hook: surface tickets blocking this branch
-ticketlens triage --plain --stale=1 | grep "needs response"
-
-# Cron digest — no AI session required
-0 9 * * 1-5 ticketlens triage --plain > ~/triage-$(date +%F).md
-```
-
----
-
-## Demos
-
-<details>
-<summary><strong>Ticket fetch</strong> — <code>ticketlens CNV1-2</code></summary>
-
-![Ticket fetch demo](docs/demos/fetch.gif)
-
-</details>
-
-<details>
-<summary><strong>Triage scan</strong> — <code>ticketlens triage</code></summary>
-
-![Triage scan demo](docs/demos/triage.gif)
-
-</details>
+- **Privacy** — ticket content never leaves your machine; no cloud relay, no data sent to Anthropic or anyone else
+- **60–80% token savings** — structured briefs instead of verbose Jira JSON; 4-hour cache by default
+- **Scriptable** — standard CLI output: pipe to cron, git hooks, CI/CD, or any LLM tool
+- **Multi-profile** — connect multiple Jira instances simultaneously; auto-route by ticket prefix or project path
+- **Attachments included** — images, PDFs, and text files downloaded locally; Claude Code reads them as context
 
 ---
 
@@ -109,8 +40,8 @@ ticketlens triage --plain --stale=1 | grep "needs response"
 
 ```bash
 npm install -g ticketlens
-ticketlens init          # Guided setup wizard (Jira URL, auth, optional settings)
-ticketlens CNV1-2      # Fetch a ticket brief
+ticketlens init          # Guided setup: Jira URL, auth type, connection test
+ticketlens CNV1-2        # Fetch a ticket brief
 ticketlens triage        # Scan your assigned tickets
 ```
 
@@ -121,178 +52,89 @@ npx ticketlens init
 npx ticketlens CNV1-2
 ```
 
+**Prerequisites:** Node.js >=18
+
+---
+
+## Demos
+
+<div align="center"><img src="docs/demos/triage.gif" alt="ticketlens triage demo" width="700" /></div>
+
 ---
 
 ## Commands
 
-### ticketlens init — Setup wizard
+### Setup
 
-_Run this first. An interactive wizard that configures your Jira connection._
+| Command | Description |
+|---------|-------------|
+| `ticketlens init` | Guided wizard — Jira URL, auth, live connection test, optional settings |
+| `ticketlens switch` | Arrow-key panel to switch between configured profiles |
+| `ticketlens config [--profile=NAME]` | Edit any field on an existing profile |
+| `ticketlens profiles` | List all configured profiles (alias: `ticketlens ls`) |
+| `ticketlens delete <NAME>` | Remove a profile and its credentials |
 
-```bash
-ticketlens init
-```
+`init` collects: profile name, Jira URL (bare hostnames accepted — HTTPS probed first), auth type (auto-detected from URL), credentials (masked), and optional ticket prefixes, project paths, and triage statuses. On connection failure, a retry menu lets you fix credentials, URL, or skip — all inputs pre-populated.
 
-What the wizard collects:
-
-1. **Profile name** — short identifier: `work`, `acme`, `myteam`
-2. **Jira URL** — suggestions are offered (e.g. `https://acme.atlassian.net`, `https://jira.acme.com`). Bare hostnames like `jira.acme.com` are accepted — `https://` is probed first, then `http://`.
-3. **Auth type** — auto-detected from the URL:
-   - `*.atlassian.net` → Jira Cloud (email + API token)
-   - Any other hostname → PAT (Server/DC 8.14+) or Basic auth (username + password)
-4. **Credentials** — masked input; pre-populated on retry so you only fix what's wrong
-5. **Live connection test** — shows `● Connected` or a classified error. On failure, a menu offers:
-   - **Retry** — e.g. VPN just connected
-   - **Edit credentials** — token or email typo
-   - **Edit from URL** — wrong URL or auth type
-   - **Skip**
-6. **Optional settings** (all skippable with Enter):
-   - **Ticket prefixes** — e.g. `PROJ,OPS` — auto-routes `CNV1-2` to this profile without needing `--profile`
-   - **Project paths** — e.g. `~/projects/myapp` — auto-activates this profile when your terminal is in that directory
-   - **Triage statuses** — Jira statuses to scan (default: `In Progress, Code Review, QA`). Validated live; case mismatches are auto-corrected.
-7. **Add another?** — repeat for each Jira instance you have
-8. **Select active profile** — arrow-key panel (if more than one configured)
-
-Config is written to `~/.ticketlens/profiles.json` and `~/.ticketlens/credentials.json` (chmod 600). Profiles are only saved on a **successful connection test**.
+`config` uses merge semantics: new ticket prefixes and triage statuses are added to existing lists, never replaced. Partial matching resolves `QA` to `QA Testing` if that's the status in your Jira.
 
 ---
 
-### ticketlens switch — Switch active profile
-
-_Switch between configured Jira connections without re-running init._
+### Fetch a ticket
 
 ```bash
-ticketlens switch
-```
-
-Opens a titled arrow-key panel listing all configured profiles. The active profile has a green `● active` badge. Selecting a different profile tests the connection live and updates `profiles.json`.
-
----
-
-### ticketlens config — Edit profile settings
-
-_Edit any setting on an existing profile without re-running the full wizard._
-
-```bash
-ticketlens config                    # Edit the default/active profile
-ticketlens config --profile=acme     # Edit a specific profile by name
-```
-
-Every field is pre-populated with its current value — press `Enter` to keep it unchanged.
-
-**Connection fields** (URL, auth type, email, token):
-- Any change triggers a live connection test with the same retry menu as `ticketlens init`
-- Token shows `[keep existing]` — Enter preserves the stored credential
-
-**Optional fields:**
-- **Ticket prefixes** — new entries are **merged** into the existing list (not replaced). Enter keeps the current list.
-- **Project paths** — new paths are validated; missing directories are offered for creation
-- **Triage statuses** — **merge semantics**: new entries are *added*, existing ones are never removed. Partial matching: typing `QA` resolves to `QA Testing` if that's the status in your Jira.
-
----
-
-### ticketlens profiles — List configured profiles
-
-_List all configured Jira profiles and identify the active one._
-
-```bash
-ticketlens profiles          # List all configured profiles
-ticketlens ls                # Shorthand alias
-ticketlens profiles --plain  # Tab-separated output (scripts / pipes)
-```
-
-Output is a four-column table. The active profile is marked with `●`.
-
-```
-    Profile    URL                              Prefixes     Statuses
-    ───────    ───                              ────────     ────────
-  ● myteam    https://myteam.atlassian.net      PROJ, OPS    In Progress, Code Review
-  ○ client    https://jira.client.com           ACME, SHOP   In Progress, QA
-
-  Active: myteam  ·  ticketlens switch  ·  ticketlens config --profile=NAME
-```
-
-Active = the profile set by `ticketlens switch`, or the first profile in the file if none has been explicitly selected.
-
----
-
-### ticketlens TICKET-KEY — Fetch a ticket brief
-
-_Fetch a ticket's full context: description, comments, linked issues, attachments, and code references._
-
-```bash
-ticketlens CNV1-2                  # Fetch with defaults (depth 1, styled output)
-ticketlens get CNV1-2              # Same — "get" is an explicit alias
-ticketlens CNV1-2 --depth=0        # Target ticket only (fastest)
+ticketlens CNV1-2                  # Depth 1, styled output (default)
+ticketlens get CNV1-2              # Same — explicit alias
+ticketlens CNV1-2 --depth=0        # Target ticket only
 ticketlens CNV1-2 --depth=1        # + linked ticket descriptions and comments
-ticketlens CNV1-2 --depth=2        # + linked-of-linked tickets (thorough)
-ticketlens CNV1-2 --profile=acme   # Use a specific profile
-ticketlens CNV1-2 --plain          # Plain markdown (no ANSI — pipe-safe, LLM-ready)
-ticketlens CNV1-2 --styled         # Force ANSI color even when piping
+ticketlens CNV1-2 --depth=2        # + linked-of-linked [Pro]
+ticketlens CNV1-2 --plain          # Plain markdown — pipe-safe, LLM-ready
+ticketlens CNV1-2 --profile=acme   # Force a specific profile
+ticketlens CNV1-2 --no-cache       # Bypass cache, re-fetch from Jira
 ticketlens CNV1-2 --no-attachments # Skip attachment download
-ticketlens CNV1-2 --no-cache       # Skip brief cache + force re-download attachments
 ```
 
-**Depth levels:**
-
-| `--depth` | What's included |
-|-----------|-----------------|
+| `--depth` | Scope |
+|-----------|-------|
 | `0` | Target ticket: description, comments, attachments |
 | `1` | + linked tickets: descriptions and comments _(default)_ |
-| `2` | + linked-of-linked: key and summary only |
+| `2` | + linked-of-linked: key and summary only _(Pro)_ |
 
-Max 15 tickets fetched at any depth. Circular references are handled automatically.
+Max 15 tickets at any depth. Circular references handled automatically.
 
-**Brief caching:** After the first fetch, ticket data is cached locally and reused on repeat fetches, skipping the Jira API entirely. A dim notice appears on stderr:
+After the first fetch, ticket data is cached to `~/.ticketlens/cache/PROFILE/TICKET-KEY/brief.json` (4h TTL, depth-aware). A dim notice appears on stderr on cache hit:
 
 ```
   ○ CNV1-2 · from cache (12m ago)  ·  --no-cache to refresh
 ```
 
-The cache is depth-aware: a cached depth-2 response satisfies a depth-1 or depth-0 request. Pass `--no-cache` to bypass and re-fetch from Jira.
-
-The default TTL is **4 hours** (fixed for the free tier). **Pro subscribers** can configure a custom TTL per profile via `ticketlens config` — the "Brief cache TTL" field in the Optional section accepts values like `4h`, `1d`, `7d`, `30d`, or `0` to disable caching entirely. Free users always use the 4h default.
-
-**Multi-profile disambiguation:** When two profiles share a ticket prefix (e.g. both have `PROJ`), an arrow-key selector appears asking which Jira instance to use. Selecting one re-runs with `--profile=NAME`. Once a profile is selected, it is correctly applied even through connection failures and retries.
-
-**On connection failure**, an arrow-key menu offers:
-- **Retry** — try again after connecting VPN, etc.
-- **Switch profile** — pick a different Jira instance and re-run cleanly
-- **Cancel**
-
-**Attachments** are downloaded automatically to `~/.ticketlens/cache/TICKET-KEY/` unless `--no-attachments` is passed. Claude Code reads images (multimodal), PDFs, and text files as part of the brief.
+Attachments download to `~/.ticketlens/cache/TICKET-KEY/` (10 MB per-file cap). Claude Code reads images multimodally, extracts PDF text, and reads plain text files as context.
 
 ---
 
-### ticketlens triage — Ticket attention scanner
-
-_Scans your assigned tickets and surfaces what needs attention._
+### Triage
 
 ```bash
-ticketlens triage                                       # Auto-detect profile from cwd
-ticketlens triage --profile=acme                        # Explicit profile
-ticketlens triage --stale=3                             # Aging threshold: 3 days (default: 5)
-ticketlens triage --status="Code Review,QA Testing"     # Override statuses to scan
-ticketlens triage --assignee="Jane Dev"                 # View another dev's tickets  [Team]
-ticketlens triage --sprint="Sprint 12"                  # Filter by sprint name  [Team]
-ticketlens triage --static                              # Static table (no interactive mode)
-ticketlens triage --plain                               # Plain markdown (for piping / LLM)
+ticketlens triage                               # Scan assigned tickets — interactive
+ticketlens triage --profile=acme               # Explicit profile
+ticketlens triage --stale=3                    # Aging threshold: 3 days (default: 5)
+ticketlens triage --status="Code Review,QA"    # Override statuses to scan
+ticketlens triage --assignee="Jane Dev"        # Another dev's tickets [Team]
+ticketlens triage --sprint="Sprint 12"         # Filter by sprint [Team]
+ticketlens triage --plain                      # Plain markdown — pipe to file or LLM
+ticketlens triage --static                     # Static table, no interactive mode
 ```
-
-**Categories:**
 
 | Badge | Category | Condition |
 |-------|----------|-----------|
-| `●` red | **Needs response** | Someone else commented within the last N days |
-| `●` yellow | **Aging** | Last comment (by anyone) or last update is N+ days old |
+| `●` red | Needs response | Someone else commented within the last N days |
+| `●` yellow | Aging | Last comment or update is N+ days old |
 
-The `--stale=N` threshold controls **both** categories: a comment waiting for your reply is "needs response" only if it arrived within N days. Once it's older than N days, it automatically downgrades to "aging" — so your urgency list stays focused on genuinely recent requests.
+`--stale=N` controls both categories. Unanswered comments older than N days downgrade from "needs response" to "aging" automatically.
 
-**Interactive mode** (default on TTY):
-- `↑/↓` navigate — `Enter` open in browser — `p` switch profile — `q/Esc` exit
-- Columns adapt to terminal width: narrow terminals show key/title/status only; wider terminals progressively add From, When, and Detail columns
+Interactive mode: `↑/↓` navigate, `Enter` open in browser, `p` switch profile, `q/Esc` exit. Columns adapt to terminal width.
 
-**Status mismatch auto-fix:** If configured statuses don't match Jira's (e.g. `"In progress"` vs `"In Progress"`, `"QA"` vs `"QA Testing"`), triage shows a diff and offers to update your profile automatically:
+Status mismatch auto-fix: if configured statuses don't match Jira's exact casing, triage shows a diff and offers to update your profile:
 
 ```
   ~ In progress  →  In Progress
@@ -301,178 +143,96 @@ The `--stale=N` threshold controls **both** categories: a comment waiting for yo
   Update "myteam" with corrected statuses?  y/N
 ```
 
-Confirming **merges** the corrections into your existing `triageStatuses` list (never replaces it) and reruns triage without the `--status` flag so the updated profile is used.
-
-Bot comments (Jira Automation, Jenkins, GitHub Actions, etc.) are automatically ignored. VCS commit bots (SVN/Git) are recognized — a commit by your username counts as your own response.
+Bot comments (Jira Automation, Jenkins, GitHub Actions) are automatically ignored.
 
 ---
 
-### ticketlens cache — Cache manager
-
-_Inspect and clean up locally cached ticket data: attachment files and ticket briefs._
+### Cache
 
 ```bash
-ticketlens cache                               # Overview + subcommand hints
-ticketlens cache --help                        # Detailed help
-
-# Inspect disk usage
 ticketlens cache size                          # Disk usage by profile and ticket
 ticketlens cache size --profile=acme           # Filter to one profile
-ticketlens cache size --help                   # Options
-
-# Clear cached files
-ticketlens cache clear                         # Interactive picker — choose by profile (TTY)
-ticketlens clear                               # Shorthand alias for cache clear
-ticketlens cache clear CNV1-2                # Clear one ticket
+ticketlens cache clear                         # Interactive picker (TTY)
+ticketlens clear                               # Alias for cache clear
+ticketlens cache clear CNV1-2                  # Clear one ticket
 ticketlens cache clear --older-than=7d         # Files older than 7 days
-ticketlens cache clear --older-than=1m         # Files older than 1 month
-ticketlens cache clear --older-than=1y         # Files older than 1 year
-ticketlens cache clear --profile=acme          # Only this profile's files
-ticketlens cache clear CNV1-2 --older-than=7d            # Ticket + age filter
-ticketlens cache clear --profile=acme --older-than=30d     # Profile + age filter
-ticketlens cache clear --older-than=30d --yes              # Skip confirmation
-ticketlens cache clear --help                  # Full options
+ticketlens cache clear --profile=acme          # One profile's files only
+ticketlens cache clear --older-than=30d --yes  # Skip confirmation (CI/scripts)
 ```
 
 Age units: `d` = days · `m` = months (30d) · `y` = years (365d)
 
-Before deleting, `cache clear` shows a summary of what will be removed (grouped by profile and ticket) and prompts for confirmation. Pass `--yes` / `-y` to skip in scripts.
-
-**Cache locations:**
-- Attachments: `~/.ticketlens/cache/TICKET-KEY/` (shared across profiles)
-- Brief cache: `~/.ticketlens/cache/PROFILE/TICKET-KEY/brief.json` (profile-scoped, configurable TTL)
-
-`cache size` shows both sections, including the configured TTL per profile. `cache clear` removes both attachment files and brief cache entries for the affected tickets. Empty ticket directories are removed automatically.
+Cache locations:
+- Attachments: `~/.ticketlens/cache/TICKET-KEY/`
+- Briefs: `~/.ticketlens/cache/PROFILE/TICKET-KEY/brief.json`
 
 ---
 
-### ticketlens license — License status
+### License
 
 ```bash
-ticketlens license                # Show license tier and status
-ticketlens activate <LICENSE-KEY> # Activate a license key
+ticketlens license                # Show tier and status
+ticketlens activate <KEY>         # Activate a Pro or Team license
 ```
-
-Output shows one of three states:
-
-| State | Indicator | Details |
-|-------|-----------|---------|
-| **Free** | `● dim` | Unlock Pro features with a license key |
-| **Active** | `● green` | Tier (pro/team), email, last validated date |
-| **Expired** | `● yellow` | Tier, email, renewal instructions |
-
----
-
-### ticketlens schedule — Scheduled triage digest (Pro)
-
-_Automatically emails a triage digest on a schedule — no open terminal required._
-
-```bash
-ticketlens schedule
-```
-
-Running this command on the **Free** tier shows the Pro upgrade prompt. Scheduled triage digests are a Pro feature — once active, the digest runs server-side and emails your triage summary each morning.
-
-> This is a preview stub. Full implementation ships with Pro tier.
-
----
-
-### ticketlens delete — Remove a profile
-
-```bash
-ticketlens delete <PROFILE-NAME>   # Permanently removes profile + credentials
-```
-
-Prompts for confirmation in TTY. Removes the profile from `profiles.json` and its credentials from `credentials.json`. If the deleted profile was the default, the default is cleared (next run will use prefix/path matching or prompt).
 
 ---
 
 ### /jtb — Jira TicketBrief for Claude Code
 
-_A Claude Code slash command that fetches full ticket context and drops a structured implementation brief directly into your session, then enters plan mode._
+`/jtb` is a Claude Code slash command that fetches full ticket context and drops a structured implementation brief directly into your session, then enters plan mode.
 
-> `/jtb` requires [Claude Code](https://claude.ai/code). For standalone CLI use, the `ticketlens` commands above work independently.
+> Requires [Claude Code](https://claude.ai/code). For standalone use, the `ticketlens` commands above work independently.
 
-#### Installing the skill
-
-```bash
-# Step 1 — install TicketLens
-npm install -g ticketlens
-ticketlens init
-
-# Step 2 — copy the skill file to Claude Code's commands directory
-SKILL=$(npm root -g)/ticketlens/skills/jtb/SKILL.md
-cp "$SKILL" ~/.claude/commands/jtb.md
-
-# Step 3 — restart Claude Code (or open a new session)
-```
-
-If you cloned the repo directly:
+**Install:**
 
 ```bash
-cp /path/to/ticket-lens/skills/jtb/SKILL.md ~/.claude/commands/jtb.md
+npm install -g ticketlens && ticketlens init
+cp $(npm root -g)/ticketlens/skills/jtb/SKILL.md ~/.claude/commands/jtb.md
+# Restart Claude Code, then:
+# /jtb CNV1-2
 ```
 
-#### Using /jtb in Claude Code
+**Usage in Claude Code:**
 
 ```
 /jtb CNV1-2                    # Fetch ticket + linked issues → plan mode
 /jtb CNV1-2 --depth=0          # Target ticket only (fast)
-/jtb CNV1-2 --depth=2          # Deep: linked-of-linked
-/jtb CNV1-2 --profile=acme     # Force a specific Jira profile
+/jtb CNV1-2 --depth=2          # Deep: linked-of-linked [Pro]
+/jtb CNV1-2 --profile=acme     # Force a specific profile
 /jtb CNV1-2 --no-attachments   # Skip attachment download
-/jtb CNV1-2 --no-cache         # Re-download all attachments
-/jtb triage                      # Scan your assigned tickets
+/jtb CNV1-2 --no-cache         # Re-fetch from Jira
+/jtb triage                    # Scan your assigned tickets
 ```
 
-#### Attachments in Claude Code
-
-Attachments are downloaded to `~/.ticketlens/cache/TICKET-KEY/` and listed in the brief:
-
-```
-## Attachments
-
-- /Users/you/.ticketlens/cache/CNV1-2/design-mockup.png  (design-mockup.png, 312KB)
-- /Users/you/.ticketlens/cache/CNV1-2/spec.pdf           (spec.pdf, 95KB)
-- /Users/you/.ticketlens/cache/CNV1-2/server.log         (server.log, 4KB)
-```
-
-Claude Code reads each file as context before planning:
-- **Images** (PNG, JPEG, GIF, WebP, SVG) — multimodal visual context
-- **PDFs** — text extracted and read
-- **Text files** (TXT, CSV, MD, LOG) — read as plain text
-- **Other files** (ZIP, DOCX) — noted as available at the listed path
-
-Files over 10 MB are skipped. Cached files are reused on repeat fetches (`--no-cache` forces a fresh download).
+Attachments are listed in the brief as absolute paths. Claude Code reads images (multimodal), PDFs, and text files before planning. Files over 10 MB are skipped.
 
 ---
 
 ## All Examples
 
-_Complete reference of every command and flag combination._
-
 ```bash
-# ── First-time setup ─────────────────────────────────────────────────────────
+# ── Setup ────────────────────────────────────────────────────────────────────
 ticketlens init                               # Guided wizard (recommended)
-ticketlens profiles                           # List all configured profiles
-ticketlens ls                                 # Shorthand for profiles
-ticketlens profiles --plain                   # Tab-separated (scripts / pipes)
 ticketlens switch                             # Switch between configured profiles
 ticketlens config                             # Edit the active profile
-ticketlens config --profile=acme              # Edit a specific profile
+ticketlens config --profile=acme             # Edit a specific profile
+ticketlens profiles                           # List all configured profiles
+ticketlens ls                                 # Alias for profiles
+ticketlens profiles --plain                   # Tab-separated (scripts / pipes)
+ticketlens delete <PROFILE-NAME>              # Remove a profile (prompts y/N in TTY)
 
 # ── Fetch a ticket brief ──────────────────────────────────────────────────────
-ticketlens CNV1-2                           # Fetch with defaults (depth 1, styled)
-ticketlens get CNV1-2                       # Explicit alias (same result)
-ticketlens CNV1-2 --depth=0                 # Target ticket only — no linked issues
-ticketlens CNV1-2 --depth=1                 # + linked ticket descriptions and comments
-ticketlens CNV1-2 --depth=2                 # + linked-of-linked (deep scan)
-ticketlens CNV1-2 --profile=acme            # Force a specific Jira profile
-ticketlens CNV1-2 --plain                   # Plain markdown — no color codes
-ticketlens CNV1-2 --styled                  # Force ANSI color even when piping
-ticketlens CNV1-2 --no-attachments          # Skip attachment download entirely
-ticketlens CNV1-2 --no-cache                # Skip brief cache + force re-download attachments
-ticketlens CNV1-2 --depth=2 --profile=acme --plain    # Combine flags freely
+ticketlens CNV1-2                            # Fetch with defaults (depth 1, styled)
+ticketlens get CNV1-2                        # Explicit alias (same result)
+ticketlens CNV1-2 --depth=0                  # Target ticket only — no linked issues
+ticketlens CNV1-2 --depth=1                  # + linked ticket descriptions and comments
+ticketlens CNV1-2 --depth=2                  # + linked-of-linked (Pro)
+ticketlens CNV1-2 --profile=acme             # Force a specific Jira profile
+ticketlens CNV1-2 --plain                    # Plain markdown — no color codes
+ticketlens CNV1-2 --styled                   # Force ANSI color even when piping
+ticketlens CNV1-2 --no-attachments           # Skip attachment download entirely
+ticketlens CNV1-2 --no-cache                 # Skip brief cache + force re-download
+ticketlens CNV1-2 --depth=2 --profile=acme --plain   # Combine flags freely
 
 # Pipe plain output to clipboard, LLM, or file
 ticketlens CNV1-2 --plain > brief.md
@@ -480,44 +240,37 @@ ticketlens CNV1-2 --plain | pbcopy
 ticketlens CNV1-2 --plain | llm "Summarize this ticket in 3 bullets"
 
 # ── Triage ────────────────────────────────────────────────────────────────────
-ticketlens triage                              # Scan assigned tickets — interactive
-ticketlens triage --profile=acme              # Explicit profile
-ticketlens triage --stale=3                   # Needs-response window: 3 days (default: 5)
-ticketlens triage --stale=10                  # More lenient — only flag very stale tickets
-ticketlens triage --status="Code Review,QA Testing"   # Scan these statuses only
-ticketlens triage --static                    # Static table output (no interactive mode)
-ticketlens triage --plain                     # Plain markdown — pipe to LLM or file
-ticketlens triage --assignee="Jane Dev"               # View another dev's tickets [Team]
-ticketlens triage --sprint="Sprint 12"                # Filter by sprint name [Team]
+ticketlens triage                             # Scan assigned tickets — interactive
+ticketlens triage --profile=acme             # Explicit profile
+ticketlens triage --stale=3                  # Needs-response window: 3 days (default: 5)
+ticketlens triage --stale=10                 # More lenient — only flag very stale tickets
+ticketlens triage --status="Code Review,QA Testing"  # Scan these statuses only
+ticketlens triage --static                   # Static table output (no interactive mode)
+ticketlens triage --plain                    # Plain markdown — pipe to LLM or file
+ticketlens triage --assignee="Jane Dev"      # View another dev's tickets [Team]
+ticketlens triage --sprint="Sprint 12"       # Filter by sprint name [Team]
 ticketlens triage --assignee="Jane Dev" --sprint="Sprint 12"  # Combined [Team]
-ticketlens triage --profile=acme --stale=3 --static   # Combine flags
+ticketlens triage --profile=acme --stale=3 --static          # Combine flags
 
 # Pipe triage output
 ticketlens triage --plain > my-tickets.md
 ticketlens triage --plain | llm "Which ticket is most urgent and why?"
 
 # ── Cache management ──────────────────────────────────────────────────────────
-ticketlens cache                              # Show overview + subcommand hints
+ticketlens cache                              # Overview + subcommand hints
 ticketlens cache --help                       # Detailed help
-
 ticketlens cache size                         # Disk usage by profile and ticket
 ticketlens cache size --profile=acme          # Filter to one profile only
-ticketlens cache size --help                  # Options
-
 ticketlens cache clear                        # Interactive picker (TTY)
-ticketlens clear                              # Shorthand alias for cache clear
-ticketlens cache clear CNV1-2              # Clear one ticket's cache
+ticketlens clear                              # Alias for cache clear
+ticketlens cache clear CNV1-2                # Clear one ticket's cache
 ticketlens cache clear --older-than=7d        # Files older than 7 days
 ticketlens cache clear --older-than=1m        # Files older than 1 month
 ticketlens cache clear --older-than=1y        # Files older than 1 year
 ticketlens cache clear --profile=acme         # Only one profile's files
-ticketlens cache clear CNV1-2 --older-than=7d          # Ticket + age filter
+ticketlens cache clear CNV1-2 --older-than=7d            # Ticket + age filter
 ticketlens cache clear --profile=acme --older-than=30d   # Profile + age filter
 ticketlens cache clear --older-than=30d --yes            # Skip confirmation (CI/scripts)
-ticketlens cache clear --help                 # Full options
-
-# ── Profile management ────────────────────────────────────────────────────────
-ticketlens delete <PROFILE-NAME>              # Remove a profile (prompts y/N in TTY)
 
 # ── License and account ────────────────────────────────────────────────────────
 ticketlens license                            # Show license tier and status
@@ -527,8 +280,7 @@ ticketlens schedule                           # Scheduled digest setup [Pro]
 # ── Help and version ──────────────────────────────────────────────────────────
 ticketlens --help                             # Main help
 ticketlens --version                          # Show installed version
-
-ticketlens CNV1-2 --help                    # Fetch subcommand help
+ticketlens CNV1-2 --help                     # Fetch subcommand help
 ticketlens triage --help                      # Triage subcommand help
 ticketlens cache --help                       # Cache overview help
 ticketlens cache size --help                  # Cache size help
@@ -537,11 +289,42 @@ ticketlens cache clear --help                 # Cache clear help
 
 ---
 
+## Pro & Teams Features
+
+Start free, upgrade when you need it — `ticketlens activate <key>`
+
+### Pro — $8/mo
+
+```bash
+ticketlens CNV1-2 --depth=2          # Deep traversal: linked-of-linked tickets
+ticketlens triage --stale=3          # Custom stale threshold (default is 5)
+ticketlens activate YOUR-LICENSE-KEY # Activate Pro license
+```
+
+Pro also unlocks configurable brief cache TTL per profile — set `cacheTtl` to `4h`, `1d`, `7d`, `30d`, or `0` (disable) via `ticketlens config`. Free tier is fixed at 4h.
+
+### Team — $15/seat/mo
+
+```bash
+ticketlens triage --export=csv       # Export triage to CSV for standups and reports
+ticketlens triage --export=json      # Machine-readable export for dashboards
+ticketlens triage --assignee="Jane Dev"       # View any teammate's ticket queue
+ticketlens triage --sprint="Sprint 12"        # Scope triage to a sprint
+```
+
+Automate a morning digest with cron — no open terminal required:
+
+```bash
+0 9 * * 1-5 ticketlens triage --plain > ~/digest-$(date +%F).md
+```
+
+Multi-profile team workflows: each teammate runs `ticketlens init` with their own credentials; shared `ticketPrefixes` auto-route tickets to the right Jira instance.
+
+---
+
 ## Multi-Profile Setup
 
-_TicketLens supports multiple Jira instances simultaneously._
-
-Profiles are stored in `~/.ticketlens/profiles.json`:
+Profiles live in `~/.ticketlens/profiles.json`:
 
 ```json
 {
@@ -566,7 +349,7 @@ Profiles are stored in `~/.ticketlens/profiles.json`:
 }
 ```
 
-Credentials live separately in `~/.ticketlens/credentials.json` (chmod 600):
+Credentials in `~/.ticketlens/credentials.json` (chmod 600):
 
 ```json
 {
@@ -575,32 +358,15 @@ Credentials live separately in `~/.ticketlens/credentials.json` (chmod 600):
 }
 ```
 
-With this setup:
-- `ticketlens CNV1-2` → uses **myteam** (prefix match)
-- `ticketlens ACME-456` → uses **client** (prefix match)
-- Running `ticketlens triage` inside `~/projects/myteam-app` → uses **myteam** (path match)
-
----
-
-## Profile Resolution Order
+**Profile resolution order:**
 
 | Priority | Method | Example |
 |----------|--------|---------|
 | 1 | `--profile=NAME` flag | `ticketlens CNV1-2 --profile=client` |
-| 2 | Ticket prefix match | `ticketlens CNV1-2` → prefix `PROJ` maps to `myteam` |
-| 3 | Project path match | `ticketlens triage` in `~/projects/myteam-app` → `myteam` |
-| 4 | Default / first profile | First entry in `profiles.json` |
+| 2 | Ticket prefix match | `ticketlens CNV1-2` → prefix `PROJ` → `myteam` |
+| 3 | Project path match | `triage` in `~/projects/myteam-app` → `myteam` |
+| 4 | First profile in file | Default when nothing else matches |
 | 5 | Environment variables | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` / `JIRA_PAT` |
-
----
-
-## Architecture
-
-- **Zero npm dependencies** — Node.js built-ins only (`node:fs`, `node:path`, `node:http`)
-- **Jira Cloud** (Basic auth email + API token, `/rest/api/3` endpoints, ADF body conversion)
-- **Jira Server/DC** (Bearer PAT or Basic user + password, `/rest/api/2` endpoints)
-- **VCS-agnostic** — detects `.git`, `.svn`, `.hg`; SVN commit bot comments recognized
-- **All modules tested** with `node:test` + `node:assert/strict` — run `npm test` to see current count
 
 ---
 
@@ -610,103 +376,24 @@ With this setup:
 npm test
 ```
 
-Expected output: all tests pass, zero failures.
-
 ---
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the full feature plan.
+See [ROADMAP.md](ROADMAP.md) for the full plan.
 
-**Iteration 3 — Complete:**
-- ✅ Jira Cloud v3 API migration (ADF → plain text conversion)
-- ✅ npm package (`ticketlens`) with `npx` support
-- ✅ Session banner with spinner, connection status dot, error classifier
-- ✅ `ticketlens init` — guided wizard: URL suggestions, auth auto-detection, live connection test, retry menu, optional settings, HTTP/HTTPS auto-probe
-- ✅ `ticketlens switch` — titled panel profile switcher with live connection test
-- ✅ `ticketlens config` — full profile editor with connection retry, prefix/status merge semantics
-- ✅ `ticketlens triage` — interactive navigator, `p` hotkey, status mismatch auto-fix (merge, not replace), `--stale` applies to both needs-response and aging categories
-- ✅ Attachment download — all file types cached locally; Claude Code reads images, PDFs, text
-- ✅ `ticketlens cache` — `size` with `--profile` filter, `clear` with ticket/age/profile filters
-- ✅ `ticketlens license` / `ticketlens activate` — styled license status display
-- ✅ `get` alias — `ticketlens get CNV1-2` as explicit fetch alias; listed in USAGE section
-- ✅ `clear` shorthand — `ticketlens clear` as alias for `ticketlens cache clear`
-- ✅ Profile switch fixed — `--profile=` arg correctly replaced on every re-run (was causing infinite loop)
-- ✅ `--stale` fixed — unanswered comments older than N days now downgrade to "aging"
-- ✅ Contextual `--help` — each subcommand shows its own focused help (not the main help)
-- ✅ Security hardening — SSRF protection on attachment downloads, JQL injection prevention, path traversal sanitization on cache keys, `chmod 600` on all credential files
-- ✅ Request timeouts — 10s `AbortSignal.timeout` applied by default to all API calls; timeout errors show as styled "Connection timed out" box (not a raw crash)
-- ✅ Unknown flag detection — unrecognized flags stop the CLI with a "Did you mean?" suggestion and interactive `y/N` fix prompt; cross-command hints (e.g. `--depth` suggested in triage, `--stale` suggested in fetch)
-- ✅ Concurrent promise guard — parallel triage startup (`userPromise` + `ticketsPromise`) guarded against unhandled rejection on early bail
-
-**Iteration 3.5 — Complete:**
-- ✅ CI pipeline (GitHub Actions, Node 20+22 matrix)
-- ✅ `--assignee=NAME` and `--sprint=NAME` filter flags (Team tier)
-- ✅ `ticketlens delete` — remove a profile with y/N confirmation
-- ✅ Ticket key validation — invalid keys rejected with clear error
-- ✅ CI badge in README
-- ✅ `ticketlens profiles` — columnar table with headers (Profile | URL | Prefixes | Statuses)
-- ✅ Responsive triage table — columns adapt to terminal width (narrow/medium/wide breakpoints)
-- ✅ Parallel attachment downloads — batched in groups of 3; order preserved
-- ✅ Profile data memoized — `profiles.json` and `credentials.json` read once per run instead of 5–6×; auto-invalidated on every write
-
-**Next up:**
-- README GIF demos (ticket fetch, triage scan)
-- Public launch: HN, Reddit, Dev.to
-
-**Coming soon:**
-- AI ticket summary, compliance check, scheduled triage digest (Pro tier)
-- Team triage dashboard, Slack/Teams alerts, triage export (Team tier)
-- TicketLens Cloud — E2EE brief sync, multi-machine context (Phase C)
-- GitHub Issues and Linear support (Phase D)
-
----
-
-## Known Issues
-
-None at this time. Previous issues resolved:
-
-- ~~Jira Cloud v2 API deprecation (410 Gone)~~ — Fixed: Cloud profiles auto-select `/rest/api/3`.
-- ~~Profile switch infinite loop~~ — Fixed: `--profile=` arg is now replaced (not appended) on every re-run.
-- ~~Status auto-fix infinite loop~~ — Fixed: Re-run after correction strips `--status` flag; profile statuses are merged (not replaced).
-- ~~Config prefix replacement~~ — Fixed: Editing ticket prefixes merges new entries with existing ones.
-- ~~`--stale` had no effect when all tickets had unanswered comments~~ — Fixed: Unanswered comments older than N days now downgrade to "aging".
-- ~~`cache --help` showed main help~~ — Fixed: Subcommand `--help` flags route to each subcommand's own help.
-- ~~Unhandled rejection crash on triage timeout~~ — Fixed: concurrent `userPromise`/`ticketsPromise` now guarded with `.catch(()=>{})` on early bail; timeout errors show styled error box.
-- ~~Unknown flags silently passed through~~ — Fixed: unrecognized flags stop the CLI with a "Did you mean?" suggestion and `y/N` interactive fix.
-
----
-
-## TicketLens + Claude Code
-
-TicketLens is the reference implementation for Jira context in Claude Code. The `/jtb` skill feeds structured, compressed briefs directly into your Claude session — saving tokens, protecting privacy, and enabling plan mode immediately.
-
-Install once, use everywhere:
-
-```bash
-npm install -g ticketlens && ticketlens init
-cp $(npm root -g)/ticketlens/skills/jtb/SKILL.md ~/.claude/commands/jtb.md
-# Then in Claude Code:
-# /jtb CNV1-2
-```
+Coming up:
+- AI ticket summary and compliance check (Pro)
+- Scheduled triage digest — server-side, no open terminal (Pro)
+- Team triage dashboard and Slack/Teams alerts (Team)
+- Triage CSV/JSON export (Team)
+- GitHub Issues and Linear support
 
 ---
 
 ## Contributing
 
-Bug reports and feature requests are welcome — open an issue on [GitHub](https://github.com/ralphmoran/ticket-lens/issues).
-
-Pull requests for bug fixes are appreciated. For larger changes, open an issue first to discuss the approach.
-
-**Development setup:**
-
-```bash
-git clone https://github.com/ralphmoran/ticket-lens.git
-cd ticket-lens
-npm test          # Run the test suite (Node 18+ required)
-```
-
-There are no build steps and no npm dependencies to install. All modules use `node:` built-ins only.
+Bug reports and feature requests welcome — open an issue on [GitHub](https://github.com/ralphmoran/ticket-lens/issues). For larger changes, open an issue first to discuss.
 
 ---
 
