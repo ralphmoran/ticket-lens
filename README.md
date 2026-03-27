@@ -92,14 +92,14 @@ ticketlens triage --plain --stale=1 | grep "needs response"
 <details>
 <summary><strong>Ticket fetch</strong> — <code>ticketlens PROJ-123</code></summary>
 
-_GIF coming soon — run `vhs docs/demos/fetch.tape` to generate locally ([instructions](docs/demos/README.md))_
+![Ticket fetch demo](docs/demos/fetch.gif)
 
 </details>
 
 <details>
 <summary><strong>Triage scan</strong> — <code>ticketlens triage</code></summary>
 
-_GIF coming soon — run `vhs docs/demos/triage.tape` to generate locally ([instructions](docs/demos/README.md))_
+![Triage scan demo](docs/demos/triage.gif)
 
 </details>
 
