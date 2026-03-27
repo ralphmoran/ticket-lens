@@ -73,7 +73,7 @@ AI assistants can't be piped, scheduled, or embedded in hooks. TicketLens can.
 
 ```bash
 # Feed a brief to any LLM tool
-ticketlens PROJ-123 --plain | llm "What are the implementation risks?"
+ticketlens CNV1-2 --plain | llm "What are the implementation risks?"
 
 # Morning triage to Slack
 ticketlens triage --plain | slack-notify "#dev-alerts"
@@ -90,7 +90,7 @@ ticketlens triage --plain --stale=1 | grep "needs response"
 ## Demos
 
 <details>
-<summary><strong>Ticket fetch</strong> — <code>ticketlens PROJ-123</code></summary>
+<summary><strong>Ticket fetch</strong> — <code>ticketlens CNV1-2</code></summary>
 
 ![Ticket fetch demo](docs/demos/fetch.gif)
 
@@ -110,7 +110,7 @@ ticketlens triage --plain --stale=1 | grep "needs response"
 ```bash
 npm install -g ticketlens
 ticketlens init          # Guided setup wizard (Jira URL, auth, optional settings)
-ticketlens PROJ-123      # Fetch a ticket brief
+ticketlens CNV1-2      # Fetch a ticket brief
 ticketlens triage        # Scan your assigned tickets
 ```
 
@@ -118,7 +118,7 @@ Or without installing:
 
 ```bash
 npx ticketlens init
-npx ticketlens PROJ-123
+npx ticketlens CNV1-2
 ```
 
 ---
@@ -147,7 +147,7 @@ What the wizard collects:
    - **Edit from URL** — wrong URL or auth type
    - **Skip**
 6. **Optional settings** (all skippable with Enter):
-   - **Ticket prefixes** — e.g. `PROJ,OPS` — auto-routes `PROJ-123` to this profile without needing `--profile`
+   - **Ticket prefixes** — e.g. `PROJ,OPS` — auto-routes `CNV1-2` to this profile without needing `--profile`
    - **Project paths** — e.g. `~/projects/myapp` — auto-activates this profile when your terminal is in that directory
    - **Triage statuses** — Jira statuses to scan (default: `In Progress, Code Review, QA`). Validated live; case mismatches are auto-corrected.
 7. **Add another?** — repeat for each Jira instance you have
@@ -221,16 +221,16 @@ Active = the profile set by `ticketlens switch`, or the first profile in the fil
 _Fetch a ticket's full context: description, comments, linked issues, attachments, and code references._
 
 ```bash
-ticketlens PROJ-123                  # Fetch with defaults (depth 1, styled output)
-ticketlens get PROJ-123              # Same — "get" is an explicit alias
-ticketlens PROJ-123 --depth=0        # Target ticket only (fastest)
-ticketlens PROJ-123 --depth=1        # + linked ticket descriptions and comments
-ticketlens PROJ-123 --depth=2        # + linked-of-linked tickets (thorough)
-ticketlens PROJ-123 --profile=acme   # Use a specific profile
-ticketlens PROJ-123 --plain          # Plain markdown (no ANSI — pipe-safe, LLM-ready)
-ticketlens PROJ-123 --styled         # Force ANSI color even when piping
-ticketlens PROJ-123 --no-attachments # Skip attachment download
-ticketlens PROJ-123 --no-cache       # Skip brief cache + force re-download attachments
+ticketlens CNV1-2                  # Fetch with defaults (depth 1, styled output)
+ticketlens get CNV1-2              # Same — "get" is an explicit alias
+ticketlens CNV1-2 --depth=0        # Target ticket only (fastest)
+ticketlens CNV1-2 --depth=1        # + linked ticket descriptions and comments
+ticketlens CNV1-2 --depth=2        # + linked-of-linked tickets (thorough)
+ticketlens CNV1-2 --profile=acme   # Use a specific profile
+ticketlens CNV1-2 --plain          # Plain markdown (no ANSI — pipe-safe, LLM-ready)
+ticketlens CNV1-2 --styled         # Force ANSI color even when piping
+ticketlens CNV1-2 --no-attachments # Skip attachment download
+ticketlens CNV1-2 --no-cache       # Skip brief cache + force re-download attachments
 ```
 
 **Depth levels:**
@@ -246,7 +246,7 @@ Max 15 tickets fetched at any depth. Circular references are handled automatical
 **Brief caching:** After the first fetch, ticket data is cached locally and reused on repeat fetches, skipping the Jira API entirely. A dim notice appears on stderr:
 
 ```
-  ○ PROJ-123 · from cache (12m ago)  ·  --no-cache to refresh
+  ○ CNV1-2 · from cache (12m ago)  ·  --no-cache to refresh
 ```
 
 The cache is depth-aware: a cached depth-2 response satisfies a depth-1 or depth-0 request. Pass `--no-cache` to bypass and re-fetch from Jira.
@@ -323,12 +323,12 @@ ticketlens cache size --help                   # Options
 # Clear cached files
 ticketlens cache clear                         # Interactive picker — choose by profile (TTY)
 ticketlens clear                               # Shorthand alias for cache clear
-ticketlens cache clear PROJ-123                # Clear one ticket
+ticketlens cache clear CNV1-2                # Clear one ticket
 ticketlens cache clear --older-than=7d         # Files older than 7 days
 ticketlens cache clear --older-than=1m         # Files older than 1 month
 ticketlens cache clear --older-than=1y         # Files older than 1 year
 ticketlens cache clear --profile=acme          # Only this profile's files
-ticketlens cache clear PROJ-123 --older-than=7d            # Ticket + age filter
+ticketlens cache clear CNV1-2 --older-than=7d            # Ticket + age filter
 ticketlens cache clear --profile=acme --older-than=30d     # Profile + age filter
 ticketlens cache clear --older-than=30d --yes              # Skip confirmation
 ticketlens cache clear --help                  # Full options
@@ -416,12 +416,12 @@ cp /path/to/ticket-lens/skills/jtb/SKILL.md ~/.claude/commands/jtb.md
 #### Using /jtb in Claude Code
 
 ```
-/jtb PROJ-123                    # Fetch ticket + linked issues → plan mode
-/jtb PROJ-123 --depth=0          # Target ticket only (fast)
-/jtb PROJ-123 --depth=2          # Deep: linked-of-linked
-/jtb PROJ-123 --profile=acme     # Force a specific Jira profile
-/jtb PROJ-123 --no-attachments   # Skip attachment download
-/jtb PROJ-123 --no-cache         # Re-download all attachments
+/jtb CNV1-2                    # Fetch ticket + linked issues → plan mode
+/jtb CNV1-2 --depth=0          # Target ticket only (fast)
+/jtb CNV1-2 --depth=2          # Deep: linked-of-linked
+/jtb CNV1-2 --profile=acme     # Force a specific Jira profile
+/jtb CNV1-2 --no-attachments   # Skip attachment download
+/jtb CNV1-2 --no-cache         # Re-download all attachments
 /jtb triage                      # Scan your assigned tickets
 ```
 
@@ -432,9 +432,9 @@ Attachments are downloaded to `~/.ticketlens/cache/TICKET-KEY/` and listed in th
 ```
 ## Attachments
 
-- /Users/you/.ticketlens/cache/PROJ-123/design-mockup.png  (design-mockup.png, 312KB)
-- /Users/you/.ticketlens/cache/PROJ-123/spec.pdf           (spec.pdf, 95KB)
-- /Users/you/.ticketlens/cache/PROJ-123/server.log         (server.log, 4KB)
+- /Users/you/.ticketlens/cache/CNV1-2/design-mockup.png  (design-mockup.png, 312KB)
+- /Users/you/.ticketlens/cache/CNV1-2/spec.pdf           (spec.pdf, 95KB)
+- /Users/you/.ticketlens/cache/CNV1-2/server.log         (server.log, 4KB)
 ```
 
 Claude Code reads each file as context before planning:
@@ -462,22 +462,22 @@ ticketlens config                             # Edit the active profile
 ticketlens config --profile=acme              # Edit a specific profile
 
 # ── Fetch a ticket brief ──────────────────────────────────────────────────────
-ticketlens PROJ-123                           # Fetch with defaults (depth 1, styled)
-ticketlens get PROJ-123                       # Explicit alias (same result)
-ticketlens PROJ-123 --depth=0                 # Target ticket only — no linked issues
-ticketlens PROJ-123 --depth=1                 # + linked ticket descriptions and comments
-ticketlens PROJ-123 --depth=2                 # + linked-of-linked (deep scan)
-ticketlens PROJ-123 --profile=acme            # Force a specific Jira profile
-ticketlens PROJ-123 --plain                   # Plain markdown — no color codes
-ticketlens PROJ-123 --styled                  # Force ANSI color even when piping
-ticketlens PROJ-123 --no-attachments          # Skip attachment download entirely
-ticketlens PROJ-123 --no-cache                # Skip brief cache + force re-download attachments
-ticketlens PROJ-123 --depth=2 --profile=acme --plain    # Combine flags freely
+ticketlens CNV1-2                           # Fetch with defaults (depth 1, styled)
+ticketlens get CNV1-2                       # Explicit alias (same result)
+ticketlens CNV1-2 --depth=0                 # Target ticket only — no linked issues
+ticketlens CNV1-2 --depth=1                 # + linked ticket descriptions and comments
+ticketlens CNV1-2 --depth=2                 # + linked-of-linked (deep scan)
+ticketlens CNV1-2 --profile=acme            # Force a specific Jira profile
+ticketlens CNV1-2 --plain                   # Plain markdown — no color codes
+ticketlens CNV1-2 --styled                  # Force ANSI color even when piping
+ticketlens CNV1-2 --no-attachments          # Skip attachment download entirely
+ticketlens CNV1-2 --no-cache                # Skip brief cache + force re-download attachments
+ticketlens CNV1-2 --depth=2 --profile=acme --plain    # Combine flags freely
 
 # Pipe plain output to clipboard, LLM, or file
-ticketlens PROJ-123 --plain > brief.md
-ticketlens PROJ-123 --plain | pbcopy
-ticketlens PROJ-123 --plain | llm "Summarize this ticket in 3 bullets"
+ticketlens CNV1-2 --plain > brief.md
+ticketlens CNV1-2 --plain | pbcopy
+ticketlens CNV1-2 --plain | llm "Summarize this ticket in 3 bullets"
 
 # ── Triage ────────────────────────────────────────────────────────────────────
 ticketlens triage                              # Scan assigned tickets — interactive
@@ -506,12 +506,12 @@ ticketlens cache size --help                  # Options
 
 ticketlens cache clear                        # Interactive picker (TTY)
 ticketlens clear                              # Shorthand alias for cache clear
-ticketlens cache clear PROJ-123              # Clear one ticket's cache
+ticketlens cache clear CNV1-2              # Clear one ticket's cache
 ticketlens cache clear --older-than=7d        # Files older than 7 days
 ticketlens cache clear --older-than=1m        # Files older than 1 month
 ticketlens cache clear --older-than=1y        # Files older than 1 year
 ticketlens cache clear --profile=acme         # Only one profile's files
-ticketlens cache clear PROJ-123 --older-than=7d          # Ticket + age filter
+ticketlens cache clear CNV1-2 --older-than=7d          # Ticket + age filter
 ticketlens cache clear --profile=acme --older-than=30d   # Profile + age filter
 ticketlens cache clear --older-than=30d --yes            # Skip confirmation (CI/scripts)
 ticketlens cache clear --help                 # Full options
@@ -528,7 +528,7 @@ ticketlens schedule                           # Scheduled digest setup [Pro]
 ticketlens --help                             # Main help
 ticketlens --version                          # Show installed version
 
-ticketlens PROJ-123 --help                    # Fetch subcommand help
+ticketlens CNV1-2 --help                    # Fetch subcommand help
 ticketlens triage --help                      # Triage subcommand help
 ticketlens cache --help                       # Cache overview help
 ticketlens cache size --help                  # Cache size help
@@ -576,7 +576,7 @@ Credentials live separately in `~/.ticketlens/credentials.json` (chmod 600):
 ```
 
 With this setup:
-- `ticketlens PROJ-123` → uses **myteam** (prefix match)
+- `ticketlens CNV1-2` → uses **myteam** (prefix match)
 - `ticketlens ACME-456` → uses **client** (prefix match)
 - Running `ticketlens triage` inside `~/projects/myteam-app` → uses **myteam** (path match)
 
@@ -586,8 +586,8 @@ With this setup:
 
 | Priority | Method | Example |
 |----------|--------|---------|
-| 1 | `--profile=NAME` flag | `ticketlens PROJ-123 --profile=client` |
-| 2 | Ticket prefix match | `ticketlens PROJ-123` → prefix `PROJ` maps to `myteam` |
+| 1 | `--profile=NAME` flag | `ticketlens CNV1-2 --profile=client` |
+| 2 | Ticket prefix match | `ticketlens CNV1-2` → prefix `PROJ` maps to `myteam` |
 | 3 | Project path match | `ticketlens triage` in `~/projects/myteam-app` → `myteam` |
 | 4 | Default / first profile | First entry in `profiles.json` |
 | 5 | Environment variables | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` / `JIRA_PAT` |
@@ -629,7 +629,7 @@ See [ROADMAP.md](ROADMAP.md) for the full feature plan.
 - ✅ Attachment download — all file types cached locally; Claude Code reads images, PDFs, text
 - ✅ `ticketlens cache` — `size` with `--profile` filter, `clear` with ticket/age/profile filters
 - ✅ `ticketlens license` / `ticketlens activate` — styled license status display
-- ✅ `get` alias — `ticketlens get PROJ-123` as explicit fetch alias; listed in USAGE section
+- ✅ `get` alias — `ticketlens get CNV1-2` as explicit fetch alias; listed in USAGE section
 - ✅ `clear` shorthand — `ticketlens clear` as alias for `ticketlens cache clear`
 - ✅ Profile switch fixed — `--profile=` arg correctly replaced on every re-run (was causing infinite loop)
 - ✅ `--stale` fixed — unanswered comments older than N days now downgrade to "aging"
@@ -687,7 +687,7 @@ Install once, use everywhere:
 npm install -g ticketlens && ticketlens init
 cp $(npm root -g)/ticketlens/skills/jtb/SKILL.md ~/.claude/commands/jtb.md
 # Then in Claude Code:
-# /jtb PROJ-123
+# /jtb CNV1-2
 ```
 
 ---

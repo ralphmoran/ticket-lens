@@ -14,7 +14,7 @@ ticketlens init   # configure your Jira connection
 
 ```bash
 # Ticket fetch demo
-# Edit fetch.tape — replace PROJ-123 with a real ticket key from your Jira
+# Edit fetch.tape — replace CNV1-2 with a real ticket key from your Jira
 vhs docs/demos/fetch.tape      # outputs docs/demos/fetch.gif
 
 # Triage scan demo
