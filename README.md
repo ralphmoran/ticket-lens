@@ -295,21 +295,31 @@ Start free, upgrade when you need it — `ticketlens activate <key>`
 
 ### Pro — $8/mo
 
+<div align="center">
+  <img src="docs/demos/pro-depth.gif" alt="ticketlens --depth=2 deep traversal demo" width="700" />
+</div>
+
 ```bash
 ticketlens CNV1-2 --depth=2          # Deep traversal: linked-of-linked tickets
 ticketlens triage --stale=3          # Custom stale threshold (default is 5)
 ticketlens activate YOUR-LICENSE-KEY # Activate Pro license
 ```
 
+<div align="center">
+  <img src="docs/demos/pro-triage.gif" alt="ticketlens triage --stale=3 demo" width="700" />
+</div>
+
 Pro also unlocks configurable brief cache TTL per profile — set `cacheTtl` to `4h`, `1d`, `7d`, `30d`, or `0` (disable) via `ticketlens config`. Free tier is fixed at 4h.
 
 ### Team — $15/seat/mo
 
+<div align="center">
+  <img src="docs/demos/teams-digest.gif" alt="ticketlens triage --plain digest pipeline demo" width="700" />
+</div>
+
 ```bash
-ticketlens triage --export=csv       # Export triage to CSV for standups and reports
-ticketlens triage --export=json      # Machine-readable export for dashboards
-ticketlens triage --assignee="Jane Dev"       # View any teammate's ticket queue
-ticketlens triage --sprint="Sprint 12"        # Scope triage to a sprint
+ticketlens triage --export=csv       # Export triage to CSV for standups and reports (coming soon)
+ticketlens triage --export=json      # Machine-readable export for dashboards (coming soon)
 ```
 
 Automate a morning digest with cron — no open terminal required:
