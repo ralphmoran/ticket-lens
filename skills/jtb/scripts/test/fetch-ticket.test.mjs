@@ -298,3 +298,62 @@ describe('fetch-ticket integration', () => {
     }
   });
 });
+
+const mockEnv = {
+  JIRA_BASE_URL: 'https://test.atlassian.net',
+  JIRA_PAT: 'test-token',
+};
+const mockFetcher = async () => ({ ok: true, json: async () => cloudFixture });
+
+describe('--check flag', () => {
+  it('appends diff output to brief when git VCS detected', async () => {
+    const output = [];
+    await run(['PROJ-1', '--check'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      detectVcs: () => 'git',
+      getDiff: () => 'diff --git a/foo.php b/foo.php\n+added line\n',
+      print: (chunk) => output.push(chunk),
+    });
+    const combined = output.join('');
+    assert.ok(combined.includes('--- DIFF ---'), 'DIFF section missing');
+    assert.ok(combined.includes('+added line'), 'diff content missing');
+  });
+
+  it('appends diff output when svn VCS detected', async () => {
+    const output = [];
+    await run(['PROJ-1', '--check'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      detectVcs: () => 'svn',
+      getDiff: () => 'Index: foo.php\n+added line\n',
+      print: (chunk) => output.push(chunk),
+    });
+    assert.ok(output.join('').includes('+added line'));
+  });
+
+  it('prints no-VCS notice when vcs is none', async () => {
+    const output = [];
+    await run(['PROJ-1', '--check'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      detectVcs: () => 'none',
+      getDiff: () => null,
+      print: (chunk) => output.push(chunk),
+    });
+    assert.ok(output.join('').includes('No VCS detected'), 'no-VCS notice missing');
+  });
+
+  it('does not interpolate diff into any shell command', async () => {
+    const maliciousDiff = 'diff\n; rm -rf /\n';
+    const output = [];
+    await run(['PROJ-1', '--check'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      detectVcs: () => 'git',
+      getDiff: () => maliciousDiff,
+      print: (chunk) => output.push(chunk),
+    });
+    assert.ok(output.join('').includes('; rm -rf /'));
+  });
+});

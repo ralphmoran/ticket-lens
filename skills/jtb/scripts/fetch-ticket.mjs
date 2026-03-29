@@ -5,6 +5,7 @@
  * Usage: node fetch-ticket.mjs TICKET-KEY [--depth=N] [--profile=NAME]
  */
 
+import { spawnSync } from 'node:child_process';
 import { fetchTicket } from './lib/jira-client.mjs';
 import { extractCodeReferences } from './lib/code-ref-parser.mjs';
 import { assembleBrief } from './lib/brief-assembler.mjs';
@@ -22,6 +23,59 @@ import { readBriefCache, writeBriefCache, briefCacheAge, BRIEF_TTL_MS } from './
 import { parseAge } from './lib/cache-manager.mjs';
 import { createStyler } from './lib/ansi.mjs';
 import { isLicensed, showUpgradePrompt } from './lib/license.mjs';
+import { detectVcs } from './lib/vcs-detector.mjs';
+
+/**
+ * Get the local diff using spawn with explicit arg arrays (never shell interpolation).
+ * @param {string} [cwd]
+ * @returns {string|null}
+ */
+function getDiff(cwd = process.cwd()) {
+  const vcsResult = detectVcs(cwd);
+  const vcs = typeof vcsResult === 'string' ? vcsResult : vcsResult.type;
+  if (vcs === 'none') return null;
+
+  const commands = {
+    git: ['git', ['diff', 'HEAD']],
+    svn: ['svn', ['diff']],
+    hg:  ['hg',  ['diff']],
+  };
+  const entry = commands[vcs];
+  if (!entry) return null;
+  const [cmd, args] = entry;
+
+  const which = spawnSync('which', [cmd], { encoding: 'utf8' });
+  if (which.status !== 0 || !which.stdout.trim()) return null;
+
+  const result = spawnSync(which.stdout.trim(), args, { cwd, encoding: 'utf8', timeout: 10_000 });
+  return result.status === 0 ? (result.stdout || null) : null;
+}
+
+/**
+ * Append --check section (diff + instructions) to a brief string.
+ * @param {string} brief
+ * @param {object} opts  — may contain detectVcs and getDiff overrides
+ * @returns {string}
+ */
+function applyCheck(brief, opts) {
+  const vcsDetector = opts.detectVcs ?? ((cwd) => { const r = detectVcs(cwd); return typeof r === 'string' ? r : r.type; });
+  const diffRunner  = opts.getDiff   ?? getDiff;
+  const vcs = vcsDetector(process.cwd());
+
+  if (vcs === 'none') {
+    brief += '\n\n⚠  No VCS detected in this directory.\n   Claude Code will evaluate coverage using this session\'s context.\n';
+    brief += '\n--- CHECK INSTRUCTIONS ---\n';
+    brief += 'No diff available. Use session context, claude-mem, context7, or fs.stat() fallback to evaluate coverage.\n';
+    return brief;
+  }
+
+  const diff = diffRunner(process.cwd());
+  if (diff) brief += '\n\n--- DIFF ---\n' + diff;
+  brief += '\n--- CHECK INSTRUCTIONS ---\n';
+  brief += 'Identify acceptance criteria from the ticket above. Evaluate whether the diff covers each one.\n';
+  brief += 'Report: ✔ FOUND (with file:line reference) or ✗ NOT FOUND. Show coverage percentage.\n';
+  return brief;
+}
 
 const RETRY_OPTIONS = [
   { label: 'Retry',          sublabel: 'Try again — e.g. VPN just connected', value: 'retry'  },
@@ -29,7 +83,21 @@ const RETRY_OPTIONS = [
   { label: 'Cancel',         sublabel: '',                                      value: 'cancel' },
 ];
 
-export async function run(args, env = process.env, fetcher = globalThis.fetch, configDir = undefined) {
+export async function run(args, envOrOpts = process.env, fetcher = globalThis.fetch, configDir = undefined) {
+  // Support opts-object injection: run(args, { env, fetcher, configDir, detectVcs, getDiff, print })
+  let env, opts;
+  if (envOrOpts && typeof envOrOpts === 'object' && !Array.isArray(envOrOpts) && ('env' in envOrOpts || 'fetcher' in envOrOpts || 'print' in envOrOpts || 'detectVcs' in envOrOpts || 'getDiff' in envOrOpts)) {
+    opts = envOrOpts;
+    env = opts.env ?? process.env;
+    fetcher = opts.fetcher ?? globalThis.fetch;
+    configDir = opts.configDir ?? undefined;
+  } else {
+    opts = {};
+    env = envOrOpts;
+  }
+
+  const printFn = opts.print ?? ((chunk) => process.stdout.write(chunk));
+
   if (args.includes('--help') || args.includes('-h')) {
     printFetchHelp();
     return;
@@ -59,7 +127,7 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth='],
+    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check'],
     { hints: ['--stale=', '--status=', '--static'] } // triage-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
@@ -173,10 +241,13 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
       const allText = [cached.ticket.description, ...cached.ticket.comments.map(c => c.body)].filter(Boolean).join('\n');
       const codeRefs = extractCodeReferences(allText);
       const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
-      const brief = useStyled
+      let brief = useStyled
         ? styleBrief(cached.ticket, codeRefs, { styled: true })
         : assembleBrief(cached.ticket, codeRefs);
-      process.stdout.write(brief + '\n');
+
+      if (args.includes('--check')) brief = applyCheck(brief, opts);
+
+      printFn(brief + '\n');
       return;
     }
   }
@@ -265,10 +336,13 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   const codeRefs = extractCodeReferences(allText);
 
   const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
-  const brief = useStyled
+  let output = useStyled
     ? styleBrief(ticket, codeRefs, { styled: true })
     : assembleBrief(ticket, codeRefs);
-  process.stdout.write(brief + '\n');
+
+  if (args.includes('--check')) output = applyCheck(output, opts);
+
+  printFn(output + '\n');
 }
 
 // Run if invoked directly
