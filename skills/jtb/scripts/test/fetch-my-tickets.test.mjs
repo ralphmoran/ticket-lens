@@ -595,3 +595,30 @@ describe('triage --export', () => {
     }
   });
 });
+
+describe('triage --digest', () => {
+  it('POSTs scored triage to backend after running triage', async () => {
+    const delivered = [];
+    await run(['triage', '--digest'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      digestDeliverer: async (payload) => { delivered.push(payload); return true; },
+      isLicensed: () => true,
+    });
+    assert.equal(delivered.length, 1);
+    assert.ok(Array.isArray(delivered[0].tickets));
+    assert.ok(delivered[0].summary);
+    assert.ok(delivered[0].profile);
+  });
+
+  it('does not require Team license — digest is Pro', async () => {
+    const delivered = [];
+    await run(['triage', '--digest'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      digestDeliverer: async () => { delivered.push(true); return true; },
+      isLicensed: (tier) => tier === 'pro',
+    });
+    assert.equal(delivered.length, 1);
+  });
+});

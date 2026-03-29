@@ -21,6 +21,22 @@ import { isLicensed, showUpgradePrompt, revalidateIfStale } from './lib/license.
 
 const DEFAULT_STATUSES = ['In Progress', 'Code Review', 'QA'];
 
+async function defaultDigestDeliverer(payload) {
+  const { readLicense } = await import('./lib/license.mjs');
+  const licenseKey = readLicense()?.key;
+  const res = await fetch('https://api.ticketlens.io/v1/digest/deliver', {
+    method: 'POST',
+    signal: AbortSignal.timeout(10_000),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${licenseKey}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Digest delivery failed: ${res.status}`);
+  return true;
+}
+
 function escapeJql(s) {
   return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
@@ -58,7 +74,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=', '--assignee=', '--sprint=', '--export='],
+    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=', '--assignee=', '--sprint=', '--export=', '--digest'],
     { hints: ['--depth=', '--no-attachments', '--no-cache'] } // fetch-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
@@ -74,6 +90,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const assigneeArg = args.find(a => a.startsWith('--assignee='));
   const sprintArg = args.find(a => a.startsWith('--sprint='));
   const exportArg = args.find(a => a.startsWith('--export='))?.split('=')[1] ?? null;
+  const digestFlag = args.includes('--digest');
 
   if (exportArg && exportArg !== 'csv' && exportArg !== 'json') {
     process.stderr.write(`Error: --export must be csv or json, got: ${exportArg}\n`);
@@ -273,6 +290,27 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const scored = tickets.map(t => scoreAttention(t, effectiveUser, { staleDays }));
   const actionable = scored.filter(s => s.urgency !== 'clear');
   const sorted = sortByUrgency(actionable);
+
+  // --digest: POST scored results to the digest backend endpoint
+  if (digestFlag) {
+    if (!licensedFn('pro', configDir)) {
+      upgradeFn('pro', '--digest');
+      process.exitCode = 1;
+      return;
+    }
+    const deliverer = opts.digestDeliverer ?? defaultDigestDeliverer;
+    await deliverer({
+      profile: profileName ?? 'default',
+      staleDays,
+      summary: {
+        total: sorted.length,
+        needsResponse: sorted.filter(t => t.urgency === 'needs-response').length,
+        aging: sorted.filter(t => t.urgency === 'aging').length,
+      },
+      tickets: sorted,
+    });
+    return;
+  }
 
   // --export: write results to file instead of (or in addition to) printing
   if (exportArg) {
