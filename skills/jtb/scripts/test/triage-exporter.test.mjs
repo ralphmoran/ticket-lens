@@ -100,7 +100,7 @@ describe('exportTriage', () => {
     assert.ok(content.includes('Line1 Line2'));
   });
 
-  it('rejects path traversal in configDir', () => {
+  it('rejects path traversal in profile name', () => {
     assert.throws(
       () => exportTriage({ tickets: [], format: 'csv', profile: '../../etc', configDir: '/tmp' }),
       { message: /invalid/i }

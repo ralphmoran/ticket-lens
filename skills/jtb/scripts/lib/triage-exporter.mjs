@@ -73,7 +73,7 @@ function buildJson(tickets, profile) {
 function escapeCsv(str) {
   if (str == null) return '';
   const s = String(str).replace(/[\r\n]+/g, ' ');
-  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+  if (s.includes(',') || s.includes('"')) {
     return `"${s.replace(/"/g, '""')}"`;
   }
   return s;
