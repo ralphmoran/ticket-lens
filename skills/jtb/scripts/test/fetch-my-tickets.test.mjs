@@ -493,3 +493,83 @@ describe('fetch-my-tickets integration', () => {
     }
   });
 });
+
+const mockEnv = {
+  JIRA_BASE_URL: 'https://test.atlassian.net',
+  JIRA_EMAIL: 'john@example.com',
+  JIRA_API_TOKEN: 'test-token',
+};
+
+const mockFetcher = async (url) => {
+  if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+  if (url.includes('/search')) return { ok: true, json: async () => makeSearchResult([]) };
+  return { ok: false, status: 404, statusText: 'Not Found' };
+};
+
+describe('triage --export', () => {
+  it('calls exportTriage with csv format when --export=csv provided', async () => {
+    const exported = [];
+    const out = captureOutput();
+    try {
+      await run(['triage', '--export=csv'], {
+        env: mockEnv,
+        fetcher: mockFetcher,
+        exporter: ({ format }) => { exported.push(format); return '/tmp/test.csv'; },
+        isLicensed: () => true,
+      });
+      assert.deepEqual(exported, ['csv']);
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('calls exportTriage with json format when --export=json provided', async () => {
+    const exported = [];
+    const out = captureOutput();
+    try {
+      await run(['triage', '--export=json'], {
+        env: mockEnv,
+        fetcher: mockFetcher,
+        exporter: ({ format }) => { exported.push(format); return '/tmp/test.json'; },
+        isLicensed: () => true,
+      });
+      assert.deepEqual(exported, ['json']);
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('shows upgrade prompt when --export used without Team license', async () => {
+    const prompts = [];
+    const out = captureOutput();
+    try {
+      await run(['triage', '--export=csv'], {
+        env: mockEnv,
+        fetcher: mockFetcher,
+        isLicensed: () => false,
+        showUpgradePrompt: (tier, flag) => prompts.push({ tier, flag }),
+      });
+      assert.equal(prompts.length, 1);
+      assert.equal(prompts[0].tier, 'team');
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('prints export path to stdout after writing', async () => {
+    const output = [];
+    const out = captureOutput();
+    try {
+      await run(['triage', '--export=csv'], {
+        env: mockEnv,
+        fetcher: mockFetcher,
+        exporter: () => '/tmp/export.csv',
+        isLicensed: () => true,
+        print: (msg) => output.push(msg),
+      });
+      assert.ok(output.some(m => m.includes('/tmp/export.csv')));
+    } finally {
+      out.restore();
+    }
+  });
+});

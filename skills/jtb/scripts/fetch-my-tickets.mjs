@@ -25,7 +25,23 @@ function escapeJql(s) {
   return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
-export async function run(args, env = process.env, fetcher = globalThis.fetch, configDir = undefined) {
+export async function run(args, envOrOpts = process.env, fetcher = globalThis.fetch, configDir = undefined) {
+  // Support both legacy positional form run(args, env, fetcher, configDir)
+  // and new opts-object form run(args, { env, fetcher, configDir, exporter, isLicensed, showUpgradePrompt, print })
+  let env, opts;
+  if (envOrOpts && typeof envOrOpts === 'object' && ('fetcher' in envOrOpts || 'exporter' in envOrOpts || 'isLicensed' in envOrOpts || 'print' in envOrOpts)) {
+    opts = envOrOpts;
+    env = opts.env ?? process.env;
+    fetcher = opts.fetcher ?? globalThis.fetch;
+    configDir = opts.configDir ?? undefined;
+  } else {
+    opts = {};
+    env = envOrOpts;
+  }
+
+  // Strip leading 'triage' subcommand if present (when called via CLI router)
+  if (args[0] === 'triage') args = args.slice(1);
+
   if (args.includes('--help') || args.includes('-h')) {
     printTriageHelp();
     return;
@@ -42,7 +58,7 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=', '--assignee=', '--sprint='],
+    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=', '--assignee=', '--sprint=', '--export='],
     { hints: ['--depth=', '--no-attachments', '--no-cache'] } // fetch-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
@@ -57,10 +73,26 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   const statusArg = args.find(a => a.startsWith('--status='));
   const assigneeArg = args.find(a => a.startsWith('--assignee='));
   const sprintArg = args.find(a => a.startsWith('--sprint='));
+  const exportArg = args.find(a => a.startsWith('--export='))?.split('=')[1] ?? null;
+
+  if (exportArg && exportArg !== 'csv' && exportArg !== 'json') {
+    process.stderr.write(`Error: --export must be csv or json, got: ${exportArg}\n`);
+    process.exitCode = 1;
+    return;
+  }
 
   // Team-tier gate: --assignee and --sprint require a Team license
   if ((assigneeArg || sprintArg) && !isLicensed('team', configDir)) {
     showUpgradePrompt('team', assigneeArg ? '--assignee' : '--sprint');
+    process.exitCode = 1;
+    return;
+  }
+
+  // Team-tier gate: --export requires a Team license
+  const licensedFn = opts.isLicensed ?? isLicensed;
+  const upgradeFn = opts.showUpgradePrompt ?? showUpgradePrompt;
+  if (exportArg && !licensedFn('team', configDir)) {
+    upgradeFn('team', '--export');
     process.exitCode = 1;
     return;
   }
@@ -240,6 +272,16 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   const scored = tickets.map(t => scoreAttention(t, effectiveUser, { staleDays }));
   const actionable = scored.filter(s => s.urgency !== 'clear');
   const sorted = sortByUrgency(actionable);
+
+  // --export: write results to file instead of (or in addition to) printing
+  if (exportArg) {
+    const { exportTriage } = await import('./lib/triage-exporter.mjs');
+    const exporterFn = opts.exporter ?? exportTriage;
+    const outputPath = await Promise.resolve(exporterFn({ tickets: sorted, format: exportArg, profile: profileName ?? 'default', configDir }));
+    const printFn = opts.print ?? ((msg) => process.stdout.write(msg + '\n'));
+    printFn(`Export written to ${outputPath}`);
+    return;
+  }
 
   // Interactive mode: TTY + not --plain + not --static
   const wantInteractive = process.stdout.isTTY && !args.includes('--plain') && !args.includes('--static');
