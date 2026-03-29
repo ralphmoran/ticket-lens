@@ -587,7 +587,7 @@ describe('triage --export', () => {
         `stderr must mention the invalid format, got: ${out.stderr}`
       );
       assert.ok(
-        out.stderr.includes('csv') || out.stderr.includes('json'),
+        out.stderr.includes('csv') && out.stderr.includes('json'),
         `stderr must mention valid formats, got: ${out.stderr}`
       );
     } finally {
