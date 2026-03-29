@@ -87,7 +87,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
   const sections = [];
 
   // Header: ticket key + summary
-  sections.push(s.bold(s.cyan(`${ticket.key}: ${ticket.summary}`)));
+  sections.push(s.bold(s.brand(`${ticket.key}: ${ticket.summary}`)));
 
   // Metadata line
   const meta = [
@@ -102,33 +102,33 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
 
   // Description
   if (ticket.description) {
-    sections.push(`${s.bold(s.cyan('Description'))}\n${s.dim('─'.repeat(divWidth()))}\n${stripCr(ticket.description)}`);
+    sections.push(`${s.bold(s.brand('Description'))}\n${s.dim('─'.repeat(divWidth()))}\n${stripCr(ticket.description)}`);
   }
 
   // Comments
   if (ticket.comments?.length > 0) {
     const commentLines = ticket.comments.map(c => {
       const date = c.created ? c.created.split('T')[0] : 'unknown';
-      return `${s.cyan(c.author)} ${s.dim(`(${date})`)}\n${stripCr(c.body)}`;
+      return `${s.brand(c.author)} ${s.dim(`(${date})`)}\n${stripCr(c.body)}`;
     });
-    sections.push(`${s.bold(s.cyan('Comments'))}\n${s.dim('─'.repeat(divWidth()))}\n${commentLines.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
+    sections.push(`${s.bold(s.brand('Comments'))}\n${s.dim('─'.repeat(divWidth()))}\n${commentLines.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
   }
 
   // Linked tickets
   if (ticket.linkedTicketDetails?.length > 0) {
     const linkedSections = ticket.linkedTicketDetails.map(lt => {
-      const parts = [`${s.cyan(lt.key)}: ${lt.summary}`, `${s.dim('Type:')} ${lt.type} | ${s.dim('Status:')} ${statusColor(s, lt.status)}`];
+      const parts = [`${s.brand(lt.key)}: ${lt.summary}`, `${s.dim('Type:')} ${lt.type} | ${s.dim('Status:')} ${statusColor(s, lt.status)}`];
       if (lt.description) parts.push(stripCr(lt.description));
       if (lt.comments?.length > 0) {
         const cmts = lt.comments.map(c => {
           const date = c.created ? c.created.split('T')[0] : 'unknown';
-          return `${s.cyan(c.author)} ${s.dim(`(${date})`)}: ${stripCr(c.body)}`;
+          return `${s.brand(c.author)} ${s.dim(`(${date})`)}: ${stripCr(c.body)}`;
         });
         parts.push(cmts.join('\n'));
       }
       return parts.join('\n');
     });
-    sections.push(`${s.bold(s.cyan('Linked Tickets'))}\n${s.dim('─'.repeat(divWidth()))}\n${linkedSections.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
+    sections.push(`${s.bold(s.brand('Linked Tickets'))}\n${s.dim('─'.repeat(divWidth()))}\n${linkedSections.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
   }
 
   // Code references
@@ -144,9 +144,9 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
     ];
     const filled = categories
       .filter(([, items]) => items?.length > 0)
-      .map(([label, items]) => `${s.dim(label + ':')} ${items.map(i => s.cyan(i)).join(', ')}`);
+      .map(([label, items]) => `${s.dim(label + ':')} ${items.map(i => s.brand(i)).join(', ')}`);
     if (filled.length > 0) {
-      sections.push(`${s.bold(s.cyan('Code References'))}\n${s.dim('─'.repeat(divWidth()))}\n${filled.join('\n')}`);
+      sections.push(`${s.bold(s.brand('Code References'))}\n${s.dim('─'.repeat(divWidth()))}\n${filled.join('\n')}`);
     }
   }
 
@@ -156,14 +156,14 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
       const sz = formatSize(a.size);
       if (r?.localPath) {
         const note = r.skipReason === 'cached' ? s.dim(', cached') : '';
-        return `  ${s.cyan(r.localPath)}${note}  ${s.dim(a.filename + ', ' + sz)}`;
+        return `  ${s.brand(r.localPath)}${note}  ${s.dim(a.filename + ', ' + sz)}`;
       }
       if (r?.skipReason === 'too-large') return `  ${a.filename}  ${s.dim(sz + ' — exceeds 10 MB limit')}`;
       if (r?.skipReason === 'limit')     return `  ${a.filename}  ${s.dim(sz + ' — attachment limit reached')}`;
       if (r?.skipReason === 'error')     return `  ${a.filename}  ${s.red('download failed: ' + r.error)}`;
       return `  ${a.filename}  ${s.dim(sz)}`;
     });
-    sections.push(`${s.bold(s.cyan('Attachments'))}\n${s.dim('─'.repeat(divWidth()))}\n${lines.join('\n')}`);
+    sections.push(`${s.bold(s.brand('Attachments'))}\n${s.dim('─'.repeat(divWidth()))}\n${lines.join('\n')}`);
   }
 
   const out = sections.join('\n\n');

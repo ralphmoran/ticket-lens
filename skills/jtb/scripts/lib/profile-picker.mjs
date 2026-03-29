@@ -16,14 +16,14 @@ export function promptProfileSelect({ profileName, suggestion, available }, { st
   stream.write('\n');
   stream.write(`  ${s.red('✖')} Profile ${s.bold(`"${profileName}"`)} not found.\n`);
   if (suggestion) {
-    stream.write(`\n  ${s.dim('Did you mean?')}  ${s.cyan(suggestion)}\n`);
+    stream.write(`\n  ${s.dim('Did you mean?')}  ${s.brand(suggestion)}\n`);
   }
   stream.write(`\n  ${s.dim('Select a profile:')}\n\n`);
 
   // Non-TTY: just list profiles and exit
   if (!isTTY || !process.stdin.setRawMode) {
     for (const name of available) {
-      stream.write(`    ${s.cyan('›')} ${name}\n`);
+      stream.write(`    ${s.brand('›')} ${name}\n`);
     }
     stream.write('\n');
     return Promise.resolve(null);
@@ -34,8 +34,8 @@ export function promptProfileSelect({ profileName, suggestion, available }, { st
   function renderFn(selected) {
     const lines = [];
     for (let i = 0; i < available.length; i++) {
-      const marker = i === selected ? s.blue('❯') : ' ';
-      const label = i === selected ? s.bold(s.blue(available[i])) : available[i];
+      const marker = i === selected ? s.brand('❯') : ' ';
+      const label = i === selected ? s.bold(s.brand(available[i])) : available[i];
       lines.push(`    ${marker} ${label}`);
     }
     lines.push('');
@@ -47,7 +47,7 @@ export function promptProfileSelect({ profileName, suggestion, available }, { st
   return runRawSelect({ count: available.length, initialIndex, renderFn, stream })
     .then(index => {
       if (index === null) return null;
-      stream.write(`  ${s.green('✔')} Using profile ${s.bold(s.cyan(available[index]))}\n\n`);
+      stream.write(`  ${s.green('✔')} Using profile ${s.bold(s.brand(available[index]))}\n\n`);
       return available[index];
     });
 }

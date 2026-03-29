@@ -46,7 +46,7 @@ export function createSession(conn, { stream = process.stderr } = {}) {
 
   // Pre-build the info lines to calculate box width including status line.
   const infoLines = [
-    `${s.bold(s.cyan('◆ TicketLens'))} ${s.dim(`v${version}`)}`,
+    `${s.bold(s.brand('◆ TicketLens'))} ${s.dim(`v${version}`)}`,
     `  ${s.dim('Profile:')}  ${profileLabel}`,
     `  ${s.dim('Server:')}   ${hostname}`,
     `  ${s.dim('User:')}     ${userLabel}`,
@@ -56,7 +56,7 @@ export function createSession(conn, { stream = process.stderr } = {}) {
   const maxVisible = allLines.reduce((max, l) => Math.max(max, visibleLength(l)), 0);
   const innerWidth = maxVisible + 2;
 
-  const bc = s.cyan; // border color
+  const bc = s.brand; // border color
   let timer = null;
   let boxOpen = false;
 
@@ -99,7 +99,7 @@ export function createSession(conn, { stream = process.stderr } = {}) {
       // Render initial spinner line + bottom border (box appears closed)
       let frame = 0;
       const writeSpinnerAndBorder = () => {
-        const content = `${s.cyan(SPINNER_FRAMES[frame])} ${message}`;
+        const content = `${s.brand(SPINNER_FRAMES[frame])} ${message}`;
         writeLine(content);
         stream.write('\n');
         stream.write(bot);
@@ -166,7 +166,7 @@ export function createSession(conn, { stream = process.stderr } = {}) {
         return this;
       }
 
-      const icon = type === 'error' ? s.red('✖') : s.cyan('ℹ');
+      const icon = type === 'error' ? s.red('✖') : s.brand('ℹ');
       const colorFn = type === 'error' ? s.red : s.dim;
       const contentLine = `${icon} ${message}`;
       const lines = [contentLine];
