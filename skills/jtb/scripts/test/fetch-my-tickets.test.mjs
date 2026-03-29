@@ -572,4 +572,26 @@ describe('triage --export', () => {
       out.restore();
     }
   });
+
+  it('rejects invalid --export value with exitCode=1 and error message', async () => {
+    const out = captureOutput();
+    try {
+      await run(['triage', '--export=pdf'], {
+        env: mockEnv,
+        fetcher: mockFetcher,
+        isLicensed: () => true,
+      });
+      assert.equal(process.exitCode, 1, 'must exit with code 1 for invalid format');
+      assert.ok(
+        out.stderr.includes('pdf'),
+        `stderr must mention the invalid format, got: ${out.stderr}`
+      );
+      assert.ok(
+        out.stderr.includes('csv') || out.stderr.includes('json'),
+        `stderr must mention valid formats, got: ${out.stderr}`
+      );
+    } finally {
+      out.restore();
+    }
+  });
 });

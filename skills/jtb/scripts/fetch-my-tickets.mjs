@@ -29,7 +29,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   // Support both legacy positional form run(args, env, fetcher, configDir)
   // and new opts-object form run(args, { env, fetcher, configDir, exporter, isLicensed, showUpgradePrompt, print })
   let env, opts;
-  if (envOrOpts && typeof envOrOpts === 'object' && ('fetcher' in envOrOpts || 'exporter' in envOrOpts || 'isLicensed' in envOrOpts || 'print' in envOrOpts)) {
+  if (envOrOpts && typeof envOrOpts === 'object' && 'env' in envOrOpts) {
     opts = envOrOpts;
     env = opts.env ?? process.env;
     fetcher = opts.fetcher ?? globalThis.fetch;
@@ -81,16 +81,17 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     return;
   }
 
+  const licensedFn = opts.isLicensed ?? isLicensed;
+  const upgradeFn = opts.showUpgradePrompt ?? showUpgradePrompt;
+
   // Team-tier gate: --assignee and --sprint require a Team license
-  if ((assigneeArg || sprintArg) && !isLicensed('team', configDir)) {
-    showUpgradePrompt('team', assigneeArg ? '--assignee' : '--sprint');
+  if ((assigneeArg || sprintArg) && !licensedFn('team', configDir)) {
+    upgradeFn('team', assigneeArg ? '--assignee' : '--sprint');
     process.exitCode = 1;
     return;
   }
 
   // Team-tier gate: --export requires a Team license
-  const licensedFn = opts.isLicensed ?? isLicensed;
-  const upgradeFn = opts.showUpgradePrompt ?? showUpgradePrompt;
   if (exportArg && !licensedFn('team', configDir)) {
     upgradeFn('team', '--export');
     process.exitCode = 1;
@@ -119,7 +120,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
         // Re-run with the selected profile
         const newArgs = args.filter(a => !a.startsWith('--profile='));
         newArgs.push(`--profile=${picked}`);
-        return run(newArgs, env, fetcher, configDir);
+        return run(newArgs, { ...opts, env, fetcher, configDir });
       }
     } else {
       const noProfiles = !loadProfiles(configDir)?.profiles;
@@ -235,7 +236,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
               out.write(`  ${s.green('✔')} Profile updated. Rerunning...\n\n`);
               // Strip --status flag so the re-run uses the corrected profile statuses
               const rerunArgs = args.filter(a => !a.startsWith('--status='));
-              return run(rerunArgs, env, fetcher, configDir);
+              return run(rerunArgs, { ...opts, env, fetcher, configDir });
             }
           }
         }
@@ -289,7 +290,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const result = await runInteractiveList(sorted, { baseUrl: conn.baseUrl, staleDays, styled: true });
     if (result === 'switch') {
       const cleanArgs = args.filter(a => !a.startsWith('--profile=') && !a.startsWith('--project='));
-      return run(cleanArgs, env, fetcher, configDir);
+      return run(cleanArgs, { ...opts, env, fetcher, configDir });
     }
     return;
   }
