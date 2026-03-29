@@ -6,11 +6,12 @@
  */
 
 import { spawnSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { fetchTicket } from './lib/jira-client.mjs';
 import { extractCodeReferences } from './lib/code-ref-parser.mjs';
 import { assembleBrief } from './lib/brief-assembler.mjs';
 import { styleBrief } from './lib/styled-assembler.mjs';
-import { resolveConnection, loadProfiles } from './lib/profile-resolver.mjs';
+import { resolveConnection, loadProfiles, loadCredentials } from './lib/profile-resolver.mjs';
 import { createSession } from './lib/banner.mjs';
 import { classifyError } from './lib/error-classifier.mjs';
 import { promptProfileSelect, promptProfileMismatch, promptSwitchProfile, promptMultipleMatches } from './lib/profile-picker.mjs';
@@ -22,7 +23,7 @@ import { downloadAttachments } from './lib/attachment-downloader.mjs';
 import { readBriefCache, writeBriefCache, briefCacheAge, BRIEF_TTL_MS } from './lib/brief-cache.mjs';
 import { parseAge } from './lib/cache-manager.mjs';
 import { createStyler } from './lib/ansi.mjs';
-import { isLicensed, showUpgradePrompt } from './lib/license.mjs';
+import { isLicensed, showUpgradePrompt, readLicense } from './lib/license.mjs';
 import { detectVcs } from './lib/vcs-detector.mjs';
 
 /**
@@ -77,6 +78,71 @@ function applyCheck(brief, opts) {
   return brief;
 }
 
+function hasCloudConsent(configDir, profileName) {
+  try {
+    const data = JSON.parse(readFileSync(`${configDir}/profiles.json`, 'utf8'));
+    return data.profiles?.[profileName]?.cloudSummarizeConsent === true;
+  } catch { return false; }
+}
+
+function saveCloudConsent(configDir, profileName) {
+  try {
+    const path = `${configDir}/profiles.json`;
+    const data = JSON.parse(readFileSync(path, 'utf8'));
+    if (!data.profiles) data.profiles = {};
+    if (!data.profiles[profileName]) data.profiles[profileName] = {};
+    data.profiles[profileName].cloudSummarizeConsent = true;
+    writeFileSync(path, JSON.stringify(data, null, 2), 'utf8');
+  } catch { /* non-fatal */ }
+}
+
+/**
+ * Apply --summarize to a brief string.
+ * Returns the modified brief, or null if the caller should exit (license gate / consent refused).
+ */
+async function applySummarize(brief, args, opts, configDir, conn, licensedFn, upgradeFn) {
+  if (!licensedFn('pro', configDir)) {
+    upgradeFn('pro', '--summarize');
+    process.exitCode = 1;
+    return null;
+  }
+
+  const mode = args.includes('--cloud') ? 'cloud' : 'byok';
+  const profileName = conn.profileName ?? 'default';
+
+  // Cloud consent check (skipped when summarizer is injected, e.g. tests)
+  if (mode === 'cloud' && !opts.summarizer && !hasCloudConsent(configDir, profileName)) {
+    let consentGiven = !process.stdin.isTTY;
+    if (!consentGiven && process.stdout.isTTY) {
+      process.stdout.write(
+        '\n  Cloud summary sends your ticket content to api.ticketlens.io for processing.\n' +
+        '  TicketLens calls Claude and returns a summary. No data stored after the request.\n' +
+        '  Proceed? (y/N) '
+      );
+      const rl = (await import('node:readline')).createInterface({ input: process.stdin, output: process.stdout });
+      consentGiven = await new Promise(resolve => rl.question('', ans => { rl.close(); resolve(ans.trim().toLowerCase() === 'y'); }));
+    }
+    if (!consentGiven) { process.exitCode = 1; return null; }
+    saveCloudConsent(configDir, profileName);
+  }
+
+  try {
+    const summarizerFn = opts.summarizer ?? (async (sumOpts) => {
+      const { summarize } = await import('./lib/summarizer.mjs');
+      return summarize(sumOpts);
+    });
+    const credentials = opts.credentials ?? loadCredentials(configDir);
+    const licenseKey = readLicense(configDir)?.key;
+    const summary = await summarizerFn({ brief, mode, credentials, licenseKey });
+    const divider = '─'.repeat(60);
+    return brief + `\n\n${divider}\n─── AI Summary ${'─'.repeat(45)}\n${summary}\n${divider}\n`;
+  } catch (err) {
+    const onErrorFn = opts.onError ?? ((msg) => process.stderr.write(msg + '\n'));
+    onErrorFn(`Could not generate summary: ${err.message}`);
+    return brief;
+  }
+}
+
 const RETRY_OPTIONS = [
   { label: 'Retry',          sublabel: 'Try again — e.g. VPN just connected', value: 'retry'  },
   { label: 'Switch profile', sublabel: 'Use a different Jira profile',         value: 'switch' },
@@ -127,7 +193,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check'],
+    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check', '--summarize', '--cloud'],
     { hints: ['--stale=', '--status=', '--static'] } // triage-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
@@ -214,9 +280,12 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const depthArg = args.find(a => a.startsWith('--depth='));
   const depth = depthArg ? parseInt(depthArg.split('=')[1], 10) : 1;
 
+  const licensedFn = opts.isLicensed ?? isLicensed;
+  const upgradeFn = opts.showUpgradePrompt ?? showUpgradePrompt;
+
   // Pro gate: --depth=2 (deep traversal) requires a Pro license
-  if (depth > 1 && !isLicensed('pro', configDir)) {
-    showUpgradePrompt('pro', '--depth=2');
+  if (depth > 1 && !licensedFn('pro', configDir)) {
+    upgradeFn('pro', '--depth=2');
     process.exitCode = 1;
     return;
   }
@@ -225,7 +294,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   // Resolve brief cache TTL: configurable for Pro tier only, else fixed 4h default
   const resolvedProfile = loadProfiles(configDir)?.profiles?.[conn.profileName];
-  const ttlMs = (resolvedProfile?.cacheTtl && isLicensed('pro', configDir))
+  const ttlMs = (resolvedProfile?.cacheTtl && licensedFn('pro', configDir))
     ? (parseAge(resolvedProfile.cacheTtl) ?? BRIEF_TTL_MS)
     : BRIEF_TTL_MS;
 
@@ -246,6 +315,11 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
         : assembleBrief(cached.ticket, codeRefs);
 
       if (args.includes('--check')) brief = applyCheck(brief, opts);
+
+      if (args.includes('--summarize')) {
+        brief = await applySummarize(brief, args, opts, configDir, conn, licensedFn, upgradeFn);
+        if (brief === null) return;
+      }
 
       printFn(brief + '\n');
       return;
@@ -341,6 +415,11 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     : assembleBrief(ticket, codeRefs);
 
   if (args.includes('--check')) output = applyCheck(output, opts);
+
+  if (args.includes('--summarize')) {
+    output = await applySummarize(output, args, opts, configDir, conn, licensedFn, upgradeFn);
+    if (output === null) return;
+  }
 
   printFn(output + '\n');
 }
