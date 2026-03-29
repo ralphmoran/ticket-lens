@@ -130,3 +130,28 @@ Enter plan mode with all gathered context:
 - Linked ticket summaries and their comments
 
 Present a clear implementation plan for the user to approve.
+
+---
+
+## --check: Acceptance Criteria Coverage Review
+
+When `--check` is appended to any ticket fetch (`/jtb PROJ-123 --check`):
+
+### With VCS (git/svn/hg detected)
+1. The brief includes a `--- DIFF ---` section with the current local diff
+2. After reading the brief, evaluate coverage:
+   - Identify acceptance criteria from the ticket description and comments
+   - For each AC, check whether the diff addresses it
+   - Report: ✔ FOUND (with file:line reference) or ✗ NOT FOUND
+   - Show: `Coverage: N/M (X%) — N items outstanding`
+
+### Without VCS (no git/svn/hg in cwd)
+Use this evaluation order:
+1. **Session context** — review files you Read/Edited this session; compare against ACs
+2. **claude-mem** — if available, call `get_observations` searching for `{ticketKey}` to find prior session work
+3. **context7** — if available, validate that changed files use correct library/framework APIs
+4. **fs.stat() fallback** — read files modified in the last 4 hours in cwd; compare against ACs
+5. **Manual checklist** — if none of the above apply, list the ACs for the developer to review manually
+
+### Privacy
+`--check` never sends data anywhere. The diff stays local. Claude Code provides the intelligence using its existing session context.
