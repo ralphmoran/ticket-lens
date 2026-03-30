@@ -298,3 +298,117 @@ describe('fetch-ticket integration', () => {
     }
   });
 });
+
+const mockEnv = {
+  JIRA_BASE_URL: 'https://test.atlassian.net',
+  JIRA_PAT: 'test-token',
+};
+const mockFetcher = async () => ({ ok: true, json: async () => cloudFixture });
+
+describe('--check flag', () => {
+  it('appends diff output to brief when git VCS detected', async () => {
+    const output = [];
+    await run(['PROJ-1', '--check'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      detectVcs: () => 'git',
+      getDiff: () => 'diff --git a/foo.php b/foo.php\n+added line\n',
+      print: (chunk) => output.push(chunk),
+    });
+    const combined = output.join('');
+    assert.ok(combined.includes('--- DIFF ---'), 'DIFF section missing');
+    assert.ok(combined.includes('+added line'), 'diff content missing');
+  });
+
+  it('appends diff output when svn VCS detected', async () => {
+    const output = [];
+    await run(['PROJ-1', '--check'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      detectVcs: () => 'svn',
+      getDiff: () => 'Index: foo.php\n+added line\n',
+      print: (chunk) => output.push(chunk),
+    });
+    assert.ok(output.join('').includes('+added line'));
+  });
+
+  it('prints no-VCS notice when vcs is none', async () => {
+    const output = [];
+    await run(['PROJ-1', '--check'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      detectVcs: () => 'none',
+      getDiff: () => null,
+      print: (chunk) => output.push(chunk),
+    });
+    assert.ok(output.join('').includes('No VCS detected'), 'no-VCS notice missing');
+  });
+
+  it('does not interpolate diff into any shell command', async () => {
+    const maliciousDiff = 'diff\n; rm -rf /\n';
+    const output = [];
+    await run(['PROJ-1', '--check'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      detectVcs: () => 'git',
+      getDiff: () => maliciousDiff,
+      print: (chunk) => output.push(chunk),
+    });
+    assert.ok(output.join('').includes('; rm -rf /'));
+  });
+});
+
+describe('--summarize flag', () => {
+  it('appends AI Summary block when --summarize provided with byok credentials', async () => {
+    const output = [];
+    await run(['PROJ-1', '--summarize'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      credentials: { anthropicApiKey: 'sk-ant-test' },
+      summarizer: async () => 'This ticket fixes cart validation. Key AC: return 400.',
+      isLicensed: () => true,
+      print: (chunk) => output.push(chunk),
+    });
+    const combined = output.join('');
+    assert.ok(combined.includes('AI Summary'), 'AI Summary block missing');
+    assert.ok(combined.includes('return 400'), 'summary content missing');
+  });
+
+  it('shows Pro upgrade prompt when not licensed', async () => {
+    const prompts = [];
+    await run(['PROJ-1', '--summarize'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      isLicensed: () => false,
+      showUpgradePrompt: (tier, flag) => prompts.push({ tier, flag }),
+    });
+    process.exitCode = undefined;
+    assert.equal(prompts.length, 1);
+    assert.equal(prompts[0].tier, 'pro');
+  });
+
+  it('uses cloud path when --summarize --cloud both present', async () => {
+    const calls = [];
+    await run(['PROJ-1', '--summarize', '--cloud'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      isLicensed: () => true,
+      summarizer: async ({ mode }) => { calls.push(mode); return 'cloud summary'; },
+      print: () => {},
+    });
+    assert.ok(calls.includes('cloud'));
+  });
+
+  it('shows styled error box when no API key configured for byok', async () => {
+    const errors = [];
+    await run(['PROJ-1', '--summarize'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      credentials: {},
+      isLicensed: () => true,
+      onError: (msg) => errors.push(msg),
+      summarizer: async () => { throw new Error('No API key found. Add ANTHROPIC_API_KEY'); },
+    });
+    assert.ok(errors.some(e => e.includes('No API key')));
+  });
+});

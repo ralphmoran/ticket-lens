@@ -493,3 +493,132 @@ describe('fetch-my-tickets integration', () => {
     }
   });
 });
+
+const mockEnv = {
+  JIRA_BASE_URL: 'https://test.atlassian.net',
+  JIRA_EMAIL: 'john@example.com',
+  JIRA_API_TOKEN: 'test-token',
+};
+
+const mockFetcher = async (url) => {
+  if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+  if (url.includes('/search')) return { ok: true, json: async () => makeSearchResult([]) };
+  return { ok: false, status: 404, statusText: 'Not Found' };
+};
+
+describe('triage --export', () => {
+  it('calls exportTriage with csv format when --export=csv provided', async () => {
+    const exported = [];
+    const out = captureOutput();
+    try {
+      await run(['triage', '--export=csv'], {
+        env: mockEnv,
+        fetcher: mockFetcher,
+        exporter: ({ format }) => { exported.push(format); return '/tmp/test.csv'; },
+        isLicensed: () => true,
+      });
+      assert.deepEqual(exported, ['csv']);
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('calls exportTriage with json format when --export=json provided', async () => {
+    const exported = [];
+    const out = captureOutput();
+    try {
+      await run(['triage', '--export=json'], {
+        env: mockEnv,
+        fetcher: mockFetcher,
+        exporter: ({ format }) => { exported.push(format); return '/tmp/test.json'; },
+        isLicensed: () => true,
+      });
+      assert.deepEqual(exported, ['json']);
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('shows upgrade prompt when --export used without Team license', async () => {
+    const prompts = [];
+    const out = captureOutput();
+    try {
+      await run(['triage', '--export=csv'], {
+        env: mockEnv,
+        fetcher: mockFetcher,
+        isLicensed: () => false,
+        showUpgradePrompt: (tier, flag) => prompts.push({ tier, flag }),
+      });
+      assert.equal(prompts.length, 1);
+      assert.equal(prompts[0].tier, 'team');
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('prints export path to stdout after writing', async () => {
+    const output = [];
+    const out = captureOutput();
+    try {
+      await run(['triage', '--export=csv'], {
+        env: mockEnv,
+        fetcher: mockFetcher,
+        exporter: () => '/tmp/export.csv',
+        isLicensed: () => true,
+        print: (msg) => output.push(msg),
+      });
+      assert.ok(output.some(m => m.includes('/tmp/export.csv')));
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('rejects invalid --export value with exitCode=1 and error message', async () => {
+    const out = captureOutput();
+    try {
+      await run(['triage', '--export=pdf'], {
+        env: mockEnv,
+        fetcher: mockFetcher,
+        isLicensed: () => true,
+      });
+      assert.equal(process.exitCode, 1, 'must exit with code 1 for invalid format');
+      assert.ok(
+        out.stderr.includes('pdf'),
+        `stderr must mention the invalid format, got: ${out.stderr}`
+      );
+      assert.ok(
+        out.stderr.includes('csv') && out.stderr.includes('json'),
+        `stderr must mention valid formats, got: ${out.stderr}`
+      );
+    } finally {
+      out.restore();
+    }
+  });
+});
+
+describe('triage --digest', () => {
+  it('POSTs scored triage to backend after running triage', async () => {
+    const delivered = [];
+    await run(['triage', '--digest'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      digestDeliverer: async (payload) => { delivered.push(payload); return true; },
+      isLicensed: () => true,
+    });
+    assert.equal(delivered.length, 1);
+    assert.ok(Array.isArray(delivered[0].tickets));
+    assert.ok(delivered[0].summary);
+    assert.ok(delivered[0].profile);
+  });
+
+  it('does not require Team license — digest is Pro', async () => {
+    const delivered = [];
+    await run(['triage', '--digest'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      digestDeliverer: async () => { delivered.push(true); return true; },
+      isLicensed: (tier) => tier === 'pro',
+    });
+    assert.equal(delivered.length, 1);
+  });
+});

@@ -52,6 +52,9 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--styled')}           Force ANSI-styled output`,
     `    ${s.brand('--no-attachments')}   Skip downloading attachments`,
     `    ${s.brand('--no-cache')}         Re-download attachments even if cached`,
+    `    ${s.brand('--check')}            Append VCS diff + review instructions for Claude Code`,
+    `    ${s.brand('--summarize')}        Generate AI summary ${s.dim('(BYOK or --cloud) [Pro]')}`,
+    `    ${s.brand('--cloud')}            Route summary through TicketLens API ${s.dim('[Pro]')}`,
     '',
     `  ${s.bold('TRIAGE OPTIONS')}`,
     '',
@@ -63,6 +66,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--assignee')}=${s.dim('NAME')}    Triage another dev's tickets  ${s.dim('[Team]')}`,
     `    ${s.brand('--sprint')}=${s.dim('NAME')}      Filter by sprint name  ${s.dim('[Team]')}`,
     `    ${s.brand('--export')}=${s.dim('FORMAT')}   Export results to file  ${s.dim('(csv|json) [Team]')}`,
+    `    ${s.brand('--digest')}           POST scored results to digest endpoint  ${s.dim('[Pro]')}`,
     `    ${s.brand('--static')}           Static table output ${s.dim('(skip interactive mode)')}`,
     `    ${s.brand('--plain')}            Plain markdown output ${s.dim('(for piping / LLM)')}`,
     '',
@@ -110,7 +114,10 @@ export function printFetchHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--styled')}           Force ANSI-styled output`,
     `    ${s.brand('--no-attachments')}   Skip downloading attachments`,
     `    ${s.brand('--no-cache')}         Re-download attachments even if cached`,
-    `    ${s.cyan('-h')}, ${s.cyan('--help')}         Show this help`,
+    `    ${s.brand('--check')}            Append VCS diff + review instructions for Claude Code`,
+    `    ${s.brand('--summarize')}        Generate AI summary ${s.dim('(BYOK or --cloud) [Pro]')}`,
+    `    ${s.brand('--cloud')}            Route summary through TicketLens API ${s.dim('[Pro]')}`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}         Show this help`,
     '',
     `  ${s.bold('EXAMPLES')}`,
     '',
@@ -161,9 +168,9 @@ export function printProfiles({ stream = process.stdout, config, plain = false }
   }
 
   const MAX_STATUS_W = 45;
-  const nameW   = Math.max('Profile'.length, ...names.map(n => n.length));
-  const urlW    = Math.max('URL'.length,     ...names.map(n => getData(n).url.length));
-  const prefW   = Math.max('Prefixes'.length, ...names.map(n => getData(n).prefixes.length));
+  const nameW = Math.max('Profile'.length, ...names.map(n => n.length));
+  const urlW = Math.max('URL'.length, ...names.map(n => getData(n).url.length));
+  const prefW = Math.max('Prefixes'.length, ...names.map(n => getData(n).prefixes.length));
 
   // Header + separator (4 chars before name = 2 leading + indicator + space)
   const hdr = `    ${padRightVis('Profile', nameW + 2)}${padRightVis('URL', urlW + 2)}${padRightVis('Prefixes', prefW + 2)}Statuses`;
@@ -216,7 +223,8 @@ export function printTriageHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--status')}=${s.dim('X,Y')}       Override statuses to scan`,
     `    ${s.brand('--assignee')}=${s.dim('NAME')}    Triage another dev's tickets  ${s.dim('[Team]')}`,
     `    ${s.brand('--sprint')}=${s.dim('NAME')}      Filter by sprint name  ${s.dim('[Team]')}`,
-    `    ${s.brand('--export')}=${s.dim('FORMAT')}   Export results to file  ${s.dim('(csv|json) [Team]')}`,
+    `    ${s.brand('--export')}=${s.dim('FORMAT')}    Export results to file  ${s.dim('(csv|json) [Team]')}`,
+    `    ${s.brand('--digest')}           POST scored results to digest endpoint  ${s.dim('[Pro]')}`,
     `    ${s.brand('--static')}           Static table output ${s.dim('(skip interactive mode)')}`,
     `    ${s.brand('--plain')}            Plain markdown output`,
     `    ${s.brand('-h')}, ${s.brand('--help')}         Show this help`,

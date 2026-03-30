@@ -21,11 +21,43 @@ import { isLicensed, showUpgradePrompt, revalidateIfStale } from './lib/license.
 
 const DEFAULT_STATUSES = ['In Progress', 'Code Review', 'QA'];
 
+async function defaultDigestDeliverer(payload) {
+  const { readLicense } = await import('./lib/license.mjs');
+  const licenseKey = readLicense()?.key;
+  const res = await fetch('https://api.ticketlens.io/v1/digest/deliver', {
+    method: 'POST',
+    signal: AbortSignal.timeout(10_000),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${licenseKey}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Digest delivery failed: ${res.status}`);
+  return true;
+}
+
 function escapeJql(s) {
   return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
-export async function run(args, env = process.env, fetcher = globalThis.fetch, configDir = undefined) {
+export async function run(args, envOrOpts = process.env, fetcher = globalThis.fetch, configDir = undefined) {
+  // Support both legacy positional form run(args, env, fetcher, configDir)
+  // and new opts-object form run(args, { env, fetcher, configDir, exporter, isLicensed, showUpgradePrompt, print })
+  let env, opts;
+  if (envOrOpts && typeof envOrOpts === 'object' && 'env' in envOrOpts) {
+    opts = envOrOpts;
+    env = opts.env ?? process.env;
+    fetcher = opts.fetcher ?? globalThis.fetch;
+    configDir = opts.configDir ?? undefined;
+  } else {
+    opts = {};
+    env = envOrOpts;
+  }
+
+  // Strip leading 'triage' subcommand if present (when called via CLI router)
+  if (args[0] === 'triage') args = args.slice(1);
+
   if (args.includes('--help') || args.includes('-h')) {
     printTriageHelp();
     return;
@@ -42,7 +74,7 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=', '--assignee=', '--sprint='],
+    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=', '--assignee=', '--sprint=', '--export=', '--digest'],
     { hints: ['--depth=', '--no-attachments', '--no-cache'] } // fetch-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
@@ -57,10 +89,28 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   const statusArg = args.find(a => a.startsWith('--status='));
   const assigneeArg = args.find(a => a.startsWith('--assignee='));
   const sprintArg = args.find(a => a.startsWith('--sprint='));
+  const exportArg = args.find(a => a.startsWith('--export='))?.split('=')[1] ?? null;
+  const digestFlag = args.includes('--digest');
+
+  if (exportArg && exportArg !== 'csv' && exportArg !== 'json') {
+    process.stderr.write(`Error: --export must be csv or json, got: ${exportArg}\n`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const licensedFn = opts.isLicensed ?? isLicensed;
+  const upgradeFn = opts.showUpgradePrompt ?? showUpgradePrompt;
 
   // Team-tier gate: --assignee and --sprint require a Team license
-  if ((assigneeArg || sprintArg) && !isLicensed('team', configDir)) {
-    showUpgradePrompt('team', assigneeArg ? '--assignee' : '--sprint');
+  if ((assigneeArg || sprintArg) && !licensedFn('team', configDir)) {
+    upgradeFn('team', assigneeArg ? '--assignee' : '--sprint');
+    process.exitCode = 1;
+    return;
+  }
+
+  // Team-tier gate: --export requires a Team license
+  if (exportArg && !licensedFn('team', configDir)) {
+    upgradeFn('team', '--export');
     process.exitCode = 1;
     return;
   }
@@ -87,7 +137,7 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
         // Re-run with the selected profile
         const newArgs = args.filter(a => !a.startsWith('--profile='));
         newArgs.push(`--profile=${picked}`);
-        return run(newArgs, env, fetcher, configDir);
+        return run(newArgs, { ...opts, env, fetcher, configDir });
       }
     } else {
       const noProfiles = !loadProfiles(configDir)?.profiles;
@@ -203,7 +253,7 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
               out.write(`  ${s.green('✔')} Profile updated. Rerunning...\n\n`);
               // Strip --status flag so the re-run uses the corrected profile statuses
               const rerunArgs = args.filter(a => !a.startsWith('--status='));
-              return run(rerunArgs, env, fetcher, configDir);
+              return run(rerunArgs, { ...opts, env, fetcher, configDir });
             }
           }
         }
@@ -241,13 +291,44 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   const actionable = scored.filter(s => s.urgency !== 'clear');
   const sorted = sortByUrgency(actionable);
 
+  // --digest: POST scored results to the digest backend endpoint
+  if (digestFlag) {
+    if (!licensedFn('pro', configDir)) {
+      upgradeFn('pro', '--digest');
+      process.exitCode = 1;
+      return;
+    }
+    const deliverer = opts.digestDeliverer ?? defaultDigestDeliverer;
+    await deliverer({
+      profile: profileName ?? 'default',
+      staleDays,
+      summary: {
+        total: sorted.length,
+        needsResponse: sorted.filter(t => t.urgency === 'needs-response').length,
+        aging: sorted.filter(t => t.urgency === 'aging').length,
+      },
+      tickets: sorted,
+    });
+    return;
+  }
+
+  // --export: write results to file instead of (or in addition to) printing
+  if (exportArg) {
+    const { exportTriage } = await import('./lib/triage-exporter.mjs');
+    const exporterFn = opts.exporter ?? exportTriage;
+    const outputPath = await Promise.resolve(exporterFn({ tickets: sorted, format: exportArg, profile: profileName ?? 'default', configDir }));
+    const printFn = opts.print ?? ((msg) => process.stdout.write(msg + '\n'));
+    printFn(`Export written to ${outputPath}`);
+    return;
+  }
+
   // Interactive mode: TTY + not --plain + not --static
   const wantInteractive = process.stdout.isTTY && !args.includes('--plain') && !args.includes('--static');
   if (wantInteractive && process.stdin.setRawMode) {
     const result = await runInteractiveList(sorted, { baseUrl: conn.baseUrl, staleDays, styled: true });
     if (result === 'switch') {
       const cleanArgs = args.filter(a => !a.startsWith('--profile=') && !a.startsWith('--project='));
-      return run(cleanArgs, env, fetcher, configDir);
+      return run(cleanArgs, { ...opts, env, fetcher, configDir });
     }
     return;
   }

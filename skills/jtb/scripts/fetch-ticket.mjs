@@ -5,11 +5,13 @@
  * Usage: node fetch-ticket.mjs TICKET-KEY [--depth=N] [--profile=NAME]
  */
 
+import { spawnSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { fetchTicket } from './lib/jira-client.mjs';
 import { extractCodeReferences } from './lib/code-ref-parser.mjs';
 import { assembleBrief } from './lib/brief-assembler.mjs';
 import { styleBrief } from './lib/styled-assembler.mjs';
-import { resolveConnection, loadProfiles } from './lib/profile-resolver.mjs';
+import { resolveConnection, loadProfiles, loadCredentials } from './lib/profile-resolver.mjs';
 import { createSession } from './lib/banner.mjs';
 import { classifyError } from './lib/error-classifier.mjs';
 import { promptProfileSelect, promptProfileMismatch, promptSwitchProfile, promptMultipleMatches } from './lib/profile-picker.mjs';
@@ -21,7 +23,125 @@ import { downloadAttachments } from './lib/attachment-downloader.mjs';
 import { readBriefCache, writeBriefCache, briefCacheAge, BRIEF_TTL_MS } from './lib/brief-cache.mjs';
 import { parseAge } from './lib/cache-manager.mjs';
 import { createStyler } from './lib/ansi.mjs';
-import { isLicensed, showUpgradePrompt } from './lib/license.mjs';
+import { isLicensed, showUpgradePrompt, readLicense } from './lib/license.mjs';
+import { detectVcs } from './lib/vcs-detector.mjs';
+
+/**
+ * Get the local diff using spawn with explicit arg arrays (never shell interpolation).
+ * @param {string} [cwd]
+ * @returns {string|null}
+ */
+function getDiff(cwd = process.cwd()) {
+  const vcsResult = detectVcs(cwd);
+  const vcs = typeof vcsResult === 'string' ? vcsResult : vcsResult.type;
+  if (vcs === 'none') return null;
+
+  const commands = {
+    git: ['git', ['diff', 'HEAD']],
+    svn: ['svn', ['diff']],
+    hg:  ['hg',  ['diff']],
+  };
+  const entry = commands[vcs];
+  if (!entry) return null;
+  const [cmd, args] = entry;
+
+  const which = spawnSync('which', [cmd], { encoding: 'utf8' });
+  if (which.status !== 0 || !which.stdout.trim()) return null;
+
+  const result = spawnSync(which.stdout.trim(), args, { cwd, encoding: 'utf8', timeout: 10_000 });
+  return result.status === 0 ? (result.stdout || null) : null;
+}
+
+/**
+ * Append --check section (diff + instructions) to a brief string.
+ * @param {string} brief
+ * @param {object} opts  — may contain detectVcs and getDiff overrides
+ * @returns {string}
+ */
+function applyCheck(brief, opts) {
+  const vcsDetector = opts.detectVcs ?? ((cwd) => { const r = detectVcs(cwd); return typeof r === 'string' ? r : r.type; });
+  const diffRunner  = opts.getDiff   ?? getDiff;
+  const vcs = vcsDetector(process.cwd());
+
+  if (vcs === 'none') {
+    brief += '\n\n⚠  No VCS detected in this directory.\n   Claude Code will evaluate coverage using this session\'s context.\n';
+    brief += '\n--- CHECK INSTRUCTIONS ---\n';
+    brief += 'No diff available. Use session context, claude-mem, context7, or fs.stat() fallback to evaluate coverage.\n';
+    return brief;
+  }
+
+  const diff = diffRunner(process.cwd());
+  if (diff) brief += '\n\n--- DIFF ---\n' + diff;
+  brief += '\n--- CHECK INSTRUCTIONS ---\n';
+  brief += 'Identify acceptance criteria from the ticket above. Evaluate whether the diff covers each one.\n';
+  brief += 'Report: ✔ FOUND (with file:line reference) or ✗ NOT FOUND. Show coverage percentage.\n';
+  return brief;
+}
+
+function hasCloudConsent(configDir, profileName) {
+  try {
+    const data = JSON.parse(readFileSync(`${configDir}/profiles.json`, 'utf8'));
+    return data.profiles?.[profileName]?.cloudSummarizeConsent === true;
+  } catch { return false; }
+}
+
+function saveCloudConsent(configDir, profileName) {
+  try {
+    const path = `${configDir}/profiles.json`;
+    const data = JSON.parse(readFileSync(path, 'utf8'));
+    if (!data.profiles) data.profiles = {};
+    if (!data.profiles[profileName]) data.profiles[profileName] = {};
+    data.profiles[profileName].cloudSummarizeConsent = true;
+    writeFileSync(path, JSON.stringify(data, null, 2), 'utf8');
+  } catch { /* non-fatal */ }
+}
+
+/**
+ * Apply --summarize to a brief string.
+ * Returns the modified brief, or null if the caller should exit (license gate / consent refused).
+ */
+async function applySummarize(brief, args, opts, configDir, conn, licensedFn, upgradeFn) {
+  if (!licensedFn('pro', configDir)) {
+    upgradeFn('pro', '--summarize');
+    process.exitCode = 1;
+    return null;
+  }
+
+  const mode = args.includes('--cloud') ? 'cloud' : 'byok';
+  const profileName = conn.profileName ?? 'default';
+
+  // Cloud consent check (skipped when summarizer is injected, e.g. tests)
+  if (mode === 'cloud' && !opts.summarizer && !hasCloudConsent(configDir, profileName)) {
+    let consentGiven = !process.stdin.isTTY;
+    if (!consentGiven && process.stdout.isTTY) {
+      process.stdout.write(
+        '\n  Cloud summary sends your ticket content to api.ticketlens.io for processing.\n' +
+        '  TicketLens calls Claude and returns a summary. No data stored after the request.\n' +
+        '  Proceed? (y/N) '
+      );
+      const rl = (await import('node:readline')).createInterface({ input: process.stdin, output: process.stdout });
+      consentGiven = await new Promise(resolve => rl.question('', ans => { rl.close(); resolve(ans.trim().toLowerCase() === 'y'); }));
+    }
+    if (!consentGiven) { process.exitCode = 1; return null; }
+    saveCloudConsent(configDir, profileName);
+  }
+
+  try {
+    const summarizerFn = opts.summarizer ?? (async (sumOpts) => {
+      const { summarize } = await import('./lib/summarizer.mjs');
+      return summarize(sumOpts);
+    });
+    const credentials = opts.credentials ?? loadCredentials(configDir);
+    const licenseKey = readLicense(configDir)?.key;
+    const summary = await summarizerFn({ brief, mode, credentials, licenseKey });
+    const divider = '─'.repeat(60);
+    return brief + `\n\n${divider}\n─── AI Summary ${'─'.repeat(45)}\n${summary}\n${divider}\n`;
+  } catch (err) {
+    const onErrorFn = opts.onError ?? ((msg) => process.stderr.write(msg + '\n'));
+    onErrorFn(`Could not generate summary: ${err.message}`);
+    return brief;
+  }
+}
 
 const RETRY_OPTIONS = [
   { label: 'Retry',          sublabel: 'Try again — e.g. VPN just connected', value: 'retry'  },
@@ -29,7 +149,21 @@ const RETRY_OPTIONS = [
   { label: 'Cancel',         sublabel: '',                                      value: 'cancel' },
 ];
 
-export async function run(args, env = process.env, fetcher = globalThis.fetch, configDir = undefined) {
+export async function run(args, envOrOpts = process.env, fetcher = globalThis.fetch, configDir = undefined) {
+  // Support opts-object injection: run(args, { env, fetcher, configDir, detectVcs, getDiff, print })
+  let env, opts;
+  if (envOrOpts && typeof envOrOpts === 'object' && !Array.isArray(envOrOpts) && ('env' in envOrOpts || 'fetcher' in envOrOpts || 'print' in envOrOpts || 'detectVcs' in envOrOpts || 'getDiff' in envOrOpts)) {
+    opts = envOrOpts;
+    env = opts.env ?? process.env;
+    fetcher = opts.fetcher ?? globalThis.fetch;
+    configDir = opts.configDir ?? undefined;
+  } else {
+    opts = {};
+    env = envOrOpts;
+  }
+
+  const printFn = opts.print ?? ((chunk) => process.stdout.write(chunk));
+
   if (args.includes('--help') || args.includes('-h')) {
     printFetchHelp();
     return;
@@ -59,7 +193,7 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth='],
+    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check', '--summarize', '--cloud'],
     { hints: ['--stale=', '--status=', '--static'] } // triage-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
@@ -146,9 +280,12 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   const depthArg = args.find(a => a.startsWith('--depth='));
   const depth = depthArg ? parseInt(depthArg.split('=')[1], 10) : 1;
 
+  const licensedFn = opts.isLicensed ?? isLicensed;
+  const upgradeFn = opts.showUpgradePrompt ?? showUpgradePrompt;
+
   // Pro gate: --depth=2 (deep traversal) requires a Pro license
-  if (depth > 1 && !isLicensed('pro', configDir)) {
-    showUpgradePrompt('pro', '--depth=2');
+  if (depth > 1 && !licensedFn('pro', configDir)) {
+    upgradeFn('pro', '--depth=2');
     process.exitCode = 1;
     return;
   }
@@ -157,7 +294,7 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
 
   // Resolve brief cache TTL: configurable for Pro tier only, else fixed 4h default
   const resolvedProfile = loadProfiles(configDir)?.profiles?.[conn.profileName];
-  const ttlMs = (resolvedProfile?.cacheTtl && isLicensed('pro', configDir))
+  const ttlMs = (resolvedProfile?.cacheTtl && licensedFn('pro', configDir))
     ? (parseAge(resolvedProfile.cacheTtl) ?? BRIEF_TTL_MS)
     : BRIEF_TTL_MS;
 
@@ -173,10 +310,18 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
       const allText = [cached.ticket.description, ...cached.ticket.comments.map(c => c.body)].filter(Boolean).join('\n');
       const codeRefs = extractCodeReferences(allText);
       const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
-      const brief = useStyled
+      let brief = useStyled
         ? styleBrief(cached.ticket, codeRefs, { styled: true })
         : assembleBrief(cached.ticket, codeRefs);
-      process.stdout.write(brief + '\n');
+
+      if (args.includes('--check')) brief = applyCheck(brief, opts);
+
+      if (args.includes('--summarize')) {
+        brief = await applySummarize(brief, args, opts, configDir, conn, licensedFn, upgradeFn);
+        if (brief === null) return;
+      }
+
+      printFn(brief + '\n');
       return;
     }
   }
@@ -265,10 +410,18 @@ export async function run(args, env = process.env, fetcher = globalThis.fetch, c
   const codeRefs = extractCodeReferences(allText);
 
   const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
-  const brief = useStyled
+  let output = useStyled
     ? styleBrief(ticket, codeRefs, { styled: true })
     : assembleBrief(ticket, codeRefs);
-  process.stdout.write(brief + '\n');
+
+  if (args.includes('--check')) output = applyCheck(output, opts);
+
+  if (args.includes('--summarize')) {
+    output = await applySummarize(output, args, opts, configDir, conn, licensedFn, upgradeFn);
+    if (output === null) return;
+  }
+
+  printFn(output + '\n');
 }
 
 // Run if invoked directly
