@@ -7,6 +7,9 @@
 - **CLI repo:** `~/Desktop/Projects/ticket-lens/`
 - **Backend repo:** `~/Desktop/Projects/ticketlens-api/`
 - **Active branch:** `feature/phase2-sprint` in worktree `.worktrees/phase2-sprint`
+- **Worktree HEAD:** `8f38cd9` (fix: replace api.ticketlens.io with api.ticketlens.dev)
+- **CLI main HEAD:** `e9fc31c` (docs: add memory file references to RESUME.md)
+- **Backend main HEAD:** `5c29f15` (fix: replace ticketlens.io with ticketlens.dev)
 - **CLI tests:** 534 passing, 0 failures
 - **Backend tests:** 39 passing, 0 failures
 
@@ -44,7 +47,15 @@ git log --oneline -3
 node --test skills/jtb/scripts/test/*.test.mjs 2>&1 | tail -5
 ```
 
-Expected: 534 passing, 0 failures.
+Expected top commit: `8f38cd9 fix: replace api.ticketlens.io with api.ticketlens.dev`
+Expected tests: 534 passing, 0 failures.
+
+If the worktree directory is missing, recreate it:
+
+```bash
+cd ~/Desktop/Projects/ticket-lens
+git worktree add .worktrees/phase2-sprint feature/phase2-sprint
+```
 
 ### Step 2 — Invoke subagent-driven-development
 
