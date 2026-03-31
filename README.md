@@ -14,6 +14,8 @@
 
 > Your AI assistant shouldn't need to read your tickets.
 
+> Works alongside Atlassian MCP — Atlassian MCP writes the tickets; TicketLens tells you which ones need you right now.
+
 <div align="center"><img src="docs/demos/fetch.gif" alt="ticketlens CNV1-2 demo" width="700" /></div>
 
 ---
