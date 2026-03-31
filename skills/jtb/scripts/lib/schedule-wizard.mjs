@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { homedir, platform as osPlatform } from 'node:os';
 import { spawnSync } from 'node:child_process';
 
-const SCHEDULE_URL = 'https://api.ticketlens.io/v1/schedule';
+const SCHEDULE_URL = 'https://api.ticketlens.dev/v1/schedule';
 
 /**
  * Build a macOS LaunchAgent plist string.

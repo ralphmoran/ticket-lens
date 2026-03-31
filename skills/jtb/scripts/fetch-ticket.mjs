@@ -115,7 +115,7 @@ async function applySummarize(brief, args, opts, configDir, conn, licensedFn, up
     let consentGiven = !process.stdin.isTTY;
     if (!consentGiven && process.stdout.isTTY) {
       process.stdout.write(
-        '\n  Cloud summary sends your ticket content to api.ticketlens.io for processing.\n' +
+        '\n  Cloud summary sends your ticket content to api.ticketlens.dev for processing.\n' +
         '  TicketLens calls Claude and returns a summary. No data stored after the request.\n' +
         '  Proceed? (y/N) '
       );

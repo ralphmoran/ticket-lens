@@ -101,7 +101,7 @@ describe('summarize — cloud mode', () => {
       fetcher,
     });
     assert.equal(result, 'Cloud summary.');
-    assert.ok(calls[0].url.includes('ticketlens.io'));
+    assert.ok(calls[0].url.includes('ticketlens.dev'));
     assert.equal(calls[0].auth, 'Bearer lic-test-123');
   });
 
