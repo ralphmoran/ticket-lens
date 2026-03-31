@@ -84,6 +84,16 @@ Plan file: `docs/superpowers/plans/2026-03-30-phase3-compliance-check.md`
 
 ---
 
+## Session Memory Files
+
+Detailed project state is persisted in Claude's memory system and auto-loaded at session start:
+
+- `~/.claude/projects/-Users-admin-Desktop-personal-solopreneur/memory/project_state.md` — verified feature map, sprint progress table, all pending items
+- `~/.claude/projects/-Users-admin-Desktop-personal-solopreneur/memory/project_competitive.md` — Atlassian MCP analysis, positioning statement
+- `~/.claude/projects/-Users-admin-Desktop-personal-solopreneur/memory/MEMORY.md` — index of all memory files (auto-loaded)
+
+---
+
 ## Implementation Plan Files
 
 | Plan | File | Status |
