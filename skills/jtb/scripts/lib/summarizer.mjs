@@ -1,6 +1,6 @@
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
-const CLOUD_URL = 'https://api.ticketlens.io/v1/summarize';
+const CLOUD_URL = 'https://api.ticketlens.dev/v1/summarize';
 const PROMPT = 'Summarize this Jira ticket in 3 sentences. Focus on what matters most for implementation. Be concrete.\n\n';
 
 /**

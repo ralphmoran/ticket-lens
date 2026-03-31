@@ -24,7 +24,7 @@ const DEFAULT_STATUSES = ['In Progress', 'Code Review', 'QA'];
 async function defaultDigestDeliverer(payload) {
   const { readLicense } = await import('./lib/license.mjs');
   const licenseKey = readLicense()?.key;
-  const res = await fetch('https://api.ticketlens.io/v1/digest/deliver', {
+  const res = await fetch('https://api.ticketlens.dev/v1/digest/deliver', {
     method: 'POST',
     signal: AbortSignal.timeout(10_000),
     headers: {

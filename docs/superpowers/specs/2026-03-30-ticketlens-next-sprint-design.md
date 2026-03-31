@@ -263,7 +263,7 @@ The largest remaining feature. Primary Free→Pro conversion lever. Server-side 
 - Free tier: 3/month counter shown; on hit: styled upgrade prompt
 
 **Server-side path:**
-- Calls `POST api.ticketlens.io/v1/compliance` (bypass-proof)
+- Calls `POST api.ticketlens.dev/v1/compliance` (bypass-proof)
 - Locally: BYOK path with Anthropic/OpenAI (same pattern as `--summarize`)
 - Free tier cap enforced both client-side (UX) and server-side (authoritative)
 
