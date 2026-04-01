@@ -91,4 +91,13 @@ describe('runComplianceCheck', () => {
     const result = await runComplianceCheck(opts);
     assert.ok(result.report.includes('free') || result.report.includes('remaining'));
   });
+
+  it('does not show free-tier footer for Pro users', async () => {
+    const opts = makeOpts({
+      isLicensedFn: () => true,
+    });
+    const result = await runComplianceCheck(opts);
+    assert.ok(!result.report.includes('Free tier:'));
+    assert.ok(!result.report.includes('Upgrade to Pro'));
+  });
 });

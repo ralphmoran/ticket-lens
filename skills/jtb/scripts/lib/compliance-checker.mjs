@@ -34,7 +34,7 @@ function formatReport({ ticketKey, requirements, analysis, usage, isPro }) {
   lines.push('');
 
   if (!isPro) {
-    const remaining = FREE_LIMIT - usage.count - 1;
+    const remaining = FREE_LIMIT - (usage.count + 1); // +1 = this check (already incremented)
     lines.push(`  Free tier: ${remaining} compliance check${remaining !== 1 ? 's' : ''} remaining this month.`);
     lines.push('  Upgrade to Pro for unlimited checks.');
     lines.push('');
