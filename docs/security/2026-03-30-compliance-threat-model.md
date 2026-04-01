@@ -16,7 +16,7 @@
 
 The client owns the filesystem. Any counter stored in `~/.ticketlens/usage.json` is trivially editable with a text editor or a single `rm` command. This is not a vulnerability in the cryptographic sense — it is an inherent property of client-side enforcement. The threat is low-sophistication: no special tools required, any moderately technical user can discover and exploit it in under a minute.
 
-The license system in `license.mjs` does better: it signs `license.json` with an HMAC keyed on `payload.key`, making silent tampering detectable. Applying the same HMAC to `usage.json` raises the bar only marginally — the user can still delete the file and start fresh, and the signing key is the license key which a free-tier user may not have.
+The license system in `license.mjs` does better: it signs `license.json` with an HMAC keyed on `payload.key || ''`, making silent tampering detectable. Applying the same HMAC to `usage.json` raises the bar only marginally — the user can still delete the file and start fresh, and crucially, `payload.key || ''` means the HMAC key for a free-tier user with no license is `''` (empty string), making the signature trivially forgeable by anyone who knows the file format.
 
 **Recommended posture:** Treat client-side cap enforcement as a UX convenience, not a security boundary. The authoritative enforcement point must be the backend `POST /v1/compliance` endpoint, which can apply rate limiting server-side keyed on the license key or a device fingerprint (e.g., `instanceId` from LemonSqueezy activation). The client cap is a polite early-exit that prevents unnecessary network round-trips for honest users.
 
@@ -60,7 +60,7 @@ The `--check` flag currently appends the diff as plain text after `--- DIFF ---`
 
 The existing `getDiff()` function in `fetch-ticket.mjs` is a clean implementation. It uses `spawnSync` with an explicit argument array — `spawnSync(which.stdout.trim(), args, { cwd, encoding: 'utf8', timeout: 10_000 })` — and never passes arguments through a shell. The `shell: true` option is absent. This is the correct pattern.
 
-The ticket key is validated against `TICKET_KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/` before any processing (lines 178–182 of `fetch-ticket.mjs`). This regex allows only uppercase alphanumeric prefixes followed by a hyphen and digits, which excludes all shell metacharacters. Any ticket key that fails this check causes an early exit before the VCS layer is reached.
+The ticket key is validated against `TICKET_KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/` before any processing (lines 178–182 of `fetch-ticket.mjs`). This regex allows only uppercase alphanumeric prefixes followed by a hyphen and digits, which excludes all shell metacharacters. Any ticket key that fails this check causes an early exit before the VCS layer is reached. Both the `^`/`$` anchors and the exclusive character class `[A-Z0-9]` are required for this guarantee to hold — if either is relaxed (e.g., to allow lowercase-prefix projects or mid-string matches), the VCS mitigation layer degrades and the ticket key must be re-validated at every shell-adjacent call site before use.
 
 The compliance feature will need to pass the ticket key to git commands (e.g., `git log --grep=PROJ-123`). As long as this follows the established `spawnSync` + arg array pattern, there is no injection risk. The real risk is if a future implementer uses template literals or `exec()` instead.
 
@@ -143,6 +143,6 @@ Prioritized for the architect and implementer. Items marked **[MUST]** are block
 
 ### P2 — Defense in Depth
 
-11. **[MAY]** HMAC-sign `usage.json` (same pattern as `license.json`) to detect naive tampering and surface a warning to the user, without using it as a hard gate.
+11. **[MAY]** HMAC-sign `usage.json` (same pattern as `license.json`) to detect naive tampering and surface a warning to the user, without using it as a hard gate. This mitigation only provides real protection if the compliance feature requires an active paid license at the point of signing; for a free-tier user the HMAC key degrades to `''` (empty string via `payload.key || ''`), making the signature trivially forgeable — signing without an active license is security theater.
 12. **[MAY]** Prefer `git diff --name-only` for extracting changed file names over parsing the full unified diff, to reduce the parser surface area.
 13. **[MAY]** Add a CI lint check that flags any use of `exec()`, `execSync()`, or `{ shell: true }` in the `skills/jtb/scripts/` directory.
