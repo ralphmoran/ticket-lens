@@ -7,19 +7,19 @@
 - **CLI repo:** `~/Desktop/Projects/ticket-lens/`
 - **Backend repo:** `~/Desktop/Projects/ticketlens-api/`
 - **Active branch:** `feature/phase2-sprint` in worktree `.worktrees/phase2-sprint`
-- **Worktree HEAD:** `b47516c` (docs: fix threat model - HMAC empty-key degradation and regex anchor note)
-- **CLI main HEAD:** `e9fc31c` (docs: add memory file references to RESUME.md)
+- **Worktree HEAD:** `36fb265` (fix: clarify remaining-count intent, add Pro footer coverage test)
+- **CLI main HEAD:** `225a71e` (docs: mark Phase 2 complete in RESUME.md)
 - **Backend main HEAD:** `5c29f15` (fix: replace ticketlens.io with ticketlens.dev)
-- **CLI tests:** 534 passing, 0 failures
+- **CLI tests:** 576 passing, 0 failures
 - **Backend tests:** 39 passing, 0 failures
 
 ---
 
-## Sprint State (as of 2026-03-31)
+## Sprint State (as of 2026-04-01)
 
 ### Phase 1 — Memory Foundation ✅ Complete
 
-### Phase 2 — Sprint Tasks
+### Phase 2 — Sprint Tasks ✅ Complete
 
 | # | Task | Status | Commit |
 |---|------|--------|--------|
@@ -31,9 +31,20 @@
 | 5 | Mintlify docs alignment audit | ✅ Done | `e6f58d9` → `b47516c` (fixes) |
 | 6 | Compliance check security threat model | ✅ Done | `50e671e` → `b47516c` (fixes) |
 
-### Phase 3 — Compliance Check ❌ Not started
+### Phase 3 — Compliance Check 🔄 In Progress
 
-All 8 tasks pending. Blocked by Task 6 (security threat model informs the design).
+All work is on branch `feature/phase2-sprint` in worktree `.worktrees/phase2-sprint`.
+
+| # | Task | Status | Commit | Tests added |
+|---|------|--------|--------|-------------|
+| 1 | `lib/requirement-extractor.mjs` | ✅ Done | `b495a0f` | +10 → 544 |
+| 2 | `lib/usage-tracker.mjs` | ✅ Done | `719be29` → `73f3d99` | +8 → 552 |
+| 3 | `lib/commit-linker.mjs` | ✅ Done | `6c17add` | +7 → 559 |
+| 4 | `lib/diff-analyzer.mjs` | ✅ Done | `3c706ec` | +8 → 567 |
+| 5 | `lib/compliance-checker.mjs` orchestrator | ✅ Done | `68a812d` → `36fb265` | +9 → 576 |
+| 6 | CLI `--compliance` flag | ❌ **NEXT TASK** | — | — |
+| 7 | Backend `POST /v1/compliance` endpoint | ❌ Pending | — | — |
+| 8 | Final verification + SKILL.md | ❌ Pending | — | — |
 
 ---
 
@@ -47,8 +58,8 @@ git log --oneline -3
 node --test skills/jtb/scripts/test/*.test.mjs 2>&1 | tail -5
 ```
 
-Expected top commit: `8f38cd9 fix: replace api.ticketlens.io with api.ticketlens.dev`
-Expected tests: 534 passing, 0 failures.
+Expected top commit: `36fb265 fix: clarify remaining-count intent, add Pro footer coverage test`
+Expected tests: 576 passing, 0 failures.
 
 If the worktree directory is missing, recreate it:
 
@@ -57,23 +68,41 @@ cd ~/Desktop/Projects/ticket-lens
 git worktree add .worktrees/phase2-sprint feature/phase2-sprint
 ```
 
-### Step 2 — Start Phase 3
+### Step 2 — Continue Phase 3
 
-Phase 2 is complete. Say: **"Start Phase 3 from the plan at `docs/superpowers/plans/2026-03-30-phase3-compliance-check.md`"**
+Say: **"Continue Phase 3 starting at Task 6 from the plan at `docs/superpowers/plans/2026-03-30-phase3-compliance-check.md`"**
 
-### Step 3 — Phase 3 (after approval)
+The skill will:
+1. Dispatch subagent for Task 6 (`--compliance` flag in `fetch-ticket.mjs` + `help.mjs`)
+2. Run two-stage review (spec compliance → code quality)
+3. Dispatch Task 7 (backend `POST /v1/compliance`)
+4. Run two-stage review
+5. Dispatch Task 8 (final verification + SKILL.md)
 
-Plan file: `docs/superpowers/plans/2026-03-30-phase3-compliance-check.md`
+### Phase 3 remaining tasks (6–8)
 
-8 tasks:
-1. `lib/requirement-extractor.mjs` (TDD, 10+ tests)
-2. `lib/usage-tracker.mjs` (TDD, 7+ tests, FREE_LIMIT=3)
-3. `lib/commit-linker.mjs` (TDD, 7+ tests)
-4. `lib/diff-analyzer.mjs` (TDD, 8+ tests)
-5. `lib/compliance-checker.mjs` orchestrator (TDD, 8+ tests)
-6. CLI `--compliance` flag (fetch-ticket.mjs + help.mjs)
-7. Backend `POST /v1/compliance` endpoint
-8. Final verification (≥564 CLI tests, ≥44 backend tests) + SKILL.md update
+**Task 6: CLI `--compliance` flag**
+- Modify: `skills/jtb/scripts/fetch-ticket.mjs` — add import + `--compliance` block after `--summarize`
+- Modify: `skills/jtb/scripts/lib/help.mjs` — add `--compliance` line after `--check` in `printHelp()` and `printFetchHelp()`
+- Commit: `"feat: --compliance flag — check ticket requirements against local git diff"`
+- Full suite must still pass (≥576), fail 0
+
+**Task 7: Backend `POST /v1/compliance`**
+- Repo: `~/Desktop/Projects/ticketlens-api/`
+- Create: `app/Http/Controllers/Api/ComplianceController.php`
+- Create: `app/Http/Requests/ComplianceRequest.php`
+- Modify: `routes/api.php` — register route with `auth.license` + `throttle:summarize` middleware
+- Create: `tests/Feature/ComplianceControllerTest.php` (5+ tests)
+- Read existing `tests/Feature/SummarizeControllerTest.php` for auth pattern
+- Commit: `"feat: POST /v1/compliance endpoint — server-side compliance check"`
+- Backend suite must pass (≥44), fail 0
+
+**Task 8: Final verification + SKILL.md**
+- CLI: `npm test` → ≥564 pass (actual: expect ~576), fail 0
+- Backend: `php artisan test` → ≥44 pass, fail 0
+- Smoke test: `node bin/ticketlens.mjs --help | grep compliance`
+- Update `skills/jtb/SKILL.md` — add `--compliance` flag docs
+- Commit: `"docs: document --compliance flag in SKILL.md"`
 
 ---
 
@@ -81,7 +110,7 @@ Plan file: `docs/superpowers/plans/2026-03-30-phase3-compliance-check.md`
 
 **P1 — DRY violation:** `jiraEnv()` duplicated in `fetch-ticket.mjs` and `fetch-my-tickets.mjs` — both functions exist in `lib/config.mjs` but local copies override them. Phase 3 implementer should use the `lib/config.mjs` version.
 
-**P1 — Docs drift:** `--no-cache` and `--schedule`/`--digest` are missing from `help.mjs` USAGE section. Note for Task 5 (Mintlify audit) and when updating help in Phase 3.
+**P1 — Docs drift:** `--no-cache` and `--schedule`/`--digest` are missing from `help.mjs` USAGE section. Note when updating help in Phase 3.
 
 **P2 — Cache staleness bug:** `saveCloudConsent()` in `fetch-ticket.mjs` writes `profiles.json` directly via `fs.writeFile`, bypassing `saveProfile()` and leaving `_profilesCache` stale. Fix in a future cleanup sprint (not Phase 3 scope).
 
@@ -102,8 +131,8 @@ Detailed project state is persisted in Claude's memory system and auto-loaded at
 | Plan | File | Status |
 |------|------|--------|
 | Phase 1 | `docs/superpowers/plans/2026-03-30-phase1-memory-foundation.md` | ✅ Complete |
-| Phase 2 | `docs/superpowers/plans/2026-03-30-phase2-sprint.md` | Tasks 5-6 pending |
-| Phase 3 | `docs/superpowers/plans/2026-03-30-phase3-compliance-check.md` | All pending |
+| Phase 2 | `docs/superpowers/plans/2026-03-30-phase2-sprint.md` | ✅ Complete |
+| Phase 3 | `docs/superpowers/plans/2026-03-30-phase3-compliance-check.md` | Tasks 6–8 pending |
 
 ---
 
