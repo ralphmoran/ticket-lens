@@ -7,7 +7,7 @@
 - **CLI repo:** `~/Desktop/Projects/ticket-lens/`
 - **Backend repo:** `~/Desktop/Projects/ticketlens-api/`
 - **Active branch:** `feature/phase2-sprint` in worktree `.worktrees/phase2-sprint`
-- **Worktree HEAD:** `8f38cd9` (fix: replace api.ticketlens.io with api.ticketlens.dev)
+- **Worktree HEAD:** `b47516c` (docs: fix threat model - HMAC empty-key degradation and regex anchor note)
 - **CLI main HEAD:** `e9fc31c` (docs: add memory file references to RESUME.md)
 - **Backend main HEAD:** `5c29f15` (fix: replace ticketlens.io with ticketlens.dev)
 - **CLI tests:** 534 passing, 0 failures
@@ -28,8 +28,8 @@
 | 3 | Atlassian MCP competitive positioning | ✅ Done | `eda37f2` |
 | — | Domain rename `.io` → `.dev` | ✅ Done | `42b253f` (CLI main), `8f38cd9` (worktree), `5c29f15` (backend) |
 | 4 | Code audit report | ✅ Done | `6017a56` |
-| 5 | Mintlify docs alignment audit | ❌ **NEXT TASK** | — |
-| 6 | Compliance check security threat model | ❌ Pending | — |
+| 5 | Mintlify docs alignment audit | ✅ Done | `e6f58d9` → `b47516c` (fixes) |
+| 6 | Compliance check security threat model | ✅ Done | `50e671e` → `b47516c` (fixes) |
 
 ### Phase 3 — Compliance Check ❌ Not started
 
@@ -57,17 +57,9 @@ cd ~/Desktop/Projects/ticket-lens
 git worktree add .worktrees/phase2-sprint feature/phase2-sprint
 ```
 
-### Step 2 — Invoke subagent-driven-development
+### Step 2 — Start Phase 3
 
-Say: **"Continue Phase 2 tasks 5 and 6 from the plan at `docs/superpowers/plans/2026-03-30-phase2-sprint.md`"**
-
-The skill will:
-1. Read the plan
-2. Dispatch a fresh subagent for Task 5 (Mintlify audit)
-3. Run two-stage review (spec compliance → code quality)
-4. Dispatch Task 6 (security threat model)
-5. Run two-stage review
-6. Proceed to Phase 3 on your approval
+Phase 2 is complete. Say: **"Start Phase 3 from the plan at `docs/superpowers/plans/2026-03-30-phase3-compliance-check.md`"**
 
 ### Step 3 — Phase 3 (after approval)
 
