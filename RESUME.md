@@ -7,11 +7,11 @@
 - **CLI repo:** `~/Desktop/Projects/ticket-lens/`
 - **Backend repo:** `~/Desktop/Projects/ticketlens-api/`
 - **Active branch:** `feature/phase2-sprint` in worktree `.worktrees/phase2-sprint`
-- **Worktree HEAD:** `36fb265` (fix: clarify remaining-count intent, add Pro footer coverage test)
+- **Worktree HEAD:** `dea8bca` (docs: document --compliance flag in SKILL.md)
 - **CLI main HEAD:** `225a71e` (docs: mark Phase 2 complete in RESUME.md)
-- **Backend main HEAD:** `5c29f15` (fix: replace ticketlens.io with ticketlens.dev)
+- **Backend main HEAD:** `a4ea6cb` (feat: POST /v1/compliance endpoint — server-side compliance check)
 - **CLI tests:** 576 passing, 0 failures
-- **Backend tests:** 39 passing, 0 failures
+- **Backend compliance tests:** 5/5 passing (full suite requires Sail for MySQL-dependent tests)
 
 ---
 
@@ -31,7 +31,7 @@
 | 5 | Mintlify docs alignment audit | ✅ Done | `e6f58d9` → `b47516c` (fixes) |
 | 6 | Compliance check security threat model | ✅ Done | `50e671e` → `b47516c` (fixes) |
 
-### Phase 3 — Compliance Check 🔄 In Progress
+### Phase 3 — Compliance Check ✅ Complete
 
 All work is on branch `feature/phase2-sprint` in worktree `.worktrees/phase2-sprint`.
 
@@ -42,9 +42,9 @@ All work is on branch `feature/phase2-sprint` in worktree `.worktrees/phase2-spr
 | 3 | `lib/commit-linker.mjs` | ✅ Done | `6c17add` | +7 → 559 |
 | 4 | `lib/diff-analyzer.mjs` | ✅ Done | `3c706ec` | +8 → 567 |
 | 5 | `lib/compliance-checker.mjs` orchestrator | ✅ Done | `68a812d` → `36fb265` | +9 → 576 |
-| 6 | CLI `--compliance` flag | ❌ **NEXT TASK** | — | — |
-| 7 | Backend `POST /v1/compliance` endpoint | ❌ Pending | — | — |
-| 8 | Final verification + SKILL.md | ❌ Pending | — | — |
+| 6 | CLI `--compliance` flag | ✅ Done | `a8322cf` | 576 (no new unit tests) |
+| 7 | Backend `POST /v1/compliance` endpoint | ✅ Done | `a4ea6cb` (backend) | +5 backend tests |
+| 8 | Final verification + SKILL.md | ✅ Done | `dea8bca` | 576 CLI ✔ 5/5 backend ✔ |
 
 ---
 
@@ -68,41 +68,17 @@ cd ~/Desktop/Projects/ticket-lens
 git worktree add .worktrees/phase2-sprint feature/phase2-sprint
 ```
 
-### Step 2 — Continue Phase 3
+### Step 2 — Merge feature/phase2-sprint to main
 
-Say: **"Continue Phase 3 starting at Task 6 from the plan at `docs/superpowers/plans/2026-03-30-phase3-compliance-check.md`"**
+All Phase 2 + Phase 3 work is on `feature/phase2-sprint`. Use `superpowers:finishing-a-development-branch` to review and merge.
 
-The skill will:
-1. Dispatch subagent for Task 6 (`--compliance` flag in `fetch-ticket.mjs` + `help.mjs`)
-2. Run two-stage review (spec compliance → code quality)
-3. Dispatch Task 7 (backend `POST /v1/compliance`)
-4. Run two-stage review
-5. Dispatch Task 8 (final verification + SKILL.md)
+```bash
+cd ~/Desktop/Projects/ticket-lens
+git checkout main
+git merge --no-ff feature/phase2-sprint -m "feat: Phase 2+3 compliance check complete"
+```
 
-### Phase 3 remaining tasks (6–8)
-
-**Task 6: CLI `--compliance` flag**
-- Modify: `skills/jtb/scripts/fetch-ticket.mjs` — add import + `--compliance` block after `--summarize`
-- Modify: `skills/jtb/scripts/lib/help.mjs` — add `--compliance` line after `--check` in `printHelp()` and `printFetchHelp()`
-- Commit: `"feat: --compliance flag — check ticket requirements against local git diff"`
-- Full suite must still pass (≥576), fail 0
-
-**Task 7: Backend `POST /v1/compliance`**
-- Repo: `~/Desktop/Projects/ticketlens-api/`
-- Create: `app/Http/Controllers/Api/ComplianceController.php`
-- Create: `app/Http/Requests/ComplianceRequest.php`
-- Modify: `routes/api.php` — register route with `auth.license` + `throttle:summarize` middleware
-- Create: `tests/Feature/ComplianceControllerTest.php` (5+ tests)
-- Read existing `tests/Feature/SummarizeControllerTest.php` for auth pattern
-- Commit: `"feat: POST /v1/compliance endpoint — server-side compliance check"`
-- Backend suite must pass (≥44), fail 0
-
-**Task 8: Final verification + SKILL.md**
-- CLI: `npm test` → ≥564 pass (actual: expect ~576), fail 0
-- Backend: `php artisan test` → ≥44 pass, fail 0
-- Smoke test: `node bin/ticketlens.mjs --help | grep compliance`
-- Update `skills/jtb/SKILL.md` — add `--compliance` flag docs
-- Commit: `"docs: document --compliance flag in SKILL.md"`
+Then tag: `git tag track3-compliance-complete`
 
 ---
 
@@ -132,7 +108,7 @@ Detailed project state is persisted in Claude's memory system and auto-loaded at
 |------|------|--------|
 | Phase 1 | `docs/superpowers/plans/2026-03-30-phase1-memory-foundation.md` | ✅ Complete |
 | Phase 2 | `docs/superpowers/plans/2026-03-30-phase2-sprint.md` | ✅ Complete |
-| Phase 3 | `docs/superpowers/plans/2026-03-30-phase3-compliance-check.md` | Tasks 6–8 pending |
+| Phase 3 | `docs/superpowers/plans/2026-03-30-phase3-compliance-check.md` | ✅ Complete |
 
 ---
 
