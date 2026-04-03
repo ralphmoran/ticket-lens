@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/npm/dm/ticketlens?style=flat-square&color=06b6d4&label=downloads" />
   <img src="https://github.com/ralphmoran/ticket-lens/actions/workflows/test.yml/badge.svg?style=flat-square" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" />
-  <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square" />
+  <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen?style=flat-square" />
 </div>
 
 </div>
@@ -54,7 +54,7 @@ npx ticketlens init
 npx ticketlens CNV1-2
 ```
 
-**Prerequisites:** Node.js >=18
+**Prerequisites:** Node.js >=20
 
 ---
 
@@ -74,7 +74,7 @@ npx ticketlens CNV1-2
 | `ticketlens switch` | Arrow-key panel to switch between configured profiles |
 | `ticketlens config [--profile=NAME]` | Edit any field on an existing profile |
 | `ticketlens profiles` | List all configured profiles (alias: `ticketlens ls`) |
-| `ticketlens delete <NAME>` | Remove a profile and its credentials |
+| `ticketlens delete <NAME>` | Remove a profile and its credentials (prompts `y/N` in TTY; use `--yes` in scripts/CI) |
 
 `init` collects: profile name, Jira URL (bare hostnames accepted — HTTPS probed first), auth type (auto-detected from URL), credentials (masked), and optional ticket prefixes, project paths, and triage statuses. On connection failure, a retry menu lets you fix credentials, URL, or skip — all inputs pre-populated.
 
@@ -94,6 +94,10 @@ ticketlens CNV1-2 --plain          # Plain markdown — pipe-safe, LLM-ready
 ticketlens CNV1-2 --profile=acme   # Force a specific profile
 ticketlens CNV1-2 --no-cache       # Bypass cache, re-fetch from Jira
 ticketlens CNV1-2 --no-attachments # Skip attachment download
+ticketlens CNV1-2 --check          # Append local VCS diff + Claude Code review instructions
+ticketlens CNV1-2 --compliance     # Check ticket requirements against local diff [Pro/Free 3/mo]
+ticketlens CNV1-2 --summarize      # AI summary via your own API key (BYOK) [Pro]
+ticketlens CNV1-2 --summarize --cloud  # AI summary routed through TicketLens API [Pro]
 ```
 
 | `--depth` | Scope |
@@ -123,6 +127,9 @@ ticketlens triage --stale=3                    # Aging threshold: 3 days (defaul
 ticketlens triage --status="Code Review,QA"    # Override statuses to scan
 ticketlens triage --assignee="Jane Dev"        # Another dev's tickets [Team]
 ticketlens triage --sprint="Sprint 12"         # Filter by sprint [Team]
+ticketlens triage --export=csv                 # Export results to CSV [Team]
+ticketlens triage --export=json                # Export results to JSON [Team]
+ticketlens triage --digest                     # POST scored results to digest endpoint [Pro]
 ticketlens triage --plain                      # Plain markdown — pipe to file or LLM
 ticketlens triage --static                     # Static table, no interactive mode
 ```
@@ -167,6 +174,18 @@ Age units: `d` = days · `m` = months (30d) · `y` = years (365d)
 Cache locations:
 - Attachments: `~/.ticketlens/cache/TICKET-KEY/`
 - Briefs: `~/.ticketlens/cache/PROFILE/TICKET-KEY/brief.json`
+
+---
+
+### Schedule
+
+```bash
+ticketlens schedule               # Interactive wizard — set digest time, timezone, profile [Pro]
+ticketlens schedule --stop        # Cancel the scheduled digest
+ticketlens schedule --status      # Show current schedule
+```
+
+Stores the schedule as a cron entry. Delivers your triage digest at the configured time without an open terminal. Requires a Pro license.
 
 ---
 
@@ -222,18 +241,23 @@ ticketlens profiles                           # List all configured profiles
 ticketlens ls                                 # Alias for profiles
 ticketlens profiles --plain                   # Tab-separated (scripts / pipes)
 ticketlens delete <PROFILE-NAME>              # Remove a profile (prompts y/N in TTY)
+ticketlens delete <PROFILE-NAME> --yes        # Remove without prompt (scripts/CI)
 
 # ── Fetch a ticket brief ──────────────────────────────────────────────────────
 ticketlens CNV1-2                            # Fetch with defaults (depth 1, styled)
 ticketlens get CNV1-2                        # Explicit alias (same result)
 ticketlens CNV1-2 --depth=0                  # Target ticket only — no linked issues
 ticketlens CNV1-2 --depth=1                  # + linked ticket descriptions and comments
-ticketlens CNV1-2 --depth=2                  # + linked-of-linked (Pro)
+ticketlens CNV1-2 --depth=2                  # + linked-of-linked [Pro]
 ticketlens CNV1-2 --profile=acme             # Force a specific Jira profile
 ticketlens CNV1-2 --plain                    # Plain markdown — no color codes
 ticketlens CNV1-2 --styled                   # Force ANSI color even when piping
 ticketlens CNV1-2 --no-attachments           # Skip attachment download entirely
 ticketlens CNV1-2 --no-cache                 # Skip brief cache + force re-download
+ticketlens CNV1-2 --check                    # Append local VCS diff + Claude Code review instructions
+ticketlens CNV1-2 --compliance               # Check ticket requirements against local diff [Pro/Free 3/mo]
+ticketlens CNV1-2 --summarize                # AI summary via your own API key (BYOK) [Pro]
+ticketlens CNV1-2 --summarize --cloud        # AI summary via TicketLens API [Pro]
 ticketlens CNV1-2 --depth=2 --profile=acme --plain   # Combine flags freely
 
 # Pipe plain output to clipboard, LLM, or file
@@ -252,6 +276,9 @@ ticketlens triage --plain                    # Plain markdown — pipe to LLM or
 ticketlens triage --assignee="Jane Dev"      # View another dev's tickets [Team]
 ticketlens triage --sprint="Sprint 12"       # Filter by sprint name [Team]
 ticketlens triage --assignee="Jane Dev" --sprint="Sprint 12"  # Combined [Team]
+ticketlens triage --export=csv               # Export to CSV [Team]
+ticketlens triage --export=json              # Export to JSON [Team]
+ticketlens triage --digest                   # POST results to digest endpoint [Pro]
 ticketlens triage --profile=acme --stale=3 --static          # Combine flags
 
 # Pipe triage output
@@ -274,10 +301,14 @@ ticketlens cache clear CNV1-2 --older-than=7d            # Ticket + age filter
 ticketlens cache clear --profile=acme --older-than=30d   # Profile + age filter
 ticketlens cache clear --older-than=30d --yes            # Skip confirmation (CI/scripts)
 
+# ── Schedule ─────────────────────────────────────────────────────────────────
+ticketlens schedule                           # Interactive wizard — set time, timezone, profile [Pro]
+ticketlens schedule --stop                    # Cancel the scheduled digest [Pro]
+ticketlens schedule --status                  # Show current schedule [Pro]
+
 # ── License and account ────────────────────────────────────────────────────────
 ticketlens license                            # Show license tier and status
 ticketlens activate <LICENSE-KEY>             # Activate a license key
-ticketlens schedule                           # Scheduled digest setup [Pro]
 
 # ── Help and version ──────────────────────────────────────────────────────────
 ticketlens --help                             # Main help
@@ -302,9 +333,14 @@ Start free, upgrade when you need it — `ticketlens activate <key>`
 </div>
 
 ```bash
-ticketlens CNV1-2 --depth=2          # Deep traversal: linked-of-linked tickets
-ticketlens triage --stale=3          # Custom stale threshold (default is 5)
-ticketlens activate YOUR-LICENSE-KEY # Activate Pro license
+ticketlens CNV1-2 --depth=2              # Deep traversal: linked-of-linked tickets
+ticketlens CNV1-2 --compliance           # Check ticket requirements against local diff [Free 3/mo]
+ticketlens CNV1-2 --summarize            # AI summary via your own API key (BYOK)
+ticketlens CNV1-2 --summarize --cloud    # AI summary via TicketLens API (no local key needed)
+ticketlens triage --stale=3              # Custom stale threshold (default is 5)
+ticketlens triage --digest               # POST scored triage results to digest endpoint
+ticketlens schedule                      # Set up a scheduled daily digest
+ticketlens activate YOUR-LICENSE-KEY     # Activate Pro license
 ```
 
 <div align="center">
@@ -320,8 +356,10 @@ Pro also unlocks configurable brief cache TTL per profile — set `cacheTtl` to 
 </div>
 
 ```bash
-ticketlens triage --export=csv       # Export triage to CSV for standups and reports (coming soon)
-ticketlens triage --export=json      # Machine-readable export for dashboards (coming soon)
+ticketlens triage --assignee="Jane Dev"        # View another dev's tickets
+ticketlens triage --sprint="Sprint 12"         # Filter by sprint name
+ticketlens triage --export=csv                 # Export triage to CSV for standups and reports
+ticketlens triage --export=json                # Machine-readable export for dashboards
 ```
 
 Automate a morning digest with cron — no open terminal required:
@@ -377,8 +415,9 @@ Credentials in `~/.ticketlens/credentials.json` (chmod 600):
 | 1 | `--profile=NAME` flag | `ticketlens CNV1-2 --profile=client` |
 | 2 | Ticket prefix match | `ticketlens CNV1-2` → prefix `PROJ` → `myteam` |
 | 3 | Project path match | `triage` in `~/projects/myteam-app` → `myteam` |
-| 4 | First profile in file | Default when nothing else matches |
-| 5 | Environment variables | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` / `JIRA_PAT` |
+| 4 | `config.default` field | Explicit default set via `ticketlens switch` |
+| 5 | First profile in file | Fallback when `config.default` is absent |
+| 6 | Environment variables | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` / `JIRA_PAT` |
 
 ---
 
@@ -395,11 +434,9 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Coming up:
-- AI ticket summary and compliance check (Pro)
-- Scheduled triage digest — server-side, no open terminal (Pro)
 - Team triage dashboard and Slack/Teams alerts (Team)
-- Triage CSV/JSON export (Team)
 - GitHub Issues and Linear support
+- Web UI dashboard for triage history and digest configuration
 
 ---
 
