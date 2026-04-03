@@ -10,6 +10,7 @@ import { scoreAttention, sortByUrgency } from './lib/attention-scorer.mjs';
 import { assembleTriageSummary } from './lib/brief-assembler.mjs';
 import { styleTriageSummary } from './lib/styled-assembler.mjs';
 import { resolveConnection, loadProfiles, saveProfile } from './lib/profile-resolver.mjs';
+import { buildJiraEnv } from './lib/config.mjs';
 import { createSpinner } from './lib/spinner.mjs';
 import { createSession } from './lib/banner.mjs';
 import { classifyError } from './lib/error-classifier.mjs';
@@ -150,10 +151,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     return;
   }
 
-  const jiraEnv = {
-    JIRA_BASE_URL: conn.baseUrl,
-    ...(conn.pat ? { JIRA_PAT: conn.pat } : { JIRA_EMAIL: conn.email, JIRA_API_TOKEN: conn.apiToken }),
-  };
+  const jiraEnv = buildJiraEnv(conn);
 
   // Cloud profiles use v3 API (v2 search is deprecated/410), Server stays on v2
   const apiVersion = conn.auth === 'cloud' ? 3 : 2;

@@ -49,3 +49,15 @@ export function stripCr(str) {
   if (!str) return '';
   return str.replace(/\r/g, '');
 }
+
+/**
+ * Build the env-like object expected by jira-client functions.
+ * @param {{ baseUrl: string, pat?: string, email?: string, apiToken?: string }} conn
+ * @returns {{ JIRA_BASE_URL: string, JIRA_PAT?: string, JIRA_EMAIL?: string, JIRA_API_TOKEN?: string }}
+ */
+export function buildJiraEnv(conn) {
+  return {
+    JIRA_BASE_URL: conn.baseUrl,
+    ...(conn.pat ? { JIRA_PAT: conn.pat } : { JIRA_EMAIL: conn.email, JIRA_API_TOKEN: conn.apiToken }),
+  };
+}

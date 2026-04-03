@@ -480,4 +480,17 @@ describe('loadCredentials — cache', () => {
     const fresh = loadCredentials(dir);
     assert.equal(fresh.p.apiToken, 'new-tok');
   });
+
+  it('saveProfile invalidates profiles cache — loadProfiles reflects update immediately', () => {
+    writeFileSync(join(dir, 'profiles.json'), JSON.stringify({ profiles: { acme: { baseUrl: 'https://jira.example.com' } } }));
+    invalidateProfilesCache(dir);
+
+    const before = loadProfiles(dir);
+    assert.equal(before.profiles.acme.cloudSummarizeConsent, undefined, 'consent should not exist yet');
+
+    saveProfile('acme', { ...before.profiles.acme, cloudSummarizeConsent: true }, null, dir);
+
+    const after = loadProfiles(dir);
+    assert.equal(after.profiles.acme.cloudSummarizeConsent, true, 'cloudSummarizeConsent must be visible immediately after save');
+  });
 });
