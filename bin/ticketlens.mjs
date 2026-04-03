@@ -143,6 +143,7 @@ switch (command) {
       process.exitCode = 1;
       break;
     }
+    const forceYes = cmdArgs.includes('--yes') || cmdArgs.includes('-y');
     // Confirmation prompt on TTY
     if (process.stdin.isTTY && process.stdin.setRawMode) {
       process.stderr.write(`  Delete profile ${s.cyan(s.bold(profileName))}? This cannot be undone.  ${s.dim('y/N')}  `);
@@ -162,6 +163,10 @@ switch (command) {
         process.stderr.write(`  ${s.dim('Cancelled.')}\n`);
         break;
       }
+    } else if (!forceYes) {
+      process.stderr.write(`${s.red('✖')} Non-interactive mode: pass ${s.cyan('--yes')} to confirm deletion without a prompt.\n`);
+      process.exitCode = 1;
+      break;
     }
     const result = deleteProfile(profileName);
     if (result.deleted) {
