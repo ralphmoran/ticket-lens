@@ -6,12 +6,13 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { fetchTicket } from './lib/jira-client.mjs';
 import { extractCodeReferences } from './lib/code-ref-parser.mjs';
 import { assembleBrief } from './lib/brief-assembler.mjs';
 import { styleBrief } from './lib/styled-assembler.mjs';
-import { resolveConnection, loadProfiles, loadCredentials } from './lib/profile-resolver.mjs';
+import { resolveConnection, loadProfiles, loadCredentials, saveProfile } from './lib/profile-resolver.mjs';
+import { buildJiraEnv } from './lib/config.mjs';
 import { createSession } from './lib/banner.mjs';
 import { classifyError } from './lib/error-classifier.mjs';
 import { promptProfileSelect, promptProfileMismatch, promptSwitchProfile, promptMultipleMatches } from './lib/profile-picker.mjs';
@@ -88,12 +89,9 @@ function hasCloudConsent(configDir, profileName) {
 
 function saveCloudConsent(configDir, profileName) {
   try {
-    const path = `${configDir}/profiles.json`;
-    const data = JSON.parse(readFileSync(path, 'utf8'));
-    if (!data.profiles) data.profiles = {};
-    if (!data.profiles[profileName]) data.profiles[profileName] = {};
-    data.profiles[profileName].cloudSummarizeConsent = true;
-    writeFileSync(path, JSON.stringify(data, null, 2), 'utf8');
+    const config = loadProfiles(configDir);
+    if (!config?.profiles[profileName]) return;
+    saveProfile(profileName, { ...config.profiles[profileName], cloudSummarizeConsent: true }, null, configDir);
   } catch { /* non-fatal */ }
 }
 
@@ -269,11 +267,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     }
   }
 
-  // Build env-like object for jira-client compatibility
-  const jiraEnv = {
-    JIRA_BASE_URL: conn.baseUrl,
-    ...(conn.pat ? { JIRA_PAT: conn.pat } : { JIRA_EMAIL: conn.email, JIRA_API_TOKEN: conn.apiToken }),
-  };
+  const jiraEnv = buildJiraEnv(conn);
 
   // Cloud profiles use v3 API (v2 search is deprecated/410), Server stays on v2
   const apiVersion = conn.auth === 'cloud' ? 3 : 2;
