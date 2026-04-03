@@ -39,4 +39,50 @@ describe('bin/ticketlens.mjs', () => {
     assert.ok(!result.stderr.includes('SyntaxError'), 'must not crash with SyntaxError');
     assert.ok(!result.stderr.includes('TypeError'), 'must not crash with unhandled TypeError');
   });
+
+  it('ls command prints profile list (alias for profiles)', () => {
+    const result = spawnSync('node', [binPath, 'ls'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
+    });
+    const combined = result.stdout + result.stderr;
+    assert.ok(
+      combined.includes('No profiles configured') || combined.includes('Profile'),
+      `"ticketlens ls" must print profile list, not help. Got: ${combined.slice(0, 200)}`
+    );
+    assert.ok(
+      !combined.includes('Stop tab-switching'),
+      '"ticketlens ls" must not fall through to printHelp'
+    );
+  });
+
+  it('delete without --yes in non-TTY exits 1 with explanation', () => {
+    const result = spawnSync('node', [binPath, 'delete', 'nonexistent-profile'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
+    });
+    assert.equal(result.status, 1, `Expected exit 1, got ${result.status}`);
+    const combined = result.stdout + result.stderr;
+    assert.ok(
+      combined.includes('--yes') || combined.includes('not found'),
+      `Expected "--yes" hint or "not found" in output. Got: ${combined.slice(0, 200)}`
+    );
+  });
+
+  it('delete --yes with nonexistent profile exits 1', () => {
+    const result = spawnSync('node', [binPath, 'delete', 'nonexistent-profile', '--yes'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
+    });
+    assert.equal(result.status, 1, `Expected exit 1 (profile not found), got ${result.status}`);
+    assert.ok(
+      result.stderr.includes('not found'),
+      `Expected "not found" in stderr. Got: ${result.stderr.slice(0, 200)}`
+    );
+  });
 });
