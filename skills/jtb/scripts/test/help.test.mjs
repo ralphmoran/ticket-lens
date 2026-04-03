@@ -21,6 +21,18 @@ describe('printHelp — main USAGE', () => {
       `"ticketlens get" must appear in USAGE (before EXAMPLES), but found at index ${getIdx} vs EXAMPLES at ${examplesIdx}`
     );
   });
+
+  it('USAGE section documents ticketlens schedule command', () => {
+    const out = captureHelp(printHelp);
+    const usageIdx = out.indexOf('USAGE');
+    const scheduleIdx = out.indexOf('ticketlens schedule');
+    const fetchOptionsIdx = out.indexOf('FETCH OPTIONS');
+    assert.ok(usageIdx !== -1, 'output must contain USAGE section');
+    assert.ok(
+      scheduleIdx !== -1 && scheduleIdx < fetchOptionsIdx,
+      `"ticketlens schedule" must appear in USAGE (before FETCH OPTIONS), found at ${scheduleIdx} vs FETCH OPTIONS at ${fetchOptionsIdx}`
+    );
+  });
 });
 
 describe('printTriageHelp — Team tier flags', () => {

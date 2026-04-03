@@ -41,6 +41,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} activate ${s.dim('<KEY>')}           Activate a license key`,
     `    ${s.brand('ticketlens')} license                  Show license status`,
     `    ${s.brand('ticketlens')} cache ${s.dim('[size|clear]')}       Manage attachment cache  ${s.dim('(try cache --help)')}`,
+    `    ${s.brand('ticketlens')} schedule ${s.dim('[--stop|--status]')} Manage digest schedule  ${s.dim('[Pro]')}`,
     '',
     `  ${s.bold('FETCH OPTIONS')}`,
     '',
