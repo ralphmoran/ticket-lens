@@ -1550,6 +1550,13 @@
             </button>
             <div class="faq-a">Yes — that's a core advantage. TicketLens is a standard CLI: pipe output, run it in cron jobs, trigger from git hooks, integrate into CI/CD. <code>ticketlens triage --plain | your-notifier</code> works. Scheduled triage digests (Pro) automate your morning standup prep. AI coding assistants are interactive and session-bound — you can't pipe or schedule them.</div>
           </div>
+          <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">
+              Does TicketLens compete with Atlassian's official Claude plugin?
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-a">No — they're complementary. Atlassian MCP is a creation tool: it writes tickets, generates Confluence pages, and imports backlogs. TicketLens is a triage and analysis tool: it tells you <em>which tickets need your attention right now</em>, links them to your code changes, and checks that your work actually covers the acceptance criteria. A developer can and should use both. Use Atlassian MCP to build out your backlog. Use TicketLens when you sit down to code. Key differences: TicketLens works with Jira Server and Data Center (not just Cloud), runs entirely locally (no data relay), supports scheduled digests, and assembles 60–80% smaller briefs than passing raw API responses to your AI.</div>
+          </div>
         </div>
       </div>
     </div>

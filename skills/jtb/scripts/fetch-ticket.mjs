@@ -25,6 +25,7 @@ import { parseAge } from './lib/cache-manager.mjs';
 import { createStyler } from './lib/ansi.mjs';
 import { isLicensed, showUpgradePrompt, readLicense } from './lib/license.mjs';
 import { detectVcs } from './lib/vcs-detector.mjs';
+import { runComplianceCheck } from './lib/compliance-checker.mjs';
 
 /**
  * Get the local diff using spawn with explicit arg arrays (never shell interpolation).
@@ -193,7 +194,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check', '--summarize', '--cloud'],
+    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check', '--summarize', '--cloud', '--compliance'],
     { hints: ['--stale=', '--status=', '--static'] } // triage-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
@@ -321,6 +322,20 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
         if (brief === null) return;
       }
 
+      if (args.includes('--compliance')) {
+        const checkResult = await runComplianceCheck({
+          brief,
+          ticketKey,
+          configDir,
+        });
+        if (checkResult === null) {
+          process.exitCode = 1;
+          return;
+        } else {
+          brief += '\n' + checkResult.report;
+        }
+      }
+
       printFn(brief + '\n');
       return;
     }
@@ -419,6 +434,20 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   if (args.includes('--summarize')) {
     output = await applySummarize(output, args, opts, configDir, conn, licensedFn, upgradeFn);
     if (output === null) return;
+  }
+
+  if (args.includes('--compliance')) {
+    const checkResult = await runComplianceCheck({
+      brief: output,
+      ticketKey,
+      configDir,
+    });
+    if (checkResult === null) {
+      process.exitCode = 1;
+      return;
+    } else {
+      output += '\n' + checkResult.report;
+    }
   }
 
   printFn(output + '\n');

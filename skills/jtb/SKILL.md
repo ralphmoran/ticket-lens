@@ -155,3 +155,9 @@ Use this evaluation order:
 
 ### Privacy
 `--check` never sends data anywhere. The diff stays local. Claude Code provides the intelligence using its existing session context.
+
+---
+
+## --compliance: Acceptance Criteria Compliance Check
+
+- `--compliance` — Check ticket acceptance criteria against local VCS diff. Reports ✔/✖/~ per requirement with coverage %. Free: 3/month. Pro: unlimited.

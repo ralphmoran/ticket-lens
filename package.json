@@ -32,6 +32,6 @@
   },
   "homepage": "https://github.com/ralphmoran/ticket-lens",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   }
 }

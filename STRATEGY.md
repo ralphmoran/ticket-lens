@@ -35,6 +35,27 @@ Developers lose 15-30 minutes per ticket gathering context before writing a sing
 | Claude Code / AI assistants (direct Jira) | API calls, ticket creation, JQL | TicketLens: privacy (no data to Anthropic), 60–80% token savings, scriptable/pipeable, deterministic — complements rather than competes |
 | Stepsize/Sleuth | Dev workflow analytics | TicketLens is action-oriented (what to work on now), not retrospective |
 
+### Atlassian MCP (Official Claude Plugin)
+
+- **Installs:** 46,149 — **Auth:** OAuth 2.1 — **Scope:** Atlassian Cloud only
+- **Skills:** `/spec-to-backlog`, `/capture-tasks-from-meeting-notes`, `/generate-status-report`, `/triage-issue`, `/search-company-knowledge`
+- **Write operations:** Create Jira issues, Confluence pages, bulk import
+- **Data flow:** Your Jira → `mcp.atlassian.com` → Claude API (data transits Atlassian's cloud)
+
+**What it cannot do:**
+- No triage queue ("what needs my attention right now")
+- No VCS/commit linking (ticket ↔ code ↔ PR)
+- No compliance check (requirements vs actual code changes)
+- No Jira Server or Data Center support (cloud-only OAuth)
+- No local-first / air-gap mode
+- No scheduled digest
+- No token-efficient brief assembly (passes raw API responses)
+- No BYOK path
+
+**Verdict:** Complementary, not competitive. Atlassian MCP is the creation layer; TicketLens is the triage and analysis layer.
+
+> "Atlassian MCP writes your tickets. TicketLens tells you which ones need you right now."
+
 ### Moat Potential
 
 1. **Privacy architecture** — Local-first with metadata-only SaaS. Enterprise can't use Claude Code for ticket context (data goes to Anthropic). TicketLens passes security review in days, not weeks.
