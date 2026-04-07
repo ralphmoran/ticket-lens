@@ -10,7 +10,8 @@
   <meta property="og:type" content="website">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"></noscript>
   <style>
     /* ============================================================
        THEME VARIABLES
@@ -51,7 +52,7 @@
       --border-2:        #CBD5E1;
       --text:            #0F172A;
       --text-muted:      #475569;
-      --text-subtle:     #94A3B8;
+      --text-subtle:     #64748B;
       --nav-bg:          rgba(248,250,252,.95);
       --section-alt:     #F1F5F9;
     }
@@ -111,14 +112,15 @@
     .nav-right { display: flex; align-items: center; gap: 8px; }
     .nav-links { display: flex; align-items: center; gap: 4px; list-style: none; margin-right: 8px; }
     .nav-links a {
-      font-size: 14px; color: var(--text-muted); padding: 6px 12px;
+      font-size: 14px; color: var(--text-muted); padding: 11px 12px;
       border-radius: var(--r); transition: color .15s, background .15s;
+      min-height: 44px; display: flex; align-items: center;
     }
     .nav-links a:hover { color: var(--text); background: rgba(127,127,127,.08); }
 
     /* Theme toggle */
     .theme-btn {
-      width: 36px; height: 36px; border-radius: var(--r);
+      width: 44px; height: 44px; border-radius: var(--r);
       border: 1px solid var(--border-2); background: var(--bg-raised);
       color: var(--text-muted); display: flex; align-items: center; justify-content: center;
       cursor: pointer; transition: border-color .15s, color .15s, background .15s; margin-right: 4px;
@@ -137,6 +139,26 @@
       box-shadow: 0 2px 12px var(--cta-glow);
     }
     .nav-cta:hover { background: var(--cta-hover); transform: translateY(-1px); }
+
+    /* ============================================================
+       FOCUS STATES — keyboard navigation
+    ============================================================ */
+    :focus-visible {
+      outline: 2px solid var(--cta);
+      outline-offset: 2px;
+    }
+    /* Remove default outline only when we have our own */
+    a:focus-visible, button:focus-visible {
+      outline: 2px solid var(--cta);
+      outline-offset: 3px;
+      border-radius: var(--r);
+    }
+    .nav-logo:focus-visible { border-radius: var(--r); }
+    .theme-btn:focus-visible { border-color: var(--cta); }
+    .t-tab:focus-visible { outline-offset: -2px; }
+    .feat-item:focus-visible { outline: 2px solid var(--cta); outline-offset: -2px; }
+    .faq-q:focus-visible { outline: 2px solid var(--cta); outline-offset: 2px; border-radius: 4px; }
+    .pricing-cta:focus-visible { outline: 2px solid var(--cta); outline-offset: 3px; }
 
     /* ============================================================
        SECTION LABELS / HEADINGS
@@ -334,7 +356,9 @@
     .logos-track {
       display: flex; align-items: center; gap: 0; white-space: nowrap;
       animation: scrollLeft 28s linear infinite;
+      will-change: transform;
     }
+    .logos-track.paused { animation-play-state: paused; }
     @keyframes scrollLeft { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
     .logo-item {
       padding: 0 36px; font-size: 17px; font-weight: 600; letter-spacing: -.01em;
@@ -347,7 +371,7 @@
     /* ============================================================
        HOW IT WORKS
     ============================================================ */
-    .how-section { background: var(--bg); }
+    .how-section { background: var(--bg); content-visibility: auto; contain-intrinsic-size: 0 600px; }
     .steps-wrap {
       display: grid; grid-template-columns: repeat(3,1fr); gap: 48px;
       position: relative;
@@ -374,7 +398,7 @@
     /* ============================================================
        FEATURES — INTERACTIVE PANEL
     ============================================================ */
-    .features-section { background: var(--section-alt); }
+    .features-section { background: var(--section-alt); content-visibility: auto; contain-intrinsic-size: 0 700px; }
     .features-panel {
       display: grid; grid-template-columns: 220px 1fr;
       border: 1px solid var(--border-2); border-radius: var(--rl); overflow: hidden;
@@ -389,6 +413,7 @@
       padding: 16px 16px 14px; cursor: pointer;
       border-bottom: 1px solid var(--border);
       transition: background .15s;
+      min-height: 56px;
     }
     .feat-item:last-of-type { border-bottom: none; }
     .feat-item:hover { background: rgba(127,127,127,.06); }
@@ -438,7 +463,7 @@
     /* ============================================================
        ATLASSIAN MCP CALLOUT
     ============================================================ */
-    .mcp-section { background: var(--bg); }
+    .mcp-section { background: var(--bg); content-visibility: auto; contain-intrinsic-size: 0 500px; }
     .mcp-inner {
       display: grid; grid-template-columns: 1fr 1fr; gap: 64px;
       align-items: center;
@@ -478,7 +503,7 @@
     /* ============================================================
        PRICING
     ============================================================ */
-    .pricing-section { background: var(--section-alt); }
+    .pricing-section { background: var(--section-alt); content-visibility: auto; contain-intrinsic-size: 0 700px; }
     .pricing-grid {
       display: grid; grid-template-columns: repeat(3,1fr); gap: 20px;
     }
@@ -523,6 +548,7 @@
     .pricing-cta {
       display: block; text-align: center; padding: 11px 20px; border-radius: var(--r);
       font-size: 14px; font-weight: 600; transition: all .15s; cursor: pointer;
+      min-height: 44px; display: flex; align-items: center; justify-content: center;
     }
     .pricing-cta.solid { background: var(--cta); color: #fff; box-shadow: 0 4px 16px var(--cta-glow); }
     .pricing-cta.solid:hover { background: var(--cta-hover); transform: translateY(-1px); }
@@ -540,7 +566,7 @@
     /* ============================================================
        COMPLIANCE / PRIVACY
     ============================================================ */
-    .compliance-section { background: var(--bg); }
+    .compliance-section { background: var(--bg); content-visibility: auto; contain-intrinsic-size: 0 600px; }
     .compliance-inner { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; }
     .compliance-badges { display: flex; flex-direction: column; gap: 10px; margin-top: 32px; }
     .compliance-badge {
@@ -578,8 +604,10 @@
       padding: 9px 13px; border-radius: 8px; flex-shrink: 0;
       font-family: var(--mono); font-size: 11.5px; font-weight: 500; white-space: nowrap;
     }
-    .arch-node--blue  { background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.4); color: #86efac; animation: nodeGlowGreen 3s ease infinite; }
-    .arch-node--green { background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.35); color: #86efac; animation: nodeGlowGreen 3s ease infinite .5s; }
+    .arch-node--blue  { background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.4); color: #86efac; }
+    .arch-node--green { background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.35); color: #86efac; }
+    .arch-animated .arch-node--blue  { animation: nodeGlowGreen 3s ease infinite; }
+    .arch-animated .arch-node--green { animation: nodeGlowGreen 3s ease infinite .5s; }
     .arch-node--red   { background: rgba(248,81,73,.06); border: 1px solid rgba(248,81,73,.2); color: rgba(248,81,73,.7); }
     .arch-node--cloud { background: rgba(248,81,73,.04); border: 1px solid rgba(248,81,73,.15); color: rgba(248,81,73,.45); }
     .arch-node-icon   { width: 15px; height: 15px; flex-shrink: 0; }
@@ -594,10 +622,10 @@
     .arch-dot { position:absolute; width:7px; height:7px; border-radius:50%; top:50%; margin-top:-3.5px; }
     .arch-dot--blue  { background:#22c55e; box-shadow:0 0 8px 3px rgba(34,197,94,.8); }
     .arch-dot--green { background:#22c55e; box-shadow:0 0 8px 3px rgba(34,197,94,.8); }
-    .arch-dot--blue.d1  { animation: dotRight 2.4s linear infinite 0s; }
-    .arch-dot--blue.d2  { animation: dotRight 2.4s linear infinite .8s; }
-    .arch-dot--green.d1 { animation: dotLeft  2.4s linear infinite 1.2s; }
-    .arch-dot--green.d2 { animation: dotLeft  2.4s linear infinite 2.0s; }
+    .arch-animated .arch-dot--blue.d1  { animation: dotRight 2.4s linear infinite 0s; }
+    .arch-animated .arch-dot--blue.d2  { animation: dotRight 2.4s linear infinite .8s; }
+    .arch-animated .arch-dot--green.d1 { animation: dotLeft  2.4s linear infinite 1.2s; }
+    .arch-animated .arch-dot--green.d2 { animation: dotLeft  2.4s linear infinite 2.0s; }
     @keyframes dotRight { 0%{left:-4px;opacity:0} 6%{opacity:1} 94%{opacity:1} 100%{left:calc(100% + 4px);opacity:0} }
     @keyframes dotLeft  { 0%{left:calc(100% + 4px);opacity:0} 6%{opacity:1} 94%{opacity:1} 100%{left:-4px;opacity:0} }
     .arch-track-label { font-family:var(--mono); font-size:9.5px; text-align:center; letter-spacing:.04em; line-height:1; }
@@ -606,7 +634,8 @@
     .arch-track-label--block { color:rgba(248,81,73,.5); text-align:center; }
     .arch-block-row { position:relative; height:30px; display:flex; align-items:center; }
     .arch-block-row .arch-track--block { position:absolute; left:0; right:0; top:50%; transform:translateY(-50%); height:2px; background:rgba(248,81,73,.15); border-radius:1px; }
-    .arch-barrier { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:26px; height:26px; border-radius:50%; background:rgba(248,81,73,.1); border:1.5px solid rgba(248,81,73,.5); display:flex; align-items:center; justify-content:center; animation:barrierPulse 1.8s ease-in-out infinite; z-index:2; }
+    .arch-barrier { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:26px; height:26px; border-radius:50%; background:rgba(248,81,73,.1); border:1.5px solid rgba(248,81,73,.5); display:flex; align-items:center; justify-content:center; z-index:2; }
+    .arch-animated .arch-barrier { animation:barrierPulse 1.8s ease-in-out infinite; }
     @keyframes barrierPulse { 0%,100%{opacity:.6;transform:translate(-50%,-50%) scale(1)} 50%{opacity:1;transform:translate(-50%,-50%) scale(1.15)} }
     @keyframes nodeGlowGreen { 0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,0);border-color:rgba(34,197,94,.35)} 50%{box-shadow:0 0 14px 4px rgba(34,197,94,.18);border-color:rgba(34,197,94,.65)} }
     .compliance-verify { margin-top: 18px; font-size: 13px; color: #7b8aa0; position: relative; z-index: 1; }
@@ -615,7 +644,7 @@
     /* ============================================================
        INSTALL
     ============================================================ */
-    .install-section { background: var(--section-alt); }
+    .install-section { background: var(--section-alt); content-visibility: auto; contain-intrinsic-size: 0 500px; }
     .install-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
     .install-card {
       background: var(--bg-card); border: 1px solid var(--border-2);
@@ -647,7 +676,7 @@
     /* ============================================================
        FAQ
     ============================================================ */
-    .faq-section { background: var(--bg); }
+    .faq-section { background: var(--bg); content-visibility: auto; contain-intrinsic-size: 0 600px; }
     .faq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 60px; }
     .faq-item { border-bottom: 1px solid var(--border); }
     .faq-q {
@@ -727,11 +756,17 @@
       .install-grid     { grid-template-columns: 1fr; }
       .faq-grid         { grid-template-columns: 1fr; }
     }
+    @media (max-width: 768px) {
+      .container        { padding: 64px clamp(16px,4vw,40px); }
+      .step-desc        { font-size: 15px; }
+      .faq-a            { font-size: 15px; }
+      .pricing-feats li { font-size: 14px; }
+    }
     @media (max-width: 600px) {
       .hero h1          { font-size: 36px; }
       .hero-ctas        { flex-direction: column; align-items: center; }
       .hero-terminal-wrap { display: none; }
-      .container        { padding: 72px 20px; }
+      .container        { padding: 56px 20px; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
@@ -937,7 +972,7 @@
       <div class="features-panel fade-in" id="features-panel">
         <!-- Left: feature list -->
         <div class="feat-list" id="feat-list">
-          <div class="feat-item active" data-feat="0">
+          <div class="feat-item active" data-feat="0" tabindex="0" role="button" aria-pressed="true">
             <span class="feat-item-icon">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M5 2h7.5L17 6.5V18a1 1 0 01-1 1H5a1 1 0 01-1-1V3a1 1 0 011-1z"/>
@@ -950,7 +985,7 @@
             <span class="feat-item-desc">Full context for any Jira ticket</span>
             <span class="feat-tier free">Free</span>
           </div>
-          <div class="feat-item" data-feat="1">
+          <div class="feat-item" data-feat="1" tabindex="0" role="button" aria-pressed="false">
             <span class="feat-item-icon">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <line x1="3" y1="5" x2="13" y2="5"/>
@@ -964,7 +999,7 @@
             <span class="feat-item-desc">Needs response &amp; aging alerts</span>
             <span class="feat-tier free">Free</span>
           </div>
-          <div class="feat-item" data-feat="2">
+          <div class="feat-item" data-feat="2" tabindex="0" role="button" aria-pressed="false">
             <span class="feat-item-icon">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <polyline points="16,4 16,10 10,10"/>
@@ -977,7 +1012,7 @@
             <span class="feat-item-desc">VCS diff + Claude Code review</span>
             <span class="feat-tier free">Free</span>
           </div>
-          <div class="feat-item" data-feat="3">
+          <div class="feat-item" data-feat="3" tabindex="0" role="button" aria-pressed="false">
             <span class="feat-item-icon">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M10 3 L16 6 L16 11 C16 14.5 13.5 17.5 10 19 C6.5 17.5 4 14.5 4 11 L4 6 Z"/>
@@ -988,7 +1023,7 @@
             <span class="feat-item-desc">Requirements vs diff analysis</span>
             <span class="feat-tier free">Free 3/mo</span>
           </div>
-          <div class="feat-item" data-feat="4">
+          <div class="feat-item" data-feat="4" tabindex="0" role="button" aria-pressed="false">
             <span class="feat-item-icon">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="10" cy="3.5" r="2"/>
@@ -1004,7 +1039,7 @@
             <span class="feat-item-desc">Full linked-issue dependency graph</span>
             <span class="feat-tier pro">Pro</span>
           </div>
-          <div class="feat-item" data-feat="5">
+          <div class="feat-item" data-feat="5" tabindex="0" role="button" aria-pressed="false">
             <span class="feat-item-icon">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="2" y="3" width="16" height="14" rx="2"/>
@@ -1456,6 +1491,11 @@
     }, { passive: true });
 
     /* ============================================================
+       REDUCED MOTION DETECTION
+    ============================================================ */
+    var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    /* ============================================================
        HERO TERMINAL — ANIMATED TYPING
     ============================================================ */
     var heroAnimations = [
@@ -1517,6 +1557,7 @@
       el.textContent = '';
       cursor.style.display = 'inline-block';
       function tick() {
+        if (heroAnim.paused) { heroAnim.timer = setTimeout(tick, 200); return; }
         if (i < cmd.length) {
           el.textContent += cmd[i++];
           heroAnim.timer = setTimeout(tick, 45 + Math.random() * 30);
@@ -1533,6 +1574,7 @@
       container.innerHTML = '';
       var i = 0;
       function next() {
+        if (heroAnim.paused) { heroAnim.timer = setTimeout(next, 200); return; }
         if (i < lines.length) {
           var line = document.createElement('span');
           line.className = 'terminal-output-line';
@@ -1548,6 +1590,7 @@
     }
 
     function runHeroLoop() {
+      if (reducedMotion) return;
       var anim = heroAnimations[heroAnim.current % heroAnimations.length];
       var cmdEl = document.getElementById('t-cmd');
       var cursor = document.getElementById('t-cursor');
@@ -1577,7 +1620,7 @@
       document.getElementById('t-panel-jtb').style.display = 'block';
     });
 
-    setTimeout(runHeroLoop, 600);
+    if (!reducedMotion) { setTimeout(runHeroLoop, 600); }
 
     /* ============================================================
        FEATURES PANEL
@@ -1702,10 +1745,10 @@
       renderFeatDemo(idx);
       if (resetTimer) {
         clearInterval(featAutoTimer);
-        startFeatAuto();
+        if (!reducedMotion) { startFeatAuto(); }
       }
       var bar = document.getElementById('feat-progress-bar');
-      if (bar) { bar.style.width = '0%'; bar.style.transition = 'none'; void bar.offsetWidth; bar.style.transition = 'width ' + FEAT_INTERVAL + 'ms linear'; bar.style.width = '100%'; }
+      if (bar && !reducedMotion) { bar.style.width = '0%'; bar.style.transition = 'none'; void bar.offsetWidth; bar.style.transition = 'width ' + FEAT_INTERVAL + 'ms linear'; bar.style.width = '100%'; }
     }
 
     function startFeatAuto() {
@@ -1719,7 +1762,57 @@
     });
 
     setFeatActive(0, false);
-    startFeatAuto();
+    if (!reducedMotion) { startFeatAuto(); }
+
+    /* ============================================================
+       PAGE VISIBILITY — pause/resume all JS loops
+    ============================================================ */
+    document.addEventListener('visibilitychange', function() {
+      var hidden = document.hidden;
+      heroAnim.paused = hidden;
+      if (hidden) {
+        clearInterval(featAutoTimer);
+        featAutoTimer = null;
+      } else {
+        if (!reducedMotion && featAutoTimer === null) { startFeatAuto(); }
+      }
+    });
+
+    /* ============================================================
+       LOGOS CAROUSEL — IntersectionObserver pause/resume
+    ============================================================ */
+    var logosTrack = document.getElementById('logos-track');
+    if (logosTrack) {
+      var logosIO = new IntersectionObserver(function(entries) {
+        entries.forEach(function(e) {
+          logosTrack.classList.toggle('paused', !e.isIntersecting);
+        });
+      }, { threshold: 0 });
+      logosIO.observe(document.querySelector('.logos-section'));
+    }
+
+    /* ============================================================
+       ARCH DIAGRAM — IntersectionObserver gate animations
+    ============================================================ */
+    var archWrap = document.querySelector('.arch-diagram-wrap');
+    if (archWrap) {
+      var archIO = new IntersectionObserver(function(entries) {
+        entries.forEach(function(e) {
+          e.target.classList.toggle('arch-animated', e.isIntersecting);
+        });
+      }, { threshold: 0.1 });
+      archIO.observe(archWrap);
+    }
+
+    /* ============================================================
+       HERO TERMINAL WRAP — remove will-change after animation
+    ============================================================ */
+    var heroWrap = document.querySelector('.hero-terminal-wrap');
+    if (heroWrap) {
+      heroWrap.addEventListener('animationend', function() {
+        this.style.willChange = 'auto';
+      }, { once: true });
+    }
 
     /* ============================================================
        FAQ ACCORDION
