@@ -29,8 +29,7 @@
 | `app/Http/Controllers/Auth/LoginController.php` | Show + handle login form |
 | `app/Http/Controllers/Auth/RegisterController.php` | Show + handle register form |
 | `resources/views/app.blade.php` | Inertia root template |
-| `resources/js/Pages/Auth/Login.vue` | Login page |
-| `resources/js/Pages/Auth/Register.vue` | Register page |
+| `resources/js/Pages/Auth/Login.vue` | Split-layout auth page — Sign in + Create account tabs, CLI preview left panel |
 | `resources/js/Layouts/ConsoleLayout.vue` | Sidebar + nav shell |
 | `resources/js/Pages/Console/Index.vue` | `/console` landing (redirects to `/console/analytics`) |
 | `database/migrations/*_add_console_fields_to_users_table.php` | Adds `tier`, `permissions` to users |
@@ -1366,12 +1365,7 @@ class AuthTest extends TestCase
         );
     }
 
-    public function test_register_page_renders(): void
-    {
-        $this->get('/register')->assertOk()->assertInertia(
-            fn ($page) => $page->component('Auth/Register')
-        );
-    }
+    // No separate GET /register — register form lives as a tab inside Auth/Login.vue
 
     public function test_user_can_login_with_valid_credentials(): void
     {
@@ -1482,6 +1476,8 @@ class LoginController extends Controller
 
 - [ ] **Step 4: Create app/Http/Controllers/Auth/RegisterController.php**
 
+No `show()` method — the register form is a tab inside `Auth/Login.vue`. Only `store()` needed.
+
 ```php
 <?php
 
@@ -1495,20 +1491,9 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Inertia\Inertia;
-use Inertia\Response;
 
 class RegisterController extends Controller
 {
-    public function show(): Response|RedirectResponse
-    {
-        if (Auth::check()) {
-            return redirect('/console');
-        }
-
-        return Inertia::render('Auth/Register');
-    }
-
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
@@ -1546,12 +1531,11 @@ use Illuminate\Support\Facades\Route;
 // Remove or keep the welcome route
 Route::get('/', fn () => redirect('/login'));
 
-// Auth
+// Auth — single /login page handles both sign-in and register tabs
 Route::middleware('guest')->group(function () {
     Route::get('/login', [LoginController::class, 'show'])->name('login');
-    Route::get('/register', [RegisterController::class, 'show'])->name('register');
     Route::post('/login', [LoginController::class, 'store']);
-    Route::post('/register', [RegisterController::class, 'store']);
+    Route::post('/register', [RegisterController::class, 'store'])->name('register');
 });
 
 Route::post('/logout', [LoginController::class, 'destroy'])->middleware('auth')->name('logout');
@@ -1734,13 +1718,18 @@ git commit -m "feat: share auth user with effectivePermissions via Inertia middl
 
 ---
 
-## Task 14: Auth Vue pages — Login.vue + Register.vue
+## Task 14: Auth Vue page — split-layout Login.vue with tabs
+
+**Design reference:** Directus-style split layout (dark theme).
+- **Left panel (60%):** `bg-gray-950`, green accents, TicketLens logo, CLI terminal snippet, 3 value props
+- **Right panel (40%):** `bg-gray-900`, "Sign in" / "Create account" tab switcher, form, green CTA
+
+Single page at `/login`. Tab switching is client-side only — no page navigation. Register form POSTs to `/register`.
 
 **Files:**
 - Create: `resources/js/Pages/Auth/Login.vue`
-- Create: `resources/js/Pages/Auth/Register.vue`
 
-*(No server-side TDD here — the auth feature tests in Task 12 already cover the HTTP layer. These tasks build the UI forms that submit to those routes.)*
+*(HTTP layer already tested in Task 12. These steps build the UI.)*
 
 - [ ] **Step 1: Invoke ui-ux-pro-max skill before writing any UI**
 
@@ -1750,167 +1739,208 @@ Run: `Skill({ skill: "ui-ux-pro-max" })` in your session before proceeding.
 
 ```vue
 <script setup>
+import { ref } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 
-const form = useForm({
-    email: '',
-    password: '',
-    remember: false,
-})
+const tab = ref('signin')  // 'signin' | 'register'
 
-const submit = () => form.post('/login')
+const loginForm = useForm({ email: '', password: '', remember: false })
+const registerForm = useForm({ name: '', email: '', password: '', password_confirmation: '' })
+
+const submitLogin    = () => loginForm.post('/login')
+const submitRegister = () => registerForm.post('/register')
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-950 flex items-center justify-center">
-    <div class="w-full max-w-sm space-y-6 px-4">
+  <div class="min-h-screen bg-gray-950 flex">
 
-      <div class="text-center">
-        <p class="font-mono text-green-400 text-xl font-bold">TicketLens</p>
-        <p class="text-gray-400 text-sm mt-1">Console</p>
+    <!-- Left panel — brand / CLI preview -->
+    <div class="hidden lg:flex flex-col justify-between w-3/5 bg-gray-950 border-r border-gray-800/50 p-12">
+
+      <div class="font-mono text-green-400 font-bold text-lg tracking-tight">
+        TicketLens
       </div>
 
-      <form @submit.prevent="submit" class="space-y-4">
-        <div>
-          <label class="block text-sm text-gray-300 mb-1">Email</label>
-          <input
-            v-model="form.email"
-            type="email"
-            autocomplete="email"
-            class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-green-500"
-          />
-          <p v-if="form.errors.email" class="text-red-400 text-xs mt-1">{{ form.errors.email }}</p>
+      <!-- CLI terminal mockup -->
+      <div class="space-y-8">
+        <div class="bg-gray-900 rounded-lg border border-gray-800 p-6 font-mono text-sm space-y-1.5">
+          <p class="text-gray-500"># fetch a ticket brief — 78% fewer tokens</p>
+          <p><span class="text-green-400">❯</span> <span class="text-gray-200">ticketlens ABC-1234</span></p>
+          <p class="text-gray-400 pl-4">↳ fetching linked tickets (depth 1)…</p>
+          <p class="text-gray-400 pl-4">↳ 3 linked · 2 comments · 1 attachment</p>
+          <p class="text-green-400 pl-4">✓ brief ready — 1,240 tokens saved</p>
+          <p class="mt-2"><span class="text-green-400">❯</span> <span class="text-gray-200">ticketlens triage --sprint=42</span></p>
+          <p class="text-gray-400 pl-4">↳ 8 tickets · 3 need attention</p>
+          <p class="text-yellow-400 pl-4">⚠ ABC-1201: blocked · ABC-1189: overdue</p>
         </div>
 
-        <div>
-          <label class="block text-sm text-gray-300 mb-1">Password</label>
-          <input
-            v-model="form.password"
-            type="password"
-            autocomplete="current-password"
-            class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-green-500"
-          />
-          <p v-if="form.errors.password" class="text-red-400 text-xs mt-1">{{ form.errors.password }}</p>
-        </div>
+        <!-- Value props -->
+        <ul class="space-y-3">
+          <li class="flex items-start gap-3 text-sm text-gray-400">
+            <span class="text-green-400 font-mono mt-0.5">✓</span>
+            <span><strong class="text-gray-200">60–80% token savings</strong> — preprocessed briefs, not raw API noise</span>
+          </li>
+          <li class="flex items-start gap-3 text-sm text-gray-400">
+            <span class="text-green-400 font-mono mt-0.5">✓</span>
+            <span><strong class="text-gray-200">Privacy-first</strong> — ticket content never leaves your machine</span>
+          </li>
+          <li class="flex items-start gap-3 text-sm text-gray-400">
+            <span class="text-green-400 font-mono mt-0.5">✓</span>
+            <span><strong class="text-gray-200">Scriptable</strong> — pipes, cron, CI/CD — works everywhere your shell does</span>
+          </li>
+        </ul>
+      </div>
 
-        <button
-          type="submit"
-          :disabled="form.processing"
-          class="w-full bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-medium py-2 rounded transition-colors"
-        >
-          {{ form.processing ? 'Signing in…' : 'Sign in' }}
-        </button>
-      </form>
-
-      <p class="text-center text-sm text-gray-500">
-        No account?
-        <a href="/register" class="text-green-400 hover:underline">Register</a>
-      </p>
+      <p class="text-xs text-gray-700 font-mono">ticketlens.dev</p>
     </div>
+
+    <!-- Right panel — auth form -->
+    <div class="flex flex-col justify-center w-full lg:w-2/5 bg-gray-900 px-8 lg:px-12">
+      <div class="w-full max-w-sm mx-auto space-y-8">
+
+        <!-- Mobile logo -->
+        <p class="lg:hidden font-mono text-green-400 font-bold text-lg">TicketLens</p>
+
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-700">
+          <button
+            @click="tab = 'signin'"
+            :class="tab === 'signin'
+              ? 'text-white border-b-2 border-green-500'
+              : 'text-gray-500 hover:text-gray-300'"
+            class="pb-3 pr-6 text-sm font-medium transition-colors"
+          >
+            Sign in
+          </button>
+          <button
+            @click="tab = 'register'"
+            :class="tab === 'register'
+              ? 'text-white border-b-2 border-green-500'
+              : 'text-gray-500 hover:text-gray-300'"
+            class="pb-3 px-6 text-sm font-medium transition-colors"
+          >
+            Create account
+          </button>
+        </div>
+
+        <!-- Sign in form -->
+        <form v-if="tab === 'signin'" @submit.prevent="submitLogin" class="space-y-4">
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wide">Email</label>
+            <input
+              v-model="loginForm.email"
+              type="email"
+              autocomplete="email"
+              placeholder="you@company.com"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2.5 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500/30"
+            />
+            <p v-if="loginForm.errors.email" class="text-red-400 text-xs mt-1">{{ loginForm.errors.email }}</p>
+          </div>
+
+          <div>
+            <div class="flex justify-between mb-1.5">
+              <label class="text-xs text-gray-400 uppercase tracking-wide">Password</label>
+              <a href="#" class="text-xs text-green-500 hover:text-green-400">Forgot password?</a>
+            </div>
+            <input
+              v-model="loginForm.password"
+              type="password"
+              autocomplete="current-password"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500/30"
+            />
+            <p v-if="loginForm.errors.password" class="text-red-400 text-xs mt-1">{{ loginForm.errors.password }}</p>
+          </div>
+
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input v-model="loginForm.remember" type="checkbox" class="rounded border-gray-600 bg-gray-800 text-green-500 focus:ring-green-500/30" />
+            <span class="text-xs text-gray-400">Remember me for 30 days</span>
+          </label>
+
+          <button
+            type="submit"
+            :disabled="loginForm.processing"
+            class="w-full bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white text-sm font-medium py-2.5 rounded-md transition-colors"
+          >
+            {{ loginForm.processing ? 'Signing in…' : 'Sign in →' }}
+          </button>
+        </form>
+
+        <!-- Register form -->
+        <form v-else @submit.prevent="submitRegister" class="space-y-4">
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wide">Name</label>
+            <input
+              v-model="registerForm.name"
+              type="text"
+              autocomplete="name"
+              placeholder="Jane Dev"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2.5 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500/30"
+            />
+            <p v-if="registerForm.errors.name" class="text-red-400 text-xs mt-1">{{ registerForm.errors.name }}</p>
+          </div>
+
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wide">Email</label>
+            <input
+              v-model="registerForm.email"
+              type="email"
+              autocomplete="email"
+              placeholder="you@company.com"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2.5 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500/30"
+            />
+            <p v-if="registerForm.errors.email" class="text-red-400 text-xs mt-1">{{ registerForm.errors.email }}</p>
+          </div>
+
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wide">Password</label>
+            <input
+              v-model="registerForm.password"
+              type="password"
+              autocomplete="new-password"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500/30"
+            />
+            <p v-if="registerForm.errors.password" class="text-red-400 text-xs mt-1">{{ registerForm.errors.password }}</p>
+          </div>
+
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wide">Confirm password</label>
+            <input
+              v-model="registerForm.password_confirmation"
+              type="password"
+              autocomplete="new-password"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500/30"
+            />
+          </div>
+
+          <button
+            type="submit"
+            :disabled="registerForm.processing"
+            class="w-full bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white text-sm font-medium py-2.5 rounded-md transition-colors"
+          >
+            {{ registerForm.processing ? 'Creating account…' : 'Create account →' }}
+          </button>
+        </form>
+
+      </div>
+    </div>
+
   </div>
 </template>
 ```
 
-- [ ] **Step 3: Create resources/js/Pages/Auth/Register.vue**
-
-```vue
-<script setup>
-import { useForm } from '@inertiajs/vue3'
-
-const form = useForm({
-    name: '',
-    email: '',
-    password: '',
-    password_confirmation: '',
-})
-
-const submit = () => form.post('/register')
-</script>
-
-<template>
-  <div class="min-h-screen bg-gray-950 flex items-center justify-center">
-    <div class="w-full max-w-sm space-y-6 px-4">
-
-      <div class="text-center">
-        <p class="font-mono text-green-400 text-xl font-bold">TicketLens</p>
-        <p class="text-gray-400 text-sm mt-1">Create your account</p>
-      </div>
-
-      <form @submit.prevent="submit" class="space-y-4">
-        <div>
-          <label class="block text-sm text-gray-300 mb-1">Name</label>
-          <input
-            v-model="form.name"
-            type="text"
-            autocomplete="name"
-            class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-green-500"
-          />
-          <p v-if="form.errors.name" class="text-red-400 text-xs mt-1">{{ form.errors.name }}</p>
-        </div>
-
-        <div>
-          <label class="block text-sm text-gray-300 mb-1">Email</label>
-          <input
-            v-model="form.email"
-            type="email"
-            autocomplete="email"
-            class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-green-500"
-          />
-          <p v-if="form.errors.email" class="text-red-400 text-xs mt-1">{{ form.errors.email }}</p>
-        </div>
-
-        <div>
-          <label class="block text-sm text-gray-300 mb-1">Password</label>
-          <input
-            v-model="form.password"
-            type="password"
-            autocomplete="new-password"
-            class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-green-500"
-          />
-          <p v-if="form.errors.password" class="text-red-400 text-xs mt-1">{{ form.errors.password }}</p>
-        </div>
-
-        <div>
-          <label class="block text-sm text-gray-300 mb-1">Confirm Password</label>
-          <input
-            v-model="form.password_confirmation"
-            type="password"
-            autocomplete="new-password"
-            class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-gray-100 focus:outline-none focus:border-green-500"
-          />
-        </div>
-
-        <button
-          type="submit"
-          :disabled="form.processing"
-          class="w-full bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-medium py-2 rounded transition-colors"
-        >
-          {{ form.processing ? 'Creating account…' : 'Create account' }}
-        </button>
-      </form>
-
-      <p class="text-center text-sm text-gray-500">
-        Already have an account?
-        <a href="/login" class="text-green-400 hover:underline">Sign in</a>
-      </p>
-    </div>
-  </div>
-</template>
-```
-
-- [ ] **Step 4: Run the full auth test suite**
+- [ ] **Step 3: Run the full auth test suite**
 
 ```bash
 php artisan test tests/Feature/Console/AuthTest.php
 ```
 
-Expected: PASS (all 8 tests — controllers were already tested; this confirms the pages render)
+Expected: PASS (all tests — the split layout and tabs are client-side only; server tests remain unchanged)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add resources/js/Pages/Auth/
-git commit -m "feat: add Login and Register Inertia pages"
+git add resources/js/Pages/Auth/Login.vue
+git commit -m "feat: add split-layout auth page with Sign in / Create account tabs"
 ```
 
 ---
