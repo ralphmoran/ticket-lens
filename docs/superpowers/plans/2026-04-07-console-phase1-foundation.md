@@ -2061,7 +2061,7 @@ export function usePermissions() {
 
 ```vue
 <script setup>
-import { Link } from '@inertiajs/vue3'
+import { Link, router } from '@inertiajs/vue3'
 import { usePermissions } from '@/composables/usePermissions'
 import { PERMISSIONS } from '@/permissions'
 
@@ -2125,15 +2125,13 @@ const adminNav = [
         </template>
       </nav>
 
-      <form method="POST" action="/logout" class="mt-4">
-        <input type="hidden" name="_token" :value="$page.props.csrf_token">
-        <button
-          type="submit"
-          class="w-full text-left px-2 py-1.5 text-xs text-gray-600 hover:text-gray-400 transition-colors"
-        >
-          Sign out
-        </button>
-      </form>
+      <button
+        type="button"
+        @click="() => router.post('/logout')"
+        class="w-full text-left px-2 py-1.5 text-xs text-gray-600 hover:text-gray-400 transition-colors"
+      >
+        Sign out
+      </button>
     </aside>
 
     <!-- Main -->
