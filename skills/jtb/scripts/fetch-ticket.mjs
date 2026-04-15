@@ -185,6 +185,30 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     return;
   }
 
+  if (args[0] === 'pr') {
+    const { assemblePr } = await import('./lib/pr-assembler.mjs');
+    const ticketKeyArg = args[1];
+    if (!ticketKeyArg) {
+      process.stderr.write('Error: "pr" requires a ticket key. Usage: ticketlens pr PROJ-123\n');
+      process.exitCode = 1;
+      return;
+    }
+    if (!TICKET_KEY_PATTERN.test(ticketKeyArg)) {
+      process.stderr.write(`Error: "${ticketKeyArg}" is not a valid ticket key. Expected format: PROJ-123\n`);
+      process.exitCode = 1;
+      return;
+    }
+    const resolvedConfigDir = configDir ?? (await import('./lib/config.mjs')).DEFAULT_CONFIG_DIR;
+    try {
+      const md = await assemblePr(ticketKeyArg, { configDir: resolvedConfigDir });
+      printFn(md + '\n');
+    } catch (err) {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   if (args[0] === 'ledger') {
     const { exportLedger } = await import('./lib/ledger.mjs');
     const { isLicensed: isLic, showUpgradePrompt: showUpgrade } = await import('./lib/license.mjs');
