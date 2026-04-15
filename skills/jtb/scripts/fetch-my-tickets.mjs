@@ -297,6 +297,20 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       return;
     }
     const deliverer = opts.digestDeliverer ?? defaultDigestDeliverer;
+
+    // Triage history delta (non-fatal — wrapped in try/catch)
+    let delta = null;
+    try {
+      const { saveTriageSnapshot, loadYesterdaySnapshot, diffSnapshots, buildDeltaSection } =
+        await import('./lib/triage-history.mjs');
+      saveTriageSnapshot(sorted, { profile: profileName ?? 'default', configDir });
+      const yesterday = loadYesterdaySnapshot({ profile: profileName ?? 'default', configDir });
+      if (yesterday) {
+        const deltas = diffSnapshots(sorted, yesterday);
+        delta = buildDeltaSection(deltas) || null;
+      }
+    } catch { /* non-fatal — digest still sends */ }
+
     await deliverer({
       profile: profileName ?? 'default',
       staleDays,
@@ -306,6 +320,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
         aging: sorted.filter(t => t.urgency === 'aging').length,
       },
       tickets: sorted,
+      delta,
     });
     return;
   }
