@@ -168,6 +168,28 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     return;
   }
 
+  // Early dispatch for non-ticket subcommands
+  if (args[0] === 'ledger') {
+    const { exportLedger } = await import('./lib/ledger.mjs');
+    const { isLicensed: isLic, showUpgradePrompt: showUpgrade } = await import('./lib/license.mjs');
+    const resolvedConfigDir = configDir ?? (await import('./lib/config.mjs')).DEFAULT_CONFIG_DIR;
+    if (!isLic('pro', resolvedConfigDir)) {
+      showUpgrade('pro', 'ledger', { stream: process.stderr });
+      process.exitCode = 1;
+      return;
+    }
+    const formatArg = args.slice(1).find(a => a.startsWith('--format='));
+    const format = formatArg ? formatArg.split('=')[1] : 'json';
+    const result = exportLedger(format, { configDir: resolvedConfigDir });
+    if (format === 'csv') {
+      printFn(result + '\n');
+    } else {
+      printFn(JSON.stringify(result, null, 2) + '\n');
+      process.stderr.write('  Verify signature: HMAC-SHA256 over {records, exportedAt} with key at ledger-key\n');
+    }
+    return;
+  }
+
   const ticketKey = args.find(a => !a.startsWith('--'));
   if (!ticketKey) {
     printFetchHelp({ stream: process.stderr });

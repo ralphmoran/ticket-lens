@@ -1,9 +1,11 @@
+import { spawnSync } from 'node:child_process';
 import { isLicensed, showUpgradePrompt } from './license.mjs';
 import { checkUsage, incrementUsage, FREE_LIMIT } from './usage-tracker.mjs';
 import { extractRequirements } from './requirement-extractor.mjs';
 import { findLinkedCommits } from './commit-linker.mjs';
 import { analyzeDiff } from './diff-analyzer.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
+import { appendLedger } from './ledger.mjs';
 
 const STATUS_ICON = { FOUND: '✔', PARTIAL: '~', NOT_FOUND: '✖' };
 
@@ -55,6 +57,8 @@ export async function runComplianceCheck({
   extractRequirementsFn = extractRequirements,
   findLinkedCommitsFn   = findLinkedCommits,
   analyzeDiffFn         = analyzeDiff,
+  appendLedgerFn        = appendLedger,
+  execFn                = spawnSync,
 }) {
   const isPro = isLicensedFn('pro', configDir);
   const usage = checkUsageFn(configDir);
@@ -71,5 +75,18 @@ export async function runComplianceCheck({
   const analysis = analyzeDiffFn(requirements, diff);
 
   const report = formatReport({ ticketKey, requirements, analysis, usage, isPro });
-  return { report, coveragePercent: analysis.coveragePercent };
+  const coveragePercent = analysis.coveragePercent;
+  const missing = analysis.results
+    .filter(r => r.status === 'NOT_FOUND')
+    .map(r => r.requirement);
+
+  if (isPro) {
+    const gitEmail = execFn('git', ['config', 'user.email'], { encoding: 'utf8' }).stdout?.trim() ?? 'unknown';
+    appendLedgerFn(
+      { ticketKey, commitSha: 'HEAD', author: gitEmail || 'unknown', coverage: coveragePercent, missing },
+      { configDir, isPro }
+    );
+  }
+
+  return { report, coveragePercent };
 }

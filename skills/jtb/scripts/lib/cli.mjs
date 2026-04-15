@@ -66,6 +66,10 @@ export function parseCommand(args) {
     return { command: 'schedule', args: args.slice(1) };
   }
 
+  if (first === 'ledger') {
+    return { command: 'ledger', args: args.slice(1) };
+  }
+
   // Anything that looks like a ticket key or any non-flag arg → fetch
   return { command: 'fetch', args };
 }
