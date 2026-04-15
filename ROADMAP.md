@@ -112,6 +112,30 @@ The killer premium feature. Primary conversion lever from Free to Pro.
 
 ---
 
+## Phase B.7 — Safety Net (Pro CLI)
+
+All CLI-only, $0 infrastructure. Runs before or alongside Phase C. Six Pro tier features where the manual version simply does not happen in practice.
+
+**Tier philosophy reframe:**
+- Free = everything local. Me, now, one ticket.
+- Pro = individual mistake prevention. The free tier tells you the truth when you ask it. Pro tells you when you forgot to ask.
+- Team = shared intelligence. Work that crosses people, time, and systems.
+
+### Iteration B.7 — Safety Net CLI Features
+
+| # | Type | Feature | Detail | Effort |
+|---|------|---------|--------|--------|
+| B7-1 | Feature | **Spec drift detection** | Scheduled re-fetch of tickets linked to your open branches. Alerts via stderr (or daily email if digest enabled) when acceptance criteria, scope, or status changed since you last read it. The manual version requires remembering to re-read every ticket mid-sprint — nobody does this. | Medium |
+| B7-2 | Feature | **Git hook compliance gate** | `ticketlens install-hooks` installs a pre-push hook that runs compliance check against the branch's linked ticket. Blocks push if coverage < configurable threshold (default: 80%). One-time setup. Makes TicketLens uncancellable — removing it breaks the pipeline. | Medium |
+| B7-3 | Feature | **Ticket-to-PR assembler** | `ticketlens pr TICKET-KEY` outputs a PR description template: requirements list, compliance coverage percentage, linked commits, acceptance criteria status. Pipe or paste into GitHub/GitLab. Maps the ticket against what was actually built, not just what the ticket said. | Medium |
+| B7-4 | Feature | **Token budget optimizer** | `ticketlens TICKET-KEY --budget 4000` runs a metadata-only prefetch to estimate token cost of the full graph, then prunes low-value content (old status comments, duplicate fields) to fit the target window. Reports what was dropped and why. | Low–Medium |
+| B7-5 | Feature | **Compliance ledger** | Append-only local log: `ticket-key → commit-SHA → author → timestamp → coverage %`. Exportable as signed JSON or CSV. Satisfies SOC 2, ISO 27001, HIPAA audit trail requirements without sending data anywhere. | Small–Medium |
+| B7-6 | Feature | **Stale delta report** | Upgrades the existing scheduled digest from snapshot to diff. Shows what got *worse* since yesterday: tickets that regressed, gained unanswered comments, crossed staleness threshold. The stored triage history is the moat — nobody else has it. | Medium |
+
+**Strategic priority:** B7-2 (git hook gate) is the path to must-have status. Once compliance runs pre-push, removing TicketLens breaks the pipeline — same category as linters.
+
+---
+
 ## VALIDATION GATE
 
 **Stop here and assess before continuing.** Ask yourself:
@@ -150,6 +174,11 @@ Build the cloud backend and web dashboard ONLY when paying users demand it.
 | 33 | Feature | **Manager view — Process Metrics** | Time to first commit, QA bounce-back rate, compliance gap trends. | Large |
 | 34 | Feature | **Team management** | Invite members, assign roles (dev/lead/manager), manage seats. | Medium |
 | 35 | Feature | **Team billing (Stripe)** | Per-seat subscription, seat add/remove, invoicing. | Medium |
+| C-T1 | Feature | **Handoff brief (`--handoff`)** | `ticketlens TICKET-KEY --handoff` generates a structured one-pager from comment history: what was attempted, current blockers, open questions. CLI flag + console view. Eliminates blind starts when tickets change hands. | Small–Medium |
+| C-T2 | Feature | **Shareable triage snapshot** | `ticketlens triage --share` generates a signed URL (24h TTL, browser-readable, no login required for recipient). Paste into Slack before standup. Recipient needs zero setup — the asymmetry is the product. | Medium |
+| C-T3 | Feature | **Standup/PR generator** | `ticketlens standup` reads git log (last 24h), matches commits to ticket keys, generates standup summary or PR body. BYOK for the AI generation step. Team leads buy seats for the whole team because the output benefits their visibility. | Medium |
+| C-T4 | Feature | **Parallel collision detection** | Surfaces when two teammates have open branches touching overlapping file paths, based on git blame + ticket scope. Requires cross-seat ticket data — meaningless for solo devs. | High |
+| C-T5 | Feature | **Team compliance analytics** | Aggregate gap patterns across team tickets over time: "cart validation tickets have a 40% gap rate." Process failure map, not individual blame. Console view. Data only TicketLens has — computed from compliance check history. | Medium |
 
 ### Iteration 9 — Slack/Teams Alerts
 
@@ -221,20 +250,18 @@ Before building any feature, ask:
 ## Critical Path
 
 ```
-Phase A: Launch (Iteration 3)
-    |
-Phase A.5: Website + Pilot Client Pitch (Iteration 3.5)
-    |
-Phase B: Premium CLI — revenue with $0 infra (Iterations 4-5)
-    |
-Phase B.5: Compliance Check — killer Pro feature (Iteration 6)
-    |
+Phase A:   Launch ✓
+Phase A.5: Website + Pilot Client ✓
+Phase B:   Premium CLI (license, schedules, digests, compliance ✓)
+Phase B.5: Compliance check ✓
+Phase B.7: Safety Net — spec drift, git hooks, PR assembler,
+           token budget, ledger, stale delta  ← NEW
+           |
     ===== VALIDATION GATE =====
-    50+ paying users? 10+ teams?
-    |
-Phase C: Cloud + Dashboard + Alerts (Iterations 7-9)
-    |
-Phase D: Multi-tracker + Enterprise (Iterations 10-12)
+    50+ paying Pro? 10+ teams? Revenue covering time?
+           |
+Phase C:   Console + Team Intelligence (in progress + C-T1 through C-T5)
+Phase D:   Multi-tracker + Enterprise
 ```
 
 ---
@@ -247,11 +274,17 @@ Phase D: Multi-tracker + Enterprise (Iterations 10-12)
 | Compliance check | 3/month | Unlimited | Unlimited | Unlimited |
 | AI ticket summary | No | Yes | Yes | Yes |
 | Configurable cache TTL | No | Yes | Yes | Yes |
-| Depth-2 traversal | No | Yes | Yes | Yes |
+| --depth=2 (full graph) | Yes | Yes | Yes | Yes |
 | Scheduled triage digest | No | Yes | Yes | Yes |
 | Multi-project triage | No | Yes | Yes | Yes |
 | Custom attention rules | No | Yes | Yes | Yes |
 | Ticket history tracking | No | Yes | Yes | Yes |
+| Spec drift detection | No | Yes | Yes | Yes |
+| Git hook compliance gate | No | Yes | Yes | Yes |
+| Ticket-to-PR assembler (`ticketlens pr`) | No | Yes | Yes | Yes |
+| Token budget optimizer (`--budget N`) | No | Yes | Yes | Yes |
+| Compliance ledger (audit trail) | No | Yes | Yes | Yes |
+| Stale delta report (diff, not snapshot) | No | Yes | Yes | Yes |
 | `--assignee` flag | No | No | Yes | Yes |
 | `--sprint` flag | No | No | Yes | Yes |
 | `--project`/`--label`/`--priority` | No | No | Yes | Yes |
@@ -260,6 +293,11 @@ Phase D: Multi-tracker + Enterprise (Iterations 10-12)
 | Slack/Teams alerts | No | No | Yes | Yes |
 | Brief templates | No | No | Yes | Yes |
 | Response time metrics | No | No | Yes | Yes |
+| Parallel collision detection | No | No | Yes | Yes |
+| Standup/PR generator (`ticketlens standup`) | No | No | Yes | Yes |
+| Handoff brief (`--handoff`) | No | No | Yes | Yes |
+| Shareable triage snapshot (`--share`) | No | No | Yes | Yes |
+| Team compliance analytics | No | No | Yes | Yes |
 | Cloud sync (E2EE) | No | Phase C | Phase C | Phase C |
 | SSO + audit logs | No | No | No | Phase D |
 | Self-hosted | No | No | No | Phase D |
@@ -276,6 +314,7 @@ Phase D: Multi-tracker + Enterprise (Iterations 10-12)
 | A.5 | 3.5 | 4 | Weeks 3-5 | First B2B sale |
 | B | 4-5 | 10 | Months 2-4 | Pro + Team revenue, $0 infra cost |
 | B.5 | 6 | 5 | Months 3-5 | Primary Pro conversion lever |
+| B.7 | B.7 | 6 | Months 4-6 | Safety Net Pro features |
 | **GATE** | | | | **50+ Pro, 10+ Teams?** |
 | C | 7-9 | 17 | Months 6-10 | SaaS revenue, hosting costs begin |
 | D | 10-12 | 12 | Month 12+ | Enterprise + multi-tracker |

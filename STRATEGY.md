@@ -43,16 +43,16 @@ Developers lose 15-30 minutes per ticket gathering context before writing a sing
 - **Data flow:** Your Jira → `mcp.atlassian.com` → Claude API (data transits Atlassian's cloud)
 
 **What it cannot do:**
+- No local-first / air-gap mode — all data transits Atlassian's cloud (CVE-2026-27825: critical SSRF/RCE in Atlassian MCP server disclosed 2026)
 - No triage queue ("what needs my attention right now")
 - No VCS/commit linking (ticket ↔ code ↔ PR)
 - No compliance check (requirements vs actual code changes)
 - No Jira Server or Data Center support (cloud-only OAuth)
-- No local-first / air-gap mode
 - No scheduled digest
 - No token-efficient brief assembly (passes raw API responses)
 - No BYOK path
 
-**Verdict:** Complementary, not competitive. Atlassian MCP is the creation layer; TicketLens is the triage and analysis layer.
+**Verdict:** Complementary for cloud teams, but a security liability for Server/DC shops and regulated industries. TicketLens is the local-first alternative: no OAuth, no relay, no CVEs.
 
 > "Atlassian MCP writes your tickets. TicketLens tells you which ones need you right now."
 
@@ -63,6 +63,7 @@ Developers lose 15-30 minutes per ticket gathering context before writing a sing
 3. **Token efficiency** — Preprocessed, compressed briefs vs raw API noise. For high-frequency teams, the economics favor TicketLens over AI-direct at scale.
 4. **Integration depth** — Multi-instance Jira (Cloud + Server/DC), VCS-agnostic, zero npm dependencies.
 5. **Claude Code ecosystem** — First-mover in the Claude Code skills marketplace; `/jtb` is the reference implementation.
+6. **CI integration** — `ticketlens install-hooks` embeds compliance gate in pre-push and CI pipelines. Once in the pipeline, removal breaks the build — same category as linters and test runners. This is the path from "useful tool" to "infrastructure we can't remove."
 
 ---
 
@@ -89,9 +90,12 @@ Current state: 134 tests, clean architecture, multi-account support, Jira Cloud 
 
 **Monetization**: License key via LemonSqueezy (Merchant of Record — handles tax, invoicing, customer portal). Key stored in `~/.ticketlens/license.json`, validated via LemonSqueezy API with offline grace period. Static landing page on Cloudflare Pages ($0 infra).
 
-**Pro tier ($8/mo):** Multi-project triage, custom attention rules, scheduled triage, ticket history tracking.
+**Tier philosophy:**
+- **Free** — Everything local. Me, now, one ticket. No limits on depth, fetch, or triage.
+- **Pro ($8/mo)** — Individual mistake prevention. The free tier tells you the truth when you ask it. Pro tells you when you forgot to ask. Features: spec drift detection, git hook compliance gate, ticket-to-PR assembler, token budget optimizer, compliance ledger, stale delta report, AI summary (BYOK), configurable cache TTL, unlimited compliance checks, scheduled digest.
+- **Team ($15/seat/mo)** — Shared intelligence. Work that crosses people, time, and systems. Adds: parallel collision detection, standup/PR generator, handoff brief, shareable triage snapshot, team compliance analytics, --assignee/--sprint flags, CSV/JSON export, seat management, console team panel.
 
-**Team tier ($15/seat/mo):** Triage by assignee/sprint/project/label/priority, triage export (CSV/JSON), brief templates, response time metrics.
+Key principle: if a feature touches another human, persists state beyond a session, or integrates with a second system → Team tier. If it prevents individual mistakes without needing infrastructure → Pro tier.
 
 ### Phase B.5: Compliance Check — Killer Pro Feature (Months 3-5)
 
@@ -118,25 +122,33 @@ If yes: proceed to Phase C. If no: iterate on Phase B, double down on marketing,
 
 #### Pricing Tiers
 
-| | Free | Pro ($8/mo) | Team ($15/seat/mo) | Enterprise (custom) |
+| | Free | Pro ($8/mo) | Team ($15/seat/mo) | Enterprise |
 |--|------|------------|-------------------|-----------|
-| CLI (fetch + triage) | Yes | Yes | Yes | Yes |
+| CLI fetch + triage | Yes | Yes | Yes | Yes |
+| `--depth=2` (full graph) | Yes | Yes | Yes | Yes |
 | Compliance check | 3/month | Unlimited | Unlimited | Unlimited |
-| AI ticket summary | No | Yes | Yes | Yes |
+| `--check` (VCS diff context) | Yes | Yes | Yes | Yes |
+| 4h brief cache | Yes | Yes | Yes | Yes |
+| Spec drift detection | No | Yes | Yes | Yes |
+| Git hook compliance gate | No | Yes | Yes | Yes |
+| Ticket-to-PR assembler | No | Yes | Yes | Yes |
+| Token budget optimizer (`--budget N`) | No | Yes | Yes | Yes |
+| Compliance ledger (audit trail) | No | Yes | Yes | Yes |
+| Stale delta report | No | Yes | Yes | Yes |
+| AI summary `--summarize` (BYOK) | No | Yes | Yes | Yes |
 | Configurable cache TTL | No | Yes | Yes | Yes |
-| Depth-2 traversal | No | Yes | Yes | Yes |
-| Scheduled triage digest | No | Yes | Yes | Yes |
-| Multi-project triage | No | Yes | Yes | Yes |
-| Custom attention rules | No | Yes | Yes | Yes |
+| Scheduled digest | No | Yes | Yes | Yes |
 | Ticket history tracking | No | Yes | Yes | Yes |
-| `--assignee` flag | No | No | Yes | Yes |
-| `--sprint` flag | No | No | Yes | Yes |
-| `--project`/`--label`/`--priority` | No | No | Yes | Yes |
+| Console dashboard | No | Yes | Yes | Yes |
+| Parallel collision detection | No | No | Yes | Yes |
+| Standup/PR generator | No | No | Yes | Yes |
+| Handoff brief (`--handoff`) | No | No | Yes | Yes |
+| Shareable triage snapshot | No | No | Yes | Yes |
+| Team compliance analytics | No | No | Yes | Yes |
+| `--assignee` / `--sprint` flags | No | No | Yes | Yes |
 | Triage export (CSV/JSON) | No | No | Yes | Yes |
 | Team triage dashboard | No | No | Yes | Yes |
 | Slack/Teams alerts | No | No | Yes | Yes |
-| Brief templates | No | No | Yes | Yes |
-| Response time metrics | No | No | Yes | Yes |
 | Cloud sync (E2EE) | No | Phase C | Phase C | Phase C |
 | SSO + audit logs | No | No | No | Phase D |
 | Self-hosted deployment | No | No | No | Phase D |
