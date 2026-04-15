@@ -464,6 +464,31 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     writeBriefCache(ticketKey, conn.profileName, depth, ticket, configDir);
   }
 
+  // ── Spec drift detection ───────────────────────────────────────────────────
+  try {
+    const dtm = opts.driftTrackerModule ?? await import('./lib/drift-tracker.mjs');
+    const branch = dtm.getCurrentBranch();
+    if (branch !== '') {
+      const { createHash } = await import('node:crypto');
+      const resolvedConfigDir = configDir ?? (await import('./lib/config.mjs')).DEFAULT_CONFIG_DIR;
+      const profileName = conn.profileName ?? 'default';
+      const prior = dtm.readSnapshot(ticketKey, { profile: profileName, configDir: resolvedConfigDir });
+      if (prior) {
+        const desc = ticket.fields?.description ?? '';
+        const { extractRequirements } = await import('./lib/requirement-extractor.mjs');
+        const current = {
+          status: ticket.fields?.status?.name ?? '',
+          descriptionHash: createHash('sha256').update(desc).digest('hex'),
+          requirements: extractRequirements(desc),
+        };
+        const result = dtm.detectDrift(current, prior);
+        if (result.drifted) process.stderr.write(dtm.formatDriftWarning(ticketKey, result.changes));
+      }
+      dtm.writeSnapshot(ticketKey, ticket, { profile: profileName, configDir: resolvedConfigDir, branch });
+    }
+  } catch { /* drift errors are non-fatal */ }
+  // ──────────────────────────────────────────────────────────────────────────
+
   if (!args.includes('--no-attachments')) {
     const downloadable = (ticket.attachments ?? []).filter(a => a.content);
     if (downloadable.length > 0) {
