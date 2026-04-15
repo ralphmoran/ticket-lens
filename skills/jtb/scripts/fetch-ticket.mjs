@@ -214,7 +214,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check', '--summarize', '--cloud', '--compliance'],
+    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check', '--summarize', '--cloud', '--compliance', '--budget='],
     { hints: ['--stale=', '--status=', '--static'] } // triage-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
@@ -320,9 +320,24 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const allText = [cached.ticket.description, ...cached.ticket.comments.map(c => c.body)].filter(Boolean).join('\n');
       const codeRefs = extractCodeReferences(allText);
       const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
-      let brief = useStyled
-        ? styleBrief(cached.ticket, codeRefs, { styled: true })
-        : assembleBrief(cached.ticket, codeRefs);
+
+      // Apply --budget pruning on the plain brief before styling (Pro only).
+      // When --budget is active, always output plain text (pruning operates on unescaped chars).
+      let plainBrief = assembleBrief(cached.ticket, codeRefs);
+      const budgetArgCached = args.find(a => a.startsWith('--budget='));
+      if (budgetArgCached) {
+        const budgetN = parseInt(budgetArgCached.split('=')[1], 10);
+        if (licensedFn('pro', configDir)) {
+          const budgetPruner = opts.budgetPruner ?? (await import('./lib/budget-pruner.mjs'));
+          const result = budgetPruner.pruneBrief(plainBrief, { budget: budgetN, stream: process.stderr });
+          plainBrief = result.pruned;
+        } else {
+          upgradeFn('pro', '--budget');
+        }
+      }
+      let brief = (budgetArgCached && licensedFn('pro', configDir))
+        ? plainBrief
+        : (useStyled ? styleBrief(cached.ticket, codeRefs, { styled: true }) : plainBrief);
 
       if (args.includes('--check')) brief = applyCheck(brief, opts);
 
@@ -434,9 +449,24 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const codeRefs = extractCodeReferences(allText);
 
   const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
-  let output = useStyled
-    ? styleBrief(ticket, codeRefs, { styled: true })
-    : assembleBrief(ticket, codeRefs);
+
+  // Apply --budget pruning on the plain brief before styling (Pro only).
+  // When --budget is active, always output plain text (pruning operates on unescaped chars).
+  let plainOutput = assembleBrief(ticket, codeRefs);
+  const budgetArg = args.find(a => a.startsWith('--budget='));
+  if (budgetArg) {
+    const budgetN = parseInt(budgetArg.split('=')[1], 10);
+    if (licensedFn('pro', configDir)) {
+      const budgetPruner = opts.budgetPruner ?? (await import('./lib/budget-pruner.mjs'));
+      const result = budgetPruner.pruneBrief(plainOutput, { budget: budgetN, stream: process.stderr });
+      plainOutput = result.pruned;
+    } else {
+      upgradeFn('pro', '--budget');
+    }
+  }
+  let output = (budgetArg && licensedFn('pro', configDir))
+    ? plainOutput
+    : (useStyled ? styleBrief(ticket, codeRefs, { styled: true }) : plainOutput);
 
   if (args.includes('--check')) output = applyCheck(output, opts);
 
