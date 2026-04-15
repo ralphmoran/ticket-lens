@@ -278,13 +278,6 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const licensedFn = opts.isLicensed ?? isLicensed;
   const upgradeFn = opts.showUpgradePrompt ?? showUpgradePrompt;
 
-  // Pro gate: --depth=2 (deep traversal) requires a Pro license
-  if (depth > 1 && !licensedFn('pro', configDir)) {
-    upgradeFn('pro', '--depth=2');
-    process.exitCode = 1;
-    return;
-  }
-
   const noCache = args.includes('--no-cache');
 
   // Resolve brief cache TTL: configurable for Pro tier only, else fixed 4h default
@@ -445,6 +438,12 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
 
   printFn(output + '\n');
+
+  // Contextual upsell: after a deep traversal with a substantial graph, nudge toward --summarize
+  if (depth > 1 && !args.includes('--summarize') && (ticket.linked?.length ?? 0) >= 2) {
+    const s = createStyler({ isTTY: process.stderr.isTTY });
+    process.stderr.write(`  ${s.dim('○')} ${s.dim('Tip: large briefs compress further — `--summarize` condenses this to a single AI digest ($8/mo)')}\n`);
+  }
 }
 
 // Run if invoked directly

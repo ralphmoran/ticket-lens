@@ -89,7 +89,7 @@ ticketlens CNV1-2                  # Depth 1, styled output (default)
 ticketlens get CNV1-2              # Same — explicit alias
 ticketlens CNV1-2 --depth=0        # Target ticket only
 ticketlens CNV1-2 --depth=1        # + linked ticket descriptions and comments
-ticketlens CNV1-2 --depth=2        # + linked-of-linked [Pro]
+ticketlens CNV1-2 --depth=2        # + linked-of-linked (full graph)
 ticketlens CNV1-2 --plain          # Plain markdown — pipe-safe, LLM-ready
 ticketlens CNV1-2 --profile=acme   # Force a specific profile
 ticketlens CNV1-2 --no-cache       # Bypass cache, re-fetch from Jira
@@ -104,7 +104,7 @@ ticketlens CNV1-2 --summarize --cloud  # AI summary routed through TicketLens AP
 |-----------|-------|
 | `0` | Target ticket: description, comments, attachments |
 | `1` | + linked tickets: descriptions and comments _(default)_ |
-| `2` | + linked-of-linked: key and summary only _(Pro)_ |
+| `2` | + linked-of-linked: key and summary only |
 
 Max 15 tickets at any depth. Circular references handled automatically.
 
@@ -218,7 +218,7 @@ cp $(npm root -g)/ticketlens/skills/jtb/SKILL.md ~/.claude/commands/jtb.md
 ```
 /jtb CNV1-2                    # Fetch ticket + linked issues → plan mode
 /jtb CNV1-2 --depth=0          # Target ticket only (fast)
-/jtb CNV1-2 --depth=2          # Deep: linked-of-linked [Pro]
+/jtb CNV1-2 --depth=2          # Deep: full linked-issue graph
 /jtb CNV1-2 --profile=acme     # Force a specific profile
 /jtb CNV1-2 --no-attachments   # Skip attachment download
 /jtb CNV1-2 --no-cache         # Re-fetch from Jira
@@ -248,7 +248,7 @@ ticketlens CNV1-2                            # Fetch with defaults (depth 1, sty
 ticketlens get CNV1-2                        # Explicit alias (same result)
 ticketlens CNV1-2 --depth=0                  # Target ticket only — no linked issues
 ticketlens CNV1-2 --depth=1                  # + linked ticket descriptions and comments
-ticketlens CNV1-2 --depth=2                  # + linked-of-linked [Pro]
+ticketlens CNV1-2 --depth=2                  # + linked-of-linked (full graph)
 ticketlens CNV1-2 --profile=acme             # Force a specific Jira profile
 ticketlens CNV1-2 --plain                    # Plain markdown — no color codes
 ticketlens CNV1-2 --styled                   # Force ANSI color even when piping
@@ -329,14 +329,13 @@ Start free, upgrade when you need it — `ticketlens activate <key>`
 ### Pro — $8/mo
 
 <div align="center">
-  <img src="docs/demos/pro-depth.gif" alt="ticketlens --depth=2 deep traversal demo" width="700" />
+  <img src="docs/demos/pro-triage.gif" alt="ticketlens --summarize AI summary demo" width="700" />
 </div>
 
 ```bash
-ticketlens CNV1-2 --depth=2              # Deep traversal: linked-of-linked tickets
-ticketlens CNV1-2 --compliance           # Check ticket requirements against local diff [Free 3/mo]
 ticketlens CNV1-2 --summarize            # AI summary via your own API key (BYOK)
 ticketlens CNV1-2 --summarize --cloud    # AI summary via TicketLens API (no local key needed)
+ticketlens CNV1-2 --compliance           # Check ticket requirements against local diff [Free 3/mo]
 ticketlens triage --stale=3              # Custom stale threshold (default is 5)
 ticketlens triage --digest               # POST scored triage results to digest endpoint
 ticketlens schedule                      # Set up a scheduled daily digest
