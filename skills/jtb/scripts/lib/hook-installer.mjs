@@ -18,6 +18,12 @@ const GUARD = '# ticketlens-compliance-gate';
  * @returns {string}
  */
 export function generateHookScript({ threshold = 80 } = {}) {
+  // Coerce to bounded integer to prevent shell injection via the threshold param
+  const safeThreshold = Math.max(0, Math.min(100, Math.floor(Number(threshold))));
+  if (!Number.isFinite(safeThreshold)) {
+    throw new Error('threshold must be a number between 0 and 100');
+  }
+  threshold = safeThreshold;
   return [
     '#!/bin/sh',
     GUARD,

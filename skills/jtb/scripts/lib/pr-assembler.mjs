@@ -104,6 +104,7 @@ function buildCoverageSection(complianceResult, requirements) {
  */
 export async function assemblePr(ticketKey, {
   configDir = DEFAULT_CONFIG_DIR,
+  cwd = process.cwd(),
   fetchTicketFn = fetchTicket,
   extractRequirementsFn = extractRequirements,
   findLinkedCommitsFn = findLinkedCommits,
@@ -122,7 +123,7 @@ export async function assemblePr(ticketKey, {
   const requirements = extractRequirementsFn(description);
 
   // Find linked commits
-  const commits = await findLinkedCommitsFn(ticketKey, { cwd: process.cwd() });
+  const commits = await findLinkedCommitsFn(ticketKey, { cwd });
 
   // Build a minimal plain-text brief for compliance check input
   const brief = `## ${ticketKey}: ${summary}\n\n${description}`;
