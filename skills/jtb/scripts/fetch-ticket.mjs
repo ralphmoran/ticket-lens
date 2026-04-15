@@ -169,6 +169,22 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
 
   // Early dispatch for non-ticket subcommands
+  if (args[0] === 'install-hooks') {
+    const { installHook } = await import('./lib/hook-installer.mjs');
+    try {
+      const result = await installHook({ cwd: process.cwd() });
+      if (result.skipped) {
+        process.stderr.write(`  Hook install skipped: ${result.reason}\n`);
+      } else {
+        process.stdout.write(`  Hook installed: ${result.path} (threshold: 80%)\n`);
+      }
+    } catch (err) {
+      process.stderr.write(`  Error installing hook: ${err.message}\n`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   if (args[0] === 'ledger') {
     const { exportLedger } = await import('./lib/ledger.mjs');
     const { isLicensed: isLic, showUpgradePrompt: showUpgrade } = await import('./lib/license.mjs');
