@@ -28,7 +28,7 @@ export function generateHookScript({ threshold = 80 } = {}) {
     '#!/bin/sh',
     GUARD,
     'BRANCH=$(git symbolic-ref HEAD 2>/dev/null | sed \'s|refs/heads/||\')',
-    'KEY=$(echo "$BRANCH" | grep -oE \'[A-Z]+-[0-9]+\' | head -1)',
+    'KEY=$(echo "$BRANCH" | grep -oE \'[A-Z][A-Z0-9]+-[0-9]+\' | head -1)',
     '[ -z "$KEY" ] && exit 0',
     `ticketlens compliance "$KEY" || { echo "Push blocked: compliance < ${threshold}% for $KEY"; exit 1; }`,
   ].join('\n') + '\n';

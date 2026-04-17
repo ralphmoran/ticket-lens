@@ -123,7 +123,7 @@ export async function assemblePr(ticketKey, {
   const requirements = extractRequirementsFn(description);
 
   // Find linked commits
-  const commits = await findLinkedCommitsFn(ticketKey, { cwd });
+  const { commits = [], branches = [] } = await findLinkedCommitsFn(ticketKey, { cwd });
 
   // Build a minimal plain-text brief for compliance check input
   const brief = `## ${ticketKey}: ${summary}\n\n${description}`;
@@ -145,15 +145,13 @@ export async function assemblePr(ticketKey, {
   // Build output
   const lines = [`## ${ticketKey}: ${summary}`, ''];
 
-  // What changed
+  // What changed — commits are raw git --oneline strings: "<sha> <message>"
   lines.push('### What changed');
   if (commits.length === 0) {
     lines.push('_No linked commits found._');
   } else {
-    for (const commit of commits) {
-      const sha = commit.sha ?? commit.hash ?? '';
-      const msg = commit.message ?? '';
-      lines.push(`- ${sha} ${msg}`.trim());
+    for (const commitLine of commits) {
+      lines.push(`- ${commitLine}`);
     }
   }
 

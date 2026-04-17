@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 
-const TICKET_KEY_RE = /^[A-Z]+-\d+$/;
+const TICKET_KEY_RE = /^[A-Z][A-Z0-9]+-\d+$/;
 const SPAWN_OPTS = { encoding: 'utf8', timeout: 10_000 };
 
 function run(execFn, cmd, args, cwd) {
