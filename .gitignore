@@ -4,3 +4,13 @@ node_modules/
 .env
 .idea/
 .worktrees/
+entities.json
+mempalace.yaml
+skills-lock.json
+.worktrees
+.agents
+.claude
+.aidesigner/*
+!.aidesigner/.gitkeep
+.mcp.json
+.planning/
