@@ -100,4 +100,19 @@ describe('runComplianceCheck', () => {
     assert.ok(!result.report.includes('Free tier:'));
     assert.ok(!result.report.includes('Upgrade to Pro'));
   });
+
+  it('returns noCriteria: false when requirements are found', async () => {
+    const result = await runComplianceCheck(makeOpts());
+    assert.equal(result.noCriteria, false);
+  });
+
+  it('returns noCriteria: true when no requirements extracted', async () => {
+    const opts = makeOpts({
+      extractRequirementsFn: () => [],
+      analyzeDiffFn: () => ({ results: [], coveragePercent: 0 }),
+    });
+    const result = await runComplianceCheck(opts);
+    assert.ok(result !== null);
+    assert.equal(result.noCriteria, true);
+  });
 });

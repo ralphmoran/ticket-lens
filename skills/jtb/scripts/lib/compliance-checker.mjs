@@ -88,5 +88,5 @@ export async function runComplianceCheck({
     );
   }
 
-  return { report, coveragePercent };
+  return { report, coveragePercent, noCriteria: requirements.length === 0 };
 }

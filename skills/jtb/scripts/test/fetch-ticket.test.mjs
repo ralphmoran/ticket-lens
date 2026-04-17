@@ -399,3 +399,197 @@ describe('--summarize flag', () => {
     assert.ok(errors.some(e => e.includes('No API key')));
   });
 });
+
+describe('compliance subcommand', () => {
+  const mockFetcher = async () => ({ ok: true, json: async () => cloudFixture });
+
+  it('errors when no ticket key provided', async () => {
+    const out = captureOutput();
+    try {
+      await run(['compliance'], validEnv, mockFetcher, NO_CONFIG);
+      assert.equal(process.exitCode, 1);
+      assert.ok(out.stderr.includes('requires a ticket key'));
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('errors on invalid ticket key format', async () => {
+    const out = captureOutput();
+    try {
+      await run(['compliance', 'not-a-key'], validEnv, mockFetcher, NO_CONFIG);
+      assert.equal(process.exitCode, 1);
+      assert.ok(out.stderr.includes('not a valid ticket key'));
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('exits 1 with credential error when no Jira env vars set', async () => {
+    const out = captureOutput();
+    try {
+      await run(['compliance', 'PROD-1234'], {}, mockFetcher, NO_CONFIG);
+      assert.equal(process.exitCode, 1);
+      assert.ok(out.stderr.includes('No Jira credentials'));
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('prints compliance report to stdout', async () => {
+    const output = [];
+    await run(['compliance', 'PROD-1234'], {
+      env: validEnv,
+      fetcher: mockFetcher,
+      configDir: NO_CONFIG,
+      print: (chunk) => output.push(chunk),
+      runComplianceCheck: async () => ({ report: '  Compliance Check — PROD-1234\n  Coverage: 90%', coveragePercent: 90 }),
+    });
+    process.exitCode = undefined;
+    const combined = output.join('');
+    assert.ok(combined.includes('Compliance Check'));
+    assert.ok(combined.includes('Coverage: 90%'));
+  });
+
+  it('exits 0 when coverage meets default threshold (80%)', async () => {
+    await run(['compliance', 'PROD-1234'], {
+      env: validEnv,
+      fetcher: mockFetcher,
+      configDir: NO_CONFIG,
+      print: () => {},
+      runComplianceCheck: async () => ({ report: '  Coverage: 80%', coveragePercent: 80 }),
+    });
+    assert.notEqual(process.exitCode, 1);
+    process.exitCode = undefined;
+  });
+
+  it('exits 1 when coverage is below default threshold (80%)', async () => {
+    await run(['compliance', 'PROD-1234'], {
+      env: validEnv,
+      fetcher: mockFetcher,
+      configDir: NO_CONFIG,
+      print: () => {},
+      runComplianceCheck: async () => ({ report: '  Coverage: 50%', coveragePercent: 50 }),
+    });
+    assert.equal(process.exitCode, 1);
+    process.exitCode = undefined;
+  });
+
+  it('exits 1 when runComplianceCheck returns null (license/usage gate)', async () => {
+    await run(['compliance', 'PROD-1234'], {
+      env: validEnv,
+      fetcher: mockFetcher,
+      configDir: NO_CONFIG,
+      print: () => {},
+      runComplianceCheck: async () => null,
+    });
+    assert.equal(process.exitCode, 1);
+    process.exitCode = undefined;
+  });
+
+  it('exits 0 when no acceptance criteria found in ticket', async () => {
+    await run(['compliance', 'PROD-1234'], {
+      env: validEnv,
+      fetcher: mockFetcher,
+      configDir: NO_CONFIG,
+      print: () => {},
+      runComplianceCheck: async () => ({
+        report: '  No acceptance criteria found in ticket description.',
+        coveragePercent: 0,
+        noCriteria: true,
+      }),
+    });
+    assert.notEqual(process.exitCode, 1);
+    process.exitCode = undefined;
+  });
+
+  it('reads threshold from .ticketlens-hooks.json and passes with custom threshold', async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'tl-compliance-'));
+    writeFileSync(join(tmpDir, '.ticketlens-hooks.json'), JSON.stringify({ complianceThreshold: 60 }) + '\n');
+    try {
+      await run(['compliance', 'PROD-1234'], {
+        env: validEnv,
+        fetcher: mockFetcher,
+        configDir: NO_CONFIG,
+        cwdForHooks: tmpDir,
+        print: () => {},
+        // 65% is above 60% but below default 80% — should pass with custom threshold
+        runComplianceCheck: async () => ({ report: '  Coverage: 65%', coveragePercent: 65 }),
+      });
+      assert.notEqual(process.exitCode, 1);
+    } finally {
+      process.exitCode = undefined;
+      rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  it('exits 1 when coverage below custom threshold from .ticketlens-hooks.json', async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'tl-compliance-'));
+    writeFileSync(join(tmpDir, '.ticketlens-hooks.json'), JSON.stringify({ complianceThreshold: 90 }) + '\n');
+    try {
+      await run(['compliance', 'PROD-1234'], {
+        env: validEnv,
+        fetcher: mockFetcher,
+        configDir: NO_CONFIG,
+        cwdForHooks: tmpDir,
+        print: () => {},
+        runComplianceCheck: async () => ({ report: '  Coverage: 80%', coveragePercent: 80 }),
+      });
+      assert.equal(process.exitCode, 1);
+    } finally {
+      process.exitCode = undefined;
+      rmSync(tmpDir, { recursive: true });
+    }
+  });
+});
+
+describe('pr subcommand', () => {
+  const mockFetcher = async () => ({ ok: true, json: async () => cloudFixture });
+
+  it('errors when no ticket key provided', async () => {
+    const out = captureOutput();
+    try {
+      await run(['pr'], validEnv, mockFetcher, NO_CONFIG);
+      assert.ok(out.stderr.includes('"pr" requires a ticket key'));
+      assert.equal(process.exitCode, 1);
+    } finally { out.restore(); }
+  });
+
+  it('errors on invalid ticket key format', async () => {
+    const out = captureOutput();
+    try {
+      await run(['pr', 'not-a-key'], validEnv, mockFetcher, NO_CONFIG);
+      assert.ok(out.stderr.includes('not a valid ticket key'));
+      assert.equal(process.exitCode, 1);
+    } finally { out.restore(); }
+  });
+
+  it('exits 1 with credential error when no Jira env vars set', async () => {
+    const out = captureOutput();
+    try {
+      await run(['pr', 'PROD-1234'], {}, mockFetcher, NO_CONFIG);
+      assert.ok(out.stderr.includes('No Jira credentials found'));
+      assert.equal(process.exitCode, 1);
+    } finally { out.restore(); }
+  });
+
+  it('prints markdown PR description to stdout using resolved env', async () => {
+    const out = captureOutput();
+    try {
+      await run(['pr', 'PROD-1234'], validEnv, mockFetcher, NO_CONFIG);
+      assert.ok(out.stdout.includes('PROD-1234'), 'output should include ticket key');
+      assert.ok(out.stdout.includes('### What changed'), 'output should include What changed section');
+      assert.equal(process.exitCode, undefined);
+    } finally { out.restore(); }
+  });
+
+  it('uses alphanumeric project keys (CNV1-2 style)', async () => {
+    const out = captureOutput();
+    try {
+      const fixture = { ...cloudFixture, key: 'CNV1-2' };
+      const fetcher = async () => ({ ok: true, json: async () => fixture });
+      await run(['pr', 'CNV1-2'], validEnv, fetcher, NO_CONFIG);
+      assert.ok(out.stdout.includes('CNV1-2'), 'output should include alphanumeric ticket key');
+    } finally { out.restore(); }
+  });
+});

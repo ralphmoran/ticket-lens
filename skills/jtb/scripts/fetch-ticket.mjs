@@ -7,6 +7,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fetchTicket } from './lib/jira-client.mjs';
 import { extractCodeReferences } from './lib/code-ref-parser.mjs';
 import { assembleBrief } from './lib/brief-assembler.mjs';
@@ -199,8 +200,34 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       return;
     }
     const resolvedConfigDir = configDir ?? (await import('./lib/config.mjs')).DEFAULT_CONFIG_DIR;
+
+    // Resolve connection (same pattern as compliance dispatch)
+    const profileArgPr = args.find(a => a.startsWith('--profile='));
+    const profileNamePr = profileArgPr ? profileArgPr.split('=')[1] : undefined;
+    const connPr = resolveConnection(ticketKeyArg, {
+      env,
+      configDir: resolvedConfigDir,
+      profileName: profileNamePr,
+      cwd: process.cwd(),
+      onWarning: (w) => process.stderr.write(w + '\n'),
+      onProfileNotFound: () => {},
+    });
+
+    const hasAuthPr = connPr.pat || (connPr.email && connPr.apiToken);
+    if (!connPr.baseUrl || !hasAuthPr) {
+      process.stderr.write('Error: No Jira credentials found. Run \'ticketlens init\' or set JIRA_BASE_URL + JIRA_API_TOKEN.\n');
+      process.exitCode = 1;
+      return;
+    }
+
+    const jiraEnvPr = buildJiraEnv(connPr);
+    const apiVersionPr = connPr.auth === 'cloud' ? 3 : 2;
+
     try {
-      const md = await assemblePr(ticketKeyArg, { configDir: resolvedConfigDir });
+      const md = await assemblePr(ticketKeyArg, {
+        configDir: resolvedConfigDir,
+        fetchTicketFn: (key, fOpts = {}) => fetchTicket(key, { env: jiraEnvPr, fetcher, apiVersion: apiVersionPr, ...fOpts }),
+      });
       printFn(md + '\n');
     } catch (err) {
       process.stderr.write(`Error: ${err.message}\n`);
@@ -226,6 +253,91 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     } else {
       printFn(JSON.stringify(result, null, 2) + '\n');
       process.stderr.write('  Verify signature: HMAC-SHA256 over {records, exportedAt} with key at ledger-key\n');
+    }
+    return;
+  }
+
+  if (args[0] === 'compliance') {
+    const ticketKeyArg = args[1];
+    if (!ticketKeyArg) {
+      process.stderr.write('Error: "compliance" requires a ticket key. Usage: ticketlens compliance PROJ-123\n');
+      process.exitCode = 1;
+      return;
+    }
+    if (!TICKET_KEY_PATTERN.test(ticketKeyArg)) {
+      process.stderr.write(`Error: "${ticketKeyArg}" is not a valid ticket key. Expected format: PROJ-123\n`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const resolvedConfigDir = configDir ?? (await import('./lib/config.mjs')).DEFAULT_CONFIG_DIR;
+
+    // Read threshold from .ticketlens-hooks.json (written by install-hooks); default 80%
+    let threshold = 80;
+    const cwdForHooks = opts.cwdForHooks ?? process.cwd();
+    try {
+      const hooksJson = JSON.parse(readFileSync(join(cwdForHooks, '.ticketlens-hooks.json'), 'utf8'));
+      const t = Number(hooksJson.complianceThreshold);
+      if (Number.isFinite(t)) threshold = Math.max(0, Math.min(100, t));
+    } catch { /* absent or unreadable — use default */ }
+
+    // Resolve Jira connection (non-interactive: hooks are non-TTY)
+    const profileArgC = args.find(a => a.startsWith('--profile='));
+    const profileNameC = profileArgC ? profileArgC.split('=')[1] : undefined;
+    const connC = resolveConnection(ticketKeyArg, {
+      env,
+      configDir: resolvedConfigDir,
+      profileName: profileNameC,
+      cwd: process.cwd(),
+      onWarning: (w) => process.stderr.write(w + '\n'),
+      onProfileNotFound: () => {},
+    });
+
+    const hasAuthC = connC.pat || (connC.email && connC.apiToken);
+    if (!connC.baseUrl || !hasAuthC) {
+      process.stderr.write('Error: No Jira credentials found. Run \'ticketlens init\' or set JIRA_BASE_URL + JIRA_API_TOKEN.\n');
+      process.exitCode = 1;
+      return;
+    }
+
+    const jiraEnvC = buildJiraEnv(connC);
+    const apiVersionC = connC.auth === 'cloud' ? 3 : 2;
+
+    let ticketC;
+    try {
+      ticketC = await fetchTicket(ticketKeyArg, { env: jiraEnvC, fetcher, depth: 0, apiVersion: apiVersionC });
+    } catch (err) {
+      process.stderr.write(`Error fetching ${ticketKeyArg}: ${err.message}\n`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const allTextC = [ticketC.description, ...ticketC.comments.map(c => c.body)].filter(Boolean).join('\n');
+    const codeRefsC = extractCodeReferences(allTextC);
+    const briefC = assembleBrief(ticketC, codeRefsC);
+
+    const complianceRunner = opts.runComplianceCheck ?? runComplianceCheck;
+    const complianceResult = await complianceRunner({
+      brief: briefC,
+      ticketKey: ticketKeyArg,
+      configDir: resolvedConfigDir,
+    });
+
+    if (complianceResult === null) {
+      // License/usage gate — showUpgradePrompt already wrote to stderr
+      process.exitCode = 1;
+      return;
+    }
+
+    printFn(complianceResult.report + '\n');
+
+    // No acceptance criteria in ticket → pass (nothing to fail on)
+    if (complianceResult.noCriteria) {
+      return;
+    }
+
+    if (complianceResult.coveragePercent < threshold) {
+      process.exitCode = 1;
     }
     return;
   }

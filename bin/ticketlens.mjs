@@ -230,6 +230,34 @@ switch (command) {
     break;
   }
 
+  case 'install-hooks':
+    runFetch(['install-hooks', ...cmdArgs]).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+
+  case 'pr':
+    runFetch(['pr', ...cmdArgs]).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+
+  case 'ledger':
+    runFetch(['ledger', ...cmdArgs]).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+
+  case 'compliance':
+    runFetch(['compliance', ...cmdArgs]).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+
   case 'help':
   default:
     printHelp();
