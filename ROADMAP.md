@@ -260,7 +260,9 @@ Phase B.7: Safety Net — spec drift, git hooks, PR assembler,
     ===== VALIDATION GATE =====
     50+ paying Pro? 10+ teams? Revenue covering time?
            |
-Phase C:   Console + Team Intelligence (in progress + C-T1 through C-T5)
+Phase C:   Console + Team Intelligence
+             ├─ Foundation: admin backend, auth, owner panel, TlIcon, tl-* design system ✅ complete
+             └─ Customer features: Iter. 7–9 (cloud sync, team dashboard, Slack) ⏳ post-validation gate
 Phase D:   Multi-tracker + Enterprise
 ```
 
@@ -316,7 +318,7 @@ Phase D:   Multi-tracker + Enterprise
 | B.5 | 6 | 5 | Months 3-5 | Primary Pro conversion lever |
 | B.7 | B.7 | 6 | Months 4-6 | Safety Net Pro features |
 | **GATE** | | | | **50+ Pro, 10+ Teams?** |
-| C | 7-9 | 17 | Months 6-10 | SaaS revenue, hosting costs begin |
+| C | 7-9 | 17 | Months 6-10 | SaaS revenue, hosting costs begin — foundation complete, customer features pending |
 | D | 10-12 | 12 | Month 12+ | Enterprise + multi-tracker |
 | Parked | — | 2 | — | — |
 | **Total** | | **57** | | |
