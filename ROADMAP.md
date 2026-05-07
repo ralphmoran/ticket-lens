@@ -102,11 +102,11 @@ The killer premium feature. Primary conversion lever from Free to Pro.
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| 20 | Feature | **Requirement extractor** | Parse acceptance criteria, bullet points, "should/must/given-when-then" from ticket description + comments. | Large |
-| 21 | Feature | **Ticket-to-commit linker** | Find git/svn commits and branches associated with a ticket key. Build on existing code-ref-parser + VCS detection. | Medium |
-| 22 | Feature | **Code diff analyzer** | Compare extracted requirements against actual code changes in linked commits. Map each requirement to FOUND/NOT FOUND. | Large |
-| 23 | Feature | **`/jtb compliance TICKET` CLI** | Assemble the compliance report: requirements list, coverage percentage, missing items. | Medium |
-| 24 | Feature | **Local usage tracking** | Count compliance checks locally to enforce the free-tier cap (3/month). Store count in `~/.ticketlens/usage.json`. | Small |
+| 20 | ~~Feature~~ | ~~**Requirement extractor**~~ | Done. Parses acceptance criteria, bullet points, "should/must/given-when-then" from ticket description + comments. | ~~Large~~ |
+| 21 | ~~Feature~~ | ~~**Ticket-to-commit linker**~~ | Done. Finds git/svn commits and branches associated with a ticket key. Built on code-ref-parser + VCS detection. | ~~Medium~~ |
+| 22 | ~~Feature~~ | ~~**Code diff analyzer**~~ | Done. Compares extracted requirements against actual code changes in linked commits. Maps each requirement to FOUND/NOT FOUND. | ~~Large~~ |
+| 23 | ~~Feature~~ | ~~**`/jtb compliance TICKET` CLI**~~ | Done. Assembles the compliance report: requirements list, coverage percentage, missing items. | ~~Medium~~ |
+| 24 | ~~Feature~~ | ~~**Local usage tracking**~~ | Done. Counts compliance checks locally to enforce the free-tier cap (3/month). Stored in `~/.ticketlens/usage.json`. | ~~Small~~ |
 
 **Pricing**: Free tier gets 3 compliance checks/month. Pro ($8/mo) gets unlimited. This is the primary conversion lever — devs hit the cap and realize it's worth $8.
 
@@ -125,12 +125,12 @@ All CLI-only, $0 infrastructure. Runs before or alongside Phase C. Six Pro tier 
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| B7-1 | Feature | **Spec drift detection** | Scheduled re-fetch of tickets linked to your open branches. Alerts via stderr (or daily email if digest enabled) when acceptance criteria, scope, or status changed since you last read it. The manual version requires remembering to re-read every ticket mid-sprint — nobody does this. | Medium |
-| B7-2 | Feature | **Git hook compliance gate** | `ticketlens install-hooks` installs a pre-push hook that runs compliance check against the branch's linked ticket. Blocks push if coverage < configurable threshold (default: 80%). One-time setup. Makes TicketLens uncancellable — removing it breaks the pipeline. | Medium |
-| B7-3 | Feature | **Ticket-to-PR assembler** | `ticketlens pr TICKET-KEY` outputs a PR description template: requirements list, compliance coverage percentage, linked commits, acceptance criteria status. Pipe or paste into GitHub/GitLab. Maps the ticket against what was actually built, not just what the ticket said. | Medium |
-| B7-4 | Feature | **Token budget optimizer** | `ticketlens TICKET-KEY --budget 4000` runs a metadata-only prefetch to estimate token cost of the full graph, then prunes low-value content (old status comments, duplicate fields) to fit the target window. Reports what was dropped and why. | Low–Medium |
-| B7-5 | Feature | **Compliance ledger** | Append-only local log: `ticket-key → commit-SHA → author → timestamp → coverage %`. Exportable as signed JSON or CSV. Satisfies SOC 2, ISO 27001, HIPAA audit trail requirements without sending data anywhere. | Small–Medium |
-| B7-6 | Feature | **Stale delta report** | Upgrades the existing scheduled digest from snapshot to diff. Shows what got *worse* since yesterday: tickets that regressed, gained unanswered comments, crossed staleness threshold. The stored triage history is the moat — nobody else has it. | Medium |
+| B7-1 | ~~Feature~~ | ~~**Spec drift detection**~~ | Done. Scheduled re-fetch of tickets linked to open branches. Alerts via stderr when acceptance criteria, scope, or status changed since last read. | ~~Medium~~ |
+| B7-2 | ~~Feature~~ | ~~**Git hook compliance gate**~~ | Done. `ticketlens install-hooks` installs a pre-push hook that runs compliance check. Blocks push if coverage < configurable threshold (default: 80%). Shell-injection hardened. | ~~Medium~~ |
+| B7-3 | ~~Feature~~ | ~~**Ticket-to-PR assembler**~~ | Done. `ticketlens pr TICKET-KEY` outputs a PR description template: requirements list, compliance coverage %, linked commits, acceptance criteria status. Pipe or paste into GitHub/GitLab. | ~~Medium~~ |
+| B7-4 | ~~Feature~~ | ~~**Token budget optimizer**~~ | Done. `ticketlens TICKET-KEY --budget 4000` prunes low-value content (old status comments, duplicate fields) to fit the target window. Reports what was dropped and why. | ~~Low–Medium~~ |
+| B7-5 | ~~Feature~~ | ~~**Compliance ledger**~~ | Done. Append-only local log: `ticket-key → commit-SHA → author → timestamp → coverage %`. Exportable as signed JSON or CSV. SOC 2 / ISO 27001 / HIPAA audit trail without sending data anywhere. | ~~Small–Medium~~ |
+| B7-6 | ~~Feature~~ | ~~**Stale delta report**~~ | Done. Upgrades scheduled digest from snapshot to diff. Shows what got *worse* since yesterday: regressed tickets, unanswered comments, staleness crossings. | ~~Medium~~ |
 
 **Strategic priority:** B7-2 (git hook gate) is the path to must-have status. Once compliance runs pre-push, removing TicketLens breaks the pipeline — same category as linters.
 
@@ -153,6 +153,22 @@ If no: iterate on Phase B features, double down on marketing, or pivot.
 ## Phase C — Infrastructure (Month 6+, only if demand is proven)
 
 Build the cloud backend and web dashboard ONLY when paying users demand it.
+
+### Phase C.0 — Console Foundation ✅ Complete
+
+Laravel 11 + Inertia.js + Vue 3 + Tailwind v4. Built in parallel with Phase B.7 to unblock team-tier features at the validation gate.
+
+| # | Type | Feature | Detail |
+|---|------|---------|--------|
+| C0-1 | ~~Feature~~ | ~~**Console architecture**~~ | Done. Laravel 11 + Inertia.js + Vue 3 + Tailwind v4 + Vite. Sail-based local dev, nginx reverse proxy, GitHub Actions CI. |
+| C0-2 | ~~Feature~~ | ~~**TlIcon + tl-* design system**~~ | Done. All 7 phases shipped: token palette, component classes (buttons, cards, nav, tables, forms, badges, typography, layout, tabs), Lucide icon library, consistent disabled/hover/focus states, global cursor rules. |
+| C0-3 | ~~Feature~~ | ~~**Owner control panel**~~ | Done. is_owner flag + IsOwner middleware; client CRUD (create/suspend/restore/delete); AuditLog + AuditService (filterable, 10/page default); feature grants + auto-revoke; user impersonation with amber banner; all owner routes at `/console/owner/*`. |
+| C0-4 | ~~Feature~~ | ~~**Team management**~~ | Done. Admin Members (invite/remove/promote) + Admin Seats panels with seat-limit enforcement. Owner Teams panel (list + detail view). |
+| C0-5 | ~~Feature~~ | ~~**Schedules management**~~ | Done. Search-before-display (no results until query typed), inline client-side validation, create/delete schedules from Console. Owner account bypasses license check. |
+| C0-6 | ~~Feature~~ | ~~**Licenses panel**~~ | Done. Owner can view, issue, and set expiry for licenses from the Console. Human-readable dates + expiry warnings. |
+| C0-7 | ~~Feature~~ | ~~**UI polish**~~ | Done. Icons on all Console buttons via TlIcon, inline validation on all forms before backend requests, cursor-pointer globally, disabled button opacity + not-allowed cursor, no-op nav clicks on active section, responsive collapsible sidebar. |
+
+---
 
 ### Iteration 7 — TicketLens Cloud (Pro tier backend)
 
@@ -255,13 +271,14 @@ Phase A.5: Website + Pilot Client ✓
 Phase B:   Premium CLI (license, schedules, digests, compliance ✓)
 Phase B.5: Compliance check ✓
 Phase B.7: Safety Net — spec drift, git hooks, PR assembler,
-           token budget, ledger, stale delta  ← NEW
+           token budget, ledger, stale delta  ✅ complete
            |
     ===== VALIDATION GATE =====
     50+ paying Pro? 10+ teams? Revenue covering time?
            |
 Phase C:   Console + Team Intelligence
-             ├─ Foundation: admin backend, auth, owner panel, TlIcon, tl-* design system ✅ complete
+             ├─ C0 Foundation: admin backend, auth, owner panel, teams, schedules,
+             │  licenses, audit log, TlIcon + tl-* design system ✅ complete
              └─ Customer features: Iter. 7–9 (cloud sync, team dashboard, Slack) ⏳ post-validation gate
 Phase D:   Multi-tracker + Enterprise
 ```
@@ -315,10 +332,11 @@ Phase D:   Multi-tracker + Enterprise
 | A | 3 | 7 | Weeks 1-4 | $0 (validation) |
 | A.5 | 3.5 | 4 | Weeks 3-5 | First B2B sale |
 | B | 4-5 | 10 | Months 2-4 | Pro + Team revenue, $0 infra cost |
-| B.5 | 6 | 5 | Months 3-5 | Primary Pro conversion lever |
-| B.7 | B.7 | 6 | Months 4-6 | Safety Net Pro features |
+| B.5 | 6 | 5 | Months 3-5 | Primary Pro conversion lever ✅ complete |
+| B.7 | B.7 | 6 | Months 4-6 | Safety Net Pro features ✅ complete |
 | **GATE** | | | | **50+ Pro, 10+ Teams?** |
-| C | 7-9 | 17 | Months 6-10 | SaaS revenue, hosting costs begin — foundation complete, customer features pending |
+| C.0 | — | 7 | — | Console foundation ✅ complete (built in parallel with B.7) |
+| C | 7-9 | 17 | Months 6-10 | SaaS revenue, hosting costs begin — customer features pending validation gate |
 | D | 10-12 | 12 | Month 12+ | Enterprise + multi-tracker |
 | Parked | — | 2 | — | — |
 | **Total** | | **57** | | |
