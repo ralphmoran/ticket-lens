@@ -10,8 +10,8 @@
   <meta property="og:type" content="website">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
-  <noscript><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"></noscript>
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..700;1,14..32,300..700&family=Playfair+Display:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..700;1,14..32,300..700&family=Playfair+Display:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"></noscript>
   <link rel="stylesheet" href="assets/styles.css">
 </head>
 <body>
@@ -58,72 +58,73 @@
           </svg>
         </button>
         <a href="/console/login" class="nav-cta-ghost">Sign in</a>
-        <a href="#install" class="nav-cta">Get started →</a>
       </div>
     </div>
   </nav>
 
   <!-- HERO -->
   <section class="hero" id="hero">
+    <!-- Centered text block -->
     <div class="hero-inner">
-      <div class="hero-left">
-        <div class="hero-badge">
-          <div class="hero-badge-dot"></div>
-          Zero npm deps &middot; Node.js &ge;20 &middot; Open core
-        </div>
-        <h1>Your AI assistant<br>shouldn't need to<br><em>read your tickets.</em></h1>
-        <p class="hero-sub">TicketLens fetches, compresses, and caches Jira context locally — so Claude Code, Cursor, and any AI tool get structured briefs instead of raw API noise. Ticket content never leaves your machine.</p>
-        <div class="hero-ctas">
-          <a href="#install" class="btn-primary">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
-              <path d="M7.5 1v9M3.5 7l4 4 4-4M2 13h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            Get Free CLI
-          </a>
-          <a href="#pricing" class="btn-secondary">See Pricing</a>
-        </div>
+      <div class="hero-badge">
+        <div class="hero-badge-dot"></div>
+        Zero npm deps &middot; Node.js &ge;20 &middot; Open core
       </div>
+      <h1>Your AI assistant<br>shouldn't need to<br><em>read your tickets.</em></h1>
+      <p class="hero-sub">TicketLens fetches, compresses, and caches Jira context locally — so Claude Code, Cursor, and any AI tool get structured briefs instead of raw API noise. Ticket content never leaves your machine.</p>
+      <div class="hero-ctas">
+        <a href="#install" class="btn-primary">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+            <path d="M7.5 1v9M3.5 7l4 4 4-4M2 13h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Get Free CLI
+        </a>
+        <a href="#pricing" class="btn-secondary">See Pricing</a>
+      </div>
+      <div class="hero-social-proof">
+        <span class="hero-social-text">Used by 500+ developers at Jira-powered teams</span>
+      </div>
+    </div>
 
-      <!-- Terminal demo -->
-      <div class="hero-terminal-wrap">
-        <div class="terminal-window">
-          <div class="terminal-titlebar">
-            <div class="t-dots">
-              <div class="t-dot r"></div>
-              <div class="t-dot y"></div>
-              <div class="t-dot g"></div>
-            </div>
-            <div class="t-tabs">
-              <button class="t-tab active" data-tab="cli" id="tab-cli">ticketlens</button>
-              <button class="t-tab jtb-tab" data-tab="jtb" id="tab-jtb">
-                /jtb
-                <span class="jtb-badge">Claude Code</span>
-              </button>
-            </div>
+    <!-- Full-width terminal visual -->
+    <div class="hero-visual">
+      <div class="terminal-window">
+        <div class="terminal-titlebar">
+          <div class="t-dots">
+            <div class="t-dot r"></div>
+            <div class="t-dot y"></div>
+            <div class="t-dot g"></div>
           </div>
-          <div class="terminal-body">
-            <!-- CLI panel -->
-            <div class="t-panel" id="t-panel-cli">
-              <span><span class="t-prompt">❯ </span><span id="t-cmd"></span><span class="t-cursor" id="t-cursor"></span></span>
-              <div id="t-output" style="display:none;margin-top:2px"></div>
-            </div>
-            <!-- /jtb panel -->
-            <div class="t-panel" id="t-panel-jtb" style="display:none">
-              <span class="t-dim">Claude Code  ●  ~/projects/auth-service</span><br><br>
-              <span><span class="t-prompt" style="color:#6366f1">❯ </span><span class="t-green">/jtb PROJ-123</span></span><br><br>
-              <span><span style="color:#febc2e">⚡</span> <span class="t-muted">TicketLens — fetching PROJ-123...</span></span><br><br>
-              <span class="t-dim">──────────────────────────────────────</span><br>
-              <span class="t-white t-bold">PROJ-123</span> <span class="t-dim">—</span> <span class="t-green">Implement OAuth2 login flow</span><br>
-              <span class="t-dim">Status: </span><span class="t-yellow">In Progress</span><span class="t-dim">  ·  Priority: </span><span class="t-red">High</span><br>
-              <span class="t-dim">Assignee: </span><span class="t-white">R. Moran</span><br><br>
-              <span class="t-muted">OAuth2 with Google + GitHub. Token rotation</span><br>
-              <span class="t-muted">required. Security audit flags resolved.</span><br><br>
-              <span class="t-dim">Linked: </span><span class="t-white">PROJ-118</span> <span class="t-green">[Done]</span> <span class="t-dim">·</span> <span class="t-white">PROJ-124</span> <span class="t-yellow">[Active]</span><br>
-              <span class="t-dim">Files:  </span><span class="t-green">src/auth/oauth.ts · middleware.ts</span><br><br>
-              <span class="t-dim">──────────────────────────────────────</span><br>
-              <span class="t-green">✓ 842 tokens loaded into Claude context.</span><br>
-              <span class="t-muted">What would you like to implement?</span><span class="t-cursor"></span>
-            </div>
+          <div class="t-tabs">
+            <button class="t-tab active" data-tab="cli" id="tab-cli">ticketlens</button>
+            <button class="t-tab jtb-tab" data-tab="jtb" id="tab-jtb">
+              /jtb
+              <span class="jtb-badge">Claude Code</span>
+            </button>
+          </div>
+        </div>
+        <div class="terminal-body">
+          <!-- CLI panel -->
+          <div class="t-panel" id="t-panel-cli">
+            <span><span class="t-prompt">❯ </span><span id="t-cmd"></span><span class="t-cursor" id="t-cursor"></span></span>
+            <div id="t-output" style="display:none;margin-top:2px"></div>
+          </div>
+          <!-- /jtb panel -->
+          <div class="t-panel" id="t-panel-jtb" style="display:none">
+            <span class="t-dim">Claude Code  ●  ~/projects/auth-service</span><br><br>
+            <span><span class="t-prompt" style="color:#377EA5">❯ </span><span class="t-green">/jtb PROJ-123</span></span><br><br>
+            <span><span style="color:#febc2e">⚡</span> <span class="t-muted">TicketLens — fetching PROJ-123...</span></span><br><br>
+            <span class="t-dim">──────────────────────────────────────</span><br>
+            <span class="t-white t-bold">PROJ-123</span> <span class="t-dim">—</span> <span class="t-green">Implement OAuth2 login flow</span><br>
+            <span class="t-dim">Status: </span><span class="t-yellow">In Progress</span><span class="t-dim">  ·  Priority: </span><span class="t-red">High</span><br>
+            <span class="t-dim">Assignee: </span><span class="t-white">R. Moran</span><br><br>
+            <span class="t-muted">OAuth2 with Google + GitHub. Token rotation</span><br>
+            <span class="t-muted">required. Security audit flags resolved.</span><br><br>
+            <span class="t-dim">Linked: </span><span class="t-white">PROJ-118</span> <span class="t-green">[Done]</span> <span class="t-dim">·</span> <span class="t-white">PROJ-124</span> <span class="t-yellow">[Active]</span><br>
+            <span class="t-dim">Files:  </span><span class="t-green">src/auth/oauth.ts · middleware.ts</span><br><br>
+            <span class="t-dim">──────────────────────────────────────</span><br>
+            <span class="t-green">✓ 842 tokens loaded into Claude context.</span><br>
+            <span class="t-muted">What would you like to implement?</span><span class="t-cursor"></span>
           </div>
         </div>
       </div>
@@ -175,29 +176,34 @@
   <!-- HOW IT WORKS -->
   <section class="how-section" id="how-it-works">
     <div class="container">
-      <div class="fade-in">
+      <div class="how-header fade-in">
         <span class="section-tag">Getting started</span>
-        <h2 class="section-h2">Up and running in 15 seconds</h2>
-        <p class="section-lead">No config file. No SaaS account. No signup. Just install and run.</p>
+        <h2 class="section-h2">Up and running<br><em>in 15 seconds.</em></h2>
       </div>
-      <div class="steps-wrap fade-in">
-        <div class="step">
-          <div class="step-num">01</div>
-          <h3 class="step-name">Install</h3>
-          <p class="step-desc">One command. Globally available. Zero runtime npm dependencies beyond Node.js &ge;20.</p>
-          <span class="step-snippet">npm i -g ticketlens</span>
+      <div class="how-steps">
+        <div class="how-step fade-in">
+          <div class="how-num">01</div>
+          <div class="how-content">
+            <h3 class="how-name">Install</h3>
+            <p class="how-desc">One command. Globally available. Zero runtime npm dependencies beyond Node.js &ge;20.</p>
+            <code class="how-code">npm i -g ticketlens</code>
+          </div>
         </div>
-        <div class="step">
-          <div class="step-num">02</div>
-          <h3 class="step-name">Fetch</h3>
-          <p class="step-desc">Paste any ticket key. Get a structured brief — linked issues, comments, and attachments cached locally.</p>
-          <span class="step-snippet">ticketlens PROJ-123</span>
+        <div class="how-step fade-in">
+          <div class="how-num">02</div>
+          <div class="how-content">
+            <h3 class="how-name">Fetch</h3>
+            <p class="how-desc">Paste any ticket key. Get a structured brief — linked issues, comments, and attachments cached locally.</p>
+            <code class="how-code">ticketlens PROJ-123</code>
+          </div>
         </div>
-        <div class="step">
-          <div class="step-num">03</div>
-          <h3 class="step-name">Build</h3>
-          <p class="step-desc">Pipe to any AI tool, or use <code style="font-family:var(--mono);color:var(--cta)">/jtb</code> in Claude Code to load full context and enter plan mode instantly.</p>
-          <span class="step-snippet">/jtb PROJ-123</span>
+        <div class="how-step fade-in">
+          <div class="how-num">03</div>
+          <div class="how-content">
+            <h3 class="how-name">Build</h3>
+            <p class="how-desc">Pipe to any AI tool, or use /jtb in Claude Code to load full context and enter plan mode instantly.</p>
+            <code class="how-code">/jtb PROJ-123</code>
+          </div>
         </div>
       </div>
     </div>
@@ -355,7 +361,7 @@
                 Your AI
               </div>
             </div>
-            <div style="font-family:var(--mono);font-size:10px;color:rgba(99,102,241,.5);padding-left:2px">via TicketLens — 60–80% fewer tokens</div>
+            <div style="font-family:var(--mono);font-size:10px;color:rgba(55,126,165,.5);padding-left:2px">via TicketLens — 60–80% fewer tokens</div>
           </div>
         </div>
       </div>
@@ -435,13 +441,13 @@
       <div class="compliance-inner fade-in">
         <div>
           <span class="section-tag">Enterprise-ready</span>
-          <h2 class="section-h2">Built for teams that<br>can't afford data leaks.</h2>
+          <h2 class="section-h2">Built for teams that can't afford<br>data leaks.</h2>
           <p class="section-lead" style="margin-bottom:0">TicketLens never routes your ticket content through external servers. That's not a setting — it's the architecture.</p>
           <div class="compliance-badges">
             <!-- GDPR -->
             <div class="compliance-badge">
               <svg class="cb-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <circle cx="16" cy="16" r="14" stroke="#6366f1" stroke-width="1.5" fill="rgba(99,102,241,.07)"/>
+                <circle cx="16" cy="16" r="14" stroke="#4A9CC5" stroke-width="1.5" fill="rgba(55,126,165,.07)"/>
                 <g fill="#f0c040">
                   <polygon points="16,4 16.5,5.5 18,5.5 16.9,6.4 17.3,8 16,7.1 14.7,8 15.1,6.4 14,5.5 15.5,5.5" transform="rotate(0,16,16) translate(0,-7)"/>
                   <polygon points="16,4 16.5,5.5 18,5.5 16.9,6.4 17.3,8 16,7.1 14.7,8 15.1,6.4 14,5.5 15.5,5.5" transform="rotate(30,16,16) translate(0,-7)"/>
@@ -465,9 +471,9 @@
             <!-- HIPAA -->
             <div class="compliance-badge">
               <svg class="cb-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <path d="M16 3 L28 8 L28 17 C28 23 22 28 16 30 C10 28 4 23 4 17 L4 8 Z" stroke="#6366f1" stroke-width="1.5" fill="rgba(99,102,241,.07)" stroke-linejoin="round"/>
-                <rect x="14" y="10" width="4" height="12" rx="1" fill="#6366f1"/>
-                <rect x="10" y="14" width="12" height="4" rx="1" fill="#6366f1"/>
+                <path d="M16 3 L28 8 L28 17 C28 23 22 28 16 30 C10 28 4 23 4 17 L4 8 Z" stroke="#4A9CC5" stroke-width="1.5" fill="rgba(55,126,165,.07)" stroke-linejoin="round"/>
+                <rect x="14" y="10" width="4" height="12" rx="1" fill="#4A9CC5"/>
+                <rect x="10" y="14" width="12" height="4" rx="1" fill="#4A9CC5"/>
               </svg>
               <div class="cb-text">
                 <span class="cb-label">HIPAA</span>
@@ -490,10 +496,10 @@
               <svg class="cb-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                 <rect x="6" y="4" width="16" height="20" rx="2" stroke="#7b8aa0" stroke-width="1.5" fill="rgba(123,138,160,.06)"/>
                 <path d="M10 10 H18 M10 14 H18 M10 18 H14" stroke="#7b8aa0" stroke-width="1.2" stroke-linecap="round"/>
-                <rect x="17" y="18" width="9" height="8" rx="1.5" fill="rgba(99,102,241,.12)" stroke="#6366f1" stroke-width="1.2"/>
-                <path d="M19.5 18 V16 A2 2 0 0 1 23.5 16 V18" stroke="#6366f1" stroke-width="1.2" stroke-linecap="round" fill="none"/>
-                <circle cx="21.5" cy="21.5" r="1" fill="#6366f1"/>
-                <rect x="21" y="22" width="1" height="2" rx=".5" fill="#6366f1"/>
+                <rect x="17" y="18" width="9" height="8" rx="1.5" fill="rgba(55,126,165,.12)" stroke="#4A9CC5" stroke-width="1.2"/>
+                <path d="M19.5 18 V16 A2 2 0 0 1 23.5 16 V18" stroke="#4A9CC5" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+                <circle cx="21.5" cy="21.5" r="1" fill="#4A9CC5"/>
+                <rect x="21" y="22" width="1" height="2" rx=".5" fill="#4A9CC5"/>
               </svg>
               <div class="cb-text">
                 <span class="cb-label">NDA</span>
@@ -512,9 +518,9 @@
                 <div class="arch-row">
                   <div class="arch-node arch-node--blue">
                     <svg class="arch-node-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <rect x="1" y="2" width="14" height="9" rx="1.5" stroke="rgba(99,102,241,.85)" stroke-width="1.2" fill="none"/>
-                      <path d="M0 11 H16" stroke="rgba(99,102,241,.85)" stroke-width="1.2"/>
-                      <path d="M6 13 H10" stroke="rgba(99,102,241,.6)" stroke-width="1.5" stroke-linecap="round"/>
+                      <rect x="1" y="2" width="14" height="9" rx="1.5" stroke="rgba(55,126,165,.85)" stroke-width="1.2" fill="none"/>
+                      <path d="M0 11 H16" stroke="rgba(55,126,165,.85)" stroke-width="1.2"/>
+                      <path d="M6 13 H10" stroke="rgba(55,126,165,.6)" stroke-width="1.5" stroke-linecap="round"/>
                     </svg>
                     Your machine
                   </div>
@@ -532,7 +538,7 @@
                   </div>
                   <div class="arch-node arch-node--green">
                     <svg class="arch-node-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <path d="M8 2 L14 8 L8 14 L2 8 Z" fill="rgba(99,102,241,.3)" stroke="rgba(99,102,241,.85)" stroke-width="1.2" stroke-linejoin="round"/>
+                      <path d="M8 2 L14 8 L8 14 L2 8 Z" fill="rgba(55,126,165,.3)" stroke="rgba(55,126,165,.85)" stroke-width="1.2" stroke-linejoin="round"/>
                     </svg>
                     Jira
                   </div>

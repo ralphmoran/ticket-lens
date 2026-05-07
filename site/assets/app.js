@@ -17,6 +17,21 @@
     }, { passive: true });
 
     /* ============================================================
+       ANCHOR SCROLL — offset for fixed 60px nav
+    ============================================================ */
+    document.querySelectorAll('a[href^="#"]').forEach(function(link) {
+      link.addEventListener('click', function(e) {
+        var hash = this.getAttribute('href');
+        if (hash === '#') return;
+        var target = document.getElementById(hash.slice(1));
+        if (!target) return;
+        e.preventDefault();
+        var top = target.getBoundingClientRect().top + window.scrollY - 72;
+        window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+      });
+    });
+
+    /* ============================================================
        REDUCED MOTION DETECTION
     ============================================================ */
     var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -157,15 +172,15 @@
         lines: [
           '<span style="color:#404958">○ PROJ-123 · from cache (12m ago)  ·  --no-cache to refresh</span>',
           '',
-          '<span style="color:#e1e8f4;font-weight:700">PROJ-123</span> <span style="color:#404958">—</span> <span style="color:#6366f1">Implement OAuth2 Login Flow</span>',
+          '<span style="color:#e1e8f4;font-weight:700">PROJ-123</span> <span style="color:#404958">—</span> <span style="color:#4A9CC5">Implement OAuth2 Login Flow</span>',
           '<span style="color:#404958">Status: </span><span style="color:#e3b341">In Progress</span>  <span style="color:#404958">Priority: </span><span style="color:#f85149">High</span>',
           '<span style="color:#404958">Assignee: </span><span style="color:#e1e8f4">R. Moran</span>',
           '',
           '<span style="color:#7b8aa0">OAuth2 with Google + GitHub. Token rotation required.</span>',
           '<span style="color:#7b8aa0">Security audit flags resolved in PROJ-118.</span>',
           '',
-          '<span style="color:#404958">Linked: </span><span style="color:#e1e8f4">PROJ-118</span> <span style="color:#6366f1">[Done]</span> <span style="color:#404958">·</span> <span style="color:#e1e8f4">PROJ-124</span> <span style="color:#e3b341">[Active]</span>',
-          '<span style="color:#404958">Files:  </span><span style="color:#6366f1">src/auth/oauth.ts · middleware.ts</span>',
+          '<span style="color:#404958">Linked: </span><span style="color:#e1e8f4">PROJ-118</span> <span style="color:#4A9CC5">[Done]</span> <span style="color:#404958">·</span> <span style="color:#e1e8f4">PROJ-124</span> <span style="color:#e3b341">[Active]</span>',
+          '<span style="color:#404958">Files:  </span><span style="color:#4A9CC5">src/auth/oauth.ts · middleware.ts</span>',
           '<span style="color:#404958">Cache:  </span><span style="color:#404958">~/.ticketlens/cache/myteam/PROJ-123/</span>',
         ]
       },
@@ -177,7 +192,7 @@
           '<span style="color:#f85149">●</span> <span style="color:#e1e8f4">PROJ-123</span>  <span style="color:#7b8aa0">Implement OAuth2 login flow</span>  <span style="color:#404958">In Progress</span>  <span style="color:#f85149">↓ stale 7d</span>',
           '<span style="color:#f85149">●</span> <span style="color:#e1e8f4">PROJ-119</span>  <span style="color:#7b8aa0">Fix mobile nav collapse</span>       <span style="color:#404958">Code Review</span>  <span style="color:#f85149">↓ stale 5d</span>',
           '<span style="color:#e3b341">●</span> <span style="color:#e1e8f4">PROJ-124</span>  <span style="color:#7b8aa0">Update API rate limits</span>         <span style="color:#404958">QA</span>           <span style="color:#e3b341">● new comment</span>',
-          '<span style="color:#6366f1">○</span> <span style="color:#e1e8f4">PROJ-121</span>  <span style="color:#7b8aa0">Design token audit</span>             <span style="color:#404958">In Progress</span>  <span style="color:#6366f1">✓ ok</span>',
+          '<span style="color:#4A9CC5">○</span> <span style="color:#e1e8f4">PROJ-121</span>  <span style="color:#7b8aa0">Design token audit</span>             <span style="color:#404958">In Progress</span>  <span style="color:#4A9CC5">✓ ok</span>',
           '',
           '<span style="color:#404958">4 tickets · 2 need response · 1 aging</span>',
           '<span style="color:#404958">↑/↓ navigate · Enter open · q exit</span>',
@@ -187,12 +202,12 @@
         label: 'ticketlens PROJ-123 --check',
         lines: [
           '<span style="color:#404958">── VCS CHECK ───────────────────────────────────</span>',
-          '<span style="color:#404958">Branch: </span><span style="color:#6366f1">feature/oauth2-login</span>',
+          '<span style="color:#404958">Branch: </span><span style="color:#4A9CC5">feature/oauth2-login</span>',
           '',
           '<span style="color:#404958">Modified files:</span>',
-          '<span style="color:#6366f1">  src/auth/oauth.ts</span>        <span style="color:#404958">+142 −8</span>',
-          '<span style="color:#6366f1">  src/middleware.ts</span>        <span style="color:#404958">+23 −2</span>',
-          '<span style="color:#6366f1">  tests/auth.test.ts</span>       <span style="color:#404958">+78 −0</span>',
+          '<span style="color:#4A9CC5">  src/auth/oauth.ts</span>        <span style="color:#404958">+142 −8</span>',
+          '<span style="color:#4A9CC5">  src/middleware.ts</span>        <span style="color:#404958">+23 −2</span>',
+          '<span style="color:#4A9CC5">  tests/auth.test.ts</span>       <span style="color:#404958">+78 −0</span>',
           '',
           '<span style="color:#404958">── CLAUDE CODE INSTRUCTIONS ────────────────────</span>',
           '<span style="color:#7b8aa0">Compare this diff against PROJ-123 requirements.</span>',
@@ -205,9 +220,9 @@
         lines: [
           '<span style="color:#7b8aa0">Analyzing PROJ-123 against local diff...</span>',
           '',
-          '<span style="color:#6366f1">✓</span> <span style="color:#e1e8f4">OAuth2 Google login</span>    <span style="color:#404958">oauth.ts:47</span>',
-          '<span style="color:#6366f1">✓</span> <span style="color:#e1e8f4">OAuth2 GitHub login</span>    <span style="color:#404958">oauth.ts:89</span>',
-          '<span style="color:#6366f1">✓</span> <span style="color:#e1e8f4">Token rotation</span>         <span style="color:#404958">auth.service.ts:23</span>',
+          '<span style="color:#4A9CC5">✓</span> <span style="color:#e1e8f4">OAuth2 Google login</span>    <span style="color:#404958">oauth.ts:47</span>',
+          '<span style="color:#4A9CC5">✓</span> <span style="color:#e1e8f4">OAuth2 GitHub login</span>    <span style="color:#404958">oauth.ts:89</span>',
+          '<span style="color:#4A9CC5">✓</span> <span style="color:#e1e8f4">Token rotation</span>         <span style="color:#404958">auth.service.ts:23</span>',
           '<span style="color:#f85149">✗</span> <span style="color:#e1e8f4">Security audit logging</span> <span style="color:#404958">NOT FOUND in diff</span>',
           '<span style="color:#e3b341">?</span> <span style="color:#e1e8f4">Rate limiting</span>          <span style="color:#404958">partially addressed</span>',
           '',
@@ -221,7 +236,7 @@
           '<span style="color:#7b8aa0">Fetching PROJ-123 + dependency graph...</span>',
           '',
           '<span style="color:#e1e8f4;font-weight:700">PROJ-123</span> <span style="color:#e3b341">In Progress</span>  <span style="color:#7b8aa0">Implement OAuth2 login flow</span>',
-          '  <span style="color:#6366f1">PROJ-118</span> <span style="color:#6366f1">[Done]</span>    <span style="color:#7b8aa0">Auth provider setup</span>',
+          '  <span style="color:#4A9CC5">PROJ-118</span> <span style="color:#4A9CC5">[Done]</span>    <span style="color:#7b8aa0">Auth provider setup</span>',
           '    <span style="color:#404958">PROJ-115</span> <span style="color:#404958">[Done]</span>  <span style="color:#404958">OAuth2 library selection</span>',
           '    <span style="color:#404958">PROJ-116</span> <span style="color:#404958">[Done]</span>  <span style="color:#404958">Provider API registration</span>',
           '  <span style="color:#e3b341">PROJ-124</span> <span style="color:#e3b341">[Active]</span>  <span style="color:#7b8aa0">Rate limit middleware</span>',
@@ -235,15 +250,15 @@
         lines: [
           '<span style="color:#404958">Claude Code  ●  ~/projects/auth-service</span>',
           '',
-          '<span style="color:#6366f1">❯ /jtb PROJ-123</span>',
+          '<span style="color:#4A9CC5">❯ /jtb PROJ-123</span>',
           '',
           '<span style="color:#e3b341">⚡</span> <span style="color:#7b8aa0">TicketLens — fetching PROJ-123...</span>',
           '',
           '<span style="color:#404958">──────────────────────────────────────</span>',
-          '<span style="color:#e1e8f4;font-weight:700">PROJ-123</span>  <span style="color:#6366f1">Implement OAuth2 Login Flow</span>',
+          '<span style="color:#e1e8f4;font-weight:700">PROJ-123</span>  <span style="color:#4A9CC5">Implement OAuth2 Login Flow</span>',
           '<span style="color:#7b8aa0">OAuth2 with Google + GitHub. Token rotation required.</span>',
           '',
-          '<span style="color:#6366f1">✓ 842 tokens loaded into Claude context.</span>',
+          '<span style="color:#4A9CC5">✓ 842 tokens loaded into Claude context.</span>',
           '<span style="color:#7b8aa0">Entering plan mode. What would you like to implement?</span>',
         ]
       },
