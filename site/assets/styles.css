@@ -201,13 +201,14 @@
       pointer-events: none; opacity: .09;
     }
     [data-theme="light"] .hero::before { opacity: .05; }
-    /* Radial glow behind terminal */
+    /* Centered ambient glow — dark theme only */
     .hero::after {
       content: '';
-      position: absolute; bottom: 0; left: 0; right: 0; height: 200px;
-      background: linear-gradient(to bottom, transparent, var(--bg));
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse 70% 55% at 50% 38%, rgba(55,126,165,.18) 0%, transparent 65%);
       pointer-events: none; z-index: 1;
     }
+    [data-theme="light"] .hero::after { display: none; }
 
     /* Centered text block */
     .hero-inner {
@@ -270,24 +271,27 @@
     .hero-visual {
       position: relative; z-index: 2;
       max-width: 1060px; margin: 0 auto;
-      padding: 0 clamp(24px,5vw,64px) 80px;
+      padding: 0 clamp(24px,5vw,64px) 72px;
       animation: slideUp .9s .38s cubic-bezier(.16,1,.3,1) both;
     }
     @keyframes slideUp { from { opacity:0; transform:translateY(48px); } to { opacity:1; transform:none; } }
-    /* Violet glow behind the terminal */
+    /* Full-width half-circle glow rising from the bottom of the hero */
     .hero-visual::before {
       content: '';
-      position: absolute; inset: -80px -40px 0;
-      background: radial-gradient(ellipse 80% 70% at 50% 40%, rgba(55,126,165,.22) 0%, rgba(55,126,165,.07) 50%, transparent 72%);
+      position: absolute; bottom: 0;
+      left: 50%; transform: translateX(-50%);
+      width: 100vw; height: 400px;
+      background: radial-gradient(ellipse 85% 100% at 50% 100%,
+        rgba(55,126,165,.38) 0%,
+        rgba(55,126,165,.12) 48%,
+        transparent 72%);
       pointer-events: none; z-index: 0;
     }
     .hero-visual .terminal-window {
       position: relative; z-index: 1;
-      box-shadow: 0 0 0 1px rgba(255,255,255,.05),
-                  0 0 60px rgba(55,126,165,.32), 0 0 140px rgba(55,126,165,.12),
-                  0 40px 100px rgba(0,0,0,.7);
+      box-shadow: 0 32px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06);
     }
-    .hero-visual .terminal-body { height: 320px; }
+    .hero-visual .terminal-body { height: 520px; }
 
     .btn-primary {
       background: var(--cta); color: #fff; padding: 13px 24px; border-radius: var(--r);
@@ -345,7 +349,7 @@
     @keyframes jtbPulse { 0%,100%{box-shadow:0 0 6px rgba(55,126,165,.2)} 50%{box-shadow:0 0 14px rgba(55,126,165,.5)} }
     .terminal-body {
       padding: 18px 22px 22px; font-family: var(--mono); font-size: 13px; line-height: 1.75;
-      height: 560px; overflow: hidden;
+      height: 560px; overflow: hidden; color: #e1e8f4;
     }
     .t-panel { min-height: 520px; }
     .t-prompt  { color: var(--green); user-select: none; }
@@ -369,7 +373,7 @@
        LOGOS CAROUSEL
     ============================================================ */
     .logos-section {
-      background: var(--section-alt); border-top: 1px solid var(--border);
+      background: var(--section-alt);
       padding: 36px 0; overflow: hidden;
     }
     .logos-label {
