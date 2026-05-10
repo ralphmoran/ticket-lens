@@ -13,6 +13,8 @@
   <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..700;1,14..32,300..700&family=Playfair+Display:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..700;1,14..32,300..700&family=Playfair+Display:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"></noscript>
   <link rel="stylesheet" href="assets/styles.css">
+  <!-- TODO: LemonSqueezy overlay — replace STORE_SLUG + PRO_VARIANT_ID once store is created -->
+  <script src="https://app.lemonsqueezy.com/js/lemon.js" defer></script>
 </head>
 <body>
   <!-- Theme initialization — must run before body paint to avoid FOUC -->
@@ -411,7 +413,8 @@
             <li>Scheduled daily triage digest (cron)</li>
             <li>Configurable cache TTL (4h, 1d, 7d, 30d)</li>
           </ul>
-          <a href="#install" class="pricing-cta solid">Get Pro →</a>
+          <!-- TODO: replace STORE_SLUG and PRO_VARIANT_ID with values from LemonSqueezy dashboard -->
+          <a href="https://STORE_SLUG.lemonsqueezy.com/buy/PRO_VARIANT_ID?embed=1" class="lemonsqueezy-button pricing-cta solid">Get Pro →</a>
         </div>
 
         <!-- TEAM -->
@@ -428,7 +431,8 @@
             <li>Slack &amp; Teams alerts<span class="cs-badge">soon</span></li>
             <li>Priority support</li>
           </ul>
-          <a href="#install" class="pricing-cta ghost">Get Team →</a>
+          <!-- TODO: replace with sales email or Calendly link -->
+          <a href="mailto:team@ticketlens.io" class="pricing-cta ghost">Contact for pricing →</a>
         </div>
       </div>
       <p class="pricing-note fade-in"><strong>Open core</strong> — The CLI is free forever. No usage limits. No forced account.</p>
