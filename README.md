@@ -129,6 +129,7 @@ ticketlens triage --assignee="Jane Dev"        # Another dev's tickets [Team]
 ticketlens triage --sprint="Sprint 12"         # Filter by sprint [Team]
 ticketlens triage --export=csv                 # Export results to CSV [Team]
 ticketlens triage --export=json                # Export results to JSON [Team]
+ticketlens triage --push                       # Push snapshot to Console queue [Team]
 ticketlens triage --digest                     # POST scored results to digest endpoint [Pro]
 ticketlens triage --plain                      # Plain markdown — pipe to file or LLM
 ticketlens triage --static                     # Static table, no interactive mode
@@ -278,6 +279,7 @@ ticketlens triage --sprint="Sprint 12"       # Filter by sprint name [Team]
 ticketlens triage --assignee="Jane Dev" --sprint="Sprint 12"  # Combined [Team]
 ticketlens triage --export=csv               # Export to CSV [Team]
 ticketlens triage --export=json              # Export to JSON [Team]
+ticketlens triage --push                     # Push snapshot to Console queue [Team]
 ticketlens triage --digest                   # POST results to digest endpoint [Pro]
 ticketlens triage --profile=acme --stale=3 --static          # Combine flags
 
@@ -359,7 +361,10 @@ ticketlens triage --assignee="Jane Dev"        # View another dev's tickets
 ticketlens triage --sprint="Sprint 12"         # Filter by sprint name
 ticketlens triage --export=csv                 # Export triage to CSV for standups and reports
 ticketlens triage --export=json                # Machine-readable export for dashboards
+ticketlens triage --push                       # Push snapshot to the Console queue
 ```
+
+`--push` syncs the scored snapshot to the TicketLens Console after each triage run. The queue page at `/console/queue` shows the latest snapshot for every team profile — no manual refresh needed.
 
 Automate a morning digest with cron — no open terminal required:
 
@@ -432,10 +437,12 @@ npm test
 
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
+Recently shipped:
+- Console queue dashboard — live at `/console/queue` for Team tier; push snapshots with `ticketlens triage --push`
+
 Coming up:
-- Team triage dashboard and Slack/Teams alerts (Team)
+- Slack/Teams alerts for triage changes (Team)
 - GitHub Issues and Linear support
-- Web UI dashboard for triage history and digest configuration
 
 ---
 

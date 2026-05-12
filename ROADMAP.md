@@ -185,7 +185,7 @@ Laravel 11 + Inertia.js + Vue 3 + Tailwind v4. Built in parallel with Phase B.7 
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| 31 | Feature | **Dev view — Attention Queue** | Auto-refreshing triage in browser. Personal ticket queue + compliance status. | Large |
+| 31 | Feature | ~~**Dev view — Attention Queue**~~ | Auto-refreshing triage in browser. Personal ticket queue + compliance status. **DONE (2026-05-11) — backend+console 59c07bf, CLI `--push` shipped.** | Large |
 | 32 | Feature | **Lead view — Team Health** | Tickets needing response (trend), bottlenecks by status, workload per dev. | Large |
 | 33 | Feature | **Manager view — Process Metrics** | Time to first commit, QA bounce-back rate, compliance gap trends. | Large |
 | 34 | Feature | **Team management** | Invite members, assign roles (dev/lead/manager), manage seats. | Medium |

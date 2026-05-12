@@ -18,7 +18,7 @@ import { runInteractiveList } from './lib/interactive-list.mjs';
 import { promptProfileSelect } from './lib/profile-picker.mjs';
 import { printTriageHelp } from './lib/help.mjs';
 import { handleUnknownFlags } from './lib/arg-validator.mjs';
-import { isLicensed, showUpgradePrompt, revalidateIfStale } from './lib/license.mjs';
+import { isLicensed, showUpgradePrompt, revalidateIfStale, readLicense } from './lib/license.mjs';
 
 const DEFAULT_STATUSES = ['In Progress', 'Code Review', 'QA'];
 
@@ -75,7 +75,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=', '--assignee=', '--sprint=', '--export=', '--digest'],
+    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=', '--assignee=', '--sprint=', '--export=', '--digest', '--push'],
     { hints: ['--depth=', '--no-attachments', '--no-cache'] } // fetch-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
@@ -92,6 +92,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const sprintArg = args.find(a => a.startsWith('--sprint='));
   const exportArg = args.find(a => a.startsWith('--export='))?.split('=')[1] ?? null;
   const digestFlag = args.includes('--digest');
+  const pushFlag = args.includes('--push');
 
   if (exportArg && exportArg !== 'csv' && exportArg !== 'json') {
     process.stderr.write(`Error: --export must be csv or json, got: ${exportArg}\n`);
@@ -288,6 +289,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const scored = tickets.map(t => scoreAttention(t, effectiveUser, { staleDays }));
   const actionable = scored.filter(s => s.urgency !== 'clear');
   const sorted = sortByUrgency(actionable);
+  const rawTicketMap = new Map(tickets.map(t => [t.key, t]));
 
   // --digest: POST scored results to the digest backend endpoint
   if (digestFlag) {
@@ -351,6 +353,22 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     ? styleTriageSummary(sorted, { styled: true, staleDays, baseUrl: conn.baseUrl })
     : assembleTriageSummary(sorted, { staleDays, baseUrl: conn.baseUrl });
   process.stdout.write(summary + '\n');
+
+  if (pushFlag) {
+    const { pushTriageSnapshot } = await import('./lib/triage-push.mjs');
+    const pushFn = opts.pushFn ?? pushTriageSnapshot;
+    const licenseKey = readLicense(configDir)?.key ?? null;
+    const printFn = opts.print ?? ((s) => process.stdout.write(s));
+    await pushFn({
+      sorted,
+      rawTicketMap,
+      profile: profileName ?? 'default',
+      baseUrl: conn.baseUrl,
+      licenseKey,
+      fetcher,
+      print: printFn,
+    });
+  }
 }
 
 // Run if invoked directly
