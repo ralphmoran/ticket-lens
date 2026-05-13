@@ -186,9 +186,9 @@ Laravel 11 + Inertia.js + Vue 3 + Tailwind v4. Built in parallel with Phase B.7 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
 | 31 | Feature | ~~**Dev view — Attention Queue**~~ | Auto-refreshing triage in browser. Personal ticket queue + compliance status. **DONE (2026-05-11) — backend+console 59c07bf, CLI `--push` shipped.** | Large |
-| 32 | Feature | **Lead view — Team Health** | Tickets needing response (trend), bottlenecks by status, workload per dev. | Large |
-| 33 | Feature | **Manager view — Process Metrics** | Time to first commit, QA bounce-back rate, compliance gap trends. | Large |
-| 34 | Feature | **Team management** | Invite members, assign roles (dev/lead/manager), manage seats. | Medium |
+| 32 | Feature | ~~**Lead view — Team Health**~~ | Tickets needing response (trend), bottlenecks by status, workload per dev. **DONE (2026-05-12) — commit 3f018f4.** | Large |
+| 33 | Feature | ~~**Manager view — Process Metrics**~~ | Ticket age distribution, status-flow heatmap, response-latency buckets, compliance coverage. Proxy metrics from snapshot data. **DONE (2026-05-12) — commit 94fffae, 19 tests, owner bypass via EnsureTeamManager.** | Large |
+| 34 | Feature | ~~**Team management**~~ | Invite members, assign roles (dev/lead/manager), manage seats. **DONE (2026-05-12) — lead role (`TeamViewHealth` bit 1024), `EnsureTeamLead` middleware, Team Health accessible to leads + managers, Process Metrics manager-only. Role badges + toggle in Members panel.** | Medium |
 | 35 | Feature | **Team billing (Stripe)** | Per-seat subscription, seat add/remove, invoicing. | Medium |
 | C-T1 | Feature | **Handoff brief (`--handoff`)** | `ticketlens TICKET-KEY --handoff` generates a structured one-pager from comment history: what was attempted, current blockers, open questions. CLI flag + console view. Eliminates blind starts when tickets change hands. | Small–Medium |
 | C-T2 | Feature | **Shareable triage snapshot** | `ticketlens triage --share` generates a signed URL (24h TTL, browser-readable, no login required for recipient). Paste into Slack before standup. Recipient needs zero setup — the asymmetry is the product. | Medium |
