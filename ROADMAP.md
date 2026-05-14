@@ -200,7 +200,7 @@ Laravel 11 + Inertia.js + Vue 3 + Tailwind v4. Built in parallel with Phase B.7 
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| 36 | Feature | **Slack app (OAuth + bot)** | Install to workspace, configure target channel per team. | Medium |
+| 36 | ~~Feature~~ | ~~**Slack app (OAuth + bot)**~~ | OAuth 2.0 install to workspace, per-team channel configuration, "Test connection" button posts a verification message to the selected channel. `SlackService` (buildAuthUrl, exchangeCode, fetchChannels, postMessage), `SlackIntegration` model, encrypted state for cross-domain callback, `POST /integrations/test` endpoint. **DONE (2026-05-13) — commits 54fe991+.** | ~~Medium~~ |
 | 37 | Feature | **Needs-response alert** | Push when someone comments on a dev's ticket, no reply in 2+ hours. | Small |
 | 38 | Feature | **Aging ticket alert** | Push when ticket sits in CR/QA beyond threshold. | Small |
 | 39 | Feature | **Compliance gap alert** | Push when ticket moves to Done with incomplete requirements. | Small |
