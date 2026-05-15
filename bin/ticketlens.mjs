@@ -19,6 +19,9 @@ import { deleteProfile, loadProfiles } from '../skills/jtb/scripts/lib/profile-r
 import { run as runCache } from '../skills/jtb/scripts/lib/cache-manager.mjs';
 import { printHelp, printProfiles } from '../skills/jtb/scripts/lib/help.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
+import { readCliToken, saveCliToken, deleteCliToken } from '../skills/jtb/scripts/lib/cli-auth.mjs';
+import { syncProfiles, getApiBase } from '../skills/jtb/scripts/lib/sync.mjs';
+import { promptSecret, promptText } from '../skills/jtb/scripts/lib/prompt-helpers.mjs';
 
 const args = process.argv.slice(2);
 const { command, args: cmdArgs } = parseCommand(args);
@@ -257,6 +260,114 @@ switch (command) {
       process.exitCode = 1;
     });
     break;
+
+  case 'login': {
+    (async () => {
+      const s = createStyler({ isTTY: process.stderr.isTTY });
+      process.stderr.write(`\n  ${s.bold('TicketLens Login')}\n`);
+      process.stderr.write(`  ${s.dim('─'.repeat(44))}\n`);
+      process.stderr.write(`  ${s.dim(`Generate a CLI token at ${s.cyan(`${getApiBase()}/console/account`)}`)}\n`);
+      process.stderr.write(`  ${s.dim('then paste it below.')}\n\n`);
+
+      const token = await promptSecret(`CLI Token ${s.dim('(tl_…)')}:`, { stream: process.stderr });
+      if (!token.startsWith('tl_')) {
+        process.stderr.write(`  ${s.red('✖')} Token must start with ${s.dim('tl_')}\n`);
+        process.exitCode = 1;
+        return;
+      }
+
+      // Validate against the API before saving
+      process.stderr.write(`\n  ${s.dim('○ Verifying token…')}\n`);
+      let res;
+      try {
+        res = await fetch(`${getApiBase()}/v1/profiles`, {
+          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+          signal: AbortSignal.timeout(15000),
+        });
+      } catch (err) {
+        process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} Could not reach ${getApiBase()} — check your connection.\n`);
+        process.exitCode = 1;
+        return;
+      }
+
+      if (res.status === 401) {
+        process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} Invalid token — check the value and try again.\n`);
+        process.exitCode = 1;
+        return;
+      }
+      if (!res.ok) {
+        process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} Server returned ${res.status}. Try again later.\n`);
+        process.exitCode = 1;
+        return;
+      }
+
+      saveCliToken(token);
+      process.stderr.write(`\x1b[A\r\x1b[2K  ${s.green('✔')} Logged in.\n`);
+      process.stderr.write(`\n  Run ${s.cyan('ticketlens sync')} to pull your connections.\n\n`);
+    })().catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+  }
+
+  case 'logout': {
+    const s = createStyler({ isTTY: process.stderr.isTTY });
+    deleteCliToken();
+    process.stderr.write(`  ${s.green('✔')} CLI token removed.\n`);
+    break;
+  }
+
+  case 'sync': {
+    (async () => {
+      const s = createStyler({ isTTY: process.stderr.isTTY });
+      process.stderr.write(`\n  ${s.dim('Syncing from TicketLens console…')}\n`);
+
+      const result = await syncProfiles();
+
+      if (result.error === 'no-token') {
+        process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} Not logged in. Run ${s.cyan('ticketlens login')} first.\n\n`);
+        process.exitCode = 1;
+        return;
+      }
+      if (result.error === 'unauthorized') {
+        process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} Token expired or revoked. Run ${s.cyan('ticketlens login')} to re-authenticate.\n\n`);
+        process.exitCode = 1;
+        return;
+      }
+      if (result.error) {
+        process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} Sync failed: ${result.error}\n\n`);
+        process.exitCode = 1;
+        return;
+      }
+
+      const { added, updated, unchanged, needsCredentials } = result;
+      const total = added.length + updated.length + unchanged.length;
+
+      process.stderr.write(`\x1b[A\r\x1b[2K  ${s.green('✔')} Sync complete`);
+      if (total === 0) {
+        process.stderr.write(` — no profiles on console yet.\n`);
+      } else {
+        process.stderr.write(`\n`);
+        if (added.length)     process.stderr.write(`  ${s.dim('+')} ${added.length} added: ${added.map(n => s.cyan(n)).join(', ')}\n`);
+        if (updated.length)   process.stderr.write(`  ${s.dim('↑')} ${updated.length} updated: ${updated.map(n => s.cyan(n)).join(', ')}\n`);
+        if (unchanged.length) process.stderr.write(`  ${s.dim('○')} ${unchanged.length} unchanged\n`);
+      }
+
+      if (needsCredentials.length > 0) {
+        process.stderr.write(`\n  ${s.yellow('!')} These profiles need credentials before they can be used:\n`);
+        for (const name of needsCredentials) {
+          process.stderr.write(`    ${s.dim('○')} ${s.cyan(name)} — run: ${s.bold(`ticketlens config --profile=${name}`)}\n`);
+        }
+      }
+
+      process.stderr.write('\n');
+    })().catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+  }
 
   case 'help':
   default:
