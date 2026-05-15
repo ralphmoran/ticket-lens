@@ -213,6 +213,7 @@ export function resolveConnection(ticketKey, opts = {}) {
       apiToken: profileCreds.apiToken || null,
       pat: profileCreds.pat || null,
       triageStatuses: profile.triageStatuses || null,
+      ticketPrefixes: profile.ticketPrefixes || null,
       source: 'profile',
       profileName: profile.name,
     };

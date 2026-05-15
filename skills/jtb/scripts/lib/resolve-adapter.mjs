@@ -1,4 +1,5 @@
 import { createJiraAdapter } from './adapters/jira-adapter.mjs';
+import { createGitHubAdapter } from './adapters/github-adapter.mjs';
 
 /**
  * Detects the tracker type from a baseUrl string.
@@ -22,5 +23,6 @@ export function detectTrackerType(baseUrl) {
 export function resolveAdapter(conn, opts = {}) {
   const type = detectTrackerType(conn?.baseUrl);
   if (type === 'jira') return createJiraAdapter(conn, opts);
-  throw new Error(`Tracker type '${type}' is not yet supported. Only Jira is currently available.`);
+  if (type === 'github') return createGitHubAdapter(conn, opts);
+  throw new Error(`Tracker type '${type}' is not yet supported. Supported: jira, github.`);
 }

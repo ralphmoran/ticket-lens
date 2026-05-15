@@ -75,19 +75,21 @@ describe('resolveAdapter', () => {
     assert.equal(typeof adapter.fetchStatuses, 'function');
   });
 
-  it('throws for unsupported tracker type (github)', () => {
-    const githubConn = { baseUrl: 'https://github.com', apiToken: 'ghp_xxx' };
-    assert.throws(
-      () => resolveAdapter(githubConn),
-      /not yet supported/,
-    );
+  it('returns a github adapter for GitHub connections', () => {
+    const githubConn = {
+      baseUrl: 'https://github.com/acme/repo',
+      apiToken: 'ghp_xxx',
+      ticketPrefixes: ['GH'],
+    };
+    const adapter = resolveAdapter(githubConn);
+    assert.equal(adapter.type, 'github');
   });
 
   it('throws for unsupported tracker type (linear)', () => {
     const linearConn = { baseUrl: 'https://linear.app', apiToken: 'lin_api_xxx' };
     assert.throws(
       () => resolveAdapter(linearConn),
-      /not yet supported/,
+      /Supported: jira, github/,
     );
   });
 
