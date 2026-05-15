@@ -125,4 +125,16 @@ describe('parseCommand', () => {
     assert.equal(result.command, 'fetch');
     assert.deepEqual(result.args, ['PROJ-123', '--help']);
   });
+
+  it('routes "login" to login', () => {
+    assert.equal(parseCommand(['login']).command, 'login');
+  });
+
+  it('routes "logout" to logout', () => {
+    assert.equal(parseCommand(['logout']).command, 'logout');
+  });
+
+  it('routes "sync" to sync', () => {
+    assert.equal(parseCommand(['sync']).command, 'sync');
+  });
 });
