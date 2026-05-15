@@ -11,6 +11,7 @@ import { createSession } from './banner.mjs';
 import { classifyError } from './error-classifier.mjs';
 import { fetchCurrentUser, fetchStatuses } from './jira-client.mjs';
 import { loadProfiles, saveProfile, saveDefault } from './profile-resolver.mjs';
+import { resolveAdapter } from './resolve-adapter.mjs';
 import { promptSelect } from './select-prompt.mjs';
 import { runSwitch } from './profile-switcher.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
@@ -74,7 +75,7 @@ async function _run({ configDir, stream, s }) {
   // Welcome box
   const headerLines = [
     `${s.bold(s.cyan('◆ TicketLens'))} — Setup Wizard`,
-    `${s.dim("Let's configure your Jira connection.")}`,
+    `${s.dim("Let's configure your tracker connection.")}`,
   ];
   const innerWidth = headerLines.reduce((max, l) => Math.max(max, visLen(l)), 0) + 4;
   const bc = s.cyan;
@@ -104,13 +105,138 @@ async function _run({ configDir, stream, s }) {
       },
     });
 
+    // ── Tracker type ──────────────────────────────────────────────────────────
+    const TRACKER_TYPES = [
+      { label: 'Jira',   sublabel: 'Jira Cloud, Server, or Data Center', value: 'jira'   },
+      { label: 'GitHub', sublabel: 'GitHub Issues (github.com)',          value: 'github' },
+    ];
+    stream.write(`\n  ${s.dim('Tracker type:')}\n\n`);
+    const trackerIndex = await promptSelect(TRACKER_TYPES, { stream, hint: '↑/↓ select   Enter confirm' });
+    if (trackerIndex === null) {
+      stream.write(`  ${s.dim('Cancelled.')}\n`);
+      addAnother = await promptYN('Configure another connection?', { stream });
+      continue;
+    }
+    const trackerType = TRACKER_TYPES[trackerIndex].value;
+    stream.write(`  ${s.green('✔')} ${TRACKER_TYPES[trackerIndex].label}\n`);
+
+    let connected = false;
+
+    if (trackerType === 'github') {
+      let ghUrl = '', ghToken = '';
+
+      githubLoop: while (true) {
+        stream.write(`\n  ${s.dim('Repository URL')}\n\n`);
+        const typed = await promptText(
+          s.dim('Repo URL') + s.dim('  (e.g. https://github.com/acme/widgets):'),
+          {
+            stream,
+            defaultValue: ghUrl,
+            validate: (v) => {
+              if (!v) return 'URL cannot be empty.';
+              if (!/github\.com\/[^/]+\/[^/]+/.test(v)) return 'Must be a GitHub repo URL — e.g. https://github.com/acme/widgets';
+              return null;
+            },
+          }
+        );
+        ghUrl = typed.replace(/\/$/, '');
+        stream.write(`  ${s.green('✔')} ${ghUrl}\n`);
+
+        const tokenHint = ghToken ? s.dim('  [keep existing]') : '';
+        ghToken = await promptSecret(
+          s.dim('Personal access token') + tokenHint + s.dim(':'),
+          { stream, existingValue: ghToken }
+        );
+
+        const ghConn = { baseUrl: ghUrl, apiToken: ghToken, ticketPrefixes: ['GH'] };
+        const ghSession = createSession({ baseUrl: ghUrl, profileName }, { stream });
+        stream.write('\n');
+        ghSession.spin('Testing connection...');
+
+        try {
+          const ghAdapter = resolveAdapter(ghConn);
+          await ghAdapter.fetchCurrentUser();
+          ghSession.connected();
+          connected = true;
+          break githubLoop;
+        } catch (err) {
+          ghSession.failed();
+          const classified = classifyError(err, { baseUrl: ghUrl, profileName });
+          ghSession.footer(classified.message, 'error', classified.hint);
+        }
+
+        const GH_RETRY = [
+          { label: 'Retry',      sublabel: 'Try again — same credentials', value: 'retry' },
+          { label: 'Edit token', sublabel: 'Change personal access token', value: 'creds' },
+          { label: 'Edit URL',   sublabel: 'Change repository URL',        value: 'url'   },
+          { label: 'Skip',       sublabel: 'Abandon — move to next step',  value: 'skip'  },
+        ];
+        stream.write(`\n  ${s.dim('What would you like to do?')}\n\n`);
+        const ghRetryIndex = await promptSelect(GH_RETRY, { stream, hint: '↑/↓ select   Enter confirm' });
+        if (ghRetryIndex === null || GH_RETRY[ghRetryIndex].value === 'skip') break githubLoop;
+        if (GH_RETRY[ghRetryIndex].value === 'url') continue githubLoop;
+        const rHint = ghToken ? s.dim('  [keep existing]') : '';
+        ghToken = await promptSecret(
+          s.dim('Personal access token') + rHint + s.dim(':'),
+          { stream, existingValue: ghToken }
+        );
+      }
+
+      if (connected) {
+        stream.write(`\n  ${s.dim('──── Optional  (press Enter to skip) ────')}\n\n`);
+
+        const prefixRaw = await promptText(s.dim('Key prefix') + s.dim('  [GH]:'), { stream });
+        const ticketPrefixes = prefixRaw
+          ? prefixRaw.split(',').map(v => v.trim().toUpperCase()).filter(Boolean)
+          : ['GH'];
+
+        const home = homedir();
+        const cwd = process.cwd();
+        const cwdDisplay = cwd.startsWith(home) ? '~' + cwd.slice(home.length) : cwd;
+        const pathInput = await promptText(
+          s.dim('Project path') + s.dim(`  [${cwdDisplay}]:`), { stream }
+        );
+        const rawPath = (pathInput.trim() || cwdDisplay).replace(/\/+$/, '');
+        const projectPaths = [];
+        if (rawPath) {
+          const expanded = rawPath.startsWith('~') ? join(home, rawPath.slice(1)) : rawPath;
+          if (existsSync(expanded)) {
+            projectPaths.push(rawPath);
+            stream.write(`  ${s.green('✔')} ${rawPath}\n`);
+          } else {
+            stream.write(`  ${s.yellow('○')} ${s.dim(rawPath)} — directory not found\n`);
+            const doCreate = await promptYN(`Create ${rawPath}?`, { stream });
+            if (doCreate) {
+              try {
+                mkdirSync(expanded, { recursive: true });
+                projectPaths.push(rawPath);
+                stream.write(`  ${s.green('✔')} Created\n`);
+              } catch (mkErr) {
+                stream.write(`  ${s.red('✖')} Could not create: ${mkErr.message}\n`);
+              }
+            }
+          }
+        }
+
+        const profileData = {
+          baseUrl: ghUrl,
+          auth: 'github',
+          ticketPrefixes,
+          ...(projectPaths.length > 0 ? { projectPaths } : {}),
+        };
+        saveProfile(profileName, profileData, { apiToken: ghToken }, configDir);
+        addedCount++;
+        stream.write(`\n  ${s.green('✔')} Profile ${s.bold(s.cyan(`"${profileName}"`))} saved.\n`);
+      }
+    }
+
+    if (trackerType === 'jira') {
     // ── Setup loop — URL → auth → credentials → test → retry ─────────────────
     //
     // startFrom controls which step to resume from on each iteration:
     //   'url'   — re-prompt URL + auth type, then fall through to creds
     //   'creds' — re-prompt email/token (pre-populated), then test
     //   'retry' — skip all prompts, rebuild env from current values, test immediately
-    let connected = false;
     let baseUrl = '', authType = '', email = '', token = '';
     let env = {}, apiVersion = 2;
     let startFrom = 'url';
@@ -333,6 +459,7 @@ async function _run({ configDir, stream, s }) {
       addedCount++;
       stream.write(`\n  ${s.green('✔')} Profile ${s.bold(s.cyan(`"${profileName}"`))} saved.\n`);
     }
+    } // end if jira
 
     addAnother = await promptYN('Configure another connection?', { stream });
   }
@@ -360,7 +487,7 @@ async function _run({ configDir, stream, s }) {
   // Quick-start panel
   const cmds = [
     ['ticketlens triage',   'Scan your assigned tickets'],
-    ['ticketlens PROJ-123', 'Fetch a specific ticket'],
+    ['ticketlens <TICKET-KEY>', 'Fetch a specific ticket'],
     ['ticketlens switch',   'Switch active profile'],
     ['ticketlens --help',   'Full command reference'],
   ];
