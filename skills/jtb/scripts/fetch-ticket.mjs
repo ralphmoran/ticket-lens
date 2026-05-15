@@ -8,12 +8,12 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fetchTicket } from './lib/jira-client.mjs';
 import { extractCodeReferences } from './lib/code-ref-parser.mjs';
 import { assembleBrief } from './lib/brief-assembler.mjs';
 import { styleBrief } from './lib/styled-assembler.mjs';
 import { resolveConnection, loadProfiles, loadCredentials, saveProfile } from './lib/profile-resolver.mjs';
 import { buildJiraEnv } from './lib/config.mjs';
+import { resolveAdapter } from './lib/resolve-adapter.mjs';
 import { createSession } from './lib/banner.mjs';
 import { classifyError } from './lib/error-classifier.mjs';
 import { promptProfileSelect, promptProfileMismatch, promptSwitchProfile, promptMultipleMatches } from './lib/profile-picker.mjs';
@@ -220,13 +220,12 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       return;
     }
 
-    const jiraEnvPr = buildJiraEnv(connPr);
-    const apiVersionPr = connPr.auth === 'cloud' ? 3 : 2;
+    const adapterPr = resolveAdapter(connPr, { fetcher });
 
     try {
       const md = await assemblePr(ticketKeyArg, {
         configDir: resolvedConfigDir,
-        fetchTicketFn: (key, fOpts = {}) => fetchTicket(key, { env: jiraEnvPr, fetcher, apiVersion: apiVersionPr, ...fOpts }),
+        fetchTicketFn: (key, fOpts = {}) => adapterPr.fetchTicket(key, fOpts),
       });
       printFn(md + '\n');
     } catch (err) {
@@ -300,12 +299,11 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       return;
     }
 
-    const jiraEnvC = buildJiraEnv(connC);
-    const apiVersionC = connC.auth === 'cloud' ? 3 : 2;
+    const adapterC = resolveAdapter(connC, { fetcher });
 
     let ticketC;
     try {
-      ticketC = await fetchTicket(ticketKeyArg, { env: jiraEnvC, fetcher, depth: 0, apiVersion: apiVersionC });
+      ticketC = await adapterC.fetchTicket(ticketKeyArg, { depth: 0 });
     } catch (err) {
       process.stderr.write(`Error fetching ${ticketKeyArg}: ${err.message}\n`);
       process.exitCode = 1;
@@ -441,10 +439,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     }
   }
 
-  const jiraEnv = buildJiraEnv(conn);
-
-  // Cloud profiles use v3 API (v2 search is deprecated/410), Server stays on v2
-  const apiVersion = conn.auth === 'cloud' ? 3 : 2;
+  const adapter = resolveAdapter(conn, { fetcher });
 
   const depthArg = args.find(a => a.startsWith('--depth='));
   const depth = depthArg ? parseInt(depthArg.split('=')[1], 10) : 1;
@@ -529,7 +524,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   while (true) {
     session.spin(isRetry ? `Retrying ${session.label}…` : `Connecting to ${session.label}…`);
     try {
-      ticket = await fetchTicket(ticketKey, { env: jiraEnv, fetcher, depth, apiVersion });
+      ticket = await adapter.fetchTicket(ticketKey, { depth });
       break;
     } catch (err) {
       const classified = classifyError(err, conn);
@@ -606,6 +601,8 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     if (downloadable.length > 0) {
       const noun = downloadable.length === 1 ? 'attachment' : 'attachments';
       process.stderr.write(`Downloading ${downloadable.length} ${noun}…\n`);
+      // attachment-downloader is Jira-specific — it needs raw auth headers from buildJiraEnv
+      const jiraEnv = buildJiraEnv(conn);
       ticket.localAttachments = await downloadAttachments(ticket, {
         env: jiraEnv,
         fetcher,

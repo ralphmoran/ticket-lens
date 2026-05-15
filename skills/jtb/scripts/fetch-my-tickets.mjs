@@ -5,12 +5,11 @@
  * Usage: node fetch-my-tickets.mjs [--stale=N] [--status=X,Y] [--profile=NAME]
  */
 
-import { fetchCurrentUser, searchTickets, fetchStatuses } from './lib/jira-client.mjs';
 import { scoreAttention, sortByUrgency } from './lib/attention-scorer.mjs';
 import { assembleTriageSummary } from './lib/brief-assembler.mjs';
 import { styleTriageSummary } from './lib/styled-assembler.mjs';
 import { resolveConnection, loadProfiles, saveProfile } from './lib/profile-resolver.mjs';
-import { buildJiraEnv } from './lib/config.mjs';
+import { resolveAdapter } from './lib/resolve-adapter.mjs';
 import { createSpinner } from './lib/spinner.mjs';
 import { createSession } from './lib/banner.mjs';
 import { classifyError } from './lib/error-classifier.mjs';
@@ -152,10 +151,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     return;
   }
 
-  const jiraEnv = buildJiraEnv(conn);
-
-  // Cloud profiles use v3 API (v2 search is deprecated/410), Server stays on v2
-  const apiVersion = conn.auth === 'cloud' ? 3 : 2;
+  const adapter = resolveAdapter(conn, { fetcher });
 
   // Status resolution: --status flag > profile triageStatuses > defaults
   const statuses = statusArg
@@ -172,8 +168,8 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   session.spin(`Connecting to ${session.label}…`);
 
   // Fire both requests concurrently — they are independent of each other
-  const userPromise = fetchCurrentUser({ env: jiraEnv, fetcher, apiVersion });
-  const ticketsPromise = searchTickets(jql, { env: jiraEnv, fetcher, apiVersion });
+  const userPromise = adapter.fetchCurrentUser();
+  const ticketsPromise = adapter.searchTickets(jql);
 
   let currentUser;
   try {
@@ -203,7 +199,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const out = process.stderr;
       out.write(`\n  ${s.yellow('○')} Status mismatch — checking Jira...\n`);
       try {
-        const available = await fetchStatuses({ env: jiraEnv, fetcher, apiVersion });
+        const available = await adapter.fetchStatuses();
         const lowerMap = new Map(available.map(n => [n.toLowerCase(), n]));
 
         // Map each configured status to its best match (exact → case-insensitive → partial)
