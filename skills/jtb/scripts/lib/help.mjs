@@ -215,6 +215,283 @@ export function printProfiles({ stream = process.stdout, config, plain = false }
   stream.write(lines.join('\n') + '\n');
 }
 
+export function printLoginHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('login')}`,
+    '',
+    `  Connect the CLI to your TicketLens account using a CLI token.`,
+    `  Validates the token against the API before saving it locally.`,
+    '',
+    `  ${s.bold('HOW IT WORKS')}`,
+    '',
+    `    1. Generate a CLI token at ${s.cyan(`${s.dim('<console-url>')}/console/account`)}`,
+    `    2. Run ${s.cyan('ticketlens login')} and paste the token when prompted`,
+    `    3. Run ${s.cyan('ticketlens sync')} to pull your tracker connections`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens login`,
+    `    ${s.dim('$')} ticketlens sync        ${s.dim('# after login, pull connections')}`,
+    '',
+    `  ${s.bold('FILES')}`,
+    '',
+    `    ${s.dim('Token saved to:')}  ~/.ticketlens/cli-token`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printLogoutHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('logout')}`,
+    '',
+    `  Remove the stored CLI token, disconnecting this machine from your`,
+    `  TicketLens account. Local profiles and credentials are kept intact.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens logout`,
+    `    ${s.dim('$')} ticketlens login   ${s.dim('# re-authenticate')}`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printSyncHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('sync')}`,
+    '',
+    `  Pull tracker connections from the TicketLens console and write them`,
+    `  to ${s.dim('~/.ticketlens/profiles.json')}. Requires ${s.cyan('ticketlens login')} first.`,
+    '',
+    `  Profiles that need credentials will be listed with a reminder to`,
+    `  run ${s.cyan('ticketlens config --profile=NAME')} to add them.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens login`,
+    `    ${s.dim('$')} ticketlens sync`,
+    `    ${s.dim('$')} ticketlens profiles   ${s.dim('# verify pulled connections')}`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printActivateHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('activate')} ${s.dim('<LICENSE-KEY>')}`,
+    '',
+    `  Activate a Pro or Team license key to unlock paid features.`,
+    `  Validates the key online and writes the result to ${s.dim('~/.ticketlens/license.json')}.`,
+    '',
+    `  ${s.bold('ARGUMENTS')}`,
+    '',
+    `    ${s.brand('<LICENSE-KEY>')}   Your LemonSqueezy license key`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('-h')}, ${s.brand('--help')}      Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens activate tl_abc123xxxx`,
+    `    ${s.dim('$')} ticketlens license             ${s.dim('# verify activation')}`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printLicenseHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('license')}`,
+    '',
+    `  Show current license status: tier, email, and last validation date.`,
+    `  License is re-validated automatically in the background every 7 days.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens license`,
+    `    ${s.dim('$')} ticketlens activate ${s.dim('<KEY>')}   ${s.dim('# activate or renew')}`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printDeleteHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('delete')} ${s.dim('<PROFILE-NAME>')}`,
+    '',
+    `  Permanently remove a locally configured profile. In TTY mode, prompts`,
+    `  for confirmation before deleting. Pass ${s.cyan('--yes')} to skip the prompt.`,
+    '',
+    `  ${s.bold('ARGUMENTS')}`,
+    '',
+    `    ${s.brand('<PROFILE-NAME>')}   Name of the profile to remove`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--yes')}, ${s.brand('-y')}     Skip confirmation prompt`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}    Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens delete myprofile`,
+    `    ${s.dim('$')} ticketlens delete myprofile --yes`,
+    `    ${s.dim('$')} ticketlens profiles                ${s.dim('# list remaining profiles')}`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printProfilesHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('profiles')} ${s.dim('[--plain]')}`,
+    '',
+    `  List all locally configured Jira profiles and their active status.`,
+    `  Also available as ${s.cyan('ticketlens ls')}.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--plain')}          Tab-separated output ${s.dim('(for scripting)')}`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}     Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens profiles`,
+    `    ${s.dim('$')} ticketlens ls`,
+    `    ${s.dim('$')} ticketlens profiles --plain`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printScheduleHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('schedule')} ${s.dim('[--stop|--status]')}  ${s.dim('[Pro]')}`,
+    '',
+    `  Set up a recurring digest email with your triage results. ${s.dim('[Pro]')}`,
+    `  Runs an interactive wizard to configure day, time, and timezone.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--stop')}        Cancel the active digest schedule`,
+    `    ${s.brand('--status')}      Show current schedule configuration`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens schedule`,
+    `    ${s.dim('$')} ticketlens schedule --status`,
+    `    ${s.dim('$')} ticketlens schedule --stop`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printInitHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('init')}`,
+    '',
+    `  Configure a new Jira connection locally using an interactive wizard.`,
+    `  Supports Jira Cloud ${s.dim('(Basic auth)')} and Jira Server/DC ${s.dim('(Bearer PAT or Basic)')}`,
+    '',
+    `  After setup, run ${s.cyan('ticketlens PROJ-123')} to fetch your first ticket.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens init`,
+    `    ${s.dim('$')} ticketlens profiles   ${s.dim('# verify the new profile')}`,
+    '',
+    `  ${s.dim('Tip: use')} ${s.cyan('ticketlens sync')} ${s.dim('instead to pull connections from the console.')}`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printSwitchHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('switch')}`,
+    '',
+    `  Interactively select which profile is active by default.`,
+    `  The chosen profile is used when no ${s.cyan('--profile')} flag is given.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens switch`,
+    `    ${s.dim('$')} ticketlens profiles   ${s.dim('# confirm new active profile')}`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printConfigHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('config')} ${s.dim('[--profile=NAME]')}`,
+    '',
+    `  Edit settings for an existing profile using an interactive wizard.`,
+    `  Without ${s.cyan('--profile')}, edits the currently active profile.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--profile')}=${s.dim('NAME')}   Profile to configure`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}      Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens config`,
+    `    ${s.dim('$')} ticketlens config --profile=work`,
+    `    ${s.dim('$')} ticketlens config --profile=acme`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
 export function printTriageHelp({ stream = process.stdout } = {}) {
   const s = createStyler({ isTTY: stream.isTTY });
   const lines = [

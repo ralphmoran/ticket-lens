@@ -17,7 +17,13 @@ import { run as runConfig } from '../skills/jtb/scripts/lib/config-wizard.mjs';
 import { activateLicense, checkLicense, revalidateIfStale, isLicensed, showUpgradePrompt, readLicense } from '../skills/jtb/scripts/lib/license.mjs';
 import { deleteProfile, loadProfiles } from '../skills/jtb/scripts/lib/profile-resolver.mjs';
 import { run as runCache } from '../skills/jtb/scripts/lib/cache-manager.mjs';
-import { printHelp, printProfiles } from '../skills/jtb/scripts/lib/help.mjs';
+import {
+  printHelp, printProfiles,
+  printLoginHelp, printLogoutHelp, printSyncHelp,
+  printActivateHelp, printLicenseHelp, printDeleteHelp,
+  printProfilesHelp, printScheduleHelp,
+  printInitHelp, printSwitchHelp, printConfigHelp,
+} from '../skills/jtb/scripts/lib/help.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
 import { readCliToken, saveCliToken, deleteCliToken } from '../skills/jtb/scripts/lib/cli-auth.mjs';
 import { syncProfiles, getApiBase, getConsoleBase } from '../skills/jtb/scripts/lib/sync.mjs';
@@ -45,6 +51,7 @@ switch (command) {
     break;
 
   case 'init':
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printInitHelp(); break; }
     runInit().catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
@@ -52,6 +59,7 @@ switch (command) {
     break;
 
   case 'switch':
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printSwitchHelp(); break; }
     runSwitch().catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
@@ -59,6 +67,7 @@ switch (command) {
     break;
 
   case 'config': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printConfigHelp(); break; }
     const profileArg = cmdArgs.find(a => a.startsWith('--profile='));
     const profileName = profileArg ? profileArg.split('=')[1] : undefined;
     runConfig({ profileName }).catch(err => {
@@ -69,6 +78,7 @@ switch (command) {
   }
 
   case 'activate': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printActivateHelp(); break; }
     const s = createStyler({ isTTY: process.stdout.isTTY });
     const key = cmdArgs.find(a => !a.startsWith('--'));
     if (!key) {
@@ -90,6 +100,7 @@ switch (command) {
   }
 
   case 'license': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printLicenseHelp(); break; }
     const s = createStyler({ isTTY: process.stdout.isTTY });
     const status = checkLicense();
     const daysSinceVal = status.validatedAt
@@ -131,6 +142,7 @@ switch (command) {
   }
 
   case 'delete': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printDeleteHelp(); break; }
     const s = createStyler({ isTTY: process.stderr.isTTY });
     const profileName = cmdArgs.find(a => !a.startsWith('--'));
     if (!profileName) {
@@ -182,6 +194,7 @@ switch (command) {
   }
 
   case 'profiles': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printProfilesHelp(); break; }
     const plain = cmdArgs.includes('--plain');
     const config = loadProfiles();
     printProfiles({ config, plain });
@@ -203,6 +216,7 @@ switch (command) {
   }
 
   case 'schedule': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printScheduleHelp(); break; }
     const subCmd = cmdArgs[0];
 
     if (subCmd === '--stop') {
@@ -262,6 +276,7 @@ switch (command) {
     break;
 
   case 'login': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printLoginHelp(); break; }
     (async () => {
       const s = createStyler({ isTTY: process.stderr.isTTY });
       process.stderr.write(`\n  ${s.bold('TicketLens Login')}\n`);
@@ -312,6 +327,7 @@ switch (command) {
   }
 
   case 'logout': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printLogoutHelp(); break; }
     const s = createStyler({ isTTY: process.stderr.isTTY });
     deleteCliToken();
     process.stderr.write(`  ${s.green('✔')} CLI token removed.\n`);
@@ -319,6 +335,7 @@ switch (command) {
   }
 
   case 'sync': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printSyncHelp(); break; }
     (async () => {
       const s = createStyler({ isTTY: process.stderr.isTTY });
       process.stderr.write(`\n  ${s.dim('Syncing from TicketLens console…')}\n`);

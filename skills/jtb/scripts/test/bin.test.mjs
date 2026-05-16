@@ -85,4 +85,44 @@ describe('bin/ticketlens.mjs', () => {
       `Expected "not found" in stderr. Got: ${result.stderr.slice(0, 200)}`
     );
   });
+
+  for (const [cmd, flag] of [
+    ['login', '--help'],
+    ['login', '-h'],
+    ['logout', '--help'],
+    ['logout', '-h'],
+    ['sync', '--help'],
+    ['sync', '-h'],
+    ['activate', '--help'],
+    ['activate', '-h'],
+    ['license', '--help'],
+    ['license', '-h'],
+    ['delete', '--help'],
+    ['delete', '-h'],
+    ['profiles', '--help'],
+    ['profiles', '-h'],
+    ['schedule', '--help'],
+    ['schedule', '-h'],
+    ['init', '--help'],
+    ['init', '-h'],
+    ['switch', '--help'],
+    ['switch', '-h'],
+    ['config', '--help'],
+    ['config', '-h'],
+  ]) {
+    it(`"ticketlens ${cmd} ${flag}" exits 0 and prints help`, () => {
+      const result = spawnSync('node', [binPath, cmd, flag], {
+        encoding: 'utf8',
+        timeout: 5000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
+      });
+      assert.equal(result.status, 0, `Expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+      const combined = result.stdout + result.stderr;
+      assert.ok(
+        combined.includes(cmd),
+        `"ticketlens ${cmd} ${flag}" output must mention "${cmd}". Got: ${combined.slice(0, 200)}`
+      );
+    });
+  }
 });
