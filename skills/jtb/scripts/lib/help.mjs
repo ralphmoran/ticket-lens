@@ -24,11 +24,13 @@ export function printHelp({ stream = process.stdout } = {}) {
     '',
     `  ${s.bold('USAGE')}`,
     '',
-    // visible widths: "ticketlens init"=15, "switch"=17, "config [--profile=NAME]"=34,
-    // "profiles"=19, "<TICKET-KEY> [options]"=33, "triage [options]"=27,
-    // "activate <KEY>"=25, "license"=18, "cache [size|clear]"=29  →  target=36
-    // Groups: Setup ─── Daily use ─── Account / Maintenance
-    `    ${s.brand('ticketlens')} init                     Configure Jira connections`,
+    // visible widths — target column = 36 visible chars for the command portion
+    // Groups: Console sync ─── Setup ─── Daily use ─── Account / Maintenance
+    `    ${s.brand('ticketlens')} login                    Connect CLI to your TicketLens account`,
+    `    ${s.brand('ticketlens')} logout                   Remove stored credentials`,
+    `    ${s.brand('ticketlens')} sync                     Pull tracker profiles from the console`,
+    '',
+    `    ${s.brand('ticketlens')} init                     Configure connections locally`,
     `    ${s.brand('ticketlens')} switch                   Switch active profile`,
     `    ${s.brand('ticketlens')} config ${s.dim('[--profile=NAME]')}  Edit profile settings`,
     `    ${s.brand('ticketlens')} profiles                 List all configured profiles  ${s.dim('(alias: ls)')}`,
@@ -75,6 +77,8 @@ export function printHelp({ stream = process.stdout } = {}) {
     '',
     `  ${s.bold('EXAMPLES')}`,
     '',
+    `    ${s.dim('$')} ticketlens login                   ${s.dim('# first-time setup')}`,
+    `    ${s.dim('$')} ticketlens sync                    ${s.dim('# pull connections from console')}`,
     `    ${s.dim('$')} ticketlens PROJ-123`,
     `    ${s.dim('$')} ticketlens get PROJ-123 --depth=0 --profile=myteam`,
     `    ${s.dim('$')} ticketlens triage`,
@@ -83,11 +87,13 @@ export function printHelp({ stream = process.stdout } = {}) {
     '',
     `  ${s.bold('CONFIGURATION')}`,
     '',
+    `    ${s.dim('CLI token:')}    ~/.ticketlens/cli-token  ${s.dim('(written by ticketlens login)')}`,
     `    ${s.dim('Profiles:')}     ~/.ticketlens/profiles.json`,
     `    ${s.dim('Credentials:')}  ~/.ticketlens/credentials.json`,
     `    ${s.dim('License:')}      ~/.ticketlens/license.json`,
     '',
     `    ${s.dim('Or use env vars:')} JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN`,
+    `    ${s.dim('               ')} TICKETLENS_API_URL  ${s.dim('(override API host for local dev)')}`,
     '',
     '',
   ];
