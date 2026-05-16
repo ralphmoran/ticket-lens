@@ -26,6 +26,7 @@ import {
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
 import { readCliToken, saveCliToken, deleteCliToken } from '../skills/jtb/scripts/lib/cli-auth.mjs';
+import { browserLogin } from '../skills/jtb/scripts/lib/browser-login.mjs';
 import { syncProfiles, getApiBase, getConsoleBase } from '../skills/jtb/scripts/lib/sync.mjs';
 import { promptSecret, promptText } from '../skills/jtb/scripts/lib/prompt-helpers.mjs';
 
@@ -277,21 +278,45 @@ switch (command) {
 
   case 'login': {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printLoginHelp(); break; }
+
+    const useManual = cmdArgs.includes('--manual');
+
     (async () => {
       const s = createStyler({ isTTY: process.stderr.isTTY });
-      process.stderr.write(`\n  ${s.bold('TicketLens Login')}\n`);
-      process.stderr.write(`  ${s.dim('─'.repeat(44))}\n`);
-      process.stderr.write(`  ${s.dim(`Generate a CLI token at ${s.cyan(`${getConsoleBase()}/console/account`)}`)}\n`);
-      process.stderr.write(`  ${s.dim('then paste it below.')}\n\n`);
 
-      const token = await promptSecret(`CLI Token ${s.dim('(tl_…)')}:`, { stream: process.stderr });
-      if (!token.startsWith('tl_')) {
-        process.stderr.write(`  ${s.red('✖')} Token must start with ${s.dim('tl_')}\n`);
-        process.exitCode = 1;
-        return;
+      let token;
+
+      if (useManual) {
+        // ── manual paste flow (CI / headless environments) ──────────────────
+        process.stderr.write(`\n  ${s.bold('TicketLens Login')}\n`);
+        process.stderr.write(`  ${s.dim('─'.repeat(44))}\n`);
+        process.stderr.write(`  ${s.dim(`Generate a CLI token at ${s.cyan(`${getConsoleBase()}/console/account`)}`)}\n`);
+        process.stderr.write(`  ${s.dim('then paste it below.')}\n\n`);
+
+        token = await promptSecret(`CLI Token ${s.dim('(tl_…)')}:`, { stream: process.stderr });
+        if (!token.startsWith('tl_')) {
+          process.stderr.write(`  ${s.red('✖')} Token must start with ${s.dim('tl_')}\n`);
+          process.exitCode = 1;
+          return;
+        }
+      } else {
+        // ── browser flow (default) ────────────────────────────────────────
+        process.stderr.write(`\n  ${s.bold('TicketLens Login')}\n`);
+        process.stderr.write(`  ${s.dim('─'.repeat(44))}\n`);
+        process.stderr.write(`  Opening browser to authorize…\n\n`);
+        process.stderr.write(`  ${s.dim('○ Waiting for authorization (120s)…')}\n`);
+
+        try {
+          token = await browserLogin();
+        } catch (err) {
+          process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} ${err.message}\n`);
+          process.stderr.write(`\n  ${s.dim(`Try ${s.cyan('ticketlens login --manual')} to paste a token instead.`)}\n\n`);
+          process.exitCode = 1;
+          return;
+        }
       }
 
-      // Validate against the API before saving
+      // ── verify token against API (both flows) ─────────────────────────
       process.stderr.write(`\n  ${s.dim('○ Verifying token…')}\n`);
       let res;
       try {
@@ -299,7 +324,7 @@ switch (command) {
           headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
           signal: AbortSignal.timeout(15000),
         });
-      } catch (err) {
+      } catch {
         process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} Could not reach ${getApiBase()} — check your connection.\n`);
         process.exitCode = 1;
         return;
