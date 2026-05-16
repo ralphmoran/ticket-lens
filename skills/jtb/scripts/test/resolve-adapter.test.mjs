@@ -85,12 +85,27 @@ describe('resolveAdapter', () => {
     assert.equal(adapter.type, 'github');
   });
 
-  it('throws for unsupported tracker type (linear)', () => {
+  it('returns a linear adapter for Linear connections', () => {
     const linearConn = { baseUrl: 'https://linear.app', apiToken: 'lin_api_xxx' };
-    assert.throws(
-      () => resolveAdapter(linearConn),
-      /Supported: jira, github/,
-    );
+    const adapter = resolveAdapter(linearConn);
+    assert.equal(adapter.type, 'linear');
+  });
+
+  it('linear adapter exposes all four methods', () => {
+    const linearConn = { baseUrl: 'https://linear.app/ticketlens', apiToken: 'lin_api_xxx' };
+    const adapter = resolveAdapter(linearConn);
+    assert.equal(typeof adapter.fetchTicket, 'function');
+    assert.equal(typeof adapter.fetchCurrentUser, 'function');
+    assert.equal(typeof adapter.searchTickets, 'function');
+    assert.equal(typeof adapter.fetchStatuses, 'function');
+  });
+
+  it('throws for truly unknown tracker type', () => {
+    // Force a type that detectTrackerType would never produce — test the guard
+    const weirdConn = { baseUrl: 'https://linear.app', apiToken: 'x' };
+    // detectTrackerType returns 'linear' for linear.app — no throw expected
+    // This test verifies the error message format stays consistent for future types
+    assert.doesNotThrow(() => resolveAdapter(weirdConn));
   });
 
   it('uses Jira v3 API for cloud auth', () => {

@@ -109,6 +109,7 @@ async function _run({ configDir, stream, s }) {
     const TRACKER_TYPES = [
       { label: 'Jira',   sublabel: 'Jira Cloud, Server, or Data Center', value: 'jira'   },
       { label: 'GitHub', sublabel: 'GitHub Issues (github.com)',          value: 'github' },
+      { label: 'Linear', sublabel: 'Linear (linear.app)',                 value: 'linear' },
     ];
     stream.write(`\n  ${s.dim('Tracker type:')}\n\n`);
     const trackerIndex = await promptSelect(TRACKER_TYPES, { stream, hint: '↑/↓ select   Enter confirm' });
@@ -225,6 +226,96 @@ async function _run({ configDir, stream, s }) {
           ...(projectPaths.length > 0 ? { projectPaths } : {}),
         };
         saveProfile(profileName, profileData, { apiToken: ghToken }, configDir);
+        addedCount++;
+        stream.write(`\n  ${s.green('✔')} Profile ${s.bold(s.cyan(`"${profileName}"`))} saved.\n`);
+      }
+    }
+
+    if (trackerType === 'linear') {
+      let linToken = '';
+
+      linearLoop: while (true) {
+        const tokenHint = linToken ? s.dim('  [keep existing]') : '';
+        linToken = await promptSecret(
+          s.dim('Linear API key') + tokenHint + s.dim(':'),
+          { stream, existingValue: linToken }
+        );
+
+        const linConn = { baseUrl: 'https://linear.app', apiToken: linToken };
+        const linSession = createSession({ baseUrl: 'https://linear.app', profileName }, { stream });
+        stream.write('\n');
+        linSession.spin('Testing connection...');
+
+        try {
+          const linAdapter = resolveAdapter(linConn);
+          await linAdapter.fetchCurrentUser();
+          linSession.connected();
+          connected = true;
+          break linearLoop;
+        } catch (err) {
+          linSession.failed();
+          const classified = classifyError(err, { baseUrl: 'https://linear.app', profileName });
+          linSession.footer(classified.message, 'error', classified.hint);
+        }
+
+        const LIN_RETRY = [
+          { label: 'Retry',     sublabel: 'Try again — same key',          value: 'retry' },
+          { label: 'Edit key',  sublabel: 'Change API key',                 value: 'creds' },
+          { label: 'Skip',      sublabel: 'Abandon — move to next step',    value: 'skip'  },
+        ];
+        stream.write(`\n  ${s.dim('What would you like to do?')}\n\n`);
+        const linRetryIndex = await promptSelect(LIN_RETRY, { stream, hint: '↑/↓ select   Enter confirm' });
+        if (linRetryIndex === null || LIN_RETRY[linRetryIndex].value === 'skip') break linearLoop;
+        const lHint = linToken ? s.dim('  [keep existing]') : '';
+        linToken = await promptSecret(
+          s.dim('Linear API key') + lHint + s.dim(':'),
+          { stream, existingValue: linToken }
+        );
+      }
+
+      if (connected) {
+        stream.write(`\n  ${s.dim('──── Optional  (press Enter to skip) ────')}\n\n`);
+
+        const prefixRaw = await promptText(s.dim('Team identifier') + s.dim('  (e.g. ENG):'), { stream });
+        const ticketPrefixes = prefixRaw
+          ? prefixRaw.split(',').map(v => v.trim().toUpperCase()).filter(Boolean)
+          : [];
+
+        const home = homedir();
+        const cwd = process.cwd();
+        const cwdDisplay = cwd.startsWith(home) ? '~' + cwd.slice(home.length) : cwd;
+        const pathInput = await promptText(
+          s.dim('Project path') + s.dim(`  [${cwdDisplay}]:`), { stream }
+        );
+        const rawPath = (pathInput.trim() || cwdDisplay).replace(/\/+$/, '');
+        const projectPaths = [];
+        if (rawPath) {
+          const expanded = rawPath.startsWith('~') ? join(home, rawPath.slice(1)) : rawPath;
+          if (existsSync(expanded)) {
+            projectPaths.push(rawPath);
+            stream.write(`  ${s.green('✔')} ${rawPath}\n`);
+          } else {
+            stream.write(`  ${s.yellow('○')} ${s.dim(rawPath)} — directory not found\n`);
+            const doCreate = await promptYN(`Create ${rawPath}?`, { stream });
+            if (doCreate) {
+              try {
+                mkdirSync(expanded, { recursive: true });
+                projectPaths.push(rawPath);
+                stream.write(`  ${s.green('✔')} Created\n`);
+              } catch (mkErr) {
+                stream.write(`  ${s.red('✖')} Could not create: ${mkErr.message}\n`);
+              }
+            }
+          }
+        }
+
+        const profileData = {
+          baseUrl: 'https://linear.app',
+          auth: 'linear',
+          ...(ticketPrefixes.length > 0 ? { ticketPrefixes } : {}),
+          ...(projectPaths.length > 0 ? { projectPaths } : {}),
+        };
+        saveProfile(profileName, profileData, { apiToken: linToken }, configDir);
         addedCount++;
         stream.write(`\n  ${s.green('✔')} Profile ${s.bold(s.cyan(`"${profileName}"`))} saved.\n`);
       }

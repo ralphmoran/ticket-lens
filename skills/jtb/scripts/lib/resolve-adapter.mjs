@@ -1,5 +1,6 @@
 import { createJiraAdapter } from './adapters/jira-adapter.mjs';
 import { createGitHubAdapter } from './adapters/github-adapter.mjs';
+import { createLinearAdapter } from './adapters/linear-adapter.mjs';
 
 /**
  * Detects the tracker type from a baseUrl string.
@@ -24,5 +25,6 @@ export function resolveAdapter(conn, opts = {}) {
   const type = detectTrackerType(conn?.baseUrl);
   if (type === 'jira') return createJiraAdapter(conn, opts);
   if (type === 'github') return createGitHubAdapter(conn, opts);
-  throw new Error(`Tracker type '${type}' is not yet supported. Supported: jira, github.`);
+  if (type === 'linear') return createLinearAdapter(conn, opts);
+  throw new Error(`Tracker type '${type}' is not yet supported. Supported: jira, github, linear.`);
 }
