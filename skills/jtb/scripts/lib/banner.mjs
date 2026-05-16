@@ -40,9 +40,14 @@ export function createSession(conn, { stream = process.stderr } = {}) {
   const profileLabel = conn.profileName || 'default';
   const userLabel = conn.email || (conn.pat ? 'token auth' : 'unknown');
 
-  const jiraLabel = conn.profileName
-    ? conn.profileName.charAt(0).toUpperCase() + conn.profileName.slice(1) + ' Jira'
-    : hostname;
+  const trackerName = hostname.includes('linear.app') ? 'Linear'
+    : hostname.includes('github.com') ? 'GitHub'
+    : 'Jira';
+  const jiraLabel = (trackerName !== 'Jira')
+    ? trackerName
+    : conn.profileName
+      ? conn.profileName.charAt(0).toUpperCase() + conn.profileName.slice(1) + ' Jira'
+      : hostname;
 
   // Pre-build the info lines to calculate box width including status line.
   const infoLines = [

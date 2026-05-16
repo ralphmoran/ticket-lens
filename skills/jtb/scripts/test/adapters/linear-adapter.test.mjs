@@ -11,15 +11,15 @@ const RAW_NODE = {
   description: 'Widget breaks on scroll.',
   state: { name: 'In Progress' },
   priority: 2,
-  assignee: { name: 'Bob Smith', displayName: 'Bob', email: 'bob@example.com' },
-  creator: { name: 'Alice Jones', displayName: 'Alice', email: 'alice@example.com' },
+  assignee: { name: 'Bob Smith', email: 'bob@example.com' },
+  creator: { name: 'Alice Jones', email: 'alice@example.com' },
   createdAt: '2024-01-15T10:00:00.000Z',
   updatedAt: '2024-01-16T12:00:00.000Z',
   labels: { nodes: [{ name: 'bug' }, { name: 'priority-high' }] },
   comments: {
     nodes: [
-      { user: { name: 'Carol', displayName: 'Carol C', email: 'carol@example.com' }, body: 'Confirmed on Firefox.', createdAt: '2024-01-15T11:00:00.000Z' },
-      { user: { name: 'Bob Smith', displayName: 'Bob', email: 'bob@example.com' }, body: 'Working on it.', createdAt: '2024-01-15T14:00:00.000Z' },
+      { user: { name: 'Carol', email: 'carol@example.com' }, body: 'Confirmed on Firefox.', createdAt: '2024-01-15T11:00:00.000Z' },
+      { user: { name: 'Bob Smith', email: 'bob@example.com' }, body: 'Working on it.', createdAt: '2024-01-15T14:00:00.000Z' },
     ],
   },
 };
@@ -80,26 +80,16 @@ describe('normalizeLinearIssue', () => {
     assert.equal(normalizeLinearIssue({ ...RAW_NODE, priority: 0 }).priority, null);
   });
 
-  it('maps assignee from displayName', () => {
-    assert.equal(normalizeLinearIssue(RAW_NODE).assignee, 'Bob');
-  });
-
-  it('falls back assignee to name when displayName is absent', () => {
-    const node = { ...RAW_NODE, assignee: { name: 'Bob Smith', displayName: null } };
-    assert.equal(normalizeLinearIssue(node).assignee, 'Bob Smith');
+  it('maps assignee from name', () => {
+    assert.equal(normalizeLinearIssue(RAW_NODE).assignee, 'Bob Smith');
   });
 
   it('maps null assignee to null', () => {
     assert.equal(normalizeLinearIssue({ ...RAW_NODE, assignee: null }).assignee, null);
   });
 
-  it('maps reporter from creator displayName', () => {
-    assert.equal(normalizeLinearIssue(RAW_NODE).reporter, 'Alice');
-  });
-
-  it('falls back reporter to name when displayName is absent', () => {
-    const node = { ...RAW_NODE, creator: { name: 'Alice Jones', displayName: null } };
-    assert.equal(normalizeLinearIssue(node).reporter, 'Alice Jones');
+  it('maps reporter from creator name', () => {
+    assert.equal(normalizeLinearIssue(RAW_NODE).reporter, 'Alice Jones');
   });
 
   it('maps null creator to null reporter', () => {
@@ -145,7 +135,7 @@ describe('normalizeLinearIssue', () => {
   it('maps comments array', () => {
     const t = normalizeLinearIssue(RAW_NODE);
     assert.equal(t.comments.length, 2);
-    assert.equal(t.comments[0].author, 'Carol C');
+    assert.equal(t.comments[0].author, 'Carol');
     assert.equal(t.comments[0].body, 'Confirmed on Firefox.');
     assert.equal(t.comments[0].created, '2024-01-15T11:00:00.000Z');
   });
@@ -262,24 +252,14 @@ describe('fetchTicket', () => {
 // fetchCurrentUser
 // ---------------------------------------------------------------------------
 describe('fetchCurrentUser', () => {
-  it('returns displayName and email', async () => {
+  it('returns displayName (from name) and email', async () => {
     const fetcher = async () => makeResponse({
-      viewer: { name: 'Alice Jones', displayName: 'Alice', email: 'alice@example.com' },
-    });
-    const adapter = createLinearAdapter(CONN, { fetcher });
-    const user = await adapter.fetchCurrentUser();
-    assert.equal(user.displayName, 'Alice');
-    assert.equal(user.email, 'alice@example.com');
-  });
-
-  it('falls back to name when displayName is null', async () => {
-    const fetcher = async () => makeResponse({
-      viewer: { name: 'Alice Jones', displayName: null, email: null },
+      viewer: { name: 'Alice Jones', email: 'alice@example.com' },
     });
     const adapter = createLinearAdapter(CONN, { fetcher });
     const user = await adapter.fetchCurrentUser();
     assert.equal(user.displayName, 'Alice Jones');
-    assert.equal(user.email, null);
+    assert.equal(user.email, 'alice@example.com');
   });
 
   it('throws on non-OK response', async () => {

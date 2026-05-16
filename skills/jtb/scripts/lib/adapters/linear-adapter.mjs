@@ -8,12 +8,12 @@ const ISSUE_FIELDS = `
   description
   state { name }
   priority
-  assignee { name displayName email }
-  creator { name displayName email }
+  assignee { name email }
+  creator { name email }
   createdAt
   updatedAt
   labels { nodes { name } }
-  comments { nodes { body createdAt user { name displayName email } } }
+  comments { nodes { body createdAt user { name email } } }
 `;
 
 /**
@@ -26,15 +26,15 @@ export function normalizeLinearIssue(raw) {
     type: 'Issue',
     status: raw.state?.name ?? null,
     priority: PRIORITY_LABELS[raw.priority] ?? null,
-    assignee: raw.assignee?.displayName ?? raw.assignee?.name ?? null,
-    reporter: raw.creator?.displayName ?? raw.creator?.name ?? null,
+    assignee: raw.assignee?.name ?? null,
+    reporter: raw.creator?.name ?? null,
     description: raw.description ?? null,
     created: raw.createdAt ?? null,
     updated: raw.updatedAt ?? null,
     labels: (raw.labels?.nodes ?? []).map(l => l.name),
     components: [],
     comments: (raw.comments?.nodes ?? []).map(c => ({
-      author: c.user?.displayName ?? c.user?.name ?? null,
+      author: c.user?.name ?? null,
       authorAccountId: null,
       authorName: c.user?.name ?? null,
       body: c.body ?? '',
@@ -52,7 +52,7 @@ async function gql(query, variables, { token, fetcher, signal }) {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ query, variables }),
+    body: JSON.stringify(Object.keys(variables).length ? { query, variables } : { query }),
     signal,
   });
   if (!res.ok) {
@@ -92,12 +92,12 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
     async fetchCurrentUser(opts = {}) {
       const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
       const data = await gql(
-        `query Me { viewer { name displayName email } }`,
+        `query Me { viewer { name email } }`,
         {},
         { token, fetcher, signal },
       );
       const v = data.viewer;
-      return { displayName: v.displayName ?? v.name, email: v.email ?? null };
+      return { displayName: v.name, email: v.email ?? null };
     },
 
     async searchTickets(_query, opts = {}) {
