@@ -41,25 +41,30 @@ export async function promptSecret(label, { stream = process.stderr, existingVal
   while (true) {
     stream.write(`  ${label}  `);
     const value = await new Promise(res => {
-      let buf = '';
+      let buf   = '';
+      let stars = 0; // visual asterisk count — may differ from buf.length after a paste
       const stdin = process.stdin;
       stdin.setRawMode(true);
       stdin.resume();
       stdin.setEncoding('utf8');
-      function onData(char) {
-        if (char === '\r' || char === '\n') {
+      function onData(chunk) {
+        if (chunk === '\r' || chunk === '\n') {
           stdin.setRawMode(false);
           stdin.pause();
           stdin.removeListener('data', onData);
           stream.write('\n');
           res(buf);
-        } else if (char === '\x7f' || char === '\x08') {
-          if (buf.length > 0) { buf = buf.slice(0, -1); stream.write('\b \b'); }
-        } else if (char === '\x03') {
+        } else if (chunk === '\x7f' || chunk === '\x08') {
+          if (buf.length > 0) {
+            buf = buf.slice(0, -1);
+            if (stars > 0) { stars--; stream.write('\b \b'); }
+          }
+        } else if (chunk === '\x03') {
           process.exit(0);
         } else {
-          buf += char;
-          stream.write('*');
+          buf   += chunk;
+          stars += chunk.length;
+          stream.write('*'.repeat(chunk.length));
         }
       }
       stdin.on('data', onData);

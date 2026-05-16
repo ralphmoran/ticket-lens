@@ -269,7 +269,7 @@ switch (command) {
       process.stderr.write(`  ${s.dim(`Generate a CLI token at ${s.cyan(`${getApiBase()}/console/account`)}`)}\n`);
       process.stderr.write(`  ${s.dim('then paste it below.')}\n\n`);
 
-      const token = await promptText(`CLI Token ${s.dim('(tl_…)')}:`, { stream: process.stderr });
+      const token = await promptSecret(`CLI Token ${s.dim('(tl_…)')}:`, { stream: process.stderr });
       if (!token.startsWith('tl_')) {
         process.stderr.write(`  ${s.red('✖')} Token must start with ${s.dim('tl_')}\n`);
         process.exitCode = 1;
