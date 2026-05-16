@@ -167,6 +167,7 @@ Laravel 11 + Inertia.js + Vue 3 + Tailwind v4. Built in parallel with Phase B.7 
 | C0-5 | ~~Feature~~ | ~~**Schedules management**~~ | Done. Search-before-display (no results until query typed), inline client-side validation, create/delete schedules from Console. Owner account bypasses license check. |
 | C0-6 | ~~Feature~~ | ~~**Licenses panel**~~ | Done. Owner can view, issue, and set expiry for licenses from the Console. Human-readable dates + expiry warnings. |
 | C0-7 | ~~Feature~~ | ~~**UI polish**~~ | Done. Icons on all Console buttons via TlIcon, inline validation on all forms before backend requests, cursor-pointer globally, disabled button opacity + not-allowed cursor, no-op nav clicks on active section, responsive collapsible sidebar. |
+| C0-8 | ~~Feature~~ | ~~**Browser-based CLI login**~~ | Done (v0.1.7). `ticketlens login` opens the Console authorize page in the default browser. User approves, Console redirects to a one-shot localhost callback server in the CLI with the token. Cancel returns `error=access_denied` so the CLI exits cleanly (exit 0) instead of timing out. `--manual` flag preserves the paste flow for CI/headless. Backend: `GET/POST /console/auth/cli` (Blade view, not Inertia) + `CliAuthController`. CLI: `browser-login.mjs` with `startLocalServer`, `openBrowser`, `browserLogin`. 13 unit tests. |
 
 ---
 

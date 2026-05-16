@@ -190,6 +190,19 @@ Stores the schedule as a cron entry. Delivers your triage digest at the configur
 
 ---
 
+### Login
+
+```bash
+ticketlens login           # Open browser → authorize in Console → token saved automatically
+ticketlens login --manual  # Paste a token instead (CI/headless environments)
+```
+
+`ticketlens login` opens the TicketLens Console in your default browser. Click **Authorize**, and the CLI receives your token via a one-shot localhost callback — no copy-pasting. Cancelling in the browser exits the CLI cleanly.
+
+Use `--manual` when there is no GUI (CI runners, SSH sessions, containers).
+
+---
+
 ### License
 
 ```bash
@@ -307,6 +320,10 @@ ticketlens cache clear --older-than=30d --yes            # Skip confirmation (CI
 ticketlens schedule                           # Interactive wizard — set time, timezone, profile [Pro]
 ticketlens schedule --stop                    # Cancel the scheduled digest [Pro]
 ticketlens schedule --status                  # Show current schedule [Pro]
+
+# ── Login ─────────────────────────────────────────────────────────────────────
+ticketlens login                              # Browser flow — opens Console, token saved automatically
+ticketlens login --manual                     # Paste flow — for CI/headless environments
 
 # ── License and account ────────────────────────────────────────────────────────
 ticketlens license                            # Show license tier and status
