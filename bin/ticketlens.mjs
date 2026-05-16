@@ -309,9 +309,12 @@ switch (command) {
         try {
           token = await browserLogin();
         } catch (err) {
-          process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} ${err.message}\n`);
-          process.stderr.write(`\n  ${s.dim(`Try ${s.cyan('ticketlens login --manual')} to paste a token instead.`)}\n\n`);
-          process.exitCode = 1;
+          const cancelled = err.message === 'Authorization cancelled';
+          process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} ${cancelled ? 'Login cancelled.' : err.message}\n`);
+          if (!cancelled) {
+            process.stderr.write(`\n  ${s.dim(`Try ${s.cyan('ticketlens login --manual')} to paste a token instead.`)}\n\n`);
+          }
+          process.exitCode = cancelled ? 0 : 1;
           return;
         }
       }

@@ -49,11 +49,24 @@ export function startLocalServer(port, expectedState, timeoutMs = TIMEOUT_MS) {
 
       const token = url.searchParams.get('token') ?? '';
       const state = url.searchParams.get('state') ?? '';
+      const error = url.searchParams.get('error') ?? '';
 
       if (state !== expectedState) {
         res.writeHead(400, { 'Content-Type': 'text/plain' });
         res.end('State mismatch — authorization rejected.');
         settle(reject, new Error('State mismatch'));
+        return;
+      }
+
+      if (error) {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(
+          '<html><body style="font-family:sans-serif;text-align:center;padding:60px;background:#0d1117;color:#cdd9e5">'
+          + '<h2 style="color:#8b949e">Authorization cancelled</h2>'
+          + '<p style="color:#8b949e">You can close this tab.</p>'
+          + '</body></html>',
+        );
+        settle(reject, new Error('Authorization cancelled'));
         return;
       }
 

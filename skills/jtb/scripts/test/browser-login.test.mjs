@@ -93,6 +93,32 @@ describe('startLocalServer', () => {
     await assertion;
   });
 
+  it('rejects with "Authorization cancelled" when error param present', async () => {
+    const port  = await getTestPort();
+    const state = generateState();
+
+    const tokenPromise = startLocalServer(port, state, 5000);
+    const assertion    = assert.rejects(tokenPromise, /authorization cancelled/i);
+
+    await fetch(`http://127.0.0.1:${port}/callback?error=access_denied&state=${state}`);
+
+    await assertion;
+  });
+
+  it('returns 200 HTML on cancel', async () => {
+    const port  = await getTestPort();
+    const state = generateState();
+
+    const tokenPromise = startLocalServer(port, state, 5000);
+    tokenPromise.catch(() => {});
+
+    const res = await fetch(`http://127.0.0.1:${port}/callback?error=access_denied&state=${state}`);
+    assert.equal(res.status, 200);
+
+    const body = await res.text();
+    assert.ok(body.includes('cancelled'));
+  });
+
   it('ignores requests to paths other than /callback', async () => {
     const port  = await getTestPort();
     const state = generateState();
