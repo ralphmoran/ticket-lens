@@ -1,6 +1,6 @@
 {
   "name": "ticketlens",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Jira CLI for developers — fetch ticket context, triage your queue, and stop tab-switching. Zero dependencies, all local.",
   "type": "module",
   "bin": {
