@@ -220,7 +220,7 @@ Build only what paying customers or market demand requires.
 |---|------|---------|--------|--------|
 | 42 | Refactor | ~~**Tracker adapter abstraction**~~ | Pluggable interface so new sources don't fork the whole client. | Medium |
 | 43 | Feature | ~~**GitHub Issues as ticket source**~~ | Large OSS audience. `GitHubAdapter` + `ticketlens init` GitHub branch (repo URL → PAT → test → prefix → save). | Medium |
-| 44 | Feature | **Linear as ticket source** | Startup audience. Implement `LinearAdapter`. | Medium |
+| 44 | Feature | ~~**Linear as ticket source**~~ | Startup audience. Implement `LinearAdapter`. | Medium |
 | 45 | Feature | **Confluence/wiki page fetching** | Fetch referenced Confluence pages and include in brief. | Small |
 
 ### Iteration 11 — Platform Features
