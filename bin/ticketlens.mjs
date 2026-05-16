@@ -20,7 +20,7 @@ import { run as runCache } from '../skills/jtb/scripts/lib/cache-manager.mjs';
 import { printHelp, printProfiles } from '../skills/jtb/scripts/lib/help.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
 import { readCliToken, saveCliToken, deleteCliToken } from '../skills/jtb/scripts/lib/cli-auth.mjs';
-import { syncProfiles, getApiBase } from '../skills/jtb/scripts/lib/sync.mjs';
+import { syncProfiles, getApiBase, getConsoleBase } from '../skills/jtb/scripts/lib/sync.mjs';
 import { promptSecret, promptText } from '../skills/jtb/scripts/lib/prompt-helpers.mjs';
 
 const args = process.argv.slice(2);
@@ -266,7 +266,7 @@ switch (command) {
       const s = createStyler({ isTTY: process.stderr.isTTY });
       process.stderr.write(`\n  ${s.bold('TicketLens Login')}\n`);
       process.stderr.write(`  ${s.dim('─'.repeat(44))}\n`);
-      process.stderr.write(`  ${s.dim(`Generate a CLI token at ${s.cyan(`${getApiBase()}/console/account`)}`)}\n`);
+      process.stderr.write(`  ${s.dim(`Generate a CLI token at ${s.cyan(`${getConsoleBase()}/console/account`)}`)}\n`);
       process.stderr.write(`  ${s.dim('then paste it below.')}\n\n`);
 
       const token = await promptSecret(`CLI Token ${s.dim('(tl_…)')}:`, { stream: process.stderr });
