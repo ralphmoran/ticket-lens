@@ -28,6 +28,8 @@ import { createStyler } from './lib/ansi.mjs';
 import { isLicensed, showUpgradePrompt, readLicense } from './lib/license.mjs';
 import { detectVcs } from './lib/vcs-detector.mjs';
 import { runComplianceCheck } from './lib/compliance-checker.mjs';
+import { fetchRemoteLinks, buildAuthHeader } from './lib/jira-client.mjs';
+import { fetchConfluencePage } from './lib/confluence-client.mjs';
 
 /**
  * Get the local diff using spawn with explicit arg arrays (never shell interpolation).
@@ -565,6 +567,29 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
   session.connected();
   process.stderr.write('\n');
+
+  // ── Confluence page fetching ───────────────────────────────────────────────
+  // Fetch pages referenced via Jira Remote Links (Confluence-only, non-blocking).
+  // Runs before cache write so cached briefs include the pages.
+  ticket.confluencePages = [];
+  if (adapter.type === 'jira' && !args.includes('--no-attachments')) {
+    try {
+      const jiraEnv = buildJiraEnv(conn);
+      const authHeader = buildAuthHeader(jiraEnv);
+      const apiVersion = conn.auth === 'cloud' ? 3 : 2;
+      const jiraOrigin = new URL(jiraEnv.JIRA_BASE_URL).origin;
+      const links = await fetchRemoteLinks(ticketKey, { env: jiraEnv, fetcher, apiVersion });
+      const MAX_CONFLUENCE_PAGES = 10;
+      const safeLinks = links
+        .filter(l => { try { return new URL(l.url).origin === jiraOrigin; } catch { return false; } })
+        .slice(0, MAX_CONFLUENCE_PAGES);
+      if (safeLinks.length > 0) {
+        const pages = await Promise.all(safeLinks.map(l => fetchConfluencePage(l.url, authHeader, { fetcher })));
+        ticket.confluencePages = pages.filter(Boolean);
+      }
+    } catch { /* non-fatal — a broken remote links endpoint must not fail the brief */ }
+  }
+  // ──────────────────────────────────────────────────────────────────────────
 
   // Save to brief cache for future requests
   if (!noCache) {

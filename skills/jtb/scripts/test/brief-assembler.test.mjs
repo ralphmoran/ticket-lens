@@ -288,3 +288,50 @@ describe('assembleTriageSummary', () => {
     assert.ok(result.includes('─'), 'Should use box-drawing characters for separator');
   });
 });
+
+// ---------------------------------------------------------------------------
+// assembleBrief — Confluence Pages section
+// ---------------------------------------------------------------------------
+describe('assembleBrief — Confluence Pages', () => {
+  function makeTicketWithPages(pages) {
+    return {
+      key: 'PROJ-1', summary: 'Test ticket', type: 'Story', status: 'Open',
+      priority: 'Medium', assignee: null, reporter: null,
+      description: null, created: null, updated: null,
+      labels: [], components: [], comments: [], attachments: [],
+      confluencePages: pages,
+    };
+  }
+
+  it('renders Confluence Pages section when pages are present', () => {
+    const ticket = makeTicketWithPages([
+      { url: 'https://example.atlassian.net/wiki/spaces/PROJ/pages/1/Setup', title: 'Setup Guide', text: 'Install the tool first.' },
+    ]);
+    const result = assembleBrief(ticket);
+    assert.ok(result.includes('Confluence Pages'), `expected section header: ${result}`);
+    assert.ok(result.includes('Setup Guide'), `expected page title: ${result}`);
+    assert.ok(result.includes('Install the tool first.'), `expected page text: ${result}`);
+  });
+
+  it('omits Confluence Pages section when confluencePages is absent', () => {
+    const { confluencePages: _, ...ticket } = makeTicketWithPages([]);
+    const result = assembleBrief(ticket);
+    assert.ok(!result.includes('Confluence Pages'), 'should not render section when absent');
+  });
+
+  it('omits Confluence Pages section when confluencePages is empty array', () => {
+    const ticket = makeTicketWithPages([]);
+    const result = assembleBrief(ticket);
+    assert.ok(!result.includes('Confluence Pages'), 'should not render empty section');
+  });
+
+  it('renders multiple pages with separators', () => {
+    const ticket = makeTicketWithPages([
+      { url: 'https://example.atlassian.net/wiki/spaces/PROJ/pages/1/A', title: 'Page A', text: 'Content A.' },
+      { url: 'https://example.atlassian.net/wiki/spaces/PROJ/pages/2/B', title: 'Page B', text: 'Content B.' },
+    ]);
+    const result = assembleBrief(ticket);
+    assert.ok(result.includes('Page A'), result);
+    assert.ok(result.includes('Page B'), result);
+  });
+});

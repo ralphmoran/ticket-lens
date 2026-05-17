@@ -131,6 +131,16 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
     sections.push(`${s.bold(s.brand('Linked Tickets'))}\n${s.dim('─'.repeat(divWidth()))}\n${linkedSections.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
   }
 
+  // Confluence pages
+  if (ticket.confluencePages?.length > 0) {
+    const pageLines = ticket.confluencePages.map(p => {
+      const parts = [s.brand(p.title ?? p.url)];
+      if (p.text) parts.push(p.text);
+      return parts.join('\n\n');
+    });
+    sections.push(`${s.bold(s.brand('Confluence Pages'))}\n${s.dim('─'.repeat(divWidth()))}\n${pageLines.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
+  }
+
   // Code references
   if (codeRefs) {
     const categories = [

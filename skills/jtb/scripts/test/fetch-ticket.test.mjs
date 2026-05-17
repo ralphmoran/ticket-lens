@@ -593,3 +593,84 @@ describe('pr subcommand', () => {
     } finally { out.restore(); }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Confluence page fetching integration
+// ---------------------------------------------------------------------------
+describe('Confluence page fetching', () => {
+  const CONFLUENCE_PAGE_URL = 'https://test.atlassian.net/wiki/spaces/PROJ/pages/999/Setup';
+  const CONFLUENCE_PAGE_CONTENT = { title: 'Setup Guide', body: { view: { value: '<p>Install the tool first.</p>' } } };
+  const REMOTE_LINKS_RESPONSE = [
+    {
+      application: { type: 'com.atlassian.confluence' },
+      object: { url: CONFLUENCE_PAGE_URL, title: 'Setup Guide' },
+    },
+  ];
+
+  function makeConfluenceFetcher({ remoteLinksOk = true } = {}) {
+    return async (url) => {
+      if (url.includes('/remotelink')) {
+        if (!remoteLinksOk) return { ok: false, status: 403, statusText: 'Forbidden' };
+        return { ok: true, json: async () => REMOTE_LINKS_RESPONSE };
+      }
+      if (url.includes('/wiki/rest/api/content/')) {
+        return { ok: true, json: async () => CONFLUENCE_PAGE_CONTENT };
+      }
+      // Default: return the Jira ticket
+      return { ok: true, json: async () => cloudFixture };
+    };
+  }
+
+  it('includes Confluence Pages section in brief when remote links exist', async () => {
+    const out = captureOutput();
+    try {
+      await run(['PROD-1234', '--plain', '--no-cache'], validEnv, makeConfluenceFetcher(), NO_CONFIG);
+      assert.ok(out.stdout.includes('Confluence Pages'), `expected Confluence Pages section:\n${out.stdout}`);
+      assert.ok(out.stdout.includes('Setup Guide'), `expected page title:\n${out.stdout}`);
+      assert.ok(out.stdout.includes('Install the tool first.'), `expected page text:\n${out.stdout}`);
+    } finally { out.restore(); }
+  });
+
+  it('still produces brief when remote links API returns 403', async () => {
+    const out = captureOutput();
+    try {
+      await run(['PROD-1234', '--plain', '--no-cache'], validEnv, makeConfluenceFetcher({ remoteLinksOk: false }), NO_CONFIG);
+      assert.ok(out.stdout.includes('PROD-1234'), `expected ticket key in brief:\n${out.stdout}`);
+      assert.equal(process.exitCode, undefined);
+    } finally { out.restore(); }
+  });
+
+  it('skips Confluence fetch when --no-attachments is passed', async () => {
+    let remoteLinksCallCount = 0;
+    const fetcher = async (url) => {
+      if (url.includes('/remotelink')) { remoteLinksCallCount++; }
+      return { ok: true, json: async () => cloudFixture };
+    };
+    const out = captureOutput();
+    try {
+      await run(['PROD-1234', '--plain', '--no-attachments'], validEnv, fetcher, NO_CONFIG);
+      assert.equal(remoteLinksCallCount, 0, 'should not call remote links API with --no-attachments');
+    } finally { out.restore(); }
+  });
+
+  it('skips Confluence pages whose origin does not match JIRA_BASE_URL', async () => {
+    let confluencePageCallCount = 0;
+    const crossOriginRemoteLinks = [
+      {
+        application: { type: 'com.atlassian.confluence' },
+        object: { url: 'https://attacker.example.com/wiki/spaces/PROJ/pages/999/Setup', title: 'Evil Page' },
+      },
+    ];
+    const fetcher = async (url) => {
+      if (url.includes('/remotelink')) return { ok: true, json: async () => crossOriginRemoteLinks };
+      if (url.includes('/wiki/rest/api/content/')) { confluencePageCallCount++; return { ok: true, json: async () => CONFLUENCE_PAGE_CONTENT }; }
+      return { ok: true, json: async () => cloudFixture };
+    };
+    const out = captureOutput();
+    try {
+      await run(['PROD-1234', '--plain', '--no-cache'], validEnv, fetcher, NO_CONFIG);
+      assert.equal(confluencePageCallCount, 0, 'should not fetch Confluence pages from a different origin');
+      assert.ok(!out.stdout.includes('Evil Page'), 'should not render cross-origin page');
+    } finally { out.restore(); }
+  });
+});

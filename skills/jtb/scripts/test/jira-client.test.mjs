@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchRemoteLinks } from '../lib/jira-client.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -682,5 +682,57 @@ describe('request timeouts', () => {
     };
     await fetchTicket('PROD-1234', { env: ENV, fetcher: spyFetch, depth: 0 });
     assert.ok(capturedOpts?.signal instanceof AbortSignal, 'must include AbortSignal even without explicit timeoutMs');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fetchRemoteLinks
+// ---------------------------------------------------------------------------
+describe('fetchRemoteLinks', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+
+  const CONFLUENCE_LINK = {
+    id: 1,
+    application: { type: 'com.atlassian.confluence', name: 'Confluence' },
+    object: { url: 'https://example.atlassian.net/wiki/spaces/PROJ/pages/123456/Page+Title', title: 'Page Title' },
+  };
+  const NON_CONFLUENCE_LINK = {
+    id: 2,
+    application: { type: 'com.example.other', name: 'Other' },
+    object: { url: 'https://example.com/other', title: 'Other Link' },
+  };
+
+  it('returns Confluence links from remote links API', async () => {
+    const fetcher = async () => ({ ok: true, json: async () => [CONFLUENCE_LINK] });
+    const links = await fetchRemoteLinks('PROJ-1', { env: ENV, fetcher });
+    assert.equal(links.length, 1);
+    assert.equal(links[0].url, CONFLUENCE_LINK.object.url);
+    assert.equal(links[0].title, CONFLUENCE_LINK.object.title);
+  });
+
+  it('filters out non-Confluence remote links', async () => {
+    const fetcher = async () => ({ ok: true, json: async () => [CONFLUENCE_LINK, NON_CONFLUENCE_LINK] });
+    const links = await fetchRemoteLinks('PROJ-1', { env: ENV, fetcher });
+    assert.equal(links.length, 1);
+    assert.equal(links[0].url, CONFLUENCE_LINK.object.url);
+  });
+
+  it('returns empty array when no remote links', async () => {
+    const fetcher = async () => ({ ok: true, json: async () => [] });
+    const links = await fetchRemoteLinks('PROJ-1', { env: ENV, fetcher });
+    assert.deepEqual(links, []);
+  });
+
+  it('calls the correct remotelink endpoint', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => { capturedUrl = url; return { ok: true, json: async () => [] }; };
+    await fetchRemoteLinks('PROJ-1', { env: ENV, fetcher });
+    assert.ok(capturedUrl.includes('/rest/api/2/issue/PROJ-1/remotelink'), `unexpected URL: ${capturedUrl}`);
+  });
+
+  it('returns empty array on non-OK response', async () => {
+    const fetcher = async () => ({ ok: false, status: 403, statusText: 'Forbidden' });
+    const result = await fetchRemoteLinks('PROJ-1', { env: ENV, fetcher });
+    assert.deepEqual(result, []);
   });
 });

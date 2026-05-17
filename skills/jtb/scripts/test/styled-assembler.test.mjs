@@ -179,4 +179,22 @@ describe('styleBrief', () => {
     assert.ok(!result.includes('\r'), 'styled brief must not contain carriage returns');
     assert.ok(result.includes('Good fix'), 'comment content must be preserved');
   });
+
+  it('renders Confluence Pages section when pages are present', () => {
+    const ticket = makeBriefTicket({
+      confluencePages: [
+        { url: 'https://example.atlassian.net/wiki/spaces/PROJ/pages/1/Setup', title: 'Setup Guide', text: 'Install the tool first.' },
+      ],
+    });
+    const result = styleBrief(ticket, null, { styled: false });
+    assert.ok(result.includes('Confluence Pages'), `expected section header: ${result}`);
+    assert.ok(result.includes('Setup Guide'), `expected page title: ${result}`);
+    assert.ok(result.includes('Install the tool first.'), `expected page text: ${result}`);
+  });
+
+  it('omits Confluence Pages section when confluencePages is absent', () => {
+    const ticket = makeBriefTicket();
+    const result = styleBrief(ticket, null, { styled: false });
+    assert.ok(!result.includes('Confluence Pages'), 'should not render section when absent');
+  });
 });

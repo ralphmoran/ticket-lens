@@ -43,6 +43,15 @@ export function assembleBrief(ticket, codeRefs = null) {
     sections.push(`## Linked Tickets\n\n${linkedSections.join('\n\n---\n\n')}`);
   }
 
+  if (ticket.confluencePages?.length > 0) {
+    const pageLines = ticket.confluencePages.map(p => {
+      const parts = [`### ${p.title ?? p.url}`];
+      if (p.text) parts.push(p.text);
+      return parts.join('\n\n');
+    });
+    sections.push(`## Confluence Pages\n\n${pageLines.join('\n\n---\n\n')}`);
+  }
+
   if (codeRefs) {
     const categories = [
       ['File Paths', codeRefs.filePaths],

@@ -131,6 +131,23 @@ export async function searchTickets(jql, opts = {}) {
   return (raw.issues ?? []).map(normalizeTicket);
 }
 
+export async function fetchRemoteLinks(ticketKey, opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch, apiVersion = 2, timeoutMs = 10_000 } = opts;
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const url = `${baseUrl}/rest/api/${apiVersion}/issue/${encodeURIComponent(ticketKey)}/remotelink`;
+
+  const fetchOpts = { headers: { ...buildAuthHeader(env), 'Content-Type': 'application/json' } };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+
+  const response = await fetcher(url, fetchOpts);
+  if (!response.ok) return [];
+
+  const raw = await response.json();
+  return (raw ?? [])
+    .filter(link => link.application?.type === 'com.atlassian.confluence')
+    .map(link => ({ url: link.object.url, title: link.object.title ?? null }));
+}
+
 export async function fetchTicket(ticketKey, opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, depth = 1, apiVersion = 2, timeoutMs = 10_000, _visited = new Set(), _currentDepth = 0 } = opts;
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
