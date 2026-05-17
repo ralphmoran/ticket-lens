@@ -220,7 +220,7 @@ Build only what paying customers or market demand requires.
 |---|------|---------|--------|--------|
 | 42 | Refactor | ~~**Tracker adapter abstraction**~~ | Pluggable interface so new sources don't fork the whole client. | Medium |
 | 43 | Feature | ~~**GitHub Issues as ticket source**~~ | Large OSS audience. `GitHubAdapter` + `ticketlens init` GitHub branch (repo URL → PAT → test → prefix → save). | Medium |
-| 44 | Feature | ~~**Linear as ticket source**~~ | Startup audience. Implement `LinearAdapter`. | Medium |
+| 44 | Feature | ~~**Linear as ticket source**~~ | Done (v0.1.11). `LinearAdapter` backed by Linear GraphQL API. `ticketlens init` → Linear branch: prompts for API key (sent without Bearer prefix), live connection test, optional prefix/path, saves `auth: linear` profile. `ticketlens config` is now tracker-aware: shows correct URL label, skips Jira-only auth/email prompts, uses Linear adapter for connection test and status validation. Always runs connection test on profile edit. 823 tests. | Medium |
 | 45 | Feature | **Confluence/wiki page fetching** | Fetch referenced Confluence pages and include in brief. | Small |
 
 ### Iteration 11 — Platform Features

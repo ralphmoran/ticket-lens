@@ -42,7 +42,7 @@ Zero npm dependencies. Node.js built-ins only.
 
 ```bash
 npm install -g ticketlens
-ticketlens init          # Guided setup: Jira URL, auth type, connection test
+ticketlens init          # Guided setup: Jira, GitHub Issues, or Linear — connection test included
 ticketlens CNV1-2        # Fetch a ticket brief
 ticketlens triage        # Scan your assigned tickets
 ```
@@ -70,13 +70,13 @@ npx ticketlens CNV1-2
 
 | Command | Description |
 |---------|-------------|
-| `ticketlens init` | Guided wizard — Jira URL, auth, live connection test, optional settings |
+| `ticketlens init` | Guided wizard — Jira, GitHub Issues, or Linear — live connection test, optional settings |
 | `ticketlens switch` | Arrow-key panel to switch between configured profiles |
-| `ticketlens config [--profile=NAME]` | Edit any field on an existing profile |
+| `ticketlens config [--profile=NAME]` | Edit any field on an existing profile — always re-validates the connection |
 | `ticketlens profiles` | List all configured profiles (alias: `ticketlens ls`) |
 | `ticketlens delete <NAME>` | Remove a profile and its credentials (prompts `y/N` in TTY; use `--yes` in scripts/CI) |
 
-`init` collects: profile name, Jira URL (bare hostnames accepted — HTTPS probed first), auth type (auto-detected from URL), credentials (masked), and optional ticket prefixes, project paths, and triage statuses. On connection failure, a retry menu lets you fix credentials, URL, or skip — all inputs pre-populated.
+`init` collects: profile name, tracker type (Jira / GitHub Issues / Linear), URL or workspace, credentials (masked), and optional ticket prefixes, project paths, and triage statuses. On connection failure, a retry menu lets you fix credentials, URL, or skip — all inputs pre-populated. `config` is tracker-aware and always re-validates the connection after edits.
 
 `config` uses merge semantics: new ticket prefixes and triage statuses are added to existing lists, never replaced. Partial matching resolves `QA` to `QA Testing` if that's the status in your Jira.
 
@@ -455,11 +455,13 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
-- Console queue dashboard — live at `/console/queue` for Team tier; push snapshots with `ticketlens triage --push`
+- **Linear support** — `ticketlens init` → Linear; connects via GraphQL API key, fetches tickets, triage, and statuses
+- **GitHub Issues support** — `ticketlens init` → GitHub Issues; PAT-based, same normalized ticket shape
+- **Tracker-aware config** — `ticketlens config` shows the right labels and skips irrelevant prompts per tracker type; always re-validates the connection
 
 Coming up:
-- Slack/Teams alerts for triage changes (Team)
-- GitHub Issues and Linear support
+- Confluence/wiki page fetching (F45)
+- "TicketLens for PRs" — PR context assembly with linked tickets and compliance (F46)
 
 ---
 
