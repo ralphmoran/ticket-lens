@@ -51,12 +51,14 @@ async function gql(query, variables, { token, fetcher, signal }) {
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
+      Accept: 'application/json',
     },
     body: JSON.stringify(Object.keys(variables).length ? { query, variables } : { query }),
     signal,
   });
   if (!res.ok) {
-    throw new Error(`Linear API error ${res.status} (${res.statusText})`);
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Linear API error ${res.status} (${res.statusText})${detail ? ': ' + detail.slice(0, 300) : ''}`);
   }
   const { data, errors } = await res.json();
   if (errors?.length) throw new Error(`Linear GraphQL error: ${errors[0].message}`);
@@ -76,7 +78,7 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
     async fetchTicket(key, opts = {}) {
       const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
       const data = await gql(
-        `query IssueByIdentifier($id: String!) {
+        `query ($id: String!) {
           issues(filter: { identifier: { eq: $id } }, first: 1) {
             nodes { ${ISSUE_FIELDS} }
           }
@@ -92,7 +94,7 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
     async fetchCurrentUser(opts = {}) {
       const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
       const data = await gql(
-        `query Me { viewer { name email } }`,
+        `{ viewer { name email } }`,
         {},
         { token, fetcher, signal },
       );
@@ -103,7 +105,7 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
     async searchTickets(_query, opts = {}) {
       const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
       const data = await gql(
-        `query MyIssues {
+        `{
           viewer {
             assignedIssues(
               filter: { state: { type: { nin: ["completed", "cancelled"] } } }
@@ -122,7 +124,7 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
     async fetchStatuses(opts = {}) {
       const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
       const data = await gql(
-        `query WorkflowStates { workflowStates(first: 50) { nodes { name } } }`,
+        `{ workflowStates(first: 50) { nodes { name } } }`,
         {},
         { token, fetcher, signal },
       );
