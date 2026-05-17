@@ -152,22 +152,14 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   const tokenHint = existingToken ? s.dim('  [keep existing]') : '';
   const tokenLabel = s.dim(getTokenLabel(trackerType, auth)) + tokenHint + s.dim(':');
   token = await promptSecret(tokenLabel, { stream, existingValue: existingToken });
-  const tokenChanged = token !== existingToken;
 
-  // ── Connection test (only when something changed) ─────────────────────────
-  const connectionChanged = url !== profile.baseUrl
-    || auth !== profile.auth
-    || email !== (profile.email || '')
-    || tokenChanged;
+  // ── Connection test (always) ──────────────────────────────────────────────
+  let connected = false;
+  let startFrom = 'test';
 
-  let connected = !connectionChanged;
-
-  if (connectionChanged) {
-    let startFrom = 'test';
-
-    setupLoop: while (true) {
-      // Re-prompt URL + auth (on retry)
-      if (startFrom === 'url') {
+  setupLoop: while (true) {
+    // Re-prompt URL + auth (on retry with 'url' option)
+    if (startFrom === 'url') {
         stream.write('\n');
         const reTyped = await promptText(
           s.dim(urlLabel) + s.dim(`  [current: ${url}]:`),
@@ -249,11 +241,10 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
       startFrom = RETRY_OPTIONS[retryIdx].value;
     }
 
-    if (!connected) {
-      stream.write(`\n  ${s.yellow('○')} Connection changes discarded. ${s.dim('Run')} ${s.cyan('ticketlens config')} ${s.dim('again to retry.')}\n\n`);
-      process.exitCode = 1;
-      return;
-    }
+  if (!connected) {
+    stream.write(`\n  ${s.yellow('○')} Connection changes discarded. ${s.dim('Run')} ${s.cyan('ticketlens config')} ${s.dim('again to retry.')}\n\n`);
+    process.exitCode = 1;
+    return;
   }
 
   // ── Optional settings ──────────────────────────────────────────────────────
