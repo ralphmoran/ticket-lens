@@ -35,6 +35,7 @@ Zero npm dependencies. Node.js built-ins only.
 - **Scriptable** — standard CLI output: pipe to cron, git hooks, CI/CD, or any LLM tool
 - **Multi-profile** — connect multiple Jira instances simultaneously; auto-route by ticket prefix or project path
 - **Attachments included** — images, PDFs, and text files downloaded locally; Claude Code reads them as context
+- **Confluence pages** — linked Confluence pages fetched and included in the brief automatically (Jira only)
 
 ---
 
@@ -93,7 +94,7 @@ ticketlens CNV1-2 --depth=2        # + linked-of-linked (full graph)
 ticketlens CNV1-2 --plain          # Plain markdown — pipe-safe, LLM-ready
 ticketlens CNV1-2 --profile=acme   # Force a specific profile
 ticketlens CNV1-2 --no-cache       # Bypass cache, re-fetch from Jira
-ticketlens CNV1-2 --no-attachments # Skip attachment download
+ticketlens CNV1-2 --no-attachments # Skip attachment download and Confluence page fetching
 ticketlens CNV1-2 --check          # Append local VCS diff + Claude Code review instructions
 ticketlens CNV1-2 --compliance     # Check ticket requirements against local diff [Pro/Free 3/mo]
 ticketlens CNV1-2 --summarize      # AI summary via your own API key (BYOK) [Pro]
@@ -102,7 +103,7 @@ ticketlens CNV1-2 --summarize --cloud  # AI summary routed through TicketLens AP
 
 | `--depth` | Scope |
 |-----------|-------|
-| `0` | Target ticket: description, comments, attachments |
+| `0` | Target ticket: description, comments, attachments, Confluence pages |
 | `1` | + linked tickets: descriptions and comments _(default)_ |
 | `2` | + linked-of-linked: key and summary only |
 
@@ -115,6 +116,8 @@ After the first fetch, ticket data is cached to `~/.ticketlens/cache/PROFILE/TIC
 ```
 
 Attachments download to `~/.ticketlens/cache/TICKET-KEY/` (10 MB per-file cap). Claude Code reads images multimodally, extracts PDF text, and reads plain text files as context.
+
+Confluence pages linked to the ticket via Jira Remote Links are fetched automatically and included as plain text in the brief (Jira profiles only, same-origin). Use `--no-attachments` to skip both attachments and Confluence pages.
 
 ---
 
@@ -455,12 +458,12 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
+- **Confluence pages** — linked Confluence pages fetched automatically and included in the brief; origin-validated, non-fatal, capped at 10 pages
 - **Linear support** — `ticketlens init` → Linear; connects via GraphQL API key, fetches tickets, triage, and statuses
 - **GitHub Issues support** — `ticketlens init` → GitHub Issues; PAT-based, same normalized ticket shape
 - **Tracker-aware config** — `ticketlens config` shows the right labels and skips irrelevant prompts per tracker type; always re-validates the connection
 
 Coming up:
-- Confluence/wiki page fetching (F45)
 - "TicketLens for PRs" — PR context assembly with linked tickets and compliance (F46)
 
 ---
