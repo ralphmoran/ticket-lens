@@ -212,7 +212,7 @@ describe('fetchTicket', () => {
     };
     const adapter = createLinearAdapter(CONN, { fetcher });
     await adapter.fetchTicket('ENG-42');
-    assert.equal(capturedAuth, 'Bearer lin_api_test_token');
+    assert.equal(capturedAuth, 'lin_api_test_token');
   });
 
   it('sends identifier as GraphQL variable', async () => {

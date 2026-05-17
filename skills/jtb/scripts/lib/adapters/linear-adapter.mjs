@@ -49,7 +49,7 @@ async function gql(query, variables, { token, fetcher, signal }) {
   const res = await fetcher(LINEAR_API, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: token,
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
