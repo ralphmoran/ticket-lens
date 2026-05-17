@@ -11,6 +11,7 @@ import { createStyler } from './ansi.mjs';
 import { createSession } from './banner.mjs';
 import { classifyError } from './error-classifier.mjs';
 import { fetchCurrentUser, fetchStatuses } from './jira-client.mjs';
+import { resolveAdapter } from './resolve-adapter.mjs';
 import { loadProfiles, loadCredentials, saveProfile } from './profile-resolver.mjs';
 import { promptSelect } from './select-prompt.mjs';
 import { parseAge } from './cache-manager.mjs';
@@ -25,6 +26,26 @@ const RETRY_OPTIONS = [
   { label: 'Edit from URL',     sublabel: 'Change URL, auth type, or credentials',                  value: 'url'   },
   { label: 'Skip',              sublabel: 'Abandon connection changes — no changes saved',           value: 'skip'  },
 ];
+
+function getTrackerType(profile) {
+  if (profile.auth === 'linear') return 'linear';
+  if (profile.auth === 'github') return 'github';
+  return 'jira';
+}
+
+function getUrlLabel(trackerType) {
+  if (trackerType === 'linear') return 'Linear workspace URL';
+  if (trackerType === 'github') return 'GitHub URL';
+  return 'Jira URL';
+}
+
+function getTokenLabel(trackerType, auth) {
+  if (trackerType === 'linear') return 'Linear API key';
+  if (trackerType === 'github') return 'GitHub token';
+  if (auth === 'cloud') return 'API token';
+  if (auth === 'pat') return 'Personal access token';
+  return 'Password';
+}
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -54,6 +75,10 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   const profileCreds = creds[target] || {};
   const hostname = (() => { try { return new URL(profile.baseUrl).hostname; } catch { return profile.baseUrl; } })();
 
+  const trackerType = getTrackerType(profile);
+  const isJira = trackerType === 'jira';
+  const urlLabel = getUrlLabel(trackerType);
+
   // Header box
   const headerLines = [
     `Editing profile ${s.bold(s.cyan(`"${target}"`))}`,
@@ -80,35 +105,36 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
 
   // ── URL ───────────────────────────────────────────────────────────────────
   const urlTyped = await promptText(
-    s.dim('Jira URL') + s.dim(`  [current: ${profile.baseUrl}]:`),
+    s.dim(urlLabel) + s.dim(`  [current: ${profile.baseUrl}]:`),
     { stream, defaultValue: profile.baseUrl }
   );
   if (urlTyped !== profile.baseUrl) {
-    // Auto-prefix https:// when the user omits the protocol
     url = /^https?:\/\//i.test(urlTyped)
       ? urlTyped.replace(/\/$/, '')
       : `https://${urlTyped.replace(/\/$/, '')}`;
     if (url !== urlTyped) stream.write(`  ${s.dim('○')} Interpreted as ${url}\n`);
   }
 
-  // ── Auth type ─────────────────────────────────────────────────────────────
-  const isCloud = /\.atlassian\.net(\/|$)/i.test(url);
-  if (isCloud && auth !== 'cloud') {
-    auth = 'cloud';
-    stream.write(`  ${s.green('✔')} Jira Cloud detected — using email + API token\n`);
-  } else if (!isCloud) {
-    const currentIdx = SERVER_AUTH_TYPES.findIndex(a => a.value === auth);
-    stream.write(`\n  ${s.dim('Auth type:')}\n\n`);
-    const authIdx = await promptSelect(SERVER_AUTH_TYPES, {
-      stream,
-      hint: '↑/↓ select   Enter confirm',
-      initialIndex: Math.max(0, currentIdx),
-    });
-    if (authIdx !== null) auth = SERVER_AUTH_TYPES[authIdx].value;
+  // ── Auth type (Jira only) ─────────────────────────────────────────────────
+  if (isJira) {
+    const isCloud = /\.atlassian\.net(\/|$)/i.test(url);
+    if (isCloud && auth !== 'cloud') {
+      auth = 'cloud';
+      stream.write(`  ${s.green('✔')} Jira Cloud detected — using email + API token\n`);
+    } else if (!isCloud) {
+      const currentIdx = SERVER_AUTH_TYPES.findIndex(a => a.value === auth);
+      stream.write(`\n  ${s.dim('Auth type:')}\n\n`);
+      const authIdx = await promptSelect(SERVER_AUTH_TYPES, {
+        stream,
+        hint: '↑/↓ select   Enter confirm',
+        initialIndex: Math.max(0, currentIdx),
+      });
+      if (authIdx !== null) auth = SERVER_AUTH_TYPES[authIdx].value;
+    }
   }
 
-  // ── Email / username ──────────────────────────────────────────────────────
-  if (auth === 'cloud' || auth === 'basic') {
+  // ── Email / username (Jira only) ──────────────────────────────────────────
+  if (isJira && (auth === 'cloud' || auth === 'basic')) {
     const emailHint = email ? s.dim(`  [current: ${email}]`) : '';
     const emailLabel = (auth === 'cloud' ? s.dim('Email') : s.dim('Username')) + emailHint + s.dim(':');
     email = await promptText(emailLabel, {
@@ -122,13 +148,9 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
     });
   }
 
-  // ── Token / PAT / password ────────────────────────────────────────────────
+  // ── Token / PAT / password / API key ─────────────────────────────────────
   const tokenHint = existingToken ? s.dim('  [keep existing]') : '';
-  const tokenLabel = (auth === 'cloud'
-    ? s.dim('API token')
-    : auth === 'pat'
-      ? s.dim('Personal access token')
-      : s.dim('Password')) + tokenHint + s.dim(':');
+  const tokenLabel = s.dim(getTokenLabel(trackerType, auth)) + tokenHint + s.dim(':');
   token = await promptSecret(tokenLabel, { stream, existingValue: existingToken });
   const tokenChanged = token !== existingToken;
 
@@ -144,11 +166,11 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
     let startFrom = 'test';
 
     setupLoop: while (true) {
-      // Re-prompt URL + auth
+      // Re-prompt URL + auth (on retry)
       if (startFrom === 'url') {
         stream.write('\n');
         const reTyped = await promptText(
-          s.dim('Jira URL') + s.dim(`  [current: ${url}]:`),
+          s.dim(urlLabel) + s.dim(`  [current: ${url}]:`),
           { stream, defaultValue: url }
         );
         if (reTyped !== url) {
@@ -157,21 +179,24 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
             : `https://${reTyped.replace(/\/$/, '')}`;
           if (url !== reTyped) stream.write(`  ${s.dim('○')} Interpreted as ${url}\n`);
         }
-        const reCloud = /\.atlassian\.net(\/|$)/i.test(url);
-        if (reCloud) {
-          auth = 'cloud';
-          stream.write(`  ${s.green('✔')} Jira Cloud detected — using email + API token\n\n`);
-        } else if (auth === 'cloud') {
-          stream.write(`\n  ${s.dim('Auth type:')}\n\n`);
-          const idx = await promptSelect(SERVER_AUTH_TYPES, { stream, hint: '↑/↓ select   Enter confirm' });
-          if (idx !== null) auth = SERVER_AUTH_TYPES[idx].value;
+
+        if (isJira) {
+          const reCloud = /\.atlassian\.net(\/|$)/i.test(url);
+          if (reCloud) {
+            auth = 'cloud';
+            stream.write(`  ${s.green('✔')} Jira Cloud detected — using email + API token\n\n`);
+          } else if (auth === 'cloud') {
+            stream.write(`\n  ${s.dim('Auth type:')}\n\n`);
+            const idx = await promptSelect(SERVER_AUTH_TYPES, { stream, hint: '↑/↓ select   Enter confirm' });
+            if (idx !== null) auth = SERVER_AUTH_TYPES[idx].value;
+          }
         }
         startFrom = 'creds';
       }
 
       // Re-prompt email + token (pre-populated)
       if (startFrom === 'creds') {
-        if (auth === 'cloud' || auth === 'basic') {
+        if (isJira && (auth === 'cloud' || auth === 'basic')) {
           const eHint = email ? s.dim(`  [current: ${email}]`) : '';
           const eLabel = (auth === 'cloud' ? s.dim('Email') : s.dim('Username')) + eHint + s.dim(':');
           email = await promptText(eLabel, {
@@ -185,24 +210,30 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
           });
         }
         const tHint = token ? s.dim('  [keep existing]') : '';
-        const tLabel = (auth === 'cloud' ? s.dim('API token') : auth === 'pat' ? s.dim('Personal access token') : s.dim('Password')) + tHint + s.dim(':');
+        const tLabel = s.dim(getTokenLabel(trackerType, auth)) + tHint + s.dim(':');
         token = await promptSecret(tLabel, { stream, existingValue: token });
       }
 
       // Test connection
-      const testEnv = {
-        JIRA_BASE_URL: url,
-        JIRA_EMAIL: email,
-        JIRA_API_TOKEN: auth !== 'pat' ? token : '',
-        JIRA_PAT: auth === 'pat' ? token : '',
-      };
-      const testVersion = auth === 'cloud' ? 3 : 2;
-      const session = createSession({ baseUrl: url, profileName: target, email: email || undefined, pat: auth === 'pat' ? token : undefined }, { stream });
+      const session = createSession(
+        { baseUrl: url, profileName: target, email: email || undefined, pat: auth === 'pat' ? token : undefined },
+        { stream },
+      );
       stream.write('\n');
       session.spin('Testing connection...');
 
       try {
-        await fetchCurrentUser({ env: testEnv, apiVersion: testVersion });
+        if (isJira) {
+          const testEnv = {
+            JIRA_BASE_URL: url,
+            JIRA_EMAIL: email,
+            JIRA_API_TOKEN: auth !== 'pat' ? token : '',
+            JIRA_PAT: auth === 'pat' ? token : '',
+          };
+          await fetchCurrentUser({ env: testEnv, apiVersion: auth === 'cloud' ? 3 : 2 });
+        } else {
+          await resolveAdapter({ baseUrl: url, auth: trackerType, apiToken: token }).fetchCurrentUser();
+        }
         session.connected();
         connected = true;
         break setupLoop;
@@ -242,7 +273,7 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   }
   const ticketPrefixes = [...existing];
 
-  // Project path (single — used for auto-profile detection from cwd)
+  // Project path
   const home = homedir();
   const cwd = process.cwd();
   const cwdDisplay = cwd.startsWith(home) ? '~' + cwd.slice(home.length) : cwd;
@@ -275,8 +306,6 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   }
 
   // ── Triage statuses (merge semantics) ────────────────────────────────────
-  // Typing new values ADDS them to the current list (with partial matching).
-  // Existing statuses are never removed by this prompt.
   const currentStatuses = profile.triageStatuses?.length
     ? profile.triageStatuses
     : ['In Progress', 'Code Review', 'QA'];
@@ -292,21 +321,24 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   if (statusInput) {
     const newEntries = statusInput.split(',').map(v => v.trim()).filter(Boolean);
     const existingLower = new Set(currentStatuses.map(n => n.toLowerCase()));
-    // Only validate statuses that aren't already in the list
     const toValidate = newEntries.filter(n => !existingLower.has(n.toLowerCase()));
 
     if (toValidate.length > 0) {
-      const validateEnv = {
-        JIRA_BASE_URL: url,
-        JIRA_EMAIL: email,
-        JIRA_API_TOKEN: auth !== 'pat' ? token : '',
-        JIRA_PAT: auth === 'pat' ? token : '',
-      };
-      const validateApiVersion = auth === 'cloud' ? 3 : 2;
-
       stream.write(`  ${s.dim('Validating new statuses...')}\n`);
       try {
-        const available = await fetchStatuses({ env: validateEnv, apiVersion: validateApiVersion });
+        let available;
+        if (isJira) {
+          const validateEnv = {
+            JIRA_BASE_URL: url,
+            JIRA_EMAIL: email,
+            JIRA_API_TOKEN: auth !== 'pat' ? token : '',
+            JIRA_PAT: auth === 'pat' ? token : '',
+          };
+          available = await fetchStatuses({ env: validateEnv, apiVersion: auth === 'cloud' ? 3 : 2 });
+        } else {
+          available = await resolveAdapter({ baseUrl: url, auth: trackerType, apiToken: token }).fetchStatuses();
+        }
+
         const lowerMap = new Map(available.map(n => [n.toLowerCase(), n]));
         stream.write('\x1b[A\r\x1b[2K');
 
@@ -316,13 +348,11 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
             toAdd.push(name);
             stream.write(`  ${s.green('✔')} ${name}\n`);
           } else {
-            // Case-insensitive exact match
             const exact = lowerMap.get(name.toLowerCase());
             if (exact) {
               stream.write(`  ${s.yellow('~')} ${s.dim(name)}  →  ${s.cyan(exact)}\n`);
               toAdd.push(exact);
             } else {
-              // Partial match: "QA" → "QA Testing"
               const partial = available.find(a =>
                 a.toLowerCase().includes(name.toLowerCase()) ||
                 name.toLowerCase().startsWith(a.toLowerCase().split(' ')[0])
@@ -343,9 +373,8 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
         }
       } catch {
         stream.write('\x1b[A\r\x1b[2K');
-        // Jira unreachable — add without validation, deduped
-        const toAddRaw = toValidate.filter(n => !existingLower.has(n.toLowerCase()));
-        triageStatuses = [...currentStatuses, ...toAddRaw];
+        // Tracker unreachable — add without validation, deduped
+        triageStatuses = [...currentStatuses, ...toValidate.filter(n => !existingLower.has(n.toLowerCase()))];
       }
     }
   }
@@ -368,12 +397,7 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   }
 
   // ── Save ───────────────────────────────────────────────────────────────────
-  const updated = {
-    ...profile,
-    baseUrl: url,
-    auth,
-    triageStatuses,
-  };
+  const updated = { ...profile, baseUrl: url, auth, triageStatuses };
   if (email) updated.email = email;
   if (ticketPrefixes.length > 0) updated.ticketPrefixes = ticketPrefixes;
   else delete updated.ticketPrefixes;
@@ -382,7 +406,6 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   if (cacheTtl && cacheTtl !== DEFAULT_BRIEF_TTL) updated.cacheTtl = cacheTtl;
   else delete updated.cacheTtl;
 
-  // Only write credentials file if the token actually changed
   const credData = (token !== existingToken)
     ? (auth === 'pat' ? { pat: token } : { apiToken: token })
     : {};
