@@ -33,7 +33,7 @@ function makeResponse(data, status = 200) {
 }
 
 function makeErrorResponse(status) {
-  return { ok: false, status, statusText: 'Unauthorized', json: async () => ({}) };
+  return { ok: false, status, statusText: 'Unauthorized', json: async () => ({}), text: async () => '' };
 }
 
 // ---------------------------------------------------------------------------
