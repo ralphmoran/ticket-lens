@@ -722,6 +722,27 @@ describe('review dispatch', () => {
     assert.equal(capturedBase, 'develop', '--base= flag should override auto-detect');
   });
 
+  it('respects --branch=develop alias (same as --base=develop)', async () => {
+    let capturedBase = null;
+    const assemblePrReviewFn = async (o) => { capturedBase = o.baseBranch; return '## PR Review Context\n'; };
+
+    const execWithDevelop = (cmd, args) => {
+      if (args.includes('--verify')) return { status: 0, stdout: '' };
+      if (args.includes('--show-current')) return { status: 0, stdout: 'feat/PROJ-123\n' };
+      if (args.includes('--oneline')) return { status: 0, stdout: '' };
+      if (args[0] === 'diff') return { status: 0, stdout: '' };
+      return { status: 1, stdout: '' };
+    };
+
+    await run(['review', '--branch=develop'], {
+      env: {},
+      execFn: execWithDevelop,
+      assemblePrReviewFn,
+      print: () => {},
+    }, async () => ({ ok: false }), NO_CONFIG);
+    assert.equal(capturedBase, 'develop', '--branch= flag should work as alias for --base=');
+  });
+
   it('prints assembled markdown to stdout via opts.print', async () => {
     let printed = '';
     const assemblePrReviewFn = async () => '## PR Review Context\n\nsome content';
@@ -813,6 +834,26 @@ describe('review dispatch', () => {
         print: () => {},
       }, async () => ({ ok: false }));
       assert.ok(stderrOut.includes('--profile=advent'), `Should suggest --profile=advent. Got: "${stderrOut}"`);
+      assert.strictEqual(process.exitCode, 1);
+    } finally {
+      process.stderr.write = origStderr;
+      process.exitCode = origExitCode;
+    }
+  });
+
+  it('suggests correct syntax for --branch-NAME typo', async () => {
+    let stderrOut = '';
+    const origStderr = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (s) => { stderrOut += s; return true; };
+    const origExitCode = process.exitCode;
+    try {
+      await run(['review', '--branch-main'], {
+        env: {},
+        configDir: NO_CONFIG,
+        execFn: mockExecFn,
+        print: () => {},
+      }, async () => ({ ok: false }));
+      assert.ok(stderrOut.includes('--branch=main'), `Should suggest --branch=main. Got: "${stderrOut}"`);
       assert.strictEqual(process.exitCode, 1);
     } finally {
       process.stderr.write = origStderr;

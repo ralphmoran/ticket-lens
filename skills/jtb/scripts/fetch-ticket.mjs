@@ -484,7 +484,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
     // Validate flags before any git work
     const reviewFlags = args.slice(1);
-    const VALID_REVIEW_FLAG = /^(--base=.+|--profile=.+)$/;
+    const VALID_REVIEW_FLAG = /^(--base=.+|--branch=.+|--profile=.+)$/;
     for (const flag of reviewFlags) {
       if (!flag.startsWith('-')) continue;
       if (VALID_REVIEW_FLAG.test(flag)) continue;
@@ -501,7 +501,13 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
         process.exitCode = 1;
         return;
       }
-      process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Usage: ${sErr.cyan('ticketlens review [--base=BRANCH] [--profile=NAME]')}\n`);
+      const branchDashM = flag.match(/^--branch-(.+)$/);
+      if (branchDashM) {
+        process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--branch=${branchDashM[1]}`)}?\n`);
+        process.exitCode = 1;
+        return;
+      }
+      process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Usage: ${sErr.cyan('ticketlens review [--base=BRANCH] [--branch=BRANCH] [--profile=NAME]')}\n`);
       process.exitCode = 1;
       return;
     }
@@ -510,8 +516,8 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const stderrNotes = [];
 
     // Resolve base branch: --base=BRANCH or auto-detect main/master/develop
-    const baseArg = reviewFlags.find(a => a.startsWith('--base='));
-    let baseBranch = baseArg ? baseArg.split('=')[1] : null;
+    const baseArg = reviewFlags.find(a => a.startsWith('--base=') || a.startsWith('--branch='));
+    let baseBranch = baseArg ? baseArg.replace(/^--(base|branch)=/, '') : null;
 
     spinner.update('Scanning branch…');
 
@@ -604,6 +610,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
     spinner.done();
     for (const note of stderrNotes) process.stderr.write(note + '\n');
+    if (stderrNotes.length > 0) process.stderr.write('\n');
 
     const isLic = opts.isLicensedFn ?? ((tier) => isLicensed(tier, resolvedConfigDir));
     const assembleFn = opts.assemblePrReviewFn ?? assemblePrReview;
