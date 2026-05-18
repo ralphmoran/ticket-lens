@@ -146,18 +146,29 @@ async function applySummarize(brief, args, opts, configDir, conn, licensedFn, up
 }
 
 function makeSpinner(s) {
-  if (!process.stderr.isTTY) return { update: () => {}, done: () => {} };
+  // setInterval won't fire while spawnSync blocks the event loop, so we draw
+  // synchronously on update() and only use setInterval during async fetch phases.
+  if (!process.stderr.isTTY) return { update: () => {}, startAnim: () => {}, done: () => {} };
   const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
-  let i = 0, msg = 'Working…', finished = false;
-  const id = setInterval(() => {
-    process.stderr.write(`\r  ${s.brand(frames[i++ % frames.length])} ${s.dim(msg)}`);
-  }, 80);
+  let fi = 0, msg = '', lastW = 0, timerId = null, finished = false;
+
+  const draw = () => {
+    const raw = `  ${s.brand(frames[fi % frames.length])} ${s.dim(msg)}`;
+    const vis = raw.replace(/\x1b\[[0-9;]*m/g, '');
+    process.stderr.write(`\r${raw}${' '.repeat(Math.max(0, lastW - vis.length))}`);
+    lastW = vis.length;
+  };
+
   return {
-    update(m) { if (!finished) msg = m; },
+    update(m) { if (!finished) { fi++; msg = m; draw(); } },
+    startAnim() {
+      if (finished || timerId) return;
+      timerId = setInterval(() => { if (!finished) { fi++; draw(); } }, 80);
+    },
     done() {
       if (finished) return;
       finished = true;
-      clearInterval(id);
+      if (timerId) { clearInterval(timerId); timerId = null; }
       process.stderr.write('\r\x1b[2K');
     },
   };
@@ -470,15 +481,50 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const cwd = process.cwd();
 
     const sErr = createStyler({ isTTY: process.stderr.isTTY });
+
+    // Validate flags before any git work
+    const reviewFlags = args.slice(1);
+    const VALID_REVIEW_FLAG = /^(--base=.+|--profile=.+)$/;
+    for (const flag of reviewFlags) {
+      if (!flag.startsWith('-')) continue;
+      if (VALID_REVIEW_FLAG.test(flag)) continue;
+      // Detect --profile-NAME typo (dash instead of =)
+      const profileDashM = flag.match(/^--profile-(.+)$/);
+      if (profileDashM) {
+        process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--profile=${profileDashM[1]}`)}?\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const baseDashM = flag.match(/^--base-(.+)$/);
+      if (baseDashM) {
+        process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--base=${baseDashM[1]}`)}?\n`);
+        process.exitCode = 1;
+        return;
+      }
+      process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Usage: ${sErr.cyan('ticketlens review [--base=BRANCH] [--profile=NAME]')}\n`);
+      process.exitCode = 1;
+      return;
+    }
+
     const spinner = makeSpinner(sErr);
+    const stderrNotes = [];
 
     // Resolve base branch: --base=BRANCH or auto-detect main/master/develop
-    const baseArg = args.find(a => a.startsWith('--base='));
+    const baseArg = reviewFlags.find(a => a.startsWith('--base='));
     let baseBranch = baseArg ? baseArg.split('=')[1] : null;
 
     spinner.update('Scanning branch…');
 
-    if (!baseBranch) {
+    if (baseBranch) {
+      // Explicit --base: verify the branch exists
+      const verifyR = execFn('git', ['rev-parse', '--verify', baseBranch], { encoding: 'utf8', cwd, timeout: 5_000 });
+      if (verifyR.status !== 0) {
+        spinner.done();
+        process.stderr.write(`${sErr.red('✖')} Branch "${baseBranch}" not found in this repository.\n`);
+        process.exitCode = 1;
+        return;
+      }
+    } else {
       for (const candidate of ['main', 'master', 'develop']) {
         const r = execFn('git', ['rev-parse', '--verify', candidate], { encoding: 'utf8', cwd, timeout: 5_000 });
         if (r.status === 0) { baseBranch = candidate; break; }
@@ -489,6 +535,12 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const headResult = execFn('git', ['branch', '--show-current'], { encoding: 'utf8', cwd, timeout: 5_000 });
     const headBranch = headResult.status === 0 ? (headResult.stdout.trim() || null) : null;
 
+    if (headBranch && headBranch === baseBranch) {
+      stderrNotes.push(
+        `  ${sErr.yellow('⚠')}  You are on ${sErr.cyan(headBranch)} — switch to a feature branch for meaningful output.`
+      );
+    }
+
     const logResult = execFn('git', ['log', '--oneline', `${baseBranch}..HEAD`], { encoding: 'utf8', cwd, timeout: 10_000 });
     const commitMessages = logResult.status === 0 ? (logResult.stdout ?? '') : '';
 
@@ -498,7 +550,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const allText = [headBranch ?? '', commitMessages].join('\n');
     const ticketKeys = extractTicketKeys(allText);
 
-    const profileArgR = args.find(a => a.startsWith('--profile='));
+    const profileArgR = reviewFlags.find(a => a.startsWith('--profile='));
     const profileNameR = profileArgR ? profileArgR.split('=')[1] : undefined;
 
     // Validate explicit --profile exists before attempting any fetch
@@ -515,12 +567,12 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       }
     }
 
-    // Fetch tickets (best-effort — collect notes/warnings, write after spinner stops)
+    // Fetch tickets (best-effort) — start animation here since fetch is async
     const tickets = [];
-    const stderrNotes = [];
 
     if (ticketKeys.length > 0) {
       spinner.update(`Fetching ticket context (${ticketKeys.length} key${ticketKeys.length > 1 ? 's' : ''})…`);
+      spinner.startAnim();
       const connR = resolveConnection(ticketKeys[0], {
         env,
         configDir: resolvedConfigDir,

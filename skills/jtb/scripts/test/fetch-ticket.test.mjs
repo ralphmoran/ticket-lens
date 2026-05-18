@@ -679,7 +679,7 @@ describe('Confluence page fetching', () => {
 
 describe('review dispatch', () => {
   const mockExecFn = (cmd, args) => {
-    if (args.includes('--verify') && args.includes('main')) return { status: 0, stdout: '' };
+    if (args.includes('--verify')) return { status: 0, stdout: '' };  // any branch exists
     if (args.includes('--show-current')) return { status: 0, stdout: 'feat/PROJ-123-fix-login\n' };
     if (args.includes('--oneline')) return { status: 0, stdout: 'abc1234 feat: PROJ-123 add login\n' };
     if (args[0] === 'diff') return { status: 0, stdout: '+++ b/src/Auth.php\n+some code\n' };
@@ -706,6 +706,7 @@ describe('review dispatch', () => {
     const assemblePrReviewFn = async (o) => { capturedBase = o.baseBranch; return '## PR Review Context\n'; };
 
     const execWithDevelop = (cmd, args) => {
+      if (args.includes('--verify')) return { status: 0, stdout: '' };
       if (args.includes('--show-current')) return { status: 0, stdout: 'feat/PROJ-123\n' };
       if (args.includes('--oneline')) return { status: 0, stdout: '' };
       if (args[0] === 'diff') return { status: 0, stdout: '' };
@@ -773,6 +774,70 @@ describe('review dispatch', () => {
         `Should show profile-not-found error. Got: "${stderrOut}"`
       );
       assert.strictEqual(process.exitCode, 1, 'Should set exitCode to 1');
+    } finally {
+      process.stderr.write = origStderr;
+      process.exitCode = origExitCode;
+    }
+  });
+
+  it('rejects unknown flags with error and exitCode 1', async () => {
+    let stderrOut = '';
+    const origStderr = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (s) => { stderrOut += s; return true; };
+    const origExitCode = process.exitCode;
+    try {
+      await run(['review', '--basessss=mmm'], {
+        env: {},
+        configDir: NO_CONFIG,
+        execFn: mockExecFn,
+        print: () => {},
+      }, async () => ({ ok: false }));
+      assert.ok(stderrOut.includes('Unknown flag'), `Should report unknown flag. Got: "${stderrOut}"`);
+      assert.strictEqual(process.exitCode, 1);
+    } finally {
+      process.stderr.write = origStderr;
+      process.exitCode = origExitCode;
+    }
+  });
+
+  it('suggests correct syntax for --profile-NAME typo', async () => {
+    let stderrOut = '';
+    const origStderr = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (s) => { stderrOut += s; return true; };
+    const origExitCode = process.exitCode;
+    try {
+      await run(['review', '--profile-advent'], {
+        env: {},
+        configDir: NO_CONFIG,
+        execFn: mockExecFn,
+        print: () => {},
+      }, async () => ({ ok: false }));
+      assert.ok(stderrOut.includes('--profile=advent'), `Should suggest --profile=advent. Got: "${stderrOut}"`);
+      assert.strictEqual(process.exitCode, 1);
+    } finally {
+      process.stderr.write = origStderr;
+      process.exitCode = origExitCode;
+    }
+  });
+
+  it('rejects nonexistent explicit --base branch', async () => {
+    let stderrOut = '';
+    const origStderr = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (s) => { stderrOut += s; return true; };
+    const origExitCode = process.exitCode;
+    const noSuchBranchExec = (cmd, args) => {
+      if (args.includes('--verify')) return { status: 1, stdout: '' };
+      return { status: 0, stdout: '' };
+    };
+    try {
+      await run(['review', '--base=ghost-branch'], {
+        env: {},
+        configDir: NO_CONFIG,
+        execFn: noSuchBranchExec,
+        print: () => {},
+      }, async () => ({ ok: false }));
+      assert.ok(stderrOut.includes('ghost-branch') && stderrOut.includes('not found'), `Should report branch not found. Got: "${stderrOut}"`);
+      assert.strictEqual(process.exitCode, 1);
     } finally {
       process.stderr.write = origStderr;
       process.exitCode = origExitCode;
