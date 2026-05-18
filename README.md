@@ -160,6 +160,32 @@ Bot comments (Jira Automation, Jenkins, GitHub Actions) are automatically ignore
 
 ---
 
+### Review
+
+```bash
+ticketlens review                             # Assemble PR review context from current branch
+ticketlens review --branch=main              # Compare against main (auto-detected by default)
+ticketlens review --branch=develop           # Compare against a specific branch
+ticketlens review --base=main                # Alias for --branch
+ticketlens review --profile=acme             # Use a specific profile for ticket fetching
+ticketlens review --branch=main | pbcopy     # Copy brief to clipboard
+ticketlens review --branch=main | llm "What changed and why?"
+ticketlens review --help                     # Review subcommand help
+```
+
+Extracts linked ticket keys from the branch name and commit messages, fetches each ticket via the configured profile, then assembles a structured brief: branch, changed files, and ticket context. On TTY, output is ANSI-styled with colored section headers, file paths, and coverage percentages.
+
+`--branch=BRANCH` (or `--base=BRANCH`) sets the comparison base. Defaults to auto-detecting `main`, `master`, or `develop`.
+
+Flag validation provides actionable hints:
+
+```
+✖ Unknown flag: --branch-main
+  Did you mean --branch=main?
+```
+
+---
+
 ### Cache
 
 ```bash
@@ -303,6 +329,16 @@ ticketlens triage --profile=acme --stale=3 --static          # Combine flags
 ticketlens triage --plain > my-tickets.md
 ticketlens triage --plain | llm "Which ticket is most urgent and why?"
 
+# ── PR Review ─────────────────────────────────────────────────────────────────
+ticketlens review                             # Assemble PR review context from current branch
+ticketlens review --branch=main              # Compare against main (auto-detected by default)
+ticketlens review --branch=develop           # Compare against a specific branch
+ticketlens review --base=main                # Alias for --branch
+ticketlens review --profile=acme             # Use a specific profile for ticket fetching
+ticketlens review --branch=main | pbcopy     # Copy brief to clipboard
+ticketlens review --branch=main --profile=myteam  # Branch + profile combined
+ticketlens review --help                     # Review subcommand help
+
 # ── Cache management ──────────────────────────────────────────────────────────
 ticketlens cache                              # Overview + subcommand hints
 ticketlens cache --help                       # Detailed help
@@ -337,6 +373,7 @@ ticketlens --help                             # Main help
 ticketlens --version                          # Show installed version
 ticketlens CNV1-2 --help                     # Fetch subcommand help
 ticketlens triage --help                      # Triage subcommand help
+ticketlens review --help                      # Review subcommand help
 ticketlens cache --help                       # Cache overview help
 ticketlens cache size --help                  # Cache size help
 ticketlens cache clear --help                 # Cache clear help
@@ -458,13 +495,11 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
+- **"TicketLens for PRs"** (`ticketlens review`) — assembles a code-review context brief from your current branch: extracts linked ticket keys from the branch name and commits, fetches each ticket, and outputs a structured brief with branch, changed files, and ticket context. Styled ANSI output, spinner, flag validation with typo hints, and base-branch safety check
 - **Confluence pages** — linked Confluence pages fetched automatically and included in the brief; origin-validated, non-fatal, capped at 10 pages
 - **Linear support** — `ticketlens init` → Linear; connects via GraphQL API key, fetches tickets, triage, and statuses
 - **GitHub Issues support** — `ticketlens init` → GitHub Issues; PAT-based, same normalized ticket shape
 - **Tracker-aware config** — `ticketlens config` shows the right labels and skips irrelevant prompts per tracker type; always re-validates the connection
-
-Coming up:
-- "TicketLens for PRs" — PR context assembly with linked tickets and compliance (F46)
 
 ---
 

@@ -227,7 +227,7 @@ Build only what paying customers or market demand requires.
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| 46 | Feature | **"TicketLens for PRs"** | Context-assembly for code review: PR + linked tickets + diff + compliance. | Large |
+| 46 | ~~Feature~~ | ~~**"TicketLens for PRs"**~~ | Done (v0.1.18). `ticketlens review` assembles a code-review context brief from the current branch: extracts linked ticket keys from the branch name and commit messages, fetches each via the configured profile, and outputs a structured brief (branch, changed files, ticket context). Styled ANSI output on TTY. `--branch=BRANCH` (or `--base=BRANCH` alias) sets the base; auto-detects `main`/`master`/`develop`. Flag validation with typo detection (`--branch-main` → `--branch=main`). Spinner for sync and async phases. Warns when head = base. 904 tests. | ~~Large~~ |
 | 47 | Feature | **Public API** | REST API for third-party integrations, webhooks. | Large |
 | 48 | Feature | **AI ticket summarization** | LLM-powered summary of long ticket threads. | Medium |
 | 49 | Feature | **AI priority recommendations** | Suggest what to work on next based on urgency + deadlines. | Medium |
