@@ -756,6 +756,29 @@ describe('review dispatch', () => {
     }
   });
 
+  it('shows error and sets exitCode 1 when explicit --profile is not found', async () => {
+    let stderrOut = '';
+    const origStderr = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (s) => { stderrOut += s; return true; };
+    const origExitCode = process.exitCode;
+    try {
+      await run(['review', '--profile=nonexistent'], {
+        env: {},
+        configDir: NO_CONFIG,
+        execFn: mockExecFn,
+        print: () => {},
+      }, async () => ({ ok: false }));
+      assert.ok(
+        stderrOut.includes('nonexistent') && stderrOut.includes('not found'),
+        `Should show profile-not-found error. Got: "${stderrOut}"`
+      );
+      assert.strictEqual(process.exitCode, 1, 'Should set exitCode to 1');
+    } finally {
+      process.stderr.write = origStderr;
+      process.exitCode = origExitCode;
+    }
+  });
+
   it('passes empty tickets array when no ticket keys found in branch or commits', async () => {
     let capturedTickets = null;
     const assemblePrReviewFn = async (o) => { capturedTickets = o.tickets; return '## PR Review Context\n'; };

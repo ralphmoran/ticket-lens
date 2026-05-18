@@ -137,4 +137,16 @@ describe('parseCommand', () => {
   it('routes "sync" to sync', () => {
     assert.equal(parseCommand(['sync']).command, 'sync');
   });
+
+  it('routes "review" to review command', () => {
+    const result = parseCommand(['review']);
+    assert.equal(result.command, 'review');
+    assert.deepEqual(result.args, []);
+  });
+
+  it('routes "review -h" to review command (not main help)', () => {
+    const result = parseCommand(['review', '-h']);
+    assert.equal(result.command, 'review');
+    assert.deepEqual(result.args, ['-h']);
+  });
 });
