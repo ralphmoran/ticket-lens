@@ -38,6 +38,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} ${s.dim('<TICKET-KEY>')} ${s.dim('[options]')}   Fetch a ticket brief`,
     `    ${s.brand('ticketlens')} get ${s.dim('<TICKET-KEY>')}         Same as above ${s.dim('(explicit alias)')}`,
     `    ${s.brand('ticketlens')} triage ${s.dim('[options]')}         Scan your assigned tickets`,
+    `    ${s.brand('ticketlens')} review ${s.dim('[--base=BRANCH]')}    Code-review context brief from current branch`,
     `    ${s.brand('ticketlens')} compliance ${s.dim('<TICKET-KEY>')}    Check requirements coverage  ${s.dim('[Pro/Free 3/mo]')}`,
     '',
     `    ${s.brand('ticketlens')} delete ${s.dim('<PROFILE-NAME>')}     Remove a profile`,
@@ -535,6 +536,40 @@ export function printTriageHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('Enter')}  Open ticket in browser`,
     `    ${s.dim('p')}      Switch profile`,
     `    ${s.dim('q/Esc')}  Exit`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printReviewHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('review')} ${s.dim('[--base=BRANCH] [--profile=NAME]')}`,
+    '',
+    `  Assemble a code-review context brief from your current branch.`,
+    `  Extracts linked ticket keys from the branch name and commit messages,`,
+    `  fetches each ticket, and outputs a markdown brief for AI-assisted review.`,
+    '',
+    `  Requirements coverage analysis against the diff is available on ${s.dim('[Pro]')}.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--base')}=${s.dim('BRANCH')}    Compare against this branch ${s.dim('(default: auto-detect main/master/develop)')}`,
+    `    ${s.brand('--profile')}=${s.dim('NAME')}  Use a specific tracker profile for ticket fetching`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}       Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens review`,
+    `    ${s.dim('$')} ticketlens review --base=main`,
+    `    ${s.dim('$')} ticketlens review --base=main --profile=myteam`,
+    `    ${s.dim('$')} ticketlens review --base=main | pbcopy ${s.dim('# copy brief to clipboard')}`,
+    '',
+    `  ${s.bold('OUTPUT SECTIONS')}`,
+    '',
+    `    Branch, Changed files, Ticket context`,
+    `    Requirements coverage ${s.dim('[Pro]')}, Review focus ${s.dim('[Pro]')}`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

@@ -342,6 +342,87 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     return;
   }
 
+  if (args[0] === 'review') {
+    const { assemblePrReview, extractTicketKeys } = await import('./lib/pr-review-assembler.mjs');
+    const { analyzeDiff } = await import('./lib/diff-analyzer.mjs');
+    const { extractRequirements } = await import('./lib/requirement-extractor.mjs');
+
+    const resolvedConfigDir = configDir ?? (await import('./lib/config.mjs')).DEFAULT_CONFIG_DIR;
+    const execFn = opts.execFn ?? spawnSync;
+    const cwd = process.cwd();
+
+    // Resolve base branch: --base=BRANCH or auto-detect main/master/develop
+    const baseArg = args.find(a => a.startsWith('--base='));
+    let baseBranch = baseArg ? baseArg.split('=')[1] : null;
+    if (!baseBranch) {
+      for (const candidate of ['main', 'master', 'develop']) {
+        const r = execFn('git', ['rev-parse', '--verify', candidate], { encoding: 'utf8', cwd, timeout: 5_000 });
+        if (r.status === 0) { baseBranch = candidate; break; }
+      }
+      baseBranch = baseBranch ?? 'main';
+    }
+
+    // Current branch name
+    const headResult = execFn('git', ['branch', '--show-current'], { encoding: 'utf8', cwd, timeout: 5_000 });
+    const headBranch = headResult.status === 0 ? (headResult.stdout.trim() || null) : null;
+
+    // Commits in range
+    const logResult = execFn('git', ['log', '--oneline', `${baseBranch}..HEAD`], { encoding: 'utf8', cwd, timeout: 10_000 });
+    const commitMessages = logResult.status === 0 ? (logResult.stdout ?? '') : '';
+
+    // Diff between base and HEAD
+    const diffResult = execFn('git', ['diff', `${baseBranch}..HEAD`], { encoding: 'utf8', cwd, timeout: 30_000 });
+    const diff = diffResult.status === 0 ? (diffResult.stdout || null) : null;
+
+    // Extract ticket keys from branch name + commit messages
+    const allText = [headBranch ?? '', commitMessages].join('\n');
+    const ticketKeys = extractTicketKeys(allText);
+
+    // Fetch tickets (best-effort — gracefully degrade if no credentials)
+    const profileArgR = args.find(a => a.startsWith('--profile='));
+    const profileNameR = profileArgR ? profileArgR.split('=')[1] : undefined;
+    const tickets = [];
+
+    if (ticketKeys.length > 0) {
+      const connR = resolveConnection(ticketKeys[0], {
+        env,
+        configDir: resolvedConfigDir,
+        profileName: profileNameR,
+        cwd,
+        onWarning: () => {},
+        onProfileNotFound: () => {},
+      });
+      const hasAuthR = connR.pat || (connR.email && connR.apiToken);
+      if (connR.baseUrl && hasAuthR) {
+        const adapterR = resolveAdapter(connR, { fetcher });
+        for (const key of ticketKeys) {
+          try {
+            tickets.push(await adapterR.fetchTicket(key, { depth: 0 }));
+          } catch { /* non-fatal — skip ticket */ }
+        }
+      } else {
+        process.stderr.write(
+          `Note: Found tickets [${ticketKeys.join(', ')}] but no profile configured. Run 'ticketlens init' to set up.\n`
+        );
+      }
+    }
+
+    const isLic = opts.isLicensedFn ?? ((tier) => isLicensed(tier, resolvedConfigDir));
+    const assembleFn = opts.assemblePrReviewFn ?? assemblePrReview;
+
+    const md = await assembleFn({
+      diff,
+      tickets,
+      baseBranch,
+      headBranch,
+      isLicensedFn: isLic,
+      analyzeDiffFn: analyzeDiff,
+      extractRequirementsFn: extractRequirements,
+    });
+    printFn(md + '\n');
+    return;
+  }
+
   const ticketKey = args.find(a => !a.startsWith('--'));
   if (!ticketKey) {
     printFetchHelp({ stream: process.stderr });

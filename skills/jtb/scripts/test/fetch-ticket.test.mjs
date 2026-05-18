@@ -674,3 +674,106 @@ describe('Confluence page fetching', () => {
     } finally { out.restore(); }
   });
 });
+
+// ─── review dispatch ──────────────────────────────────────────────────────────
+
+describe('review dispatch', () => {
+  const mockExecFn = (cmd, args) => {
+    if (args.includes('--verify') && args.includes('main')) return { status: 0, stdout: '' };
+    if (args.includes('--show-current')) return { status: 0, stdout: 'feat/PROJ-123-fix-login\n' };
+    if (args.includes('--oneline')) return { status: 0, stdout: 'abc1234 feat: PROJ-123 add login\n' };
+    if (args[0] === 'diff') return { status: 0, stdout: '+++ b/src/Auth.php\n+some code\n' };
+    return { status: 1, stdout: '' };
+  };
+
+  it('calls assemblePrReviewFn with correct baseBranch, headBranch, and diff', async () => {
+    let capturedOpts = null;
+    const assemblePrReviewFn = async (o) => { capturedOpts = o; return '## PR Review Context\n'; };
+
+    await run(['review'], {
+      env: {},
+      execFn: mockExecFn,
+      assemblePrReviewFn,
+      print: () => {},
+    }, async () => ({ ok: false }), NO_CONFIG);
+    assert.equal(capturedOpts.baseBranch, 'main', 'baseBranch should be auto-detected main');
+    assert.equal(capturedOpts.headBranch, 'feat/PROJ-123-fix-login', 'headBranch from git');
+    assert.ok(capturedOpts.diff.includes('src/Auth.php'), 'diff should be passed');
+  });
+
+  it('respects --base=develop override', async () => {
+    let capturedBase = null;
+    const assemblePrReviewFn = async (o) => { capturedBase = o.baseBranch; return '## PR Review Context\n'; };
+
+    const execWithDevelop = (cmd, args) => {
+      if (args.includes('--show-current')) return { status: 0, stdout: 'feat/PROJ-123\n' };
+      if (args.includes('--oneline')) return { status: 0, stdout: '' };
+      if (args[0] === 'diff') return { status: 0, stdout: '' };
+      return { status: 1, stdout: '' };
+    };
+
+    await run(['review', '--base=develop'], {
+      env: {},
+      execFn: execWithDevelop,
+      assemblePrReviewFn,
+      print: () => {},
+    }, async () => ({ ok: false }), NO_CONFIG);
+    assert.equal(capturedBase, 'develop', '--base= flag should override auto-detect');
+  });
+
+  it('prints assembled markdown to stdout via opts.print', async () => {
+    let printed = '';
+    const assemblePrReviewFn = async () => '## PR Review Context\n\nsome content';
+
+    await run(['review'], {
+      env: {},
+      execFn: mockExecFn,
+      assemblePrReviewFn,
+      print: (chunk) => { printed += chunk; },
+    }, async () => ({ ok: false }), NO_CONFIG);
+    assert.ok(printed.includes('## PR Review Context'), 'output should include assembled markdown');
+  });
+
+  it('notes missing profile on stderr when ticket keys found but no credentials', async () => {
+    const assemblePrReviewFn = async () => '## PR Review Context\n';
+    let stderrOut = '';
+    const origStderr = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (s) => { stderrOut += s; return true; };
+    try {
+      await run(['review'], {
+        env: {},
+        configDir: NO_CONFIG,
+        execFn: mockExecFn,
+        assemblePrReviewFn,
+        print: () => {},
+      }, async () => ({ ok: false }));
+      assert.ok(
+        stderrOut.includes('no profile configured'),
+        `Should note missing profile when ticket keys found but no credentials. Got: "${stderrOut}"`
+      );
+    } finally {
+      process.stderr.write = origStderr;
+    }
+  });
+
+  it('passes empty tickets array when no ticket keys found in branch or commits', async () => {
+    let capturedTickets = null;
+    const assemblePrReviewFn = async (o) => { capturedTickets = o.tickets; return '## PR Review Context\n'; };
+
+    const noTicketExec = (cmd, args) => {
+      if (args.includes('--verify') && args.includes('main')) return { status: 0, stdout: '' };
+      if (args.includes('--show-current')) return { status: 0, stdout: 'fix/no-ticket-ref\n' };
+      if (args.includes('--oneline')) return { status: 0, stdout: 'abc1234 fix: some cleanup\n' };
+      if (args[0] === 'diff') return { status: 0, stdout: '' };
+      return { status: 1, stdout: '' };
+    };
+
+    await run(['review'], {
+      env: {},
+      execFn: noTicketExec,
+      assemblePrReviewFn,
+      print: () => {},
+    }, async () => ({ ok: false }), NO_CONFIG);
+    assert.deepEqual(capturedTickets, [], 'tickets should be empty when no keys found');
+  });
+});
