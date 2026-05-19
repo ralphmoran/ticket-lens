@@ -201,6 +201,7 @@ ticketlens standup --help                    # Standup subcommand help
 
 Scans `git log` for the configured window, extracts ticket keys from commit messages, and groups commits by ticket. Optionally fetches ticket summaries from your Jira profile to add context. Outputs a dated standup brief or a PR body depending on `--format`.
 
+**`--format=standup` (default)**
 ```
 ## Standup — Mon, May 18, 2026
 
@@ -213,6 +214,21 @@ Scans `git log` for the configured window, extracts ticket keys from commit mess
 [No ticket key] (1 commit)
   jkl3456 chore: bump deps
 ```
+
+**`--format=pr`** — paste directly into a GitHub/GitLab PR description
+```
+## What changed
+
+- **PROJ-123** — Fix payment validation
+
+## Commits (3)
+
+- `abc1234` feat: PROJ-123 add payment validation check
+- `def5678` test: PROJ-123 payment validation tests
+- `jkl3456` chore: bump deps
+```
+
+When no commits reference a ticket key, `## What changed` shows `_No ticket references found in commits._` instead of a blank section.
 
 ---
 
