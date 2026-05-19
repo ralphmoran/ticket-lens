@@ -465,12 +465,26 @@ ticketlens schedule                      # Set up a scheduled daily digest
 ticketlens activate YOUR-LICENSE-KEY     # Activate Pro license
 ```
 
-**`--handoff`** synthesizes the comment thread into a structured one-pager for the developer picking up the ticket. No context-reading required — the AI reads the full comment history and returns:
+**`--summarize`** generates a 3-sentence AI summary of the ticket. The AI receives the full ticket context: description, comments, linked Confluence pages, and any text-readable attachments.
+
+**`--handoff`** synthesizes the ticket into a structured one-pager for the developer picking up the work. The AI receives the same full context and returns:
 
 - **What was attempted** — concrete work already done
 - **Current blockers** — unresolved issues
 - **Open questions** — decisions not yet made
 - **Recommendation** — where to start
+
+**What the AI can read:**
+
+| Content | Included |
+|---|---|
+| Description | ✅ Always |
+| Comments | ✅ Always |
+| Linked Confluence pages | ✅ Jira only, same-origin |
+| Text files (`.txt`, `.md`, `.log`, `.csv`, `.json`, `.yaml`, etc.) | ✅ Up to 4 KB per file, 12 KB total |
+| Screenshots (`.png`, `.jpg`, `.gif`, etc.) | ❌ Binary — images require multimodal API |
+| PDFs | ❌ Binary — no parser included (zero-dependency) |
+| Office documents (`.docx`, `.xlsx`) | ❌ Binary — no parser included |
 
 Add one of the following to `~/.ticketlens/credentials.json` for BYOK, or use `--cloud` to route through the TicketLens API:
 
