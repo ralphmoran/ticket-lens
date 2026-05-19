@@ -148,20 +148,33 @@ describe('assembleStandup — pr format', () => {
     const groups = new Map([['PROJ-123', ['abc1234 feat: PROJ-123']]]);
     const tickets = [{ key: 'PROJ-123', fields: { summary: 'Fix login' } }];
     const md = assembleStandup(groups, tickets, { format: 'pr' });
-    assert.ok(md.includes('PROJ-123: Fix login'), `Expected "PROJ-123: Fix login". Got: "${md}"`);
+    assert.ok(md.includes('**PROJ-123** — Fix login'), `Expected "**PROJ-123** — Fix login". Got: "${md}"`);
   });
 
   it('lists ticket key alone when no ticket data available', () => {
     const groups = new Map([['PROJ-123', ['abc1234 feat: PROJ-123']]]);
     const md = assembleStandup(groups, [], { format: 'pr' });
-    assert.ok(md.includes('- PROJ-123'), `Expected "- PROJ-123". Got: "${md}"`);
+    assert.ok(md.includes('- **PROJ-123**'), `Expected "- **PROJ-123**". Got: "${md}"`);
   });
 
-  it('outputs "## Commits" section with all commits', () => {
+  it('outputs "## Commits (N)" section with all commits', () => {
     const groups = new Map([['PROJ-123', ['abc1234 feat: PROJ-123']]]);
     const md = assembleStandup(groups, [], { format: 'pr' });
-    assert.ok(md.includes('## Commits'), `Expected "## Commits". Got: "${md}"`);
+    assert.ok(md.includes('## Commits (1)'), `Expected "## Commits (1)". Got: "${md}"`);
     assert.ok(md.includes('abc1234'), `Expected commit sha in output`);
+  });
+
+  it('formats commit sha as inline code', () => {
+    const groups = new Map([['PROJ-123', ['abc1234 feat: PROJ-123 add login']]]);
+    const md = assembleStandup(groups, [], { format: 'pr' });
+    assert.ok(md.includes('`abc1234`'), `Expected inline code sha. Got: "${md}"`);
+  });
+
+  it('shows fallback in "What changed" when no keyed groups', () => {
+    const groups = new Map([['__no_key__', ['abc1234 chore: bump deps']]]);
+    const md = assembleStandup(groups, [], { format: 'pr' });
+    assert.ok(md.includes('_No ticket references found in commits._'), `Expected fallback text. Got: "${md}"`);
+    assert.ok(md.includes('## Commits (1)'), `Expected commits section. Got: "${md}"`);
   });
 
   it('deduplicates commits shared across ticket groups', () => {

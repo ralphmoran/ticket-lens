@@ -25,17 +25,27 @@ export function groupCommitsByTicket(logLines) {
 function assemblePrBody(groups, ticketMap) {
   const lines = ['## What changed', ''];
   const keyedGroups = [...groups.entries()].filter(([k]) => k !== '__no_key__');
-  for (const [key] of keyedGroups) {
-    const ticket = ticketMap.get(key);
-    const summary = ticket?.fields?.summary ?? ticket?.summary ?? null;
-    lines.push(summary ? `- ${key}: ${summary}` : `- ${key}`);
+  if (keyedGroups.length === 0) {
+    lines.push('_No ticket references found in commits._');
+  } else {
+    for (const [key] of keyedGroups) {
+      const ticket = ticketMap.get(key);
+      const summary = ticket?.fields?.summary ?? ticket?.summary ?? null;
+      lines.push(summary ? `- **${key}** — ${summary}` : `- **${key}**`);
+    }
   }
-  lines.push('', '## Commits', '');
   const seen = new Set();
+  const allCommits = [];
   for (const commits of groups.values()) {
     for (const c of commits) {
-      if (!seen.has(c)) { seen.add(c); lines.push(`- ${c.trim()}`); }
+      if (!seen.has(c)) { seen.add(c); allCommits.push(c); }
     }
+  }
+  lines.push('', `## Commits (${allCommits.length})`, '');
+  for (const c of allCommits) {
+    const trimmed = c.trim();
+    const shaM = trimmed.match(/^([0-9a-f]{6,})\s(.+)$/);
+    lines.push(shaM ? `- \`${shaM[1]}\` ${shaM[2]}` : `- ${trimmed}`);
   }
   return lines.join('\n');
 }
@@ -96,6 +106,12 @@ export function styleStandupMd(md, s) {
     .map(line => {
       if (line.startsWith('## Standup')) {
         return `\n  ${s.brand(s.bold('◆  ' + line.slice(3)))}`;
+      }
+      if (line.startsWith('## What changed')) {
+        return `\n  ${s.brand(s.bold('◆  What changed'))}`;
+      }
+      if (line.match(/^## Commits \(\d+\)/)) {
+        return `\n  ${s.bold(line.slice(3))}`;
       }
       if (line.startsWith('### ')) {
         return `\n  ${s.bold(line.slice(4))}`;
