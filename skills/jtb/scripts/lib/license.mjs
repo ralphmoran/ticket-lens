@@ -45,6 +45,7 @@ export function writeLicense(data, configDir = DEFAULT_CONFIG_DIR) {
 export function isLicensed(tier, configDir = DEFAULT_CONFIG_DIR) {
   const required = LICENSE_TIERS[tier] ?? 0;
   if (required === 0) return true;
+  if (process.env.TICKETLENS_SKIP_LICENSE === 'true') return true;
 
   const license = readLicense(configDir);
   if (!license) return false;
@@ -102,6 +103,16 @@ export function showUpgradePrompt(requiredTier, featureFlag, { stream = process.
 const LEMONSQUEEZY_ACTIVATE_URL = 'https://api.lemonsqueezy.com/v1/licenses/activate';
 const LEMONSQUEEZY_VALIDATE_URL = 'https://api.lemonsqueezy.com/v1/licenses/validate';
 
+function resolveActivateUrl() {
+  const base = process.env.TICKETLENS_API_URL;
+  return base ? `${base.replace(/\/$/, '')}/v1/licenses/activate` : LEMONSQUEEZY_ACTIVATE_URL;
+}
+
+function resolveValidateUrl() {
+  const base = process.env.TICKETLENS_API_URL;
+  return base ? `${base.replace(/\/$/, '')}/v1/licenses/validate` : LEMONSQUEEZY_VALIDATE_URL;
+}
+
 function extractTier(meta) {
   if (!meta) return 'pro';
   const name = (meta.variant_name || meta.product_name || '').toLowerCase();
@@ -114,7 +125,7 @@ export async function activateLicense(key, opts = {}) {
   const instance = instanceName || os.hostname();
 
   try {
-    const res = await fetcher(LEMONSQUEEZY_ACTIVATE_URL, {
+    const res = await fetcher(resolveActivateUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ license_key: key, instance_name: instance }),
@@ -154,7 +165,7 @@ export async function revalidateLicense(opts = {}) {
   const instance = instanceName || os.hostname();
 
   try {
-    const res = await fetcher(LEMONSQUEEZY_VALIDATE_URL, {
+    const res = await fetcher(resolveValidateUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ license_key: license.key, instance_name: instance }),

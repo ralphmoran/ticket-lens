@@ -378,6 +378,79 @@ describe('showUpgradePrompt', () => {
   });
 });
 
+describe('isLicensed — TICKETLENS_SKIP_LICENSE bypass', () => {
+  afterEach(() => { delete process.env.TICKETLENS_SKIP_LICENSE; });
+
+  it('returns true for pro tier when TICKETLENS_SKIP_LICENSE=true, no license file', () => {
+    process.env.TICKETLENS_SKIP_LICENSE = 'true';
+    assert.equal(isLicensed('pro', tmpDir), true);
+  });
+
+  it('returns true for team tier when TICKETLENS_SKIP_LICENSE=true, no license file', () => {
+    process.env.TICKETLENS_SKIP_LICENSE = 'true';
+    assert.equal(isLicensed('team', tmpDir), true);
+  });
+
+  it('does not bypass when TICKETLENS_SKIP_LICENSE is absent', () => {
+    assert.equal(isLicensed('pro', tmpDir), false);
+  });
+});
+
+describe('activateLicense — TICKETLENS_API_URL routing', () => {
+  const successBody = {
+    activated: true, valid: true,
+    license_key: { key: 'TL-test-key' },
+    instance: { id: '1' },
+    meta: { variant_name: 'Pro', customer_email: 'dev@test.local', ends_at: null },
+  };
+
+  afterEach(() => { delete process.env.TICKETLENS_API_URL; });
+
+  it('calls local backend URL when TICKETLENS_API_URL is set', async () => {
+    process.env.TICKETLENS_API_URL = 'http://api.ticketlens.test';
+    let capturedUrl;
+    const fetcher = async (url) => { capturedUrl = url; return { ok: true, json: async () => successBody }; };
+    await activateLicense('TL-test-key', { configDir: tmpDir, fetcher, instanceName: 'test-host' });
+    assert.equal(capturedUrl, 'http://api.ticketlens.test/v1/licenses/activate');
+  });
+
+  it('strips trailing slash from TICKETLENS_API_URL', async () => {
+    process.env.TICKETLENS_API_URL = 'http://api.ticketlens.test/';
+    let capturedUrl;
+    const fetcher = async (url) => { capturedUrl = url; return { ok: true, json: async () => successBody }; };
+    await activateLicense('TL-test-key', { configDir: tmpDir, fetcher, instanceName: 'test-host' });
+    assert.equal(capturedUrl, 'http://api.ticketlens.test/v1/licenses/activate');
+  });
+
+  it('calls LemonSqueezy URL when TICKETLENS_API_URL is not set', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => { capturedUrl = url; return { ok: true, json: async () => successBody }; };
+    await activateLicense('AAAA-BBBB', { configDir: tmpDir, fetcher, instanceName: 'test-host' });
+    assert.equal(capturedUrl, 'https://api.lemonsqueezy.com/v1/licenses/activate');
+  });
+});
+
+describe('revalidateLicense — TICKETLENS_API_URL routing', () => {
+  afterEach(() => { delete process.env.TICKETLENS_API_URL; });
+
+  it('calls local backend validate URL when TICKETLENS_API_URL is set', async () => {
+    process.env.TICKETLENS_API_URL = 'http://api.ticketlens.test';
+    writeLicense({ ...validLicense, key: 'TL-test' }, tmpDir);
+    let capturedUrl;
+    const fetcher = async (url) => { capturedUrl = url; return { json: async () => ({ valid: true, meta: {} }) }; };
+    await revalidateLicense({ configDir: tmpDir, fetcher, instanceName: 'test-host' });
+    assert.equal(capturedUrl, 'http://api.ticketlens.test/v1/licenses/validate');
+  });
+
+  it('calls LemonSqueezy validate URL when TICKETLENS_API_URL is not set', async () => {
+    writeLicense({ ...validLicense, key: 'LS-test' }, tmpDir);
+    let capturedUrl;
+    const fetcher = async (url) => { capturedUrl = url; return { json: async () => ({ valid: true, meta: {} }) }; };
+    await revalidateLicense({ configDir: tmpDir, fetcher, instanceName: 'test-host' });
+    assert.equal(capturedUrl, 'https://api.lemonsqueezy.com/v1/licenses/validate');
+  });
+});
+
 describe('writeLicense — file permissions', () => {
   it('writes license.json with mode 0o600', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tl-lic-perm-'));
