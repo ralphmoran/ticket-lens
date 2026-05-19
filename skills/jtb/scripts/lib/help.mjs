@@ -98,6 +98,11 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('Or use env vars:')} JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN`,
     `    ${s.dim('               ')} TICKETLENS_API_URL  ${s.dim('(override API host for local dev)')}`,
     '',
+    `    ${s.dim('BYOK AI keys')}  ${s.dim('(add to credentials.json):')}`,
+    `    ${s.dim('               ')} anthropicApiKey  ${s.dim('→ Claude (paid)')}`,
+    `    ${s.dim('               ')} openaiApiKey     ${s.dim('→ GPT-4o mini (paid)')}`,
+    `    ${s.dim('               ')} groqApiKey       ${s.dim('→ Llama 3.1 (free tier — console.groq.com)')}`,
+    '',
     '',
   ];
 
@@ -131,6 +136,7 @@ export function printFetchHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--summarize')}        Generate AI summary ${s.dim('(BYOK or --cloud) [Pro]')}`,
     `    ${s.brand('--handoff')}          AI handoff brief from comment thread ${s.dim('(BYOK or --cloud) [Pro]')}`,
     `    ${s.brand('--cloud')}            Route AI request through TicketLens API ${s.dim('[Pro]')}`,
+    `    ${s.brand('--provider')}=${s.dim('NAME')}     Force AI provider ${s.dim('(anthropic|openai|groq)')}`,
     `    ${s.brand('-h')}, ${s.brand('--help')}         Show this help`,
     '',
     `  ${s.bold('EXAMPLES')}`,
@@ -140,6 +146,7 @@ export function printFetchHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('$')} ticketlens PROJ-123 --profile=acme --depth=2`,
     `    ${s.dim('$')} ticketlens PROJ-123 --handoff`,
     `    ${s.dim('$')} ticketlens PROJ-123 --handoff --cloud`,
+    `    ${s.dim('$')} ticketlens PROJ-123 --summarize --provider=groq`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');
@@ -484,9 +491,20 @@ export function printConfigHelp({ stream = process.stdout } = {}) {
   const lines = [
     '',
     `  ${s.bold(s.brand('ticketlens'))} ${s.bold('config')} ${s.dim('[--profile=NAME]')}`,
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('config set aiProvider')} ${s.dim('<anthropic|openai|groq>')}`,
     '',
     `  Edit settings for an existing profile using an interactive wizard.`,
     `  Without ${s.cyan('--profile')}, edits the currently active profile.`,
+    '',
+    `  Use ${s.cyan('config set aiProvider')} to set a persistent default AI provider`,
+    `  for ${s.cyan('--summarize')} and ${s.cyan('--handoff')}. Overridden per-command with ${s.cyan('--provider=')}.`,
+    '',
+    `  ${s.bold('SUBCOMMANDS')}`,
+    '',
+    `    ${s.brand('set aiProvider')} ${s.dim('<PROVIDER>')}   Persist default AI provider`,
+    `                            ${s.dim('anthropic')} = Claude Haiku ${s.dim('(paid)')}`,
+    `                            ${s.dim('openai')}    = GPT-4o mini ${s.dim('(paid)')}`,
+    `                            ${s.dim('groq')}      = Llama 3.1 ${s.dim('(free tier)')}`,
     '',
     `  ${s.bold('OPTIONS')}`,
     '',
@@ -497,7 +515,8 @@ export function printConfigHelp({ stream = process.stdout } = {}) {
     '',
     `    ${s.dim('$')} ticketlens config`,
     `    ${s.dim('$')} ticketlens config --profile=work`,
-    `    ${s.dim('$')} ticketlens config --profile=acme`,
+    `    ${s.dim('$')} ticketlens config set aiProvider groq`,
+    `    ${s.dim('$')} ticketlens config set aiProvider anthropic`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

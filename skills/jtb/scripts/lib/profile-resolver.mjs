@@ -120,6 +120,20 @@ export function loadCredentials(configDir = DEFAULT_CONFIG_DIR) {
   return data;
 }
 
+export function saveCredentialKey(key, value, configDir = DEFAULT_CONFIG_DIR) {
+  mkdirSync(configDir, { recursive: true });
+  const credPath = join(configDir, 'credentials.json');
+  const creds = loadCredentials(configDir);
+  if (value === null || value === undefined) {
+    delete creds[key];
+  } else {
+    creds[key] = value;
+  }
+  writeFileSync(credPath, JSON.stringify(creds, null, 2) + '\n', 'utf8');
+  chmodSync(credPath, 0o600);
+  invalidateProfilesCache(configDir);
+}
+
 export function expandTilde(p) {
   if (p.startsWith('~/')) return join(homedir(), p.slice(2));
   if (p === '~') return homedir();

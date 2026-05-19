@@ -15,7 +15,7 @@ import { run as runInit } from '../skills/jtb/scripts/lib/init-wizard.mjs';
 import { runSwitch } from '../skills/jtb/scripts/lib/profile-switcher.mjs';
 import { run as runConfig } from '../skills/jtb/scripts/lib/config-wizard.mjs';
 import { activateLicense, checkLicense, revalidateIfStale, isLicensed, showUpgradePrompt, readLicense } from '../skills/jtb/scripts/lib/license.mjs';
-import { deleteProfile, loadProfiles } from '../skills/jtb/scripts/lib/profile-resolver.mjs';
+import { deleteProfile, loadProfiles, saveCredentialKey } from '../skills/jtb/scripts/lib/profile-resolver.mjs';
 import { run as runCache } from '../skills/jtb/scripts/lib/cache-manager.mjs';
 import {
   printHelp, printProfiles,
@@ -70,6 +70,27 @@ switch (command) {
 
   case 'config': {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printConfigHelp(); break; }
+
+    if (cmdArgs[0] === 'set' && cmdArgs[1] === 'aiProvider') {
+      const s = createStyler({ isTTY: process.stdout.isTTY });
+      const value = cmdArgs[2];
+      if (!value) {
+        process.stderr.write(`${s.red('✖')} Missing value.\n  Usage: ticketlens config set aiProvider <anthropic|openai|groq>\n`);
+        process.exitCode = 1;
+        break;
+      }
+      const validProviders = ['anthropic', 'openai', 'groq'];
+      if (!validProviders.includes(value)) {
+        process.stderr.write(`${s.red('✖')} Unknown provider "${value}". Valid: ${validProviders.join(', ')}\n`);
+        process.exitCode = 1;
+        break;
+      }
+      saveCredentialKey('aiProvider', value);
+      process.stdout.write(`  ${s.green('✔')} AI provider set to ${s.bold(s.cyan(value))}\n`);
+      process.stdout.write(`  ${s.dim('Applied when running --summarize or --handoff without --provider=')}\n`);
+      break;
+    }
+
     const profileArg = cmdArgs.find(a => a.startsWith('--profile='));
     const profileName = profileArg ? profileArg.split('=')[1] : undefined;
     runConfig({ profileName }).catch(err => {

@@ -1,5 +1,6 @@
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const CLOUD_URL = 'https://api.ticketlens.dev/v1/summarize';
 const DEFAULT_PROMPT = 'Summarize this Jira ticket in 3 sentences. Focus on what matters most for implementation. Be concrete.\n\n';
 const DEFAULT_MAX_TOKENS = 256;
@@ -9,34 +10,45 @@ const DEFAULT_MAX_TOKENS = 256;
  * @param {object} opts
  * @param {string} opts.brief - Markdown brief text
  * @param {'byok'|'cloud'} opts.mode
- * @param {object} [opts.credentials] - { anthropicApiKey?, openaiApiKey? }
+ * @param {object} [opts.credentials] - { anthropicApiKey?, openaiApiKey?, groqApiKey? }
  * @param {string} [opts.licenseKey] - Required for cloud mode
  * @param {Function} [opts.fetcher] - Injectable for tests (defaults to globalThis.fetch)
  * @param {number} [opts.timeoutMs]
  * @returns {Promise<string>} Summary text
  */
-export async function summarize({ brief, mode, credentials = null, licenseKey = null, fetcher = globalThis.fetch, timeoutMs = 30_000, prompt, maxTokens }) {
+export async function summarize({ brief, mode, credentials = null, licenseKey = null, fetcher = globalThis.fetch, timeoutMs = 30_000, prompt, maxTokens, provider }) {
   const effectivePrompt = prompt ?? DEFAULT_PROMPT;
   const effectiveMaxTokens = maxTokens ?? DEFAULT_MAX_TOKENS;
   if (mode === 'byok') {
-    return byok({ brief, credentials, fetcher, timeoutMs, prompt: effectivePrompt, maxTokens: effectiveMaxTokens });
+    return byok({ brief, credentials, fetcher, timeoutMs, prompt: effectivePrompt, maxTokens: effectiveMaxTokens, provider });
   }
   return cloud({ brief, licenseKey, fetcher, timeoutMs });
 }
 
-async function byok({ brief, credentials, fetcher, timeoutMs, prompt, maxTokens }) {
+async function byok({ brief, credentials, fetcher, timeoutMs, prompt, maxTokens, provider }) {
   const anthropicKey = credentials?.anthropicApiKey;
   const openaiKey = credentials?.openaiApiKey;
+  const groqKey = credentials?.groqApiKey;
 
-  if (!anthropicKey && !openaiKey) {
-    throw new Error('No API key found. Add ANTHROPIC_API_KEY or OPENAI_API_KEY to ~/.ticketlens/credentials.json');
-  }
-
-  if (anthropicKey) {
+  if (provider === 'anthropic') {
+    if (!anthropicKey) throw new Error('No ANTHROPIC_API_KEY found. Add it to ~/.ticketlens/credentials.json');
     return callAnthropic({ brief, apiKey: anthropicKey, fetcher, timeoutMs, prompt, maxTokens });
   }
+  if (provider === 'openai') {
+    if (!openaiKey) throw new Error('No OPENAI_API_KEY found. Add it to ~/.ticketlens/credentials.json');
+    return callOpenAi({ brief, apiKey: openaiKey, fetcher, timeoutMs, prompt, maxTokens });
+  }
+  if (provider === 'groq') {
+    if (!groqKey) throw new Error('No GROQ_API_KEY found. Add it to ~/.ticketlens/credentials.json');
+    return callGroq({ brief, apiKey: groqKey, fetcher, timeoutMs, prompt, maxTokens });
+  }
 
-  return callOpenAi({ brief, apiKey: openaiKey, fetcher, timeoutMs, prompt, maxTokens });
+  if (!anthropicKey && !openaiKey && !groqKey) {
+    throw new Error('No API key found. Add ANTHROPIC_API_KEY, OPENAI_API_KEY, or GROQ_API_KEY to ~/.ticketlens/credentials.json');
+  }
+  if (anthropicKey) return callAnthropic({ brief, apiKey: anthropicKey, fetcher, timeoutMs, prompt, maxTokens });
+  if (openaiKey) return callOpenAi({ brief, apiKey: openaiKey, fetcher, timeoutMs, prompt, maxTokens });
+  return callGroq({ brief, apiKey: groqKey, fetcher, timeoutMs, prompt, maxTokens });
 }
 
 async function callAnthropic({ brief, apiKey, fetcher, timeoutMs, prompt, maxTokens }) {
@@ -86,6 +98,33 @@ async function callOpenAi({ brief, apiKey, fetcher, timeoutMs, prompt, maxTokens
     let detail = '';
     try { detail = (await res.json()).error?.message || ''; } catch {}
     const err = new Error(`OpenAI API error ${res.status}${detail ? ': ' + detail : ''}`);
+    err.status = res.status;
+    throw err;
+  }
+
+  const data = await res.json();
+  return data.choices[0].message.content;
+}
+
+async function callGroq({ brief, apiKey, fetcher, timeoutMs, prompt, maxTokens }) {
+  const res = await fetcher(GROQ_URL, {
+    method: 'POST',
+    signal: AbortSignal.timeout(timeoutMs),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'llama-3.1-8b-instant',
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content: prompt + brief }],
+    }),
+  });
+
+  if (!res.ok) {
+    let detail = '';
+    try { detail = (await res.json()).error?.message || ''; } catch {}
+    const err = new Error(`Groq API error ${res.status}${detail ? ': ' + detail : ''}`);
     err.status = res.status;
     throw err;
   }

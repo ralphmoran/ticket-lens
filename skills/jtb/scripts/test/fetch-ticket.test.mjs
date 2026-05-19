@@ -398,6 +398,45 @@ describe('--summarize flag', () => {
     });
     assert.ok(errors.some(e => e.includes('No API key')));
   });
+
+  it('passes --provider= flag value to summarizer', async () => {
+    const calls = [];
+    await run(['PROJ-1', '--summarize', '--provider=groq'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      credentials: { groqApiKey: 'gsk_test' },
+      isLicensed: () => true,
+      summarizer: async ({ provider }) => { calls.push(provider); return 'groq summary'; },
+      print: () => {},
+    });
+    assert.equal(calls[0], 'groq');
+  });
+
+  it('uses aiProvider from credentials when no --provider= flag', async () => {
+    const calls = [];
+    await run(['PROJ-1', '--summarize'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      credentials: { anthropicApiKey: 'sk-ant', aiProvider: 'anthropic' },
+      isLicensed: () => true,
+      summarizer: async ({ provider }) => { calls.push(provider); return 'anthropic summary'; },
+      print: () => {},
+    });
+    assert.equal(calls[0], 'anthropic');
+  });
+
+  it('--provider= flag overrides aiProvider in credentials', async () => {
+    const calls = [];
+    await run(['PROJ-1', '--summarize', '--provider=groq'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      credentials: { anthropicApiKey: 'sk-ant', groqApiKey: 'gsk_test', aiProvider: 'anthropic' },
+      isLicensed: () => true,
+      summarizer: async ({ provider }) => { calls.push(provider); return 'groq summary'; },
+      print: () => {},
+    });
+    assert.equal(calls[0], 'groq');
+  });
 });
 
 describe('compliance subcommand', () => {

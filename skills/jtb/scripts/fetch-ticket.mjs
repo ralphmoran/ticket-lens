@@ -98,6 +98,12 @@ function saveCloudConsent(configDir, profileName) {
   } catch { /* non-fatal */ }
 }
 
+function resolveAiProvider(args, credentials) {
+  const flagArg = args.find(a => a.startsWith('--provider='));
+  if (flagArg) return flagArg.split('=')[1];
+  return credentials?.aiProvider ?? undefined;
+}
+
 /**
  * Apply --summarize to a brief string.
  * Returns the modified brief, or null if the caller should exit (license gate / consent refused).
@@ -135,7 +141,8 @@ async function applySummarize(brief, args, opts, configDir, conn, licensedFn, up
     });
     const credentials = opts.credentials ?? loadCredentials(configDir);
     const licenseKey = readLicense(configDir)?.key;
-    const summary = await summarizerFn({ brief, mode, credentials, licenseKey });
+    const provider = opts.provider ?? resolveAiProvider(args, credentials);
+    const summary = await summarizerFn({ brief, mode, credentials, licenseKey, provider });
     const divider = '─'.repeat(60);
     return brief + `\n\n${divider}\n─── AI Summary ${'─'.repeat(45)}\n${summary}\n${divider}\n`;
   } catch (err) {
@@ -166,8 +173,9 @@ async function applyHandoff(ticket, args, opts, configDir, licensedFn, upgradeFn
     });
     const credentials = opts.credentials ?? loadCredentials(configDir);
     const licenseKey = readLicense(configDir)?.key;
+    const provider = opts.provider ?? resolveAiProvider(args, credentials);
     const input = buildHandoffInput(ticket);
-    const body = await summarizerFn({ brief: input, mode, credentials, licenseKey, prompt: HANDOFF_PROMPT, maxTokens: 512 });
+    const body = await summarizerFn({ brief: input, mode, credentials, licenseKey, prompt: HANDOFF_PROMPT, maxTokens: 512, provider });
     return `## Handoff Brief — ${ticket.key}\n\n${body}\n`;
   } catch (err) {
     const onErrorFn = opts.onError ?? ((msg) => process.stderr.write(msg + '\n'));
@@ -815,7 +823,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check', '--summarize', '--cloud', '--compliance', '--budget=', '--handoff'],
+    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check', '--summarize', '--cloud', '--compliance', '--budget=', '--handoff', '--provider='],
     { hints: ['--stale=', '--status=', '--static'] } // triage-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }

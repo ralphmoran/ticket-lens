@@ -97,10 +97,11 @@ ticketlens CNV1-2 --no-cache       # Bypass cache, re-fetch from Jira
 ticketlens CNV1-2 --no-attachments # Skip attachment download and Confluence page fetching
 ticketlens CNV1-2 --check          # Append local VCS diff + Claude Code review instructions
 ticketlens CNV1-2 --compliance     # Check ticket requirements against local diff [Pro/Free 3/mo]
-ticketlens CNV1-2 --summarize      # AI summary via your own API key (BYOK) [Pro]
-ticketlens CNV1-2 --summarize --cloud  # AI summary routed through TicketLens API [Pro]
-ticketlens CNV1-2 --handoff        # AI handoff brief from comment thread (BYOK) [Pro]
-ticketlens CNV1-2 --handoff --cloud    # AI handoff brief via TicketLens API [Pro]
+ticketlens CNV1-2 --summarize                  # AI summary via your own API key (BYOK) [Pro]
+ticketlens CNV1-2 --summarize --provider=groq  # Force a specific AI provider [Pro]
+ticketlens CNV1-2 --summarize --cloud          # AI summary routed through TicketLens API [Pro]
+ticketlens CNV1-2 --handoff                    # AI handoff brief from comment thread (BYOK) [Pro]
+ticketlens CNV1-2 --handoff --cloud            # AI handoff brief via TicketLens API [Pro]
 ```
 
 | `--depth` | Scope |
@@ -328,6 +329,7 @@ ticketlens init                               # Guided wizard (recommended)
 ticketlens switch                             # Switch between configured profiles
 ticketlens config                             # Edit the active profile
 ticketlens config --profile=acme             # Edit a specific profile
+ticketlens config set aiProvider groq        # Set default AI provider (groq|openai|anthropic)
 ticketlens profiles                           # List all configured profiles
 ticketlens ls                                 # Alias for profiles
 ticketlens profiles --plain                   # Tab-separated (scripts / pipes)
@@ -347,10 +349,11 @@ ticketlens CNV1-2 --no-attachments           # Skip attachment download entirely
 ticketlens CNV1-2 --no-cache                 # Skip brief cache + force re-download
 ticketlens CNV1-2 --check                    # Append local VCS diff + Claude Code review instructions
 ticketlens CNV1-2 --compliance               # Check ticket requirements against local diff [Pro/Free 3/mo]
-ticketlens CNV1-2 --summarize                # AI summary via your own API key (BYOK) [Pro]
-ticketlens CNV1-2 --summarize --cloud        # AI summary via TicketLens API [Pro]
-ticketlens CNV1-2 --handoff                  # AI handoff brief from comment thread (BYOK) [Pro]
-ticketlens CNV1-2 --handoff --cloud          # AI handoff brief via TicketLens API [Pro]
+ticketlens CNV1-2 --summarize                   # AI summary via your own API key (BYOK) [Pro]
+ticketlens CNV1-2 --summarize --provider=groq   # Force Groq (Llama 3.1, free tier) [Pro]
+ticketlens CNV1-2 --summarize --cloud           # AI summary via TicketLens API [Pro]
+ticketlens CNV1-2 --handoff                     # AI handoff brief from comment thread (BYOK) [Pro]
+ticketlens CNV1-2 --handoff --cloud             # AI handoff brief via TicketLens API [Pro]
 ticketlens CNV1-2 --depth=2 --profile=acme --plain   # Combine flags freely
 
 # Pipe plain output to clipboard, LLM, or file
@@ -469,7 +472,28 @@ ticketlens activate YOUR-LICENSE-KEY     # Activate Pro license
 - **Open questions** — decisions not yet made
 - **Recommendation** — where to start
 
-Add `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` to `~/.ticketlens/credentials.json` for BYOK, or use `--cloud` to route through the TicketLens API.
+Add one of the following to `~/.ticketlens/credentials.json` for BYOK, or use `--cloud` to route through the TicketLens API:
+
+| Key | Provider | Cost |
+|---|---|---|
+| `anthropicApiKey` | Anthropic (Claude Haiku) | Paid |
+| `openaiApiKey` | OpenAI (GPT-4o mini) | Paid |
+| `groqApiKey` | Groq (Llama 3.1 8B) | **Free tier** — [console.groq.com](https://console.groq.com) |
+
+**Selecting a provider:** By default, the first available key is used (Anthropic → OpenAI → Groq). To set a persistent default:
+
+```bash
+ticketlens config set aiProvider groq        # always use Groq
+ticketlens config set aiProvider openai      # always use OpenAI
+ticketlens config set aiProvider anthropic   # always use Anthropic
+```
+
+Override per-command with `--provider=`:
+
+```bash
+ticketlens CNV1-2 --summarize --provider=groq
+ticketlens CNV1-2 --handoff --provider=openai
+```
 
 <div align="center">
   <img src="docs/demos/pro-triage.gif" alt="ticketlens triage --stale=3 demo" width="700" />
