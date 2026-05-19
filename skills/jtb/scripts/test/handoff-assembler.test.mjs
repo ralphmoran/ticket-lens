@@ -1,6 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildHandoffInput, HANDOFF_PROMPT } from '../lib/handoff-assembler.mjs';
+import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { buildHandoffInput, readTextAttachments, HANDOFF_PROMPT } from '../lib/handoff-assembler.mjs';
+
+function makeTmpDir() {
+  return mkdtempSync(join(tmpdir(), 'tl-handoff-'));
+}
 
 const BASE_TICKET = {
   key: 'PROJ-1',
@@ -127,6 +134,126 @@ describe('buildHandoffInput — comment section', () => {
     const pos1 = input.indexOf('[1]');
     const pos2 = input.indexOf('[2]');
     assert.ok(pos1 < pos2);
+  });
+});
+
+describe('buildHandoffInput — description section', () => {
+  it('includes description when present', () => {
+    const ticket = { ...BASE_TICKET, description: 'Validate cart items before checkout.' };
+    const input = buildHandoffInput(ticket);
+    assert.ok(input.includes('--- Description ---'));
+    assert.ok(input.includes('Validate cart items before checkout.'));
+  });
+
+  it('omits description section when description is null', () => {
+    const ticket = { ...BASE_TICKET, description: null };
+    const input = buildHandoffInput(ticket);
+    assert.ok(!input.includes('--- Description ---'));
+  });
+
+  it('description appears before comments', () => {
+    const ticket = { ...BASE_TICKET, description: 'The spec is here.' };
+    const input = buildHandoffInput(ticket);
+    assert.ok(input.indexOf('--- Description ---') < input.indexOf('--- Comments'));
+  });
+});
+
+describe('buildHandoffInput — Confluence pages', () => {
+  it('includes Confluence page title and text', () => {
+    const ticket = {
+      ...BASE_TICKET,
+      confluencePages: [{ title: 'Design Spec', text: 'The cart should validate stock levels.' }],
+    };
+    const input = buildHandoffInput(ticket);
+    assert.ok(input.includes('--- Confluence Pages (1) ---'));
+    assert.ok(input.includes('Design Spec'));
+    assert.ok(input.includes('cart should validate stock levels'));
+  });
+
+  it('uses URL as title when title is absent', () => {
+    const ticket = {
+      ...BASE_TICKET,
+      confluencePages: [{ url: 'https://wiki.example.com/page/123', text: 'Some content.' }],
+    };
+    const input = buildHandoffInput(ticket);
+    assert.ok(input.includes('wiki.example.com/page/123'));
+  });
+
+  it('omits Confluence section when no pages', () => {
+    const ticket = { ...BASE_TICKET, confluencePages: [] };
+    const input = buildHandoffInput(ticket);
+    assert.ok(!input.includes('Confluence Pages'));
+  });
+});
+
+describe('buildHandoffInput — text attachments', () => {
+  it('includes text file content', () => {
+    const d = makeTmpDir();
+    const p = join(d, 'spec.txt');
+    writeFileSync(p, 'Auth flow: check token expiry before redirect.');
+    const ticket = {
+      ...BASE_TICKET,
+      localAttachments: [{ filename: 'spec.txt', localPath: p, skipReason: null }],
+    };
+    const input = buildHandoffInput(ticket);
+    rmSync(d, { recursive: true });
+    assert.ok(input.includes('--- Attached Documents (1 text-readable) ---'));
+    assert.ok(input.includes('spec.txt'));
+    assert.ok(input.includes('check token expiry before redirect'));
+  });
+
+  it('skips binary attachments (images, PDFs)', () => {
+    const ticket = {
+      ...BASE_TICKET,
+      localAttachments: [{ filename: 'screenshot.png', localPath: '/some/path.png', skipReason: null }],
+    };
+    const input = buildHandoffInput(ticket);
+    assert.ok(!input.includes('Attached Documents'));
+  });
+
+  it('skips attachments with error skipReason', () => {
+    const ticket = {
+      ...BASE_TICKET,
+      localAttachments: [{ filename: 'notes.txt', localPath: '/nonexistent.txt', skipReason: 'error' }],
+    };
+    const input = buildHandoffInput(ticket);
+    assert.ok(!input.includes('Attached Documents'));
+  });
+
+  it('gracefully handles missing localAttachments', () => {
+    const input = buildHandoffInput({ ...BASE_TICKET });
+    assert.ok(!input.includes('Attached Documents'));
+  });
+});
+
+describe('readTextAttachments', () => {
+  it('reads .md and .txt files', () => {
+    const d = makeTmpDir();
+    const p1 = join(d, 'notes.md');
+    const p2 = join(d, 'log.txt');
+    writeFileSync(p1, '# Notes\nDo the thing.');
+    writeFileSync(p2, 'Error: null pointer at line 42');
+    const result = readTextAttachments([
+      { filename: 'notes.md', localPath: p1, skipReason: null },
+      { filename: 'log.txt', localPath: p2, skipReason: null },
+    ]);
+    rmSync(d, { recursive: true });
+    assert.equal(result.length, 2);
+    assert.ok(result[0].content.includes('Do the thing'));
+    assert.ok(result[1].content.includes('null pointer'));
+  });
+
+  it('skips non-text extensions', () => {
+    const result = readTextAttachments([
+      { filename: 'image.png', localPath: '/fake/path.png', skipReason: null },
+      { filename: 'doc.pdf', localPath: '/fake/doc.pdf', skipReason: null },
+    ]);
+    assert.equal(result.length, 0);
+  });
+
+  it('returns empty array for empty input', () => {
+    assert.deepEqual(readTextAttachments([]), []);
+    assert.deepEqual(readTextAttachments(undefined), []);
   });
 });
 

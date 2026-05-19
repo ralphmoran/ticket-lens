@@ -19,6 +19,7 @@ import { classifyError } from './lib/error-classifier.mjs';
 import { promptProfileSelect, promptProfileMismatch, promptSwitchProfile, promptMultipleMatches } from './lib/profile-picker.mjs';
 import { promptSelect } from './lib/select-prompt.mjs';
 import { printFetchHelp } from './lib/help.mjs';
+import { readTextAttachments } from './lib/handoff-assembler.mjs';
 import { handleUnknownFlags } from './lib/arg-validator.mjs';
 import { TICKET_KEY_PATTERN } from './lib/cli.mjs';
 import { downloadAttachments } from './lib/attachment-downloader.mjs';
@@ -105,10 +106,21 @@ function resolveAiProvider(args, credentials) {
 }
 
 /**
+ * Append text-readable attachment content to a brief for AI consumption only.
+ * The returned string is only sent to the AI — the displayed brief is unchanged.
+ */
+function augmentBriefForAi(brief, localAttachments) {
+  const textFiles = readTextAttachments(localAttachments);
+  if (textFiles.length === 0) return brief;
+  const sections = textFiles.map(({ filename, content }) => `=== Attachment: ${filename} ===\n${content}`);
+  return brief + `\n\n--- Attached Documents (${textFiles.length} text-readable) ---\n\n${sections.join('\n\n')}`;
+}
+
+/**
  * Apply --summarize to a brief string.
  * Returns the modified brief, or null if the caller should exit (license gate / consent refused).
  */
-async function applySummarize(brief, args, opts, configDir, conn, licensedFn, upgradeFn) {
+async function applySummarize(brief, args, opts, configDir, conn, licensedFn, upgradeFn, ticket) {
   if (!licensedFn('pro', configDir)) {
     upgradeFn('pro', '--summarize');
     process.exitCode = 1;
@@ -142,7 +154,8 @@ async function applySummarize(brief, args, opts, configDir, conn, licensedFn, up
     const credentials = opts.credentials ?? loadCredentials(configDir);
     const licenseKey = readLicense(configDir)?.key;
     const provider = opts.provider ?? resolveAiProvider(args, credentials);
-    const summary = await summarizerFn({ brief, mode, credentials, licenseKey, provider });
+    const aiInput = augmentBriefForAi(brief, ticket?.localAttachments);
+    const summary = await summarizerFn({ brief: aiInput, mode, credentials, licenseKey, provider });
     const divider = '─'.repeat(60);
     return brief + `\n\n${divider}\n─── AI Summary ${'─'.repeat(45)}\n${summary}\n${divider}\n`;
   } catch (err) {
@@ -955,7 +968,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       if (args.includes('--check')) brief = applyCheck(brief, opts);
 
       if (args.includes('--summarize')) {
-        brief = await applySummarize(brief, args, opts, configDir, conn, licensedFn, upgradeFn);
+        brief = await applySummarize(brief, args, opts, configDir, conn, licensedFn, upgradeFn, cached.ticket);
         if (brief === null) return;
       }
 
@@ -1141,7 +1154,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   if (args.includes('--check')) output = applyCheck(output, opts);
 
   if (args.includes('--summarize')) {
-    output = await applySummarize(output, args, opts, configDir, conn, licensedFn, upgradeFn);
+    output = await applySummarize(output, args, opts, configDir, conn, licensedFn, upgradeFn, ticket);
     if (output === null) return;
   }
 
