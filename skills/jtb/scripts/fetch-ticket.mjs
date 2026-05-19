@@ -145,6 +145,38 @@ async function applySummarize(brief, args, opts, configDir, conn, licensedFn, up
   }
 }
 
+/**
+ * Apply --handoff: generate a structured handoff brief from the ticket's comment thread.
+ * Returns the handoff brief string, or null if the caller should exit (license gate / error).
+ */
+async function applyHandoff(ticket, args, opts, configDir, licensedFn, upgradeFn) {
+  if (!licensedFn('pro', configDir)) {
+    upgradeFn('pro', '--handoff');
+    process.exitCode = 1;
+    return null;
+  }
+
+  const mode = args.includes('--cloud') ? 'cloud' : 'byok';
+
+  try {
+    const { buildHandoffInput, HANDOFF_PROMPT } = await import('./lib/handoff-assembler.mjs');
+    const summarizerFn = opts.summarizer ?? (async (sumOpts) => {
+      const { summarize } = await import('./lib/summarizer.mjs');
+      return summarize(sumOpts);
+    });
+    const credentials = opts.credentials ?? loadCredentials(configDir);
+    const licenseKey = readLicense(configDir)?.key;
+    const input = buildHandoffInput(ticket);
+    const body = await summarizerFn({ brief: input, mode, credentials, licenseKey, prompt: HANDOFF_PROMPT, maxTokens: 512 });
+    return `## Handoff Brief — ${ticket.key}\n\n${body}\n`;
+  } catch (err) {
+    const onErrorFn = opts.onError ?? ((msg) => process.stderr.write(msg + '\n'));
+    onErrorFn(`Could not generate handoff brief: ${err.message}`);
+    process.exitCode = 1;
+    return null;
+  }
+}
+
 function makeSpinner(s) {
   // setInterval won't fire while spawnSync blocks the event loop, so we draw
   // synchronously on update() and only use setInterval during async fetch phases.
@@ -783,7 +815,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check', '--summarize', '--cloud', '--compliance', '--budget='],
+    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check', '--summarize', '--cloud', '--compliance', '--budget=', '--handoff'],
     { hints: ['--stale=', '--status=', '--static'] } // triage-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
@@ -904,6 +936,13 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       let brief = (budgetArgCached && licensedFn('pro', configDir))
         ? plainBrief
         : (useStyled ? styleBrief(cached.ticket, codeRefs, { styled: true }) : plainBrief);
+
+      if (args.includes('--handoff')) {
+        const handoffResult = await applyHandoff(cached.ticket, args, opts, configDir, licensedFn, upgradeFn);
+        if (handoffResult === null) return;
+        printFn(handoffResult);
+        return;
+      }
 
       if (args.includes('--check')) brief = applyCheck(brief, opts);
 
@@ -1083,6 +1122,13 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   let output = (budgetArg && licensedFn('pro', configDir))
     ? plainOutput
     : (useStyled ? styleBrief(ticket, codeRefs, { styled: true }) : plainOutput);
+
+  if (args.includes('--handoff')) {
+    const handoffResult = await applyHandoff(ticket, args, opts, configDir, licensedFn, upgradeFn);
+    if (handoffResult === null) return;
+    printFn(handoffResult);
+    return;
+  }
 
   if (args.includes('--check')) output = applyCheck(output, opts);
 

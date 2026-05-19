@@ -61,7 +61,8 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--check')}            Append VCS diff + review instructions for Claude Code`,
     `    ${s.brand('--compliance')}       Check ticket requirements against local diff  ${s.dim('[Pro/Free 3/mo]')}`,
     `    ${s.brand('--summarize')}        Generate AI summary ${s.dim('(BYOK or --cloud) [Pro]')}`,
-    `    ${s.brand('--cloud')}            Route summary through TicketLens API ${s.dim('[Pro]')}`,
+    `    ${s.brand('--handoff')}          AI handoff brief from comment thread ${s.dim('(BYOK or --cloud) [Pro]')}`,
+    `    ${s.brand('--cloud')}            Route AI request through TicketLens API ${s.dim('[Pro]')}`,
     '',
     `  ${s.bold('TRIAGE OPTIONS')}`,
     '',
@@ -128,7 +129,8 @@ export function printFetchHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--check')}            Append VCS diff + review instructions for Claude Code`,
     `    ${s.brand('--compliance')}       Check ticket requirements against local diff  ${s.dim('[Pro/Free 3/mo]')}`,
     `    ${s.brand('--summarize')}        Generate AI summary ${s.dim('(BYOK or --cloud) [Pro]')}`,
-    `    ${s.brand('--cloud')}            Route summary through TicketLens API ${s.dim('[Pro]')}`,
+    `    ${s.brand('--handoff')}          AI handoff brief from comment thread ${s.dim('(BYOK or --cloud) [Pro]')}`,
+    `    ${s.brand('--cloud')}            Route AI request through TicketLens API ${s.dim('[Pro]')}`,
     `    ${s.brand('-h')}, ${s.brand('--help')}         Show this help`,
     '',
     `  ${s.bold('EXAMPLES')}`,
@@ -136,6 +138,8 @@ export function printFetchHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('$')} ticketlens PROJ-123`,
     `    ${s.dim('$')} ticketlens PROJ-123 --depth=0`,
     `    ${s.dim('$')} ticketlens PROJ-123 --profile=acme --depth=2`,
+    `    ${s.dim('$')} ticketlens PROJ-123 --handoff`,
+    `    ${s.dim('$')} ticketlens PROJ-123 --handoff --cloud`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

@@ -1047,3 +1047,112 @@ describe('standup dispatch', () => {
     assert.equal(capturedOpts?.format, 'pr', `Expected format=pr. Got: ${capturedOpts?.format}`);
   });
 });
+
+describe('--handoff flag', () => {
+  it('produces handoff brief header when licensed', async () => {
+    const output = [];
+    await run(['PROD-1234', '--handoff'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      isLicensed: () => true,
+      summarizer: async () => '### What was attempted\n- Tried fixing validateCart()\n\n### Current blockers\n- None identified\n\n### Open questions\n- None identified\n\n### Recommendation\nStart from validateCart().',
+      print: (chunk) => output.push(chunk),
+    });
+    const combined = output.join('');
+    assert.ok(combined.includes('## Handoff Brief — PROD-1234'), `Handoff header missing. Got: ${combined.slice(0, 200)}`);
+  });
+
+  it('includes AI body in handoff output', async () => {
+    const output = [];
+    await run(['PROD-1234', '--handoff'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      isLicensed: () => true,
+      summarizer: async () => '### What was attempted\n- Implemented the fix',
+      print: (chunk) => output.push(chunk),
+    });
+    assert.ok(output.join('').includes('Implemented the fix'));
+  });
+
+  it('does not include normal ticket brief sections when --handoff is set', async () => {
+    const output = [];
+    await run(['PROD-1234', '--handoff'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      isLicensed: () => true,
+      summarizer: async () => '### What was attempted\n- Work done',
+      print: (chunk) => output.push(chunk),
+    });
+    const combined = output.join('');
+    assert.ok(!combined.includes('## Description'), `Normal brief must not appear with --handoff. Got: ${combined.slice(0, 200)}`);
+  });
+
+  it('shows Pro upgrade prompt when not licensed', async () => {
+    const prompts = [];
+    await run(['PROD-1234', '--handoff'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      isLicensed: () => false,
+      showUpgradePrompt: (tier, flag) => prompts.push({ tier, flag }),
+    });
+    process.exitCode = undefined;
+    assert.equal(prompts.length, 1, 'Expected exactly one upgrade prompt');
+    assert.equal(prompts[0].tier, 'pro');
+    assert.ok(prompts[0].flag.includes('handoff'));
+  });
+
+  it('uses cloud mode when --handoff --cloud both present', async () => {
+    const calls = [];
+    await run(['PROD-1234', '--handoff', '--cloud'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      isLicensed: () => true,
+      summarizer: async ({ mode }) => { calls.push(mode); return 'cloud handoff brief'; },
+      print: () => {},
+    });
+    assert.ok(calls.includes('cloud'), `Expected cloud mode call. Got: ${JSON.stringify(calls)}`);
+  });
+
+  it('exits 1 when summarizer throws', async () => {
+    const errors = [];
+    await run(['PROD-1234', '--handoff'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      isLicensed: () => true,
+      summarizer: async () => { throw new Error('No API key found. Add ANTHROPIC_API_KEY'); },
+      onError: (msg) => errors.push(msg),
+      print: () => {},
+    });
+    assert.equal(process.exitCode, 1);
+    assert.ok(errors.some(e => e.includes('No API key')));
+    process.exitCode = undefined;
+  });
+
+  it('passes HANDOFF_PROMPT to summarizer', async () => {
+    let capturedPrompt = null;
+    await run(['PROD-1234', '--handoff'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      isLicensed: () => true,
+      summarizer: async (opts) => { capturedPrompt = opts.prompt ?? null; return 'ok'; },
+      print: () => {},
+    });
+    assert.ok(capturedPrompt !== null, 'Expected prompt to be passed to summarizer');
+    assert.ok(capturedPrompt.includes('What was attempted'), `Expected handoff prompt. Got: ${capturedPrompt?.slice(0, 80)}`);
+  });
+
+  it('does not trigger unknown-flag error for --handoff', async () => {
+    let stderrOut = '';
+    const orig = process.stderr.write;
+    process.stderr.write = (s) => { stderrOut += s; };
+    await run(['PROD-1234', '--handoff'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      isLicensed: () => true,
+      summarizer: async () => 'ok',
+      print: () => {},
+    });
+    process.stderr.write = orig;
+    assert.ok(!stderrOut.includes('Unknown flag'), `--handoff must not trigger unknown-flag error. Got: ${stderrOut}`);
+  });
+});

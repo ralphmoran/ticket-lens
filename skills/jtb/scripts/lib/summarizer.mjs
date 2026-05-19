@@ -1,7 +1,8 @@
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const CLOUD_URL = 'https://api.ticketlens.dev/v1/summarize';
-const PROMPT = 'Summarize this Jira ticket in 3 sentences. Focus on what matters most for implementation. Be concrete.\n\n';
+const DEFAULT_PROMPT = 'Summarize this Jira ticket in 3 sentences. Focus on what matters most for implementation. Be concrete.\n\n';
+const DEFAULT_MAX_TOKENS = 256;
 
 /**
  * Summarize a ticket brief using BYOK or cloud mode.
@@ -14,14 +15,16 @@ const PROMPT = 'Summarize this Jira ticket in 3 sentences. Focus on what matters
  * @param {number} [opts.timeoutMs]
  * @returns {Promise<string>} Summary text
  */
-export async function summarize({ brief, mode, credentials = null, licenseKey = null, fetcher = globalThis.fetch, timeoutMs = 30_000 }) {
+export async function summarize({ brief, mode, credentials = null, licenseKey = null, fetcher = globalThis.fetch, timeoutMs = 30_000, prompt, maxTokens }) {
+  const effectivePrompt = prompt ?? DEFAULT_PROMPT;
+  const effectiveMaxTokens = maxTokens ?? DEFAULT_MAX_TOKENS;
   if (mode === 'byok') {
-    return byok({ brief, credentials, fetcher, timeoutMs });
+    return byok({ brief, credentials, fetcher, timeoutMs, prompt: effectivePrompt, maxTokens: effectiveMaxTokens });
   }
   return cloud({ brief, licenseKey, fetcher, timeoutMs });
 }
 
-async function byok({ brief, credentials, fetcher, timeoutMs }) {
+async function byok({ brief, credentials, fetcher, timeoutMs, prompt, maxTokens }) {
   const anthropicKey = credentials?.anthropicApiKey;
   const openaiKey = credentials?.openaiApiKey;
 
@@ -30,13 +33,13 @@ async function byok({ brief, credentials, fetcher, timeoutMs }) {
   }
 
   if (anthropicKey) {
-    return callAnthropic({ brief, apiKey: anthropicKey, fetcher, timeoutMs });
+    return callAnthropic({ brief, apiKey: anthropicKey, fetcher, timeoutMs, prompt, maxTokens });
   }
 
-  return callOpenAi({ brief, apiKey: openaiKey, fetcher, timeoutMs });
+  return callOpenAi({ brief, apiKey: openaiKey, fetcher, timeoutMs, prompt, maxTokens });
 }
 
-async function callAnthropic({ brief, apiKey, fetcher, timeoutMs }) {
+async function callAnthropic({ brief, apiKey, fetcher, timeoutMs, prompt, maxTokens }) {
   const res = await fetcher(ANTHROPIC_URL, {
     method: 'POST',
     signal: AbortSignal.timeout(timeoutMs),
@@ -47,8 +50,8 @@ async function callAnthropic({ brief, apiKey, fetcher, timeoutMs }) {
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 256,
-      messages: [{ role: 'user', content: PROMPT + brief }],
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content: prompt + brief }],
     }),
   });
 
@@ -62,7 +65,7 @@ async function callAnthropic({ brief, apiKey, fetcher, timeoutMs }) {
   return data.content[0].text;
 }
 
-async function callOpenAi({ brief, apiKey, fetcher, timeoutMs }) {
+async function callOpenAi({ brief, apiKey, fetcher, timeoutMs, prompt, maxTokens }) {
   const res = await fetcher(OPENAI_URL, {
     method: 'POST',
     signal: AbortSignal.timeout(timeoutMs),
@@ -72,8 +75,8 @@ async function callOpenAi({ brief, apiKey, fetcher, timeoutMs }) {
     },
     body: JSON.stringify({
       model: 'gpt-4o-mini',
-      max_tokens: 256,
-      messages: [{ role: 'user', content: PROMPT + brief }],
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content: prompt + brief }],
     }),
   });
 

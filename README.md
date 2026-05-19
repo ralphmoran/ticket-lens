@@ -99,6 +99,8 @@ ticketlens CNV1-2 --check          # Append local VCS diff + Claude Code review 
 ticketlens CNV1-2 --compliance     # Check ticket requirements against local diff [Pro/Free 3/mo]
 ticketlens CNV1-2 --summarize      # AI summary via your own API key (BYOK) [Pro]
 ticketlens CNV1-2 --summarize --cloud  # AI summary routed through TicketLens API [Pro]
+ticketlens CNV1-2 --handoff        # AI handoff brief from comment thread (BYOK) [Pro]
+ticketlens CNV1-2 --handoff --cloud    # AI handoff brief via TicketLens API [Pro]
 ```
 
 | `--depth` | Scope |
@@ -347,6 +349,8 @@ ticketlens CNV1-2 --check                    # Append local VCS diff + Claude Co
 ticketlens CNV1-2 --compliance               # Check ticket requirements against local diff [Pro/Free 3/mo]
 ticketlens CNV1-2 --summarize                # AI summary via your own API key (BYOK) [Pro]
 ticketlens CNV1-2 --summarize --cloud        # AI summary via TicketLens API [Pro]
+ticketlens CNV1-2 --handoff                  # AI handoff brief from comment thread (BYOK) [Pro]
+ticketlens CNV1-2 --handoff --cloud          # AI handoff brief via TicketLens API [Pro]
 ticketlens CNV1-2 --depth=2 --profile=acme --plain   # Combine flags freely
 
 # Pipe plain output to clipboard, LLM, or file
@@ -449,12 +453,23 @@ Start free, upgrade when you need it — `ticketlens activate <key>`
 ```bash
 ticketlens CNV1-2 --summarize            # AI summary via your own API key (BYOK)
 ticketlens CNV1-2 --summarize --cloud    # AI summary via TicketLens API (no local key needed)
+ticketlens CNV1-2 --handoff              # AI handoff brief from the ticket's comment thread (BYOK)
+ticketlens CNV1-2 --handoff --cloud      # AI handoff brief via TicketLens API
 ticketlens CNV1-2 --compliance           # Check ticket requirements against local diff [Free 3/mo]
 ticketlens triage --stale=3              # Custom stale threshold (default is 5)
 ticketlens triage --digest               # POST scored triage results to digest endpoint
 ticketlens schedule                      # Set up a scheduled daily digest
 ticketlens activate YOUR-LICENSE-KEY     # Activate Pro license
 ```
+
+**`--handoff`** synthesizes the comment thread into a structured one-pager for the developer picking up the ticket. No context-reading required — the AI reads the full comment history and returns:
+
+- **What was attempted** — concrete work already done
+- **Current blockers** — unresolved issues
+- **Open questions** — decisions not yet made
+- **Recommendation** — where to start
+
+Add `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` to `~/.ticketlens/credentials.json` for BYOK, or use `--cloud` to route through the TicketLens API.
 
 <div align="center">
   <img src="docs/demos/pro-triage.gif" alt="ticketlens triage --stale=3 demo" width="700" />
