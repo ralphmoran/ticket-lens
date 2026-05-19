@@ -39,6 +39,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} get ${s.dim('<TICKET-KEY>')}         Same as above ${s.dim('(explicit alias)')}`,
     `    ${s.brand('ticketlens')} triage ${s.dim('[options]')}         Scan your assigned tickets`,
     `    ${s.brand('ticketlens')} review ${s.dim('[--branch=BRANCH]')}   Code-review context brief from current branch`,
+    `    ${s.brand('ticketlens')} standup ${s.dim('[--since=N]')}        Standup summary from git log  ${s.dim('(last 24h by default)')}`,
     `    ${s.brand('ticketlens')} compliance ${s.dim('<TICKET-KEY>')}    Check requirements coverage  ${s.dim('[Pro/Free 3/mo]')}`,
     '',
     `    ${s.brand('ticketlens')} delete ${s.dim('<PROFILE-NAME>')}     Remove a profile`,
@@ -571,6 +572,38 @@ export function printReviewHelp({ stream = process.stdout } = {}) {
     '',
     `    Branch, Changed files, Ticket context`,
     `    Requirements coverage ${s.dim('[Pro]')}, Review focus ${s.dim('[Pro]')}`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printStandupHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('standup')} ${s.dim('[--since=N] [--format=standup|pr] [--profile=NAME] [--plain]')}`,
+    '',
+    `  Generate a standup summary or PR body from your recent git commits.`,
+    `  Reads git log for the last 24 hours, groups commits by ticket key,`,
+    `  and optionally enriches output with ticket summaries via a Jira profile.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--since')}=${s.dim('N')}          Look back N hours  ${s.dim('(default: 24)')}`,
+    `                       Also accepts git date strings: ${s.dim('--since=yesterday')}, ${s.dim('--since=2024-01-15')}`,
+    `    ${s.brand('--format')}=${s.dim('standup')}   Bullet list grouped by ticket  ${s.dim('(default)')}`,
+    `    ${s.brand('--format')}=${s.dim('pr')}        PR body: "What changed" + commit list`,
+    `    ${s.brand('--profile')}=${s.dim('NAME')}  Use a specific tracker profile to fetch ticket summaries`,
+    `    ${s.brand('--plain')}           Plain markdown output ${s.dim('(no ANSI colour)')}`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}      Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens standup`,
+    `    ${s.dim('$')} ticketlens standup --since=48`,
+    `    ${s.dim('$')} ticketlens standup --format=pr`,
+    `    ${s.dim('$')} ticketlens standup --profile=myteam`,
+    `    ${s.dim('$')} ticketlens standup --plain | pbcopy  ${s.dim('# copy standup to clipboard')}`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

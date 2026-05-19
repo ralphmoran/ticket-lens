@@ -906,3 +906,144 @@ describe('review dispatch', () => {
     assert.deepEqual(capturedTickets, [], 'tickets should be empty when no keys found');
   });
 });
+
+// ─── standup dispatch ─────────────────────────────────────────────────────────
+
+describe('standup dispatch', () => {
+  const mockStandupExec = (cmd, args) => {
+    if (args[0] === 'log') return { status: 0, stdout: 'abc1234 feat: PROJ-123 add login\ndef5678 chore: bump deps\n' };
+    return { status: 1, stdout: '' };
+  };
+
+  it('calls assembleStandupFn with grouped commits and empty tickets', async () => {
+    let capturedGroups = null;
+    let capturedTickets = null;
+
+    const assembleStandupFn = (groups, tickets, opts) => {
+      capturedGroups = groups;
+      capturedTickets = tickets;
+      return '## Standup\n';
+    };
+
+    await run(['standup'], {
+      env: {},
+      execFn: mockStandupExec,
+      assembleStandupFn,
+      print: () => {},
+    }, async () => ({ ok: false }), NO_CONFIG);
+
+    assert.ok(capturedGroups instanceof Map, 'groups should be a Map');
+    assert.ok(capturedGroups.has('PROJ-123'), 'should group PROJ-123 commits');
+    assert.deepEqual(capturedTickets, [], 'tickets empty when no auth configured');
+  });
+
+  it('prints assembled markdown to stdout via opts.print', async () => {
+    let printed = '';
+    const assembleStandupFn = () => '## Standup — Mon\n\nsome content';
+
+    await run(['standup'], {
+      env: {},
+      execFn: mockStandupExec,
+      assembleStandupFn,
+      print: (chunk) => { printed += chunk; },
+    }, async () => ({ ok: false }), NO_CONFIG);
+
+    assert.ok(printed.includes('## Standup'), `output should include standup markdown`);
+  });
+
+  it('rejects unknown flags with error and exitCode 1', async () => {
+    let stderrOut = '';
+    const orig = process.stderr.write;
+    process.stderr.write = (s) => { stderrOut += s; };
+
+    await run(['standup', '--badflags=foo'], {
+      env: {},
+      execFn: mockStandupExec,
+      print: () => {},
+    }, async () => ({ ok: false }), NO_CONFIG);
+
+    process.stderr.write = orig;
+    assert.equal(process.exitCode, 1);
+    assert.ok(stderrOut.includes('Unknown flag'), `Should report unknown flag. Got: "${stderrOut}"`);
+    process.exitCode = 0;
+  });
+
+  it('suggests --since=N for --since-N typo', async () => {
+    let stderrOut = '';
+    const orig = process.stderr.write;
+    process.stderr.write = (s) => { stderrOut += s; };
+
+    await run(['standup', '--since-48'], {
+      env: {},
+      execFn: mockStandupExec,
+      print: () => {},
+    }, async () => ({ ok: false }), NO_CONFIG);
+
+    process.stderr.write = orig;
+    assert.equal(process.exitCode, 1);
+    assert.ok(stderrOut.includes('--since=48'), `Should suggest --since=48. Got: "${stderrOut}"`);
+    process.exitCode = 0;
+  });
+
+  it('suggests --profile=NAME for --profile-NAME typo', async () => {
+    let stderrOut = '';
+    const orig = process.stderr.write;
+    process.stderr.write = (s) => { stderrOut += s; };
+
+    await run(['standup', '--profile-myteam'], {
+      env: {},
+      execFn: mockStandupExec,
+      print: () => {},
+    }, async () => ({ ok: false }), NO_CONFIG);
+
+    process.stderr.write = orig;
+    assert.equal(process.exitCode, 1);
+    assert.ok(stderrOut.includes('--profile=myteam'), `Should suggest --profile=myteam. Got: "${stderrOut}"`);
+    process.exitCode = 0;
+  });
+
+  it('shows error for invalid --format value', async () => {
+    let stderrOut = '';
+    const orig = process.stderr.write;
+    process.stderr.write = (s) => { stderrOut += s; };
+
+    await run(['standup', '--format=invalid'], {
+      env: {},
+      execFn: mockStandupExec,
+      print: () => {},
+    }, async () => ({ ok: false }), NO_CONFIG);
+
+    process.stderr.write = orig;
+    assert.equal(process.exitCode, 1);
+    assert.ok(stderrOut.includes('Invalid --format'), `Should report invalid format. Got: "${stderrOut}"`);
+    process.exitCode = 0;
+  });
+
+  it('passes --since value to assembleStandupFn opts.since', async () => {
+    let capturedOpts = null;
+    const assembleStandupFn = (groups, tickets, o) => { capturedOpts = o; return '## Standup\n'; };
+
+    await run(['standup', '--since=48'], {
+      env: {},
+      execFn: mockStandupExec,
+      assembleStandupFn,
+      print: () => {},
+    }, async () => ({ ok: false }), NO_CONFIG);
+
+    assert.equal(capturedOpts?.since, '48', `Expected since=48. Got: ${capturedOpts?.since}`);
+  });
+
+  it('passes --format=pr to assembleStandupFn opts.format', async () => {
+    let capturedOpts = null;
+    const assembleStandupFn = (groups, tickets, o) => { capturedOpts = o; return '## What changed\n'; };
+
+    await run(['standup', '--format=pr'], {
+      env: {},
+      execFn: mockStandupExec,
+      assembleStandupFn,
+      print: () => {},
+    }, async () => ({ ok: false }), NO_CONFIG);
+
+    assert.equal(capturedOpts?.format, 'pr', `Expected format=pr. Got: ${capturedOpts?.format}`);
+  });
+});

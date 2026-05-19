@@ -86,6 +86,10 @@ export function parseCommand(args) {
     return { command: 'review', args: args.slice(1) };
   }
 
+  if (first === 'standup') {
+    return { command: 'standup', args: args.slice(1) };
+  }
+
   if (first === 'login') {
     return { command: 'login', args: args.slice(1) };
   }

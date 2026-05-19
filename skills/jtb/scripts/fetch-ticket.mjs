@@ -630,6 +630,135 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     return;
   }
 
+  if (args[0] === 'standup') {
+    const { groupCommitsByTicket, assembleStandup, styleStandupMd, VALID_STANDUP_FLAG } =
+      await import('./lib/standup-assembler.mjs');
+
+    const resolvedConfigDir = configDir ?? (await import('./lib/config.mjs')).DEFAULT_CONFIG_DIR;
+    const execFn = opts.execFn ?? spawnSync;
+    const cwd = process.cwd();
+    const sErr = createStyler({ isTTY: process.stderr.isTTY });
+
+    const standupFlags = args.slice(1);
+
+    // Validate flags
+    for (const flag of standupFlags) {
+      if (!flag.startsWith('-')) continue;
+      if (VALID_STANDUP_FLAG.test(flag)) continue;
+
+      const sinceDashM = flag.match(/^--since-(.+)$/);
+      if (sinceDashM) {
+        process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--since=${sinceDashM[1]}`)}?\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const formatDashM = flag.match(/^--format-(.+)$/);
+      if (formatDashM) {
+        process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--format=${formatDashM[1]}`)}?\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const profileDashM = flag.match(/^--profile-(.+)$/);
+      if (profileDashM) {
+        process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--profile=${profileDashM[1]}`)}?\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const formatValueM = flag.match(/^--format=(.+)$/);
+      if (formatValueM) {
+        process.stderr.write(`${sErr.red('✖')} Invalid --format value: "${formatValueM[1]}". Expected: standup or pr\n`);
+        process.exitCode = 1;
+        return;
+      }
+      process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Usage: ${sErr.cyan('ticketlens standup [--since=N] [--format=standup|pr] [--profile=NAME]')}\n`);
+      process.exitCode = 1;
+      return;
+    }
+
+    // --format value
+    const formatArgS = standupFlags.find(a => a.startsWith('--format='));
+    const format = formatArgS ? formatArgS.split('=')[1] : 'standup';
+
+    // --since: integer → "N hours ago", otherwise pass verbatim to git --since
+    const sinceArgS = standupFlags.find(a => a.startsWith('--since='));
+    const sinceVal = sinceArgS ? sinceArgS.split('=').slice(1).join('=') : '24';
+    const sinceDateStr = /^\d+$/.test(sinceVal) ? `${sinceVal} hours ago` : sinceVal;
+
+    // --profile
+    const profileArgS = standupFlags.find(a => a.startsWith('--profile='));
+    const profileNameS = profileArgS ? profileArgS.split('=')[1] : undefined;
+
+    if (profileNameS) {
+      const profiles = loadProfiles(resolvedConfigDir);
+      if (!profiles?.profiles?.[profileNameS]) {
+        process.stderr.write(`${sErr.red('✖')} Profile "${profileNameS}" not found.\n`);
+        const names = Object.keys(profiles?.profiles ?? {});
+        if (names.length > 0) process.stderr.write(`  ${sErr.dim('Available:')} ${names.join(', ')}\n`);
+        else process.stderr.write(`  Run ${sErr.cyan('ticketlens init')} to configure a profile.\n`);
+        process.exitCode = 1;
+        return;
+      }
+    }
+
+    const spinner = makeSpinner(sErr);
+    const stderrNotes = [];
+
+    spinner.update('Scanning git log…');
+
+    const logResult = execFn('git', ['log', '--oneline', `--since=${sinceDateStr}`], {
+      encoding: 'utf8', cwd, timeout: 10_000,
+    });
+    const logLines = logResult.status === 0
+      ? (logResult.stdout ?? '').split('\n').filter(Boolean)
+      : [];
+
+    if (logResult.status !== 0) {
+      stderrNotes.push(`  ${sErr.yellow('⚠')} git log failed — ensure you are in a git repository.`);
+    }
+
+    const groupCommitsFn = opts.groupCommitsByTicketFn ?? groupCommitsByTicket;
+    const groups = groupCommitsFn(logLines);
+    const ticketKeys = [...groups.keys()].filter(k => k !== '__no_key__');
+
+    // Optionally fetch ticket summaries
+    const tickets = [];
+    if (ticketKeys.length > 0) {
+      spinner.update(`Fetching ticket context (${ticketKeys.length} key${ticketKeys.length > 1 ? 's' : ''})…`);
+      spinner.startAnim();
+      const connS = resolveConnection(ticketKeys[0], {
+        env,
+        configDir: resolvedConfigDir,
+        profileName: profileNameS,
+        cwd,
+        onWarning: () => {},
+        onProfileNotFound: () => {},
+      });
+      const hasAuthS = connS.pat || (connS.email && connS.apiToken);
+      if (connS.baseUrl && hasAuthS) {
+        const adapterS = resolveAdapter(connS, { fetcher });
+        for (const key of ticketKeys) {
+          try {
+            tickets.push(await adapterS.fetchTicket(key, { depth: 0 }));
+          } catch (err) {
+            stderrNotes.push(`  ${sErr.yellow('⚠')} ${key}: ${err.message ?? 'fetch failed'}`);
+          }
+        }
+      }
+    }
+
+    spinner.done();
+    for (const note of stderrNotes) process.stderr.write(note + '\n');
+    if (stderrNotes.length > 0) process.stderr.write('\n');
+
+    const isPlain = standupFlags.includes('--plain');
+    const assembleStandupFn = opts.assembleStandupFn ?? assembleStandup;
+    const md = assembleStandupFn(groups, tickets, { since: sinceVal, format });
+
+    const sOut = createStyler({ isTTY: !isPlain && process.stdout.isTTY });
+    printFn((sOut.enabled ? styleStandupMd(md, sOut) : md) + '\n');
+    return;
+  }
+
   const ticketKey = args.find(a => !a.startsWith('--'));
   if (!ticketKey) {
     printFetchHelp({ stream: process.stderr });

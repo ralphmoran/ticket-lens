@@ -186,6 +186,36 @@ Flag validation provides actionable hints:
 
 ---
 
+### Standup
+
+```bash
+ticketlens standup                            # Standup summary for the last 24 hours
+ticketlens standup --since=48                 # Last 48 hours
+ticketlens standup --since=yesterday          # Git date string
+ticketlens standup --format=pr               # PR body format: "What changed" + commit list
+ticketlens standup --profile=myteam          # Enrich with ticket summaries from Jira
+ticketlens standup --plain                   # Plain markdown (no ANSI colour)
+ticketlens standup --plain | pbcopy          # Copy standup to clipboard
+ticketlens standup --help                    # Standup subcommand help
+```
+
+Scans `git log` for the configured window, extracts ticket keys from commit messages, and groups commits by ticket. Optionally fetches ticket summaries from your Jira profile to add context. Outputs a dated standup brief or a PR body depending on `--format`.
+
+```
+## Standup — Mon, May 18, 2026
+
+### Commits by ticket
+
+**PROJ-123** — Fix payment validation (2 commits)
+  abc1234 feat: PROJ-123 add payment validation check
+  def5678 test: PROJ-123 payment validation tests
+
+[No ticket key] (1 commit)
+  jkl3456 chore: bump deps
+```
+
+---
+
 ### Cache
 
 ```bash
@@ -338,6 +368,15 @@ ticketlens review --profile=acme             # Use a specific profile for ticket
 ticketlens review --branch=main | pbcopy     # Copy brief to clipboard
 ticketlens review --branch=main --profile=myteam  # Branch + profile combined
 ticketlens review --help                     # Review subcommand help
+
+# ── Standup ───────────────────────────────────────────────────────────────────
+ticketlens standup                            # Standup summary for last 24 hours
+ticketlens standup --since=48                 # Last 48 hours
+ticketlens standup --since=yesterday          # Git date string
+ticketlens standup --format=pr               # PR body: "What changed" + commit list
+ticketlens standup --profile=myteam          # Enrich with Jira ticket summaries
+ticketlens standup --plain | pbcopy          # Copy to clipboard
+ticketlens standup --help                    # Standup subcommand help
 
 # ── Cache management ──────────────────────────────────────────────────────────
 ticketlens cache                              # Overview + subcommand hints

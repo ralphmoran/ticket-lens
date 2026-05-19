@@ -149,4 +149,22 @@ describe('parseCommand', () => {
     assert.equal(result.command, 'review');
     assert.deepEqual(result.args, ['-h']);
   });
+
+  it('routes "standup" to standup command', () => {
+    const result = parseCommand(['standup']);
+    assert.equal(result.command, 'standup');
+    assert.deepEqual(result.args, []);
+  });
+
+  it('routes "standup -h" to standup command (not main help)', () => {
+    const result = parseCommand(['standup', '-h']);
+    assert.equal(result.command, 'standup');
+    assert.deepEqual(result.args, ['-h']);
+  });
+
+  it('routes "standup --since=48" with flags preserved', () => {
+    const result = parseCommand(['standup', '--since=48', '--format=pr']);
+    assert.equal(result.command, 'standup');
+    assert.deepEqual(result.args, ['--since=48', '--format=pr']);
+  });
 });

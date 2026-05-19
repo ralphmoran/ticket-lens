@@ -23,7 +23,7 @@ import {
   printActivateHelp, printLicenseHelp, printDeleteHelp,
   printProfilesHelp, printScheduleHelp,
   printInitHelp, printSwitchHelp, printConfigHelp,
-  printReviewHelp,
+  printReviewHelp, printStandupHelp,
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
 import { readCliToken, saveCliToken, deleteCliToken } from '../skills/jtb/scripts/lib/cli-auth.mjs';
@@ -266,6 +266,14 @@ switch (command) {
   case 'review':
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printReviewHelp(); break; }
     runFetch(['review', ...cmdArgs]).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+
+  case 'standup':
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printStandupHelp(); break; }
+    runFetch(['standup', ...cmdArgs]).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
     });
