@@ -74,7 +74,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=', '--assignee=', '--sprint=', '--export=', '--digest', '--push'],
+    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=', '--assignee=', '--sprint=', '--export=', '--digest', '--push', '--share'],
     { hints: ['--depth=', '--no-attachments', '--no-cache'] } // fetch-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
@@ -92,6 +92,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const exportArg = args.find(a => a.startsWith('--export='))?.split('=')[1] ?? null;
   const digestFlag = args.includes('--digest');
   const pushFlag = args.includes('--push');
+  const shareFlag = args.includes('--share');
 
   if (exportArg && exportArg !== 'csv' && exportArg !== 'json') {
     process.stderr.write(`Error: --export must be csv or json, got: ${exportArg}\n`);
@@ -356,6 +357,22 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const licenseKey = readLicense(configDir)?.key ?? null;
     const printFn = opts.print ?? ((s) => process.stdout.write(s));
     await pushFn({
+      sorted,
+      rawTicketMap,
+      profile: profileName ?? 'default',
+      baseUrl: conn.baseUrl,
+      licenseKey,
+      fetcher,
+      print: printFn,
+    });
+  }
+
+  if (shareFlag) {
+    const { shareTriageSnapshot } = await import('./lib/triage-share.mjs');
+    const shareFn = opts.shareFn ?? shareTriageSnapshot;
+    const licenseKey = readLicense(configDir)?.key ?? null;
+    const printFn = opts.print ?? ((s) => process.stdout.write(s));
+    await shareFn({
       sorted,
       rawTicketMap,
       profile: profileName ?? 'default',
