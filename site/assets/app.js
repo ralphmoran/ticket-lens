@@ -1,4 +1,19 @@
     /* ============================================================
+       BILLING TOGGLE
+    ============================================================ */
+    var pricingSection = document.querySelector('.pricing-section');
+    var billingBtns = document.querySelectorAll('.billing-btn');
+    billingBtns.forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var billing = this.getAttribute('data-billing');
+        if (pricingSection) pricingSection.setAttribute('data-billing', billing);
+        billingBtns.forEach(function(b) {
+          b.classList.toggle('is-active', b.getAttribute('data-billing') === billing);
+        });
+      });
+    });
+
+    /* ============================================================
        THEME TOGGLE
     ============================================================ */
     document.getElementById('theme-toggle').addEventListener('click', function() {

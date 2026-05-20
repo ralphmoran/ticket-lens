@@ -136,6 +136,7 @@ ticketlens triage --sprint="Sprint 12"         # Filter by sprint [Team]
 ticketlens triage --export=csv                 # Export results to CSV [Team]
 ticketlens triage --export=json                # Export results to JSON [Team]
 ticketlens triage --push                       # Push snapshot to Console queue [Team]
+ticketlens triage --share                      # Generate 24h share URL (no login for recipient) [Team]
 ticketlens triage --digest                     # POST scored results to digest endpoint [Pro]
 ticketlens triage --plain                      # Plain markdown — pipe to file or LLM
 ticketlens triage --static                     # Static table, no interactive mode
@@ -375,6 +376,7 @@ ticketlens triage --assignee="Jane Dev" --sprint="Sprint 12"  # Combined [Team]
 ticketlens triage --export=csv               # Export to CSV [Team]
 ticketlens triage --export=json              # Export to JSON [Team]
 ticketlens triage --push                     # Push snapshot to Console queue [Team]
+ticketlens triage --share                    # Generate 24h share URL (no login for recipient) [Team]
 ticketlens triage --digest                   # POST results to digest endpoint [Pro]
 ticketlens triage --profile=acme --stale=3 --static          # Combine flags
 
@@ -447,7 +449,7 @@ ticketlens cache clear --help                 # Cache clear help
 
 Start free, upgrade when you need it — `ticketlens activate <key>`
 
-### Pro — $8/mo
+### Pro — $9/mo
 
 <div align="center">
   <img src="docs/demos/pro-triage.gif" alt="ticketlens --summarize AI summary demo" width="700" />
@@ -515,7 +517,7 @@ ticketlens CNV1-2 --handoff --provider=openai
 
 Pro also unlocks configurable brief cache TTL per profile — set `cacheTtl` to `4h`, `1d`, `7d`, `30d`, or `0` (disable) via `ticketlens config`. Free tier is fixed at 4h.
 
-### Team — $15/seat/mo
+### Team — $19/seat/mo
 
 <div align="center">
   <img src="docs/demos/teams-digest.gif" alt="ticketlens triage --plain digest pipeline demo" width="700" />
@@ -527,9 +529,12 @@ ticketlens triage --sprint="Sprint 12"         # Filter by sprint name
 ticketlens triage --export=csv                 # Export triage to CSV for standups and reports
 ticketlens triage --export=json                # Machine-readable export for dashboards
 ticketlens triage --push                       # Push snapshot to the Console queue
+ticketlens triage --share                      # Generate a 24h share URL — paste into Slack, no login needed for recipients
 ```
 
 `--push` syncs the scored snapshot to the TicketLens Console after each triage run. The queue page at `/console/queue` shows the latest snapshot for every team profile — no manual refresh needed.
+
+`--share` generates a signed URL valid for 24 hours. Recipients open it in any browser — no account, no install. The asymmetry is the product: you run one command, everyone sees the same snapshot.
 
 Automate a morning digest with cron — no open terminal required:
 

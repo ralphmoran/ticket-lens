@@ -70,7 +70,7 @@ Static landing page + LemonSqueezy checkout overlay + first B2B pitch. No backen
 
 Premium features that run 100% locally. No backend needed. License key via LemonSqueezy (Merchant of Record, $0 infra cost).
 
-### Iteration 4 — Premium CLI Features (Pro tier, $8/mo)
+### Iteration 4 — Premium CLI Features (Pro tier, $9/mo)
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
@@ -80,7 +80,7 @@ Premium features that run 100% locally. No backend needed. License key via Lemon
 | 11 | Feature | **Scheduled triage (cron)** | Auto-run triage on a schedule, save results to file. Morning triage without remembering to run the command. | Small |
 | 12 | Feature | **Ticket history tracking** | Track ticket state over time locally. "This ticket has bounced between CR and Dev 3 times." Stored in `~/.ticketlens/history/`. | Medium |
 
-### Iteration 5 — Premium CLI Features (Team tier, $15/seat/mo)
+### Iteration 5 — Premium CLI Features (Team tier, $19/seat/mo)
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
@@ -108,7 +108,7 @@ The killer premium feature. Primary conversion lever from Free to Pro.
 | 23 | ~~Feature~~ | ~~**`/jtb compliance TICKET` CLI**~~ | Done. Assembles the compliance report: requirements list, coverage percentage, missing items. | ~~Medium~~ |
 | 24 | ~~Feature~~ | ~~**Local usage tracking**~~ | Done. Counts compliance checks locally to enforce the free-tier cap (3/month). Stored in `~/.ticketlens/usage.json`. | ~~Small~~ |
 
-**Pricing**: Free tier gets 3 compliance checks/month. Pro ($8/mo) gets unlimited. This is the primary conversion lever — devs hit the cap and realize it's worth $8.
+**Pricing**: Free tier gets 3 compliance checks/month. Pro ($9/mo) gets unlimited. This is the primary conversion lever — devs hit the cap and realize it's worth $9.
 
 ---
 
@@ -288,7 +288,7 @@ Phase D:   Multi-tracker + Enterprise
 
 ## Pricing Tiers
 
-| | Free | Pro ($8/mo) | Team ($15/seat/mo) | Enterprise (custom) |
+| | Free | Pro ($9/mo) | Team ($19/seat/mo) | Enterprise (contact us) |
 |--|------|------------|-------------------|-----------|
 | CLI fetch + triage | Yes | Yes | Yes | Yes |
 | Compliance check | 3/month | Unlimited | Unlimited | Unlimited |
@@ -322,7 +322,7 @@ Phase D:   Multi-tracker + Enterprise
 | SSO + audit logs | No | No | No | Phase D |
 | Self-hosted | No | No | No | Phase D |
 
-**Phase B revenue (no infra):** Pro at $8/mo + Team at $15/seat/mo, gated by license key via LemonSqueezy (Merchant of Record). Static landing page on Cloudflare Pages ($0). LemonSqueezy handles checkout, tax, invoicing, and customer portal.
+**Phase B revenue (no infra):** Pro at $9/mo ($84/yr) + Team at $19/seat/mo ($180/seat/yr), gated by license key via LemonSqueezy (Merchant of Record). Annual billing default (20% off). Static landing page on Cloudflare Pages ($0). LemonSqueezy handles checkout, tax, invoicing, and customer portal.
 
 ---
 

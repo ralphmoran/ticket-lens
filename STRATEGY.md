@@ -92,8 +92,8 @@ Current state: 134 tests, clean architecture, multi-account support, Jira Cloud 
 
 **Tier philosophy:**
 - **Free** — Everything local. Me, now, one ticket. No limits on depth, fetch, or triage.
-- **Pro ($8/mo)** — Individual mistake prevention. The free tier tells you the truth when you ask it. Pro tells you when you forgot to ask. Features: spec drift detection, git hook compliance gate, ticket-to-PR assembler, token budget optimizer, compliance ledger, stale delta report, AI summary (BYOK), configurable cache TTL, unlimited compliance checks, scheduled digest.
-- **Team ($15/seat/mo)** — Shared intelligence. Work that crosses people, time, and systems. Adds: parallel collision detection, standup/PR generator, handoff brief, shareable triage snapshot, team compliance analytics, --assignee/--sprint flags, CSV/JSON export, seat management, console team panel.
+- **Pro ($9/mo)** — Individual mistake prevention. The free tier tells you the truth when you ask it. Pro tells you when you forgot to ask. Features: spec drift detection, git hook compliance gate, ticket-to-PR assembler, token budget optimizer, compliance ledger, stale delta report, AI summary (BYOK), configurable cache TTL, unlimited compliance checks, scheduled digest.
+- **Team ($19/seat/mo)** — Shared intelligence. Work that crosses people, time, and systems. Adds: parallel collision detection, standup/PR generator, handoff brief, shareable triage snapshot, team compliance analytics, --assignee/--sprint flags, CSV/JSON export, seat management, console team panel.
 
 Key principle: if a feature touches another human, persists state beyond a session, or integrates with a second system → Team tier. If it prevents individual mistakes without needing infrastructure → Pro tier.
 
@@ -122,7 +122,7 @@ If yes: proceed to Phase C. If no: iterate on Phase B, double down on marketing,
 
 #### Pricing Tiers
 
-| | Free | Pro ($8/mo) | Team ($15/seat/mo) | Enterprise |
+| | Free | Pro ($9/mo) | Team ($19/seat/mo) | Enterprise |
 |--|------|------------|-------------------|-----------|
 | CLI fetch + triage | Yes | Yes | Yes | Yes |
 | `--depth=2` (full graph) | Yes | Yes | Yes | Yes |
@@ -194,7 +194,7 @@ Who pays for this:
 - **Team leads**: "Is this ticket actually done or just moved to Done?"
 - **QA**: "What should I test? What did the dev say they changed?"
 
-Free tier gets 3 compliance checks/month (conversion lever — devs hit the cap and realize it's worth $8).
+Free tier gets 3 compliance checks/month (conversion lever — devs hit the cap and realize it's worth $9).
 
 #### Team Dashboard — Three Views for Three Roles
 
@@ -405,7 +405,7 @@ For developers and teams using Jira with AI coding tools, TicketLens is the loca
 |--------|--------|-----------|
 | CAC (organic) | < $5 | Content + community driven |
 | CAC (paid, later) | < $50 | Dev tool ads are expensive |
-| LTV (team plan) | $540 | $15/seat x 3 seats avg x 12 months |
+| LTV (team plan) | $684 | $19/seat x 3 seats avg x 12 months |
 | LTV:CAC | > 10:1 | Organic-first model |
 | Monthly churn | < 5% | Sticky once integrated into workflow |
 | Free-to-paid conversion | 3-5% | Standard open-core conversion |
@@ -489,7 +489,7 @@ Most dev tools (Stepsize, Sleuth, LinearB) require full Jira OAuth and store eve
 
 ## Revenue Projection (Conservative)
 
-| Month | WAU | Pro ($8/mo) | Teams | Avg Seats | Team MRR | Pro MRR | Total MRR |
+| Month | WAU | Pro ($9/mo) | Teams | Avg Seats | Team MRR | Pro MRR | Total MRR |
 |-------|-----|------------|-------|-----------|----------|---------|-----------|
 | 3 | 100 | 0 | 0 | - | $0 | $0 | $0 |
 | 6 | 500 | 30 | 10 | 3 | $450 | $240 | $690 |
