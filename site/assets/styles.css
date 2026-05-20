@@ -600,17 +600,29 @@
     }
     .pricing-note strong { color: var(--cta); font-weight: 600; }
     /* Billing toggle */
-    .billing-toggle {
-      display: flex; align-items: center; justify-content: center; gap: 4px;
-      margin: 0 auto 32px;
+    .billing-toggle { display: flex; justify-content: center; margin: 0 auto 32px; }
+    .billing-track {
+      position: relative; display: inline-flex; align-items: center;
+      background: var(--bg-raised); border: 1px solid var(--border-2);
+      border-radius: 100px; padding: 4px;
     }
-    .billing-btn {
-      padding: 7px 18px; border-radius: 100px; border: 1px solid var(--border-2);
-      background: transparent; color: var(--text-subtle); font-size: 13px; font-weight: 500;
-      cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 7px;
-      font-family: var(--sans);
+    .billing-thumb {
+      position: absolute; top: 4px; bottom: 4px; left: 4px;
+      border-radius: 100px; background: var(--bg-card);
+      box-shadow: 0 1px 6px rgba(0,0,0,.18);
+      transition: left .22s cubic-bezier(.4,0,.2,1), width .22s cubic-bezier(.4,0,.2,1);
+      pointer-events: none; z-index: 0; opacity: 0;
     }
-    .billing-btn.is-active { background: var(--bg-raised); color: var(--text); border-color: var(--text-subtle); }
+    @media (prefers-reduced-motion: reduce) { .billing-thumb { transition: none; } }
+    .billing-opt {
+      position: relative; z-index: 1;
+      padding: 7px 16px; border: none; background: transparent;
+      color: var(--text-subtle); font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: color .15s;
+      display: inline-flex; align-items: center; gap: 7px;
+      font-family: var(--sans); white-space: nowrap; border-radius: 100px; line-height: 1;
+    }
+    .billing-opt.is-active { color: var(--text); }
     .billing-badge {
       font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
       background: rgba(55,126,165,.15); color: var(--cta); padding: 2px 7px; border-radius: 4px;
@@ -622,13 +634,26 @@
     .pricing-section[data-billing="monthly"] .price-yr { display: none; }
     /* Enterprise band */
     .pricing-enterprise {
-      display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+      margin-top: 12px; border-radius: var(--rl);
       background: var(--bg-card); border: 1px solid var(--border-2);
-      border-radius: var(--r); padding: 20px 28px; margin-top: 12px;
+      position: relative; overflow: hidden;
     }
-    .pricing-enterprise-text { font-size: 14px; color: var(--text-muted); line-height: 1.5; }
-    .pricing-enterprise-text strong { color: var(--text); font-weight: 600; margin-right: 2px; }
-    .pricing-enterprise-cta { flex-shrink: 0; padding: 8px 20px; min-height: 38px; font-size: 13px; }
+    .pricing-enterprise::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent 0%, var(--cta) 35%, rgba(55,126,165,.35) 65%, transparent 100%);
+    }
+    .pricing-enterprise-inner {
+      display: flex; align-items: center; gap: 20px; padding: 22px 28px; flex-wrap: wrap;
+    }
+    .pricing-enterprise-icon {
+      width: 44px; height: 44px; border-radius: var(--r); flex-shrink: 0;
+      background: rgba(55,126,165,.1); border: 1px solid rgba(55,126,165,.2);
+      display: flex; align-items: center; justify-content: center; color: var(--cta);
+    }
+    .pricing-enterprise-body { flex: 1; min-width: 180px; }
+    .pricing-enterprise-label { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .pricing-enterprise-desc { font-size: 13px; color: var(--text-muted); line-height: 1.55; margin: 0; }
+    .pricing-enterprise-cta { flex-shrink: 0; padding: 10px 22px; min-height: 40px; font-size: 13px; white-space: nowrap; }
 
     /* ============================================================
        COMPLIANCE / PRIVACY
@@ -815,6 +840,8 @@
       .feat-item-desc   { display: none; }
       .feat-tier        { display: none; }
       .pricing-grid     { grid-template-columns: 1fr; max-width: 380px; margin: 0 auto; }
+      .pricing-enterprise-inner { flex-direction: column; align-items: flex-start; }
+      .pricing-enterprise-cta { align-self: stretch; text-align: center; }
       .install-grid     { grid-template-columns: 1fr; }
       .faq-grid         { grid-template-columns: 1fr; }
     }

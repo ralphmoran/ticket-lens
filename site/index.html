@@ -379,8 +379,14 @@
         <p class="section-lead" style="margin:0 auto 16px;text-align:center">Start free. Upgrade when you need it with <code style="font-family:var(--mono);color:var(--cta)">ticketlens activate &lt;key&gt;</code></p>
       </div>
       <div class="billing-toggle fade-in">
-        <button class="billing-btn" data-billing="monthly">Monthly</button>
-        <button class="billing-btn is-active" data-billing="annual">Annual <span class="billing-badge">2 months free</span></button>
+        <div class="billing-track">
+          <div class="billing-thumb" aria-hidden="true"></div>
+          <button class="billing-opt" data-billing="monthly">Monthly</button>
+          <button class="billing-opt is-active" data-billing="annual">
+            Annual
+            <span class="billing-badge">2 months free</span>
+          </button>
+        </div>
       </div>
       <div class="pricing-grid fade-in">
 
@@ -452,10 +458,20 @@
         </div>
       </div>
       <div class="pricing-enterprise fade-in">
-        <div class="pricing-enterprise-text">
-          <strong>Enterprise</strong> — SSO, centralized billing, DPA, and dedicated onboarding for teams of 50+.
+        <div class="pricing-enterprise-inner">
+          <div class="pricing-enterprise-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 21h18M4 21V7a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v14"/>
+              <path d="M9 21v-5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v5"/>
+              <path d="M9 8h.01M15 8h.01M9 12h.01M15 12h.01"/>
+            </svg>
+          </div>
+          <div class="pricing-enterprise-body">
+            <div class="pricing-enterprise-label">Enterprise</div>
+            <p class="pricing-enterprise-desc">SSO, centralized billing, DPA, and dedicated onboarding for teams of 50+. Your ticket data never leaves your network — passes security review in days.</p>
+          </div>
+          <a href="mailto:enterprise@ticketlens.io" class="pricing-cta ghost pricing-enterprise-cta">Talk to us →</a>
         </div>
-        <a href="mailto:enterprise@ticketlens.io" class="pricing-cta ghost pricing-enterprise-cta">Talk to us →</a>
       </div>
       <p class="pricing-note fade-in"><strong>Open core</strong> — The CLI is free forever. No usage limits. No forced account.</p>
     </div>

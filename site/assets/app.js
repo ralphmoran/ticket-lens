@@ -1,17 +1,37 @@
     /* ============================================================
        BILLING TOGGLE
     ============================================================ */
-    var pricingSection = document.querySelector('.pricing-section');
-    var billingBtns = document.querySelectorAll('.billing-btn');
-    billingBtns.forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        var billing = this.getAttribute('data-billing');
-        if (pricingSection) pricingSection.setAttribute('data-billing', billing);
-        billingBtns.forEach(function(b) {
-          b.classList.toggle('is-active', b.getAttribute('data-billing') === billing);
+    (function() {
+      var pricingSection = document.querySelector('.pricing-section');
+      var billingThumb = document.querySelector('.billing-thumb');
+      var billingOpts = document.querySelectorAll('.billing-opt');
+
+      function positionThumb(opt, instant) {
+        if (!billingThumb || !opt) return;
+        if (instant) billingThumb.style.transition = 'none';
+        billingThumb.style.width = opt.offsetWidth + 'px';
+        billingThumb.style.left = opt.offsetLeft + 'px';
+        billingThumb.style.opacity = '1';
+        if (instant) {
+          billingThumb.offsetWidth; // force reflow before re-enabling transition
+          billingThumb.style.transition = '';
+        }
+      }
+
+      var activeOpt = document.querySelector('.billing-opt.is-active');
+      if (activeOpt) requestAnimationFrame(function() { positionThumb(activeOpt, true); });
+
+      billingOpts.forEach(function(opt) {
+        opt.addEventListener('click', function() {
+          var billing = this.getAttribute('data-billing');
+          if (pricingSection) pricingSection.setAttribute('data-billing', billing);
+          billingOpts.forEach(function(o) {
+            o.classList.toggle('is-active', o.getAttribute('data-billing') === billing);
+          });
+          positionThumb(this, false);
         });
       });
-    });
+    })();
 
     /* ============================================================
        THEME TOGGLE
