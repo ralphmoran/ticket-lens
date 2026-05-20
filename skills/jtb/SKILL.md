@@ -1,3 +1,4 @@
+<!-- jtb-skill-version: 0.2.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -13,10 +14,19 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb PROD-1234                          # fetch a ticket brief
 /jtb PROD-1234 --depth=0               # target ticket only (fast)
 /jtb PROD-1234 --depth=2               # include linked-of-linked tickets
+/jtb PROD-1234 --profile=acme          # force a specific connection profile
+/jtb PROD-1234 --no-cache              # re-fetch from Jira (bypass local cache)
+/jtb PROD-1234 --no-attachments        # skip attachment download
+/jtb PROD-1234 --plain                 # plain text output (no ANSI colours)
+/jtb PROD-1234 --check                 # coverage review: ACs vs local diff
+/jtb PROD-1234 --compliance            # formal compliance check (tier-gated)
+/jtb PROD-1234 --summarize             # AI summary of the brief (Pro)
+/jtb PROD-1234 --summarize --cloud     # summary via TicketLens cloud (Pro)
+/jtb PROD-1234 --handoff               # structured handoff brief from comments (Pro)
 /jtb triage                            # scan your assigned tickets for attention
 /jtb triage --stale=3                  # custom aging threshold (days)
 /jtb triage --status=CR,QA             # only check specific statuses
-/jtb triage --profile=acme           # explicit profile override
+/jtb triage --profile=acme             # explicit profile override
 ```
 
 ## Prerequisites
@@ -158,6 +168,79 @@ Use this evaluation order:
 
 ---
 
-## --compliance: Acceptance Criteria Compliance Check
+## --compliance: Formal Compliance Check
 
-- `--compliance` — Check ticket acceptance criteria against local VCS diff. Reports ✔/✖/~ per requirement with coverage %. Free: 3/month. Pro: unlimited.
+When `--compliance` is appended to any ticket fetch (`/jtb PROJ-123 --compliance`):
+
+**Tier gate:** Free tier allows 3 compliance checks per month. Pro tier is unlimited.
+If the user is on Free and has exhausted their quota, show the upgrade prompt returned by the script and stop.
+
+### With VCS (git/svn/hg detected)
+1. The brief includes a `--- DIFF ---` section with the current local diff
+2. After reading the brief, evaluate each requirement formally:
+   - Extract every stated requirement, acceptance criterion, and definition-of-done item from the ticket description and all comments
+   - For each requirement, assess whether the diff satisfies it:
+     - `✔ COMPLIANT` — fully addressed, cite file:line
+     - `✖ NON-COMPLIANT` — not addressed at all
+     - `~ PARTIAL` — partially addressed, describe the gap
+   - Show a compliance summary: `Compliance: N/M (X%) — N items non-compliant, N partial`
+   - List all non-compliant and partial items with actionable notes
+
+### Without VCS (no git/svn/hg in cwd)
+Use this evaluation order:
+1. **Session context** — review files you Read/Edited this session; compare against requirements
+2. **claude-mem** — if available, call `get_observations` searching for `{ticketKey}`
+3. **Manual checklist** — list each requirement for the developer to verify manually
+
+### Privacy
+`--compliance` never sends data anywhere. The diff stays local. All analysis is performed by Claude Code within your session context.
+
+---
+
+## Advanced Options
+
+These flags are available on any ticket fetch and can be combined.
+
+### --summarize (Pro)
+
+Generates an AI-powered summary of the full brief, collapsing verbose descriptions into a concise implementation overview. Useful for large tickets with many comments.
+
+```
+/jtb PROD-1234 --summarize             # BYOK — uses your own API key
+/jtb PROD-1234 --summarize --cloud     # uses TicketLens cloud summariser
+/jtb PROD-1234 --summarize --provider=openai   # use a specific AI provider
+/jtb PROD-1234 --summarize --budget=2000       # limit output to ~2000 tokens
+```
+
+- **BYOK (default):** reads your AI API key from `~/.ticketlens/credentials.json`. First use will prompt for consent.
+- **`--cloud`:** routes through TicketLens cloud API (no local key needed, requires Pro).
+- **`--provider=NAME`:** override the AI provider. Supported values depend on your credentials (e.g. `claude`, `openai`).
+- **`--budget=N`:** prune the brief to approximately N tokens before summarising. Forces plain-text output.
+
+### --handoff (Pro)
+
+Generates a structured handoff brief synthesised from the ticket's full comment thread. Designed for developer-to-developer handoffs — includes open questions, current state, and next steps.
+
+```
+/jtb PROD-1234 --handoff
+/jtb PROD-1234 --handoff --cloud
+```
+
+Output is a concise markdown document, not a full TicketBrief. No plan mode — output is displayed and the workflow stops.
+
+### --plain / --styled
+
+Control output formatting:
+
+- **`--plain`** — strip all ANSI colour codes. Useful when piping to a file or another tool.
+- **`--styled`** — force ANSI-styled output even in non-TTY contexts (e.g. when piped).
+
+Default: styled when stdout is a TTY, plain otherwise.
+
+### --no-cache
+
+Forces a fresh fetch from Jira, bypassing the local brief cache (4-hour TTL by default). Use when the ticket was recently updated and the cached brief is stale.
+
+### --no-attachments
+
+Skip downloading and reading ticket attachments. Speeds up the fetch for tickets with large or irrelevant file attachments.

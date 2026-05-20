@@ -1,6 +1,6 @@
 {
   "name": "ticketlens",
-  "version": "0.1.27",
+  "version": "0.2.0",
   "description": "Jira CLI for developers — fetch ticket context, triage your queue, and stop tab-switching. Zero dependencies, all local.",
   "type": "module",
   "bin": {
@@ -8,12 +8,15 @@
   },
   "files": [
     "bin/",
+    "scripts/",
+    "skills/jtb/SKILL.md",
     "skills/jtb/scripts/lib/",
     "skills/jtb/scripts/fetch-ticket.mjs",
     "skills/jtb/scripts/fetch-my-tickets.mjs"
   ],
   "scripts": {
-    "test": "node --test skills/jtb/scripts/test/*.test.mjs"
+    "test": "node --test skills/jtb/scripts/test/*.test.mjs",
+    "postinstall": "node scripts/postinstall.mjs"
   },
   "keywords": [
     "jira",

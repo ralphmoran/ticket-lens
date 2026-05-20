@@ -23,7 +23,7 @@ import {
   printActivateHelp, printLicenseHelp, printDeleteHelp,
   printProfilesHelp, printScheduleHelp,
   printInitHelp, printSwitchHelp, printConfigHelp,
-  printReviewHelp, printStandupHelp,
+  printReviewHelp, printStandupHelp, printUpdateSkillHelp,
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
 import { readCliToken, saveCliToken, deleteCliToken } from '../skills/jtb/scripts/lib/cli-auth.mjs';
@@ -313,6 +313,13 @@ switch (command) {
       process.exitCode = 1;
     });
     break;
+
+  case 'update-skill': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printUpdateSkillHelp(); break; }
+    const { updateSkill } = await import('../skills/jtb/scripts/lib/update-skill.mjs');
+    await updateSkill(cmdArgs);
+    break;
+  }
 
   case 'login': {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printLoginHelp(); break; }

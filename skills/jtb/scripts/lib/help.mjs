@@ -47,6 +47,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} license                  Show license status`,
     `    ${s.brand('ticketlens')} cache ${s.dim('[size|clear]')}       Manage attachment cache  ${s.dim('(try cache --help)')}`,
     `    ${s.brand('ticketlens')} schedule ${s.dim('[--stop|--status]')} Manage digest schedule  ${s.dim('[Pro]')}`,
+    `    ${s.brand('ticketlens')} update-skill ${s.dim('[--dry-run]')}    Update /jtb skill in Claude Code and other AI assistants`,
     '',
     `  ${s.bold('FETCH OPTIONS')}`,
     '',
@@ -601,6 +602,42 @@ export function printReviewHelp({ stream = process.stdout } = {}) {
     '',
     `    Branch, Changed files, Ticket context`,
     `    Requirements coverage ${s.dim('[Pro]')}, Review focus ${s.dim('[Pro]')}`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printUpdateSkillHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('update-skill')} ${s.dim('[--dry-run] [--path=DIR] [--quiet]')}`,
+    '',
+    `  Copy the latest /jtb SKILL.md into every detected AI assistant command directory.`,
+    `  Runs automatically on ${s.dim('npm install -g ticketlens')} for existing installs.`,
+    '',
+    `  ${s.bold('SUPPORTED ASSISTANTS')}`,
+    '',
+    `    Claude Code         ${s.dim('~/.claude/commands/jtb.md')}`,
+    `    Claude Code (work)  ${s.dim('~/.claude-work/commands/jtb.md')}`,
+    `    Gemini CLI          ${s.dim('~/.gemini/commands/jtb.md')}`,
+    `    Copilot CLI         ${s.dim('~/.copilot-cli/commands/jtb.md')}`,
+    '',
+    `  Only targets where ${s.dim('jtb.md')} already exists are updated. Use ${s.dim('--path')} to install`,
+    `  into a new location (the directory must exist).`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--dry-run')}          Show what would change without writing any files`,
+    `    ${s.brand('--path')}=${s.dim('DIR')}       Write to a specific commands directory instead`,
+    `    ${s.brand('--quiet')}            Suppress all output except errors`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}      Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens update-skill`,
+    `    ${s.dim('$')} ticketlens update-skill --dry-run`,
+    `    ${s.dim('$')} ticketlens update-skill --path=~/.config/my-ai/commands`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');
