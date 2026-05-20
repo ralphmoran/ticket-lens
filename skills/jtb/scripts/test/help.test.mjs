@@ -249,6 +249,31 @@ describe('printConfigHelp', () => {
   });
 });
 
+describe('printHelp — AI provider discoverability', () => {
+  it('FETCH OPTIONS documents --provider flag', () => {
+    const out = captureHelp(printHelp);
+    const fetchStart = out.indexOf('FETCH OPTIONS');
+    const triageStart = out.indexOf('TRIAGE OPTIONS');
+    assert.ok(fetchStart !== -1, 'main --help must have FETCH OPTIONS');
+    const fetchBlock = out.slice(fetchStart, triageStart);
+    assert.ok(
+      fetchBlock.includes('--provider'),
+      'FETCH OPTIONS must document --provider flag for AI provider selection'
+    );
+  });
+
+  it('CONFIGURATION section references config set aiProvider', () => {
+    const out = captureHelp(printHelp);
+    const configStart = out.indexOf('CONFIGURATION');
+    assert.ok(configStart !== -1, 'main --help must have CONFIGURATION section');
+    const configBlock = out.slice(configStart);
+    assert.ok(
+      configBlock.includes('aiProvider'),
+      'CONFIGURATION must reference config set aiProvider command'
+    );
+  });
+});
+
 describe('printTriageHelp — interactive mode keys', () => {
   it('documents the p hotkey for profile switching', () => {
     const out = captureHelp(printTriageHelp);

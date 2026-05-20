@@ -63,6 +63,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--summarize')}        Generate AI summary ${s.dim('(BYOK or --cloud) [Pro]')}`,
     `    ${s.brand('--handoff')}          AI handoff brief from comment thread ${s.dim('(BYOK or --cloud) [Pro]')}`,
     `    ${s.brand('--cloud')}            Route AI request through TicketLens API ${s.dim('[Pro]')}`,
+    `    ${s.brand('--provider')}=${s.dim('NAME')}     Force AI provider ${s.dim('(anthropic|openai|groq)')}`,
     '',
     `  ${s.bold('TRIAGE OPTIONS')}`,
     '',
@@ -102,6 +103,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('               ')} anthropicApiKey  ${s.dim('→ Claude (paid)')}`,
     `    ${s.dim('               ')} openaiApiKey     ${s.dim('→ GPT-4o mini (paid)')}`,
     `    ${s.dim('               ')} groqApiKey       ${s.dim('→ Llama 3.1 (free tier — console.groq.com)')}`,
+    `    ${s.dim('               ')} ${s.dim('Set default:')} ticketlens config set aiProvider ${s.dim('<anthropic|openai|groq>')}`,
     '',
     '',
   ];
