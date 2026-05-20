@@ -44,6 +44,7 @@ function buildTicketPayload(scored, rawMap, baseUrl) {
  * @param {string}   [opts.baseUrl]      - Jira base URL for URL construction
  * @param {string}   [opts.licenseKey]   - Bearer token for the API
  * @param {string}   [opts.capturedAt]   - ISO 8601 timestamp (defaults to now)
+ * @param {Array}    [opts.gitBranches]  - Branch metadata from scanCurrentBranch (null = not in git repo)
  * @param {Function} [opts.fetcher]      - Injectable fetch (default: globalThis.fetch)
  * @param {Function} [opts.print]        - Output fn (default: process.stdout.write)
  * @returns {Promise<{ ok: boolean, status?: number }>}
@@ -55,6 +56,7 @@ export async function pushTriageSnapshot({
   baseUrl,
   licenseKey,
   capturedAt,
+  gitBranches,
   fetcher = globalThis.fetch,
   print = (s) => process.stdout.write(s),
 } = {}) {
@@ -67,6 +69,7 @@ export async function pushTriageSnapshot({
     profile: String(profile ?? 'default').slice(0, 100),
     captured_at: capturedAt ?? new Date().toISOString(),
     tickets: sorted.map(t => buildTicketPayload(t, rawTicketMap, baseUrl)),
+    ...(gitBranches != null && { git_branches: gitBranches }),
   };
 
   try {

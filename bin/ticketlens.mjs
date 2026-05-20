@@ -52,6 +52,15 @@ switch (command) {
     });
     break;
 
+  case 'collisions': {
+    const { runCollisions } = await import('../skills/jtb/scripts/lib/run-collisions.mjs');
+    runCollisions(cmdArgs).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+  }
+
   case 'init':
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printInitHelp(); break; }
     runInit().catch(err => {

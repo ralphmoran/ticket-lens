@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.2.1 -->
+<!-- jtb-skill-version: 0.3.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -27,6 +27,10 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb triage --stale=3                  # custom aging threshold (days)
 /jtb triage --status=CR,QA             # only check specific statuses
 /jtb triage --profile=acme             # explicit profile override
+/jtb triage --push                     # push snapshot + git branches to Console (Team)
+/jtb triage --share                    # generate 24h share URL (Team)
+/jtb collisions                        # show branch collisions with teammates (Team)
+/jtb collisions --json                 # machine-readable output
 ```
 
 ## Prerequisites
@@ -60,6 +64,23 @@ node ~/.agents/skills/jtb/scripts/fetch-my-tickets.mjs $EXTRA_ARGS
 Where `$EXTRA_ARGS` are any flags passed (e.g. `--stale=3 --status=QA --profile=acme`).
 
 **IMPORTANT:** Copy the script's stdout and display it directly as your response text (not inside a tool result). This ensures the markdown table renders visibly and URLs are clickable in the terminal. No VCS enrichment, no plan mode. Stop here.
+
+---
+
+### Collisions subcommand
+
+If the first argument is `collisions`:
+
+Run:
+```bash
+node ~/.agents/skills/jtb/scripts/lib/run-collisions.mjs $EXTRA_ARGS
+```
+
+Where `$EXTRA_ARGS` are any flags passed (e.g. `--json`, `--plain`).
+
+Requires a Team license and at least one teammate in the same group. Compares your current branch's changed files against teammates' recent branches. Outputs a collision report or an empty-state message.
+
+Display the script's stdout directly. No plan mode. Stop here.
 
 ---
 

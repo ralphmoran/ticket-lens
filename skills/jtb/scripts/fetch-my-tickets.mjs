@@ -354,7 +354,9 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   if (pushFlag) {
     const { pushTriageSnapshot } = await import('./lib/triage-push.mjs');
+    const { scanCurrentBranch } = await import('./lib/branch-scanner.mjs');
     const pushFn = opts.pushFn ?? pushTriageSnapshot;
+    const scanFn = opts.scanFn ?? scanCurrentBranch;
     const licenseKey = readLicense(configDir)?.key ?? null;
     const printFn = opts.print ?? ((s) => process.stdout.write(s));
     await pushFn({
@@ -363,6 +365,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       profile: profileName ?? 'default',
       baseUrl: conn.baseUrl,
       licenseKey,
+      gitBranches: scanFn(),
       fetcher,
       print: printFn,
     });

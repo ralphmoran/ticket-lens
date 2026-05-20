@@ -176,6 +176,45 @@ describe('pushTriageSnapshot — HTTP errors (non-fatal)', () => {
 // Payload shape
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// LOCK: git_branches absent when not provided — characterization test
+// ---------------------------------------------------------------------------
+
+describe('pushTriageSnapshot — LOCK: no git_branches by default', () => {
+  it('payload does not include git_branches key when param is omitted', async () => {
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-1')],
+      rawTicketMap: new Map(),
+      profile: 'default',
+      licenseKey: 'k',
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 200 };
+      },
+      print: () => {},
+    });
+    assert.ok(!Object.prototype.hasOwnProperty.call(capturedBody, 'git_branches'), 'git_branches must be absent when not provided');
+  });
+
+  it('payload does not include git_branches key when param is undefined', async () => {
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [],
+      licenseKey: 'k',
+      gitBranches: undefined,
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 200 };
+      },
+      print: () => {},
+    });
+    assert.ok(!Object.prototype.hasOwnProperty.call(capturedBody, 'git_branches'), 'git_branches must be absent when undefined');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
 describe('pushTriageSnapshot — payload shape', () => {
   it('sends correct JSON payload structure', async () => {
     let capturedBody;
@@ -386,5 +425,102 @@ describe('pushTriageSnapshot — payload shape', () => {
       print: () => {},
     });
     assert.equal(capturedBody.tickets[0].compliance_status, 'unknown');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// git_branches in payload
+// ---------------------------------------------------------------------------
+
+describe('pushTriageSnapshot — git_branches', () => {
+  const sampleBranches = [
+    { branch: 'feat/PROJ-123-checkout', base: 'origin/main', tickets: ['PROJ-123'], files: ['src/checkout.js'] },
+  ];
+
+  it('includes git_branches in payload when provided', async () => {
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [],
+      licenseKey: 'k',
+      gitBranches: sampleBranches,
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 200 };
+      },
+      print: () => {},
+    });
+    assert.deepEqual(capturedBody.git_branches, sampleBranches);
+  });
+
+  it('git_branches null value omits key from payload', async () => {
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [],
+      licenseKey: 'k',
+      gitBranches: null,
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 200 };
+      },
+      print: () => {},
+    });
+    assert.ok(!Object.prototype.hasOwnProperty.call(capturedBody, 'git_branches'));
+  });
+
+  it('git_branches empty array is included in payload', async () => {
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [],
+      licenseKey: 'k',
+      gitBranches: [],
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 200 };
+      },
+      print: () => {},
+    });
+    assert.ok(Object.prototype.hasOwnProperty.call(capturedBody, 'git_branches'));
+    assert.deepEqual(capturedBody.git_branches, []);
+  });
+
+  it('git_branches with multiple entries are all sent', async () => {
+    const branches = [
+      { branch: 'feat/A-1', base: 'origin/main', tickets: ['A-1'], files: ['a.js'] },
+      { branch: 'feat/B-2', base: 'origin/main', tickets: ['B-2'], files: ['b.js'] },
+    ];
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [],
+      licenseKey: 'k',
+      gitBranches: branches,
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 200 };
+      },
+      print: () => {},
+    });
+    assert.equal(capturedBody.git_branches.length, 2);
+  });
+
+  it('success/failure outcome unchanged when git_branches provided', async () => {
+    const result = await pushTriageSnapshot({
+      sorted: [],
+      licenseKey: 'k',
+      gitBranches: sampleBranches,
+      fetcher: async () => ({ ok: true, status: 200 }),
+      print: () => {},
+    });
+    assert.ok(result.ok);
+  });
+
+  it('push still succeeds on network error regardless of git_branches', async () => {
+    const result = await pushTriageSnapshot({
+      sorted: [],
+      licenseKey: 'k',
+      gitBranches: sampleBranches,
+      fetcher: async () => { throw new Error('ECONNREFUSED'); },
+      print: () => {},
+    });
+    assert.ok(!result.ok);
   });
 });

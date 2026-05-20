@@ -164,6 +164,27 @@ Bot comments (Jira Automation, Jenkins, GitHub Actions) are automatically ignore
 
 ---
 
+### Collisions
+
+```bash
+ticketlens collisions                         # Show branches that overlap with teammates [Team]
+ticketlens collisions --json                  # Machine-readable output
+ticketlens collisions --plain                 # Plain text, no ANSI colour
+```
+
+Requires a Team license and at least one teammate in your group. Compares your current git branch's changed files against your teammates' recent branches (within 7 days). Reports each overlap as a collision: your branch, their branch, the shared files, and linked ticket keys.
+
+```
+[1] feat/auth-refactor ↔ Jane Dev (feat/login-redesign)
+    Your tickets:  PROJ-101
+    Their tickets: PROJ-88
+    Shared files:  src/auth/LoginController.php, src/auth/guards.php
+```
+
+Branches are captured automatically when you run `ticketlens triage --push`. No extra step required.
+
+---
+
 ### Review
 
 ```bash
@@ -416,6 +437,11 @@ ticketlens triage --profile=acme --stale=3 --static          # Combine flags
 # Pipe triage output
 ticketlens triage --plain > my-tickets.md
 ticketlens triage --plain | llm "Which ticket is most urgent and why?"
+
+# ── Collisions ────────────────────────────────────────────────────────────────
+ticketlens collisions                         # Show branch collisions with teammates [Team]
+ticketlens collisions --json                  # Machine-readable JSON output
+ticketlens collisions --plain                 # Plain text, no ANSI colour
 
 # ── PR Review ─────────────────────────────────────────────────────────────────
 ticketlens review                             # Assemble PR review context from current branch
