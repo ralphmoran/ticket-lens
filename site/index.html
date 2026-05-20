@@ -656,12 +656,11 @@
           <div class="install-card-title">Claude Code /jtb skill</div>
           <div class="install-card-sub">Loads full ticket context directly into your Claude session.</div>
           <div class="code-block">
-            <button class="copy-btn" data-copy="npm install -g ticketlens && ticketlens init&#10;cp $(npm root -g)/ticketlens/skills/jtb/SKILL.md ~/.claude/commands/jtb.md">Copy</button>
+            <button class="copy-btn" data-copy="npm install -g ticketlens && ticketlens init&#10;ticketlens update-skill">Copy</button>
             <span class="code-comment"># Install + configure</span><br>
             <span class="code-cmd">npm install -g ticketlens &amp;&amp; ticketlens init</span><br><br>
             <span class="code-comment"># Install /jtb Claude Code command</span><br>
-            <span class="code-cmd">cp $(npm root -g)/ticketlens/skills/jtb/SKILL.md \</span><br>
-            <span class="code-cmd">&nbsp;&nbsp;&nbsp;~/.claude/commands/jtb.md</span><br><br>
+            <span class="code-cmd">ticketlens update-skill</span><br><br>
             <span class="code-comment"># Then in Claude Code:</span><br>
             <span class="code-cmd"><span class="code-arg">/jtb CNV1-2</span></span>
           </div>
