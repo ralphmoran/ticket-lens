@@ -291,6 +291,25 @@ ticketlens activate <KEY>         # Activate a Pro or Team license
 
 ---
 
+### Update Skill
+
+```bash
+ticketlens update-skill                          # Sync /jtb skill to all detected AI assistants
+ticketlens update-skill --dry-run                # Preview what would be updated (no writes)
+ticketlens update-skill --path=~/.gemini/commands  # Sync to a specific assistant directory
+ticketlens update-skill --quiet                  # Suppress output (useful in scripts)
+```
+
+Copies the latest `SKILL.md` to every AI assistant command directory where `/jtb` is already installed. Runs automatically on `npm install -g ticketlens` — for most users, upgrading the CLI is enough. Use `--dry-run` to confirm what would change before writing.
+
+Supported assistants detected automatically:
+- Claude Code — `~/.claude/commands/jtb.md`
+- Claude Code (work) — `~/.claude-work/commands/jtb.md`
+- Gemini CLI — `~/.gemini/commands/jtb.md`
+- Copilot CLI — `~/.copilot-cli/commands/jtb.md`
+
+---
+
 ### /jtb — Jira TicketBrief for Claude Code
 
 `/jtb` is a Claude Code slash command that fetches full ticket context and drops a structured implementation brief directly into your session, then enters plan mode.
