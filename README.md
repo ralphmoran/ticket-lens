@@ -301,9 +301,23 @@ ticketlens activate <KEY>         # Activate a Pro or Team license
 
 ```bash
 npm install -g ticketlens && ticketlens init
-cp $(npm root -g)/ticketlens/skills/jtb/SKILL.md ~/.claude/commands/jtb.md
+ticketlens update-skill        # copies /jtb skill into ~/.claude/commands/jtb.md
 # Restart Claude Code, then:
 # /jtb CNV1-2
+```
+
+**Keeping the skill up to date:**
+
+```bash
+npm install -g ticketlens@latest   # update the CLI
+ticketlens update-skill            # sync the /jtb skill to the new version
+```
+
+`update-skill` runs automatically on `npm install -g`, so for most users the second step is handled. If you manage Claude Code across multiple machines or accounts, run it manually after updating.
+
+```bash
+ticketlens update-skill --dry-run         # preview what would change
+ticketlens update-skill --path=~/.gemini/commands  # sync to a different AI assistant
 ```
 
 **Usage in Claude Code:**
@@ -431,6 +445,11 @@ ticketlens login --manual                     # Paste flow — for CI/headless e
 # ── License and account ────────────────────────────────────────────────────────
 ticketlens license                            # Show license tier and status
 ticketlens activate <LICENSE-KEY>             # Activate a license key
+
+# ── Skill maintenance ─────────────────────────────────────────────────────────
+ticketlens update-skill                       # Sync /jtb skill to all detected AI assistants
+ticketlens update-skill --dry-run             # Preview what would be updated
+ticketlens update-skill --path=~/.gemini/commands  # Sync to a custom assistant directory
 
 # ── Help and version ──────────────────────────────────────────────────────────
 ticketlens --help                             # Main help
