@@ -622,3 +622,31 @@ describe('triage --digest', () => {
     assert.equal(delivered.length, 1);
   });
 });
+
+describe('triage --share', () => {
+  it('calls shareFn when --share flag is passed', async () => {
+    const calls = [];
+    await run(['triage', '--share'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      shareFn: async (opts) => { calls.push(opts); return { ok: true }; },
+      isLicensed: () => true,
+    });
+    assert.equal(calls.length, 1);
+    assert.ok('sorted' in calls[0]);
+    assert.ok('profile' in calls[0]);
+  });
+
+  it('shareFn receives sorted array and string profile', async () => {
+    const calls = [];
+    await run(['triage', '--share'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      shareFn: async (opts) => { calls.push(opts); return { ok: true }; },
+      isLicensed: () => true,
+    });
+    assert.equal(calls.length, 1);
+    assert.strictEqual(typeof calls[0].profile, 'string');
+    assert.ok(Array.isArray(calls[0].sorted));
+  });
+});

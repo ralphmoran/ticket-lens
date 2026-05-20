@@ -342,14 +342,15 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const cleanArgs = args.filter(a => !a.startsWith('--profile=') && !a.startsWith('--project='));
       return run(cleanArgs, { ...opts, env, fetcher, configDir });
     }
-    return;
+    // Fall through to push/share if those flags were passed
+    if (!pushFlag && !shareFlag) return;
+  } else {
+    const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
+    const summary = useStyled
+      ? styleTriageSummary(sorted, { styled: true, staleDays, baseUrl: conn.baseUrl })
+      : assembleTriageSummary(sorted, { staleDays, baseUrl: conn.baseUrl });
+    process.stdout.write(summary + '\n');
   }
-
-  const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
-  const summary = useStyled
-    ? styleTriageSummary(sorted, { styled: true, staleDays, baseUrl: conn.baseUrl })
-    : assembleTriageSummary(sorted, { staleDays, baseUrl: conn.baseUrl });
-  process.stdout.write(summary + '\n');
 
   if (pushFlag) {
     const { pushTriageSnapshot } = await import('./lib/triage-push.mjs');
