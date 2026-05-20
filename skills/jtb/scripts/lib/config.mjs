@@ -3,20 +3,24 @@
  * Single source of truth — import from here, do not redefine locally.
  */
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, realpathSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 
 /** Canonical config directory: ~/.ticketlens */
 export const DEFAULT_CONFIG_DIR = join(homedir(), '.ticketlens');
 
-/** Read package.json version once per process, memoized. */
+/** Read package.json version once per process, memoized.
+ * Uses realpathSync to resolve symlinks before navigating, so the correct
+ * package.json is found whether the module is loaded via a symlink or directly.
+ */
 let _version;
 export function getVersion() {
   if (_version) return _version;
   try {
-    const pkgPath = new URL('../../../../package.json', import.meta.url);
-    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+    const realDir = dirname(realpathSync(fileURLToPath(import.meta.url)));
+    const pkg = JSON.parse(readFileSync(join(realDir, '..', '..', '..', '..', 'package.json'), 'utf8'));
     _version = pkg.version || '0.0.0';
   } catch {
     _version = '0.0.0';
