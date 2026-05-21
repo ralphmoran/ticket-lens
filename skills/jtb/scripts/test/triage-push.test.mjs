@@ -1,6 +1,18 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { pushTriageSnapshot } from '../lib/triage-push.mjs';
+
+describe('queueUrl', () => {
+  it('production api → app subdomain', () => {
+    assert.equal(queueUrl('https://api.ticketlens.com'), 'https://app.ticketlens.com/console/queue');
+  });
+  it('local api subdomain → no subdomain change', () => {
+    assert.equal(queueUrl('http://api.ticketlens.test'), 'http://ticketlens.test/console/queue');
+  });
+  it('local no subdomain → unchanged', () => {
+    assert.equal(queueUrl('http://ticketlens.test'), 'http://ticketlens.test/console/queue');
+  });
+});
+import { pushTriageSnapshot, queueUrl } from '../lib/triage-push.mjs';
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -167,4 +167,16 @@ describe('parseCommand', () => {
     assert.equal(result.command, 'standup');
     assert.deepEqual(result.args, ['--since=48', '--format=pr']);
   });
+
+  it('routes "collisions" to collisions command', () => {
+    const result = parseCommand(['collisions']);
+    assert.equal(result.command, 'collisions');
+    assert.deepEqual(result.args, []);
+  });
+
+  it('routes "collisions --json" with flags preserved', () => {
+    const result = parseCommand(['collisions', '--json']);
+    assert.equal(result.command, 'collisions');
+    assert.deepEqual(result.args, ['--json']);
+  });
 });

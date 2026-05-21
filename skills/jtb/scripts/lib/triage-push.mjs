@@ -12,10 +12,15 @@ function apiBase() {
 }
 
 // Derive console queue URL from API base:
-//   http://ticketlens.test          → http://ticketlens.test/console/queue
+//   http://api.ticketlens.test      → http://ticketlens.test/console/queue
 //   https://api.ticketlens.com      → https://app.ticketlens.com/console/queue
-function queueUrl(base) {
-  return base.replace(/^(https?:\/\/)api\./, '$1app.') + '/console/queue';
+export function queueUrl(base) {
+  const noApi = base.replace(/^(https?:\/\/)api\./, '$1');
+  // Production: ticketlens.com → app.ticketlens.com
+  const console = /ticketlens\.com/.test(noApi)
+    ? noApi.replace('://', '://app.')
+    : noApi;
+  return console + '/console/queue';
 }
 
 function buildTicketPayload(scored, rawMap, baseUrl) {
