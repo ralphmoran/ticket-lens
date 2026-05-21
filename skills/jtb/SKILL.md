@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.3.1 -->
+<!-- jtb-skill-version: 0.4.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -248,6 +248,12 @@ Generates a structured handoff brief synthesised from the ticket's full comment 
 ```
 
 Output is a concise markdown document, not a full TicketBrief. No plan mode — output is displayed and the workflow stops.
+
+### triage --push compliance enrichment (Pro)
+
+When `--push` is run by a Pro-licensed user, the local compliance ledger (written by `--compliance` runs) is read and merged into the snapshot before sending. Each ticket's `compliance_status` (`pass`/`gap`) and `compliance_coverage` (%) are included in the push payload. This feeds the **Compliance Analytics** dashboard in the Console (`/console/admin/compliance-analytics`), which shows gap-rate trends by project, ticket status, and week.
+
+Non-Pro users push with `compliance_status: unknown` — no data is lost, and the analytics page simply shows no compliance data for those snapshots.
 
 ### --plain / --styled
 

@@ -415,6 +415,7 @@ describe('pushTriageSnapshot — payload shape', () => {
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
       licenseKey: 'k',
+      isLicensedFn: () => false,
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
         return { ok: true, status: 201 };
@@ -430,6 +431,7 @@ describe('pushTriageSnapshot — payload shape', () => {
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
       licenseKey: 'k',
+      isLicensedFn: () => false,
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
         return { ok: true, status: 201 };
@@ -437,6 +439,207 @@ describe('pushTriageSnapshot — payload shape', () => {
       print: () => {},
     });
     assert.equal(capturedBody.tickets[0].compliance_status, 'unknown');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LOCK: compliance defaults when no ledger data
+// ---------------------------------------------------------------------------
+
+describe('pushTriageSnapshot — LOCK: compliance defaults without ledger entry', () => {
+  it('compliance_status is unknown when ledger has no entry for the ticket key', async () => {
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-1')],
+      rawTicketMap: new Map(),
+      licenseKey: 'k',
+      isLicensedFn: () => true,
+      readLedgerFn: () => [],
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 201 };
+      },
+      print: () => {},
+    });
+    assert.equal(capturedBody.tickets[0].compliance_status, 'unknown');
+  });
+
+  it('compliance_coverage is null when ledger has no entry for the ticket key', async () => {
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-1')],
+      rawTicketMap: new Map(),
+      licenseKey: 'k',
+      isLicensedFn: () => true,
+      readLedgerFn: () => [],
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 201 };
+      },
+      print: () => {},
+    });
+    assert.equal(capturedBody.tickets[0].compliance_coverage, null);
+  });
+
+  it('readLedgerFn is not called when isLicensedFn returns false', async () => {
+    let ledgerCalled = false;
+    await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-1')],
+      rawTicketMap: new Map(),
+      licenseKey: 'k',
+      isLicensedFn: () => false,
+      readLedgerFn: () => { ledgerCalled = true; return []; },
+      fetcher: async () => ({ ok: true, status: 201 }),
+      print: () => {},
+    });
+    assert.ok(!ledgerCalled, 'readLedger must not be called for non-Pro users');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Compliance ledger enrichment
+// ---------------------------------------------------------------------------
+
+describe('pushTriageSnapshot — compliance enrichment from ledger', () => {
+  function makeLedgerEntry(ticketKey, coverage, missing = []) {
+    return { ts: '2026-05-20T10:00:00.000Z', ticketKey, commitSha: 'abc1234', author: 'dev', coverage, missing };
+  }
+
+  it('sets compliance_status to pass when ledger entry has empty missing array', async () => {
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-1')],
+      rawTicketMap: new Map(),
+      licenseKey: 'k',
+      isLicensedFn: () => true,
+      readLedgerFn: () => [makeLedgerEntry('PROJ-1', 100, [])],
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 201 };
+      },
+      print: () => {},
+    });
+    assert.equal(capturedBody.tickets[0].compliance_status, 'pass');
+  });
+
+  it('sets compliance_status to gap when ledger entry has non-empty missing array', async () => {
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-1')],
+      rawTicketMap: new Map(),
+      licenseKey: 'k',
+      isLicensedFn: () => true,
+      readLedgerFn: () => [makeLedgerEntry('PROJ-1', 60, ['req-A', 'req-B'])],
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 201 };
+      },
+      print: () => {},
+    });
+    assert.equal(capturedBody.tickets[0].compliance_status, 'gap');
+  });
+
+  it('sets compliance_coverage from ledger entry coverage value', async () => {
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-1')],
+      rawTicketMap: new Map(),
+      licenseKey: 'k',
+      isLicensedFn: () => true,
+      readLedgerFn: () => [makeLedgerEntry('PROJ-1', 75, ['req-A'])],
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 201 };
+      },
+      print: () => {},
+    });
+    assert.equal(capturedBody.tickets[0].compliance_coverage, 75);
+  });
+
+  it('leaves compliance_status unknown for ticket keys not in ledger', async () => {
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-1'), makeScored('PROJ-2')],
+      rawTicketMap: new Map(),
+      licenseKey: 'k',
+      isLicensedFn: () => true,
+      readLedgerFn: () => [makeLedgerEntry('PROJ-1', 100, [])],
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 201 };
+      },
+      print: () => {},
+    });
+    assert.equal(capturedBody.tickets.find(t => t.key === 'PROJ-1').compliance_status, 'pass');
+    assert.equal(capturedBody.tickets.find(t => t.key === 'PROJ-2').compliance_status, 'unknown');
+  });
+
+  it('uses most recent ledger entry when multiple entries exist for same key', async () => {
+    let capturedBody;
+    const entries = [
+      { ts: '2026-05-18T10:00:00.000Z', ticketKey: 'PROJ-1', commitSha: 'old', author: 'dev', coverage: 50, missing: ['req-A'] },
+      { ts: '2026-05-20T10:00:00.000Z', ticketKey: 'PROJ-1', commitSha: 'new', author: 'dev', coverage: 100, missing: [] },
+      { ts: '2026-05-19T10:00:00.000Z', ticketKey: 'PROJ-1', commitSha: 'mid', author: 'dev', coverage: 75, missing: ['req-B'] },
+    ];
+    await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-1')],
+      rawTicketMap: new Map(),
+      licenseKey: 'k',
+      isLicensedFn: () => true,
+      readLedgerFn: () => entries,
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 201 };
+      },
+      print: () => {},
+    });
+    assert.equal(capturedBody.tickets[0].compliance_status, 'pass');
+    assert.equal(capturedBody.tickets[0].compliance_coverage, 100);
+  });
+
+  it('compliance_coverage is null when ledger entry has no coverage field', async () => {
+    let capturedBody;
+    const entry = { ts: '2026-05-20T10:00:00.000Z', ticketKey: 'PROJ-1', commitSha: 'abc', author: 'dev', missing: [] };
+    await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-1')],
+      rawTicketMap: new Map(),
+      licenseKey: 'k',
+      isLicensedFn: () => true,
+      readLedgerFn: () => [entry],
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 201 };
+      },
+      print: () => {},
+    });
+    assert.equal(capturedBody.tickets[0].compliance_coverage, null);
+  });
+
+  it('push succeeds even when readLedgerFn throws', async () => {
+    const lines = [];
+    const result = await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-1')],
+      rawTicketMap: new Map(),
+      licenseKey: 'k',
+      isLicensedFn: () => true,
+      readLedgerFn: () => { throw new Error('ledger read error'); },
+      fetcher: async () => ({ ok: true, status: 201 }),
+      print: (s) => lines.push(s),
+    });
+    assert.ok(result.ok, 'push must succeed even when ledger throws');
+  });
+
+  it('push output is not disrupted when ledger throws', async () => {
+    const lines = [];
+    await pushTriageSnapshot({
+      sorted: [],
+      licenseKey: 'k',
+      isLicensedFn: () => true,
+      readLedgerFn: () => { throw new Error('ledger error'); },
+      fetcher: async () => ({ ok: true, status: 200 }),
+      print: (s) => lines.push(s),
+    });
+    assert.ok(lines.some(l => l.includes('Queue updated')));
   });
 });
 

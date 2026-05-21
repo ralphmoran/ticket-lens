@@ -3,6 +3,10 @@
  * All errors are caught — push failure must never break triage output.
  */
 
+import { readLedger } from './ledger.mjs';
+import { isLicensed } from './license.mjs';
+import { DEFAULT_CONFIG_DIR } from './config.mjs';
+
 const PUSH_PATH = '/v1/triage/push';
 // Local dev: http://ticketlens.test — production override via TICKETLENS_API_URL env var
 const DEFAULT_API_BASE = 'http://ticketlens.test';
@@ -64,16 +68,43 @@ export async function pushTriageSnapshot({
   gitBranches,
   fetcher = globalThis.fetch,
   print = (s) => process.stdout.write(s),
+  readLedgerFn = readLedger,
+  isLicensedFn = isLicensed,
+  configDir = DEFAULT_CONFIG_DIR,
 } = {}) {
   if (!licenseKey) {
     print('✗ --push requires an active Team license (ticketlens activate <key>)\n');
     return { ok: false };
   }
 
+  let tickets = sorted.map(t => buildTicketPayload(t, rawTicketMap, baseUrl));
+
+  if (isLicensedFn('pro', configDir)) {
+    try {
+      const entries = readLedgerFn({ configDir });
+      const latestByKey = new Map();
+      for (const entry of entries) {
+        const prev = latestByKey.get(entry.ticketKey);
+        if (!prev || entry.ts > prev.ts) latestByKey.set(entry.ticketKey, entry);
+      }
+      tickets = tickets.map(t => {
+        const entry = latestByKey.get(t.key);
+        if (!entry) return t;
+        return {
+          ...t,
+          compliance_coverage: entry.coverage ?? null,
+          compliance_status: (entry.missing?.length ?? 0) === 0 ? 'pass' : 'gap',
+        };
+      });
+    } catch {
+      // non-fatal — ledger errors must not break triage push
+    }
+  }
+
   const payload = {
     profile: String(profile ?? 'default').slice(0, 100),
     captured_at: capturedAt ?? new Date().toISOString(),
-    tickets: sorted.map(t => buildTicketPayload(t, rawTicketMap, baseUrl)),
+    tickets,
     ...(gitBranches != null && { git_branches: gitBranches }),
   };
 
