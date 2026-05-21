@@ -644,6 +644,37 @@ export function printUpdateSkillHelp({ stream = process.stdout } = {}) {
   stream.write(lines.join('\n') + '\n');
 }
 
+export function printCollisionsHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('collisions')} ${s.dim('[--json] [--plain]')}`,
+    '',
+    `  Show branches where your changed files overlap with a teammate's.`,
+    `  Reads the most recent snapshot pushed by you and each teammate (within 7 days).`,
+    `  Requires a ${s.bold('Team')} license and at least one teammate in your group.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--json')}     Output raw JSON array of collision objects`,
+    `    ${s.brand('--plain')}    Plain text output ${s.dim('(no ANSI colour)')}`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}  Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens collisions`,
+    `    ${s.dim('$')} ticketlens collisions --json`,
+    `    ${s.dim('$')} ticketlens collisions --plain`,
+    '',
+    `  ${s.bold('NOTES')}`,
+    '',
+    `    Branch data is captured automatically when you run ${s.brand('ticketlens triage --push')}.`,
+    `    Snapshots older than 7 days are ignored.`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
 export function printStandupHelp({ stream = process.stdout } = {}) {
   const s = createStyler({ isTTY: stream.isTTY });
   const lines = [

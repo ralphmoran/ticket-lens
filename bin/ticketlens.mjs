@@ -24,6 +24,7 @@ import {
   printProfilesHelp, printScheduleHelp,
   printInitHelp, printSwitchHelp, printConfigHelp,
   printReviewHelp, printStandupHelp, printUpdateSkillHelp,
+  printCollisionsHelp,
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
 import { readCliToken, saveCliToken, deleteCliToken } from '../skills/jtb/scripts/lib/cli-auth.mjs';
@@ -53,6 +54,7 @@ switch (command) {
     break;
 
   case 'collisions': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printCollisionsHelp(); break; }
     const { runCollisions } = await import('../skills/jtb/scripts/lib/run-collisions.mjs');
     runCollisions(cmdArgs).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
