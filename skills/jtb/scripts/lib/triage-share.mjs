@@ -67,6 +67,7 @@ export async function shareTriageSnapshot({
         'Authorization': `Bearer ${licenseKey}`,
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (res.ok) {

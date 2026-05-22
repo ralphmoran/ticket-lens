@@ -5,6 +5,9 @@ import crypto from 'node:crypto';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { createStyler } from './ansi.mjs';
 
+export // Mixed into the HMAC key so that knowing the license key alone is not sufficient
+// to forge a valid signature — an attacker also needs this constant from the source.
+const LICENSE_HMAC_SALT = 'tl-lic-v1';
 export const LICENSE_TIERS = { free: 0, pro: 1, team: 2 };
 const LICENSE_FILE = 'license.json';
 const REVALIDATION_DAYS = 7;   // attempt background revalidation after this many days
@@ -24,9 +27,14 @@ export function readLicense(configDir = DEFAULT_CONFIG_DIR) {
     const { sig, ...payload } = data;
     // Legacy unsigned files are trusted; will be re-signed on next write
     if (!sig) return payload;
-    const expected = crypto.createHmac('sha256', payload.key || '')
+    const sigKey = `${LICENSE_HMAC_SALT}:${payload.key || ''}`;
+    const expected = crypto.createHmac('sha256', sigKey)
       .update(JSON.stringify(payload)).digest('hex');
-    return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)) ? payload : null;
+    const sigBuf = Buffer.from(sig, 'hex');
+    const expBuf = Buffer.from(expected, 'hex');
+    // timingSafeEqual requires equal-length buffers; unequal lengths mean tampered sig
+    if (sigBuf.length !== expBuf.length) return null;
+    return crypto.timingSafeEqual(sigBuf, expBuf) ? payload : null;
   } catch {
     return null;
   }
@@ -36,7 +44,8 @@ export function writeLicense(data, configDir = DEFAULT_CONFIG_DIR) {
   fs.mkdirSync(configDir, { recursive: true });
   const filePath = path.join(configDir, LICENSE_FILE);
   const { sig: _, ...payload } = data; // strip any existing sig before re-signing
-  const mac = crypto.createHmac('sha256', payload.key || '')
+  const sigKey = `${LICENSE_HMAC_SALT}:${payload.key || ''}`;
+  const mac = crypto.createHmac('sha256', sigKey)
     .update(JSON.stringify(payload)).digest('hex');
   fs.writeFileSync(filePath, JSON.stringify({ ...payload, sig: mac }), 'utf8');
   fs.chmodSync(filePath, 0o600);

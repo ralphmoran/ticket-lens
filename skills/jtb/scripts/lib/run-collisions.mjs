@@ -34,6 +34,7 @@ export async function runCollisions(args = [], opts = {}) {
   try {
     const res = await fetcher(`${apiBase()}${COLLISIONS_PATH}`, {
       headers: { Authorization: `Bearer ${licenseKey}` },
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!res.ok) {

@@ -211,6 +211,53 @@ Flag validation provides actionable hints:
 
 ---
 
+### Compliance
+
+```bash
+ticketlens compliance <TICKET-KEY>                # Check ticket requirements against local diff [Pro/Free 3/mo]
+ticketlens compliance <TICKET-KEY> --profile=acme # Specify a profile
+ticketlens compliance <TICKET-KEY> --plain        # Plain markdown output
+```
+
+Runs the same compliance check as `ticketlens CNV1-2 --compliance` but as a dedicated subcommand — useful when you want to check compliance without fetching the full ticket brief. Free accounts get 3 checks per month; Pro is unlimited.
+
+---
+
+### Compliance Ledger
+
+```bash
+ticketlens ledger                             # View the local compliance audit ledger [Pro]
+ticketlens ledger --plain                     # Plain markdown output
+```
+
+Displays the append-only local ledger of all compliance checks run on this machine. Useful for SOC 2 / HIPAA audit trails. Requires a Pro license.
+
+---
+
+### Git Hook
+
+```bash
+ticketlens install-hooks                      # Install pre-push compliance gate [Pro]
+ticketlens install-hooks --uninstall          # Remove installed hooks
+```
+
+Installs a `pre-push` git hook that runs `ticketlens compliance` on every push. Blocks the push if compliance coverage falls below the configured threshold. Requires a Pro license.
+
+---
+
+### PR Description
+
+```bash
+ticketlens pr <TICKET-KEY>                    # Generate PR description from ticket [Pro]
+ticketlens pr <TICKET-KEY> --profile=acme    # Specify a profile
+ticketlens pr <TICKET-KEY> --plain           # Plain markdown output
+ticketlens pr <TICKET-KEY> | pbcopy          # Copy to clipboard
+```
+
+Generates a PR description template pre-filled with the ticket summary, acceptance criteria, and compliance coverage. Requires a Pro license.
+
+---
+
 ### Standup
 
 ```bash
@@ -295,11 +342,15 @@ Stores the schedule as a cron entry. Delivers your triage digest at the configur
 ```bash
 ticketlens login           # Open browser → authorize in Console → token saved automatically
 ticketlens login --manual  # Paste a token instead (CI/headless environments)
+ticketlens logout          # Revoke and remove the stored CLI token
+ticketlens sync            # Pull your latest tracker profiles from the Console
 ```
 
 `ticketlens login` opens the TicketLens Console in your default browser. Click **Authorize**, and the CLI receives your token via a one-shot localhost callback — no copy-pasting. Cancelling in the browser exits the CLI cleanly.
 
 Use `--manual` when there is no GUI (CI runners, SSH sessions, containers).
+
+`ticketlens sync` pulls any tracker profiles you have configured in the Console and writes them locally, keeping your CLI in sync with your team settings without re-running `init`.
 
 ---
 
@@ -483,9 +534,21 @@ ticketlens schedule                           # Interactive wizard — set time,
 ticketlens schedule --stop                    # Cancel the scheduled digest [Pro]
 ticketlens schedule --status                  # Show current schedule [Pro]
 
+# ── Compliance ────────────────────────────────────────────────────────────────
+ticketlens compliance <TICKET-KEY>            # Check ticket requirements against local diff [Pro/Free 3/mo]
+ticketlens ledger                             # View local compliance audit ledger [Pro]
+ticketlens install-hooks                      # Install pre-push compliance gate [Pro]
+ticketlens install-hooks --uninstall          # Remove installed hooks [Pro]
+
+# ── PR Description ─────────────────────────────────────────────────────────────
+ticketlens pr <TICKET-KEY>                    # Generate PR description from ticket [Pro]
+ticketlens pr <TICKET-KEY> | pbcopy          # Copy to clipboard [Pro]
+
 # ── Login ─────────────────────────────────────────────────────────────────────
 ticketlens login                              # Browser flow — opens Console, token saved automatically
 ticketlens login --manual                     # Paste flow — for CI/headless environments
+ticketlens logout                             # Revoke and remove stored CLI token
+ticketlens sync                               # Pull tracker profiles from the Console
 
 # ── License and account ────────────────────────────────────────────────────────
 ticketlens license                            # Show license tier and status
