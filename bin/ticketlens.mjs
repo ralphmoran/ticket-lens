@@ -129,6 +129,9 @@ switch (command) {
         process.stderr.write(`\n  ${s.red('✖')} Activation failed: ${result.error}\n\n`);
         process.exitCode = 1;
       }
+    }).catch(err => {
+      process.stderr.write(`\n  ${s.red('✖')} Activation error: ${err.message}\n\n`);
+      process.exitCode = 1;
     });
     break;
   }

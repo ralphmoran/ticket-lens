@@ -83,6 +83,19 @@ describe('readLedger', () => {
     assert.equal(result.length, 1);
     assert.equal(result[0].ticketKey, 'NEW-1');
   });
+
+  it('skips corrupt lines and returns remaining valid records', () => {
+    const dir = mkdtempSync(join(tmpDir, 'read-corrupt-'));
+    appendFileSync(join(dir, 'ledger.jsonl'),
+      JSON.stringify({ ts: '2026-01-01T00:00:00.000Z', ticketKey: 'GOOD-1', commitSha: 's', author: 'a', coverage: 10, missing: [] }) + '\n' +
+      'NOT_VALID_JSON\n' +
+      JSON.stringify({ ts: '2026-01-02T00:00:00.000Z', ticketKey: 'GOOD-2', commitSha: 's', author: 'a', coverage: 20, missing: [] }) + '\n'
+    );
+    const result = readLedger({ configDir: dir });
+    assert.equal(result.length, 2);
+    assert.equal(result[0].ticketKey, 'GOOD-1');
+    assert.equal(result[1].ticketKey, 'GOOD-2');
+  });
 });
 
 // ── exportLedger ──────────────────────────────────────────────────────────────

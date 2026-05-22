@@ -103,9 +103,13 @@ export function loadProfiles(configDir = DEFAULT_CONFIG_DIR) {
   if (_profilesCache.has(configDir)) return _profilesCache.get(configDir);
   const profilesPath = join(configDir, 'profiles.json');
   if (!existsSync(profilesPath)) return null;
-  const data = JSON.parse(readFileSync(profilesPath, 'utf8'));
-  _profilesCache.set(configDir, data);
-  return data;
+  try {
+    const data = JSON.parse(readFileSync(profilesPath, 'utf8'));
+    _profilesCache.set(configDir, data);
+    return data;
+  } catch {
+    return null;
+  }
 }
 
 export function loadCredentials(configDir = DEFAULT_CONFIG_DIR) {
@@ -115,9 +119,14 @@ export function loadCredentials(configDir = DEFAULT_CONFIG_DIR) {
     _credentialsCache.set(configDir, {});
     return {};
   }
-  const data = JSON.parse(readFileSync(credPath, 'utf8'));
-  _credentialsCache.set(configDir, data);
-  return data;
+  try {
+    const data = JSON.parse(readFileSync(credPath, 'utf8'));
+    _credentialsCache.set(configDir, data);
+    return data;
+  } catch {
+    _credentialsCache.set(configDir, {});
+    return {};
+  }
 }
 
 export function saveCredentialKey(key, value, configDir = DEFAULT_CONFIG_DIR) {

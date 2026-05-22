@@ -47,7 +47,8 @@ export function readLedger({ configDir = DEFAULT_CONFIG_DIR, fsModule = _fs, sin
   return raw
     .split('\n')
     .filter(line => line.trim().length > 0)
-    .map(line => JSON.parse(line))
+    .map(line => { try { return JSON.parse(line); } catch { return null; } })
+    .filter(record => record !== null)
     .filter(record => sinceMs === null || new Date(record.ts).getTime() >= sinceMs);
 }
 

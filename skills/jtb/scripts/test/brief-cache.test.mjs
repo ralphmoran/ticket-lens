@@ -110,6 +110,22 @@ describe('writeBriefCache + readBriefCache', () => {
     }
   });
 
+  it('treats missing fetchedAt as expired and evicts the entry', () => {
+    const dir = makeTmpDir();
+    try {
+      writeBriefCache('PROJ-123', 'work', 1, SAMPLE_TICKET, dir);
+      const filePath = briefCachePath('PROJ-123', 'work', dir);
+      const data = JSON.parse(readFileSync(filePath, 'utf8'));
+      delete data.fetchedAt;
+      writeFileSync(filePath, JSON.stringify(data));
+      const result = readBriefCache('PROJ-123', 'work', 1, dir);
+      assert.equal(result, null);
+      assert.equal(existsSync(filePath), false, 'stale file should be evicted');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('deletes the file when TTL is exceeded (lazy eviction)', () => {
     const dir = makeTmpDir();
     try {

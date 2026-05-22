@@ -5,12 +5,10 @@
  */
 
 import * as defaultFs from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const DEFAULT_CONFIG_DIR = join(
-  process.env.HOME ?? process.env.USERPROFILE ?? '',
-  '.ticketlens'
-);
+const DEFAULT_CONFIG_DIR = join(homedir(), '.ticketlens');
 
 const URGENCY_ORDER = { 'needs-response': 0, 'aging': 1, 'clear': 2 };
 

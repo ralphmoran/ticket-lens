@@ -47,7 +47,7 @@ export function readBriefCache(ticketKey, profileName, depth, configDir = DEFAUL
   }
 
   const age = Date.now() - new Date(data.fetchedAt).getTime();
-  if (age > ttlMs) {
+  if (isNaN(age) || age > ttlMs) {
     try { fs.unlinkSync(filePath); } catch { /* non-fatal */ }
     return null;
   }

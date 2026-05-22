@@ -168,6 +168,12 @@ describe('profile-resolver', () => {
       assert.equal(config.default, 'corenexus');
       assert.ok(config.profiles.acme);
     });
+
+    it('returns null when profiles.json is corrupt JSON', () => {
+      writeFileSync(join(configDir, 'profiles.json'), 'NOT_VALID_JSON');
+      invalidateProfilesCache(configDir);
+      assert.equal(loadProfiles(configDir), null);
+    });
   });
 
   describe('resolveProfile', () => {
