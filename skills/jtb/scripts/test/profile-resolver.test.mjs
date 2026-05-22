@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -48,8 +48,8 @@ describe('profile-resolver', () => {
   });
 
   function writeConfig(profiles = sampleProfiles, creds = sampleCreds) {
-    writeFileSync(join(configDir, 'profiles.json'), JSON.stringify(profiles));
-    writeFileSync(join(configDir, 'credentials.json'), JSON.stringify(creds));
+    writeFileSync(join(configDir, 'profiles.json'), JSON.stringify(profiles), { mode: 0o600 });
+    writeFileSync(join(configDir, 'credentials.json'), JSON.stringify(creds), { mode: 0o600 });
   }
 
   describe('resolveConnection', () => {

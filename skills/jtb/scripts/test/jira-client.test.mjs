@@ -176,6 +176,7 @@ describe('fetchTicket', () => {
       (err) => {
         assert.ok(err.message.includes('401'));
         assert.ok(err.message.includes('PROD-1234'));
+        assert.ok(!err.message.includes('Unauthorized'), 'statusText must not appear in error message');
         return true;
       }
     );
@@ -368,6 +369,20 @@ describe('fetchTicket', () => {
     });
     assert.equal(fetchCounts['B-1'], 1, 'B-1 appears in two link lists but must only be fetched once');
   });
+
+  it('sets err.status on HTTP error', async () => {
+    const mockFetch = async () => ({ ok: false, status: 404, statusText: 'Not Found' });
+    await assert.rejects(
+      () => fetchTicket('PROD-9999', {
+        env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+        fetcher: mockFetch,
+      }),
+      (err) => {
+        assert.equal(err.status, 404, 'fetchTicket must set err.status for error-classifier routing');
+        return true;
+      }
+    );
+  });
 });
 
 describe('fetchCurrentUser', () => {
@@ -416,6 +431,7 @@ describe('fetchCurrentUser', () => {
       }),
       (err) => {
         assert.ok(err.message.includes('401'));
+        assert.ok(!err.message.includes('Unauthorized'), 'statusText must not appear in error message');
         return true;
       }
     );
@@ -433,6 +449,20 @@ describe('fetchCurrentUser', () => {
       apiVersion: 3,
     });
     assert.ok(capturedUrl.includes('/rest/api/3/myself'), `Expected v3 URL, got: ${capturedUrl}`);
+  });
+
+  it('sets err.status on HTTP error', async () => {
+    const mockFetch = async () => ({ ok: false, status: 401, statusText: 'Unauthorized' });
+    await assert.rejects(
+      () => fetchCurrentUser({
+        env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'bad' },
+        fetcher: mockFetch,
+      }),
+      (err) => {
+        assert.equal(err.status, 401, 'fetchCurrentUser must set err.status for error-classifier routing');
+        return true;
+      }
+    );
   });
 });
 
@@ -557,9 +587,29 @@ describe('searchTickets', () => {
       }),
       (err) => {
         assert.ok(err.message.includes('400'));
-        assert.ok(err.message.includes("does not exist"));
         assert.equal(err.status, 400);
         assert.ok(err.detail.includes('QA'));
+        return true;
+      }
+    );
+  });
+
+  it('error message does not embed Jira errorMessages content', async () => {
+    const mockFetch = async () => ({
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+      json: async () => ({ errorMessages: ["The value 'QA' does not exist for the field 'status'."] }),
+    });
+    await assert.rejects(
+      () => searchTickets('bad jql', {
+        env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+        fetcher: mockFetch,
+      }),
+      (err) => {
+        assert.ok(!err.message.includes('does not exist'), 'Jira errorMessages must not be embedded in err.message');
+        assert.equal(err.status, 400);
+        assert.ok(err.detail.includes('QA'), 'detail should still carry Jira errorMessages for internal use');
         return true;
       }
     );
@@ -593,6 +643,7 @@ describe('fetchStatuses', () => {
       }),
       (err) => {
         assert.ok(err.message.includes('401'));
+        assert.ok(!err.message.includes('Unauthorized'), 'statusText must not appear in error message');
         return true;
       }
     );
@@ -610,6 +661,20 @@ describe('fetchStatuses', () => {
       apiVersion: 3,
     });
     assert.ok(capturedUrl.includes('/rest/api/3/status'), `Expected v3 URL, got: ${capturedUrl}`);
+  });
+
+  it('sets err.status on HTTP error', async () => {
+    const mockFetch = async () => ({ ok: false, status: 500, statusText: 'Internal Server Error' });
+    await assert.rejects(
+      () => fetchStatuses({
+        env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+        fetcher: mockFetch,
+      }),
+      (err) => {
+        assert.equal(err.status, 500, 'fetchStatuses must set err.status for error-classifier routing');
+        return true;
+      }
+    );
   });
 });
 

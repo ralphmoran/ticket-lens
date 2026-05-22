@@ -75,7 +75,9 @@ export async function fetchCurrentUser(opts = {}) {
   const response = await fetcher(url, fetchOpts);
 
   if (!response.ok) {
-    throw new Error(`Jira API error ${response.status} (${response.statusText}) fetching current user`);
+    const err = new Error(`Jira API error ${response.status} fetching current user`);
+    err.status = response.status;
+    throw err;
   }
 
   const raw = await response.json();
@@ -98,7 +100,9 @@ export async function fetchStatuses(opts = {}) {
   const response = await fetcher(url, fetchOpts);
 
   if (!response.ok) {
-    throw new Error(`Jira API error ${response.status} (${response.statusText}) fetching statuses`);
+    const err = new Error(`Jira API error ${response.status} fetching statuses`);
+    err.status = response.status;
+    throw err;
   }
 
   const raw = await response.json();
@@ -121,7 +125,7 @@ export async function searchTickets(jql, opts = {}) {
   if (!response.ok) {
     let detail = '';
     try { const body = await response.json(); detail = (body.errorMessages || []).join('; '); } catch {}
-    const err = new Error(`Jira API error ${response.status} (${response.statusText}) searching tickets${detail ? ': ' + detail : ''}`);
+    const err = new Error(`Jira API error ${response.status} searching tickets`);
     err.status = response.status;
     err.detail = detail;
     throw err;
@@ -159,7 +163,9 @@ export async function fetchTicket(ticketKey, opts = {}) {
   const response = await fetcher(url, fetchOpts);
 
   if (!response.ok) {
-    throw new Error(`Jira API error ${response.status} (${response.statusText}) fetching ${ticketKey}`);
+    const err = new Error(`Jira API error ${response.status} fetching ${ticketKey}`);
+    err.status = response.status;
+    throw err;
   }
 
   const raw = await response.json();

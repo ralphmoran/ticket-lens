@@ -69,6 +69,14 @@ describe('classifyError', () => {
     assert.ok(result.hint.includes('credentials'));
   });
 
+  it('401 hint does not reveal the credentials file path', () => {
+    const err = new Error('Jira API error 401');
+    err.status = 401;
+    const result = classifyError(err, conn);
+    assert.ok(!result.hint.includes('~/.ticketlens'), '401 hint must not disclose the credentials file path');
+    assert.ok(!result.hint.includes('/credentials.json'), '401 hint must not disclose the credentials file path');
+  });
+
   it('classifies 403 as access denied', () => {
     const err = new Error('Jira API error 403');
     err.status = 403;

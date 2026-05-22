@@ -71,7 +71,7 @@ export function classifyError(err, { baseUrl, profileName } = {}) {
   if (status === 401) {
     return {
       message: `Authentication failed for ${profile}`,
-      hint: 'Your credentials may have expired. Check your API token or PAT in ~/.ticketlens/credentials.json.',
+      hint: 'Your credentials may have expired. Check your API token or PAT in your TicketLens credentials file.',
     };
   }
 

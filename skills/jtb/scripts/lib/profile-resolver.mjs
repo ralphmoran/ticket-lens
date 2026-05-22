@@ -3,7 +3,7 @@
  * Resolution order: --profile flag → ticket prefix match → default profile → env vars
  */
 
-import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync, chmodSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
@@ -51,8 +51,7 @@ export function saveDefault(name, configDir = DEFAULT_CONFIG_DIR) {
   const profilesPath = join(configDir, 'profiles.json');
   const config = loadProfiles(configDir) || { profiles: {} };
   config.default = name;
-  writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
-  chmodSync(profilesPath, 0o600);
+  writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
   invalidateProfilesCache(configDir);
 }
 
@@ -61,14 +60,12 @@ export function saveProfile(name, profileData, credData, configDir = DEFAULT_CON
   const profilesPath = join(configDir, 'profiles.json');
   const config = loadProfiles(configDir) || { profiles: {} };
   config.profiles[name] = profileData;
-  writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
-  chmodSync(profilesPath, 0o600);
+  writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
   if (credData && Object.keys(credData).length > 0) {
     const credPath = join(configDir, 'credentials.json');
     const creds = loadCredentials(configDir);
     creds[name] = credData;
-    writeFileSync(credPath, JSON.stringify(creds, null, 2) + '\n', 'utf8');
-    chmodSync(credPath, 0o600);
+    writeFileSync(credPath, JSON.stringify(creds, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
   }
   invalidateProfilesCache(configDir);
 }
@@ -81,8 +78,7 @@ export function deleteProfile(name, configDir = DEFAULT_CONFIG_DIR) {
   delete config.profiles[name];
   if (config.default === name) delete config.default;
 
-  writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
-  chmodSync(profilesPath, 0o600);
+  writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
 
   // Remove credentials entry
   const credPath = join(configDir, 'credentials.json');
@@ -90,8 +86,7 @@ export function deleteProfile(name, configDir = DEFAULT_CONFIG_DIR) {
     const creds = loadCredentials(configDir);
     if (creds[name]) {
       delete creds[name];
-      writeFileSync(credPath, JSON.stringify(creds, null, 2) + '\n', 'utf8');
-      chmodSync(credPath, 0o600);
+      writeFileSync(credPath, JSON.stringify(creds, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
     }
   }
 
@@ -138,8 +133,7 @@ export function saveCredentialKey(key, value, configDir = DEFAULT_CONFIG_DIR) {
   } else {
     creds[key] = value;
   }
-  writeFileSync(credPath, JSON.stringify(creds, null, 2) + '\n', 'utf8');
-  chmodSync(credPath, 0o600);
+  writeFileSync(credPath, JSON.stringify(creds, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
   invalidateProfilesCache(configDir);
 }
 
