@@ -1,12 +1,9 @@
 import { readLicense } from './license.mjs';
 import { formatCollisions } from './collision-reporter.mjs';
 
-const COLLISIONS_PATH = '/v1/triage/collisions';
-const DEFAULT_API_BASE = 'http://ticketlens.test';
+import { apiBase, warnIfInsecure } from './api-utils.mjs';
 
-function apiBase() {
-  return process.env?.TICKETLENS_API_URL ?? DEFAULT_API_BASE;
-}
+const COLLISIONS_PATH = '/v1/triage/collisions';
 
 /**
  * Fetches cross-team branch collision data from the TicketLens API and prints results.
@@ -23,7 +20,9 @@ export async function runCollisions(args = [], opts = {}) {
   const plainFlag = args.includes('--plain');
   const fetcher        = opts.fetcher       ?? globalThis.fetch;
   const print          = opts.print         ?? ((s) => process.stdout.write(s));
+  const warn           = opts.warn          ?? ((s) => process.stderr.write(s));
   const readLicenseFn  = opts.readLicenseFn ?? (() => readLicense());
+  warnIfInsecure(apiBase(), warn);
 
   const licenseKey = readLicenseFn()?.key ?? null;
   if (!licenseKey) {
@@ -38,8 +37,14 @@ export async function runCollisions(args = [], opts = {}) {
     });
 
     if (!res.ok) {
-      if (res.status === 401) { print('✗ Invalid license key\n');              return { ok: false, status: 401 }; }
-      if (res.status === 403) { print('✗ collisions requires a Team license\n'); return { ok: false, status: 403 }; }
+      if (res.status === 401) {
+        print('✗ Invalid license key\n');
+        return { ok: false, status: 401 };
+      }
+      if (res.status === 403) {
+        print('✗ collisions requires a Team license\n');
+        return { ok: false, status: 403 };
+      }
       print(`⚠ Failed to fetch collisions (${res.status})\n`);
       return { ok: false, status: res.status };
     }

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { readLicense, writeLicense, isLicensed, activateLicense, revalidateLicense, checkLicense, revalidateIfStale, showUpgradePrompt, LICENSE_TIERS } from '../lib/license.mjs';
+import crypto from 'node:crypto';
+import { readLicense, writeLicense, isLicensed, activateLicense, revalidateLicense, checkLicense, revalidateIfStale, showUpgradePrompt, LICENSE_TIERS, LICENSE_HMAC_SALT } from '../lib/license.mjs';
 
 let tmpDir;
 
@@ -461,5 +462,55 @@ describe('writeLicense — file permissions', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('writeLicense — HMAC machine secret (item 1)', () => {
+  it('creates license-hmac-secret.json alongside license.json', () => {
+    writeLicense(validLicense, tmpDir);
+    assert.ok(
+      fs.existsSync(path.join(tmpDir, 'license-hmac-secret.json')),
+      'license-hmac-secret.json must be created on first writeLicense',
+    );
+  });
+
+  it('license-hmac-secret.json is written with mode 0o600', () => {
+    writeLicense(validLicense, tmpDir);
+    const mode = fs.statSync(path.join(tmpDir, 'license-hmac-secret.json')).mode & 0o777;
+    assert.equal(mode, 0o600, `license-hmac-secret.json must be chmod 600, got ${mode.toString(8)}`);
+  });
+
+  it('rejects a license re-signed with the license key when a secret file exists', () => {
+    // Establish a legitimate signed license (creates the secret file)
+    writeLicense(validLicense, tmpDir);
+
+    // Simulate an attacker who knows their key and tries to forge a higher tier
+    // by re-signing using the old key-derivable scheme
+    const filePath = path.join(tmpDir, 'license.json');
+    const tampered = { ...validLicense, tier: 'team' };
+    const attackerSig = crypto
+      .createHmac('sha256', `${LICENSE_HMAC_SALT}:${validLicense.key}`)
+      .update(JSON.stringify(tampered))
+      .digest('hex');
+    fs.writeFileSync(filePath, JSON.stringify({ ...tampered, sig: attackerSig }));
+
+    assert.equal(
+      readLicense(tmpDir),
+      null,
+      'key-derived HMAC must be rejected when machine secret exists',
+    );
+  });
+
+  it('falls back to key-based HMAC when no secret file exists (backward compat)', () => {
+    // Legacy install: only license.json, signed with old key-based scheme, no secret file
+    const payload = { ...validLicense };
+    const mac = crypto
+      .createHmac('sha256', `${LICENSE_HMAC_SALT}:${payload.key}`)
+      .update(JSON.stringify(payload))
+      .digest('hex');
+    fs.writeFileSync(path.join(tmpDir, 'license.json'), JSON.stringify({ ...payload, sig: mac }));
+    // No secret file written — backward-compat path
+    const result = readLicense(tmpDir);
+    assert.equal(result?.tier, 'pro', 'key-based HMAC must still be accepted when no secret file');
   });
 });

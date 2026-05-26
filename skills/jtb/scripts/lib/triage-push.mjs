@@ -7,13 +7,9 @@ import { readLedger } from './ledger.mjs';
 import { isLicensed } from './license.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 
-const PUSH_PATH = '/v1/triage/push';
-// Local dev: http://ticketlens.test — production override via TICKETLENS_API_URL env var
-const DEFAULT_API_BASE = 'http://ticketlens.test';
+import { apiBase, warnIfInsecure } from './api-utils.mjs';
 
-function apiBase() {
-  return process.env?.TICKETLENS_API_URL ?? DEFAULT_API_BASE;
-}
+const PUSH_PATH = '/v1/triage/push';
 
 // Derive console queue URL from API base:
 //   http://api.ticketlens.test      → http://ticketlens.test/console/queue
@@ -68,10 +64,12 @@ export async function pushTriageSnapshot({
   gitBranches,
   fetcher = globalThis.fetch,
   print = (s) => process.stdout.write(s),
+  warn = (s) => process.stderr.write(s),
   readLedgerFn = readLedger,
   isLicensedFn = isLicensed,
   configDir = DEFAULT_CONFIG_DIR,
 } = {}) {
+  warnIfInsecure(apiBase(), warn);
   if (!licenseKey) {
     print('✗ --push requires an active Team license (ticketlens activate <key>)\n');
     return { ok: false };
@@ -81,9 +79,8 @@ export async function pushTriageSnapshot({
 
   if (isLicensedFn('pro', configDir)) {
     try {
-      const entries = readLedgerFn({ configDir });
       const latestByKey = new Map();
-      for (const entry of entries) {
+      for (const entry of readLedgerFn({ configDir })) {
         const prev = latestByKey.get(entry.ticketKey);
         if (!prev || entry.ts > prev.ts) latestByKey.set(entry.ticketKey, entry);
       }

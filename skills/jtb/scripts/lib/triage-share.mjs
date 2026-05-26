@@ -3,12 +3,9 @@
  * Errors are non-fatal — share failure must never suppress triage output.
  */
 
-const SHARE_PATH = '/v1/triage/share';
-const DEFAULT_API_BASE = 'http://ticketlens.test';
+import { apiBase, warnIfInsecure } from './api-utils.mjs';
 
-function apiBase() {
-  return process.env?.TICKETLENS_API_URL ?? DEFAULT_API_BASE;
-}
+const SHARE_PATH = '/v1/triage/share';
 
 function buildTicketPayload(scored, rawMap, baseUrl) {
   const raw = rawMap?.get(scored.ticketKey);
@@ -47,7 +44,9 @@ export async function shareTriageSnapshot({
   capturedAt,
   fetcher = globalThis.fetch,
   print = (s) => process.stdout.write(s),
+  warn = (s) => process.stderr.write(s),
 } = {}) {
+  warnIfInsecure(apiBase(), warn);
   if (!licenseKey) {
     print('✗ --share requires an active Team license (ticketlens activate <key>)\n');
     return { ok: false };

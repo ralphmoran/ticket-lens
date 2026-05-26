@@ -4,7 +4,7 @@
  * plaintext so the CLI can use it as a Bearer token.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from 'node:fs';
+import { readFileSync, writeFileSync, chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 
@@ -28,13 +28,14 @@ export function readCliToken(configDir = DEFAULT_CONFIG_DIR) {
 export function saveCliToken(token, configDir = DEFAULT_CONFIG_DIR) {
   mkdirSync(configDir, { recursive: true });
   const p = cliTokenPath(configDir);
-  writeFileSync(p, JSON.stringify({ token }, null, 2) + '\n', 'utf8');
+  writeFileSync(p, JSON.stringify({ token }, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
   chmodSync(p, 0o600);
 }
 
 export function deleteCliToken(configDir = DEFAULT_CONFIG_DIR) {
   const p = cliTokenPath(configDir);
   if (existsSync(p)) {
-    writeFileSync(p, JSON.stringify({}, null, 2) + '\n', 'utf8');
+    writeFileSync(p, JSON.stringify({}, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
+    chmodSync(p, 0o600);
   }
 }

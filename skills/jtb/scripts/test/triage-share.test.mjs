@@ -225,3 +225,33 @@ describe('shareTriageSnapshot', () => {
     assert.ok(body.profile.length <= 100);
   });
 });
+
+describe('shareTriageSnapshot — http warning (item 3)', () => {
+  afterEach(() => { delete process.env.TICKETLENS_API_URL; });
+
+  it('calls warn when TICKETLENS_API_URL is http:// with a non-local host', async () => {
+    process.env.TICKETLENS_API_URL = 'http://prod.example.com';
+    const warnings = [];
+    await shareTriageSnapshot({
+      sorted: [],
+      licenseKey: 'k',
+      fetcher: async () => ({ ok: true, json: async () => ({ url: 'https://x' }) }),
+      print: () => {},
+      warn: msg => warnings.push(msg),
+    });
+    assert.ok(warnings.length > 0, 'warn must be called for http:// non-local URL');
+  });
+
+  it('does NOT warn for http://ticketlens.test (local .test domain)', async () => {
+    process.env.TICKETLENS_API_URL = 'http://ticketlens.test';
+    const warnings = [];
+    await shareTriageSnapshot({
+      sorted: [],
+      licenseKey: 'k',
+      fetcher: async () => ({ ok: true, json: async () => ({ url: 'https://x' }) }),
+      print: () => {},
+      warn: msg => warnings.push(msg),
+    });
+    assert.equal(warnings.length, 0, 'no warning for .test local domain');
+  });
+});

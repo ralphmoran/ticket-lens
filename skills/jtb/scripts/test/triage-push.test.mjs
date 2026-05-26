@@ -739,3 +739,34 @@ describe('pushTriageSnapshot — git_branches', () => {
     assert.ok(!result.ok);
   });
 });
+
+describe('pushTriageSnapshot — http warning (item 3)', () => {
+  afterEach(() => { delete process.env.TICKETLENS_API_URL; });
+
+  it('calls warn when TICKETLENS_API_URL is http:// with a non-local host', async () => {
+    process.env.TICKETLENS_API_URL = 'http://prod.example.com';
+    const warnings = [];
+    await pushTriageSnapshot({
+      sorted: [],
+      licenseKey: 'k',
+      fetcher: async () => ({ ok: true, json: async () => ({}) }),
+      print: () => {},
+      warn: msg => warnings.push(msg),
+    });
+    assert.ok(warnings.length > 0, 'warn must be called for http:// non-local URL');
+    assert.ok(warnings[0].includes('HTTP'), 'warning must mention HTTP');
+  });
+
+  it('does NOT warn for http://ticketlens.test (local .test domain)', async () => {
+    process.env.TICKETLENS_API_URL = 'http://ticketlens.test';
+    const warnings = [];
+    await pushTriageSnapshot({
+      sorted: [],
+      licenseKey: 'k',
+      fetcher: async () => ({ ok: true, json: async () => ({}) }),
+      print: () => {},
+      warn: msg => warnings.push(msg),
+    });
+    assert.equal(warnings.length, 0, 'no warning for .test local domain');
+  });
+});
