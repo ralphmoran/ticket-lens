@@ -587,7 +587,7 @@ ticketlens CNV1-2 --summarize            # AI summary via your own API key (BYOK
 ticketlens CNV1-2 --summarize --cloud    # AI summary via TicketLens API (no local key needed)
 ticketlens CNV1-2 --handoff              # AI handoff brief from the ticket's comment thread (BYOK)
 ticketlens CNV1-2 --handoff --cloud      # AI handoff brief via TicketLens API
-ticketlens CNV1-2 --compliance           # Check ticket requirements against local diff [Free 3/mo]
+ticketlens CNV1-2 --compliance           # Check ticket requirements against local diff [Pro/Free 3/mo]
 ticketlens triage --stale=3              # Custom stale threshold (default is 5)
 ticketlens triage --digest               # POST scored triage results to digest endpoint
 ticketlens schedule                      # Set up a scheduled daily digest
@@ -735,11 +735,13 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
-- **"TicketLens for PRs"** (`ticketlens review`) — assembles a code-review context brief from your current branch: extracts linked ticket keys from the branch name and commits, fetches each ticket, and outputs a structured brief with branch, changed files, and ticket context. Styled ANSI output, spinner, flag validation with typo hints, and base-branch safety check
+- **Collision detection** (`ticketlens collisions`) — shows which files your branch shares with teammates' in-flight branches; `--push` auto-sends git branch data to the team snapshot. Team tier
+- **Shareable triage snapshot** (`ticketlens triage --share`) — generates a 24h signed URL; recipients open it in any browser, no account needed. Team tier
+- **Compliance push** (`ticketlens triage --push`) — enriches the team snapshot with per-ticket compliance status and coverage from the local ledger. Pro tier
+- **"TicketLens for PRs"** (`ticketlens review`) — assembles a code-review context brief from your current branch: linked tickets, changed files, and ticket context in one brief
 - **Confluence pages** — linked Confluence pages fetched automatically and included in the brief; origin-validated, non-fatal, capped at 10 pages
 - **Linear support** — `ticketlens init` → Linear; connects via GraphQL API key, fetches tickets, triage, and statuses
 - **GitHub Issues support** — `ticketlens init` → GitHub Issues; PAT-based, same normalized ticket shape
-- **Tracker-aware config** — `ticketlens config` shows the right labels and skips irrelevant prompts per tracker type; always re-validates the connection
 
 ---
 

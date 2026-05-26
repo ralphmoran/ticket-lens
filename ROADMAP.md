@@ -219,8 +219,8 @@ Build only what paying customers or market demand requires.
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| 42 | Refactor | ~~**Tracker adapter abstraction**~~ | Pluggable interface so new sources don't fork the whole client. | Medium |
-| 43 | Feature | ~~**GitHub Issues as ticket source**~~ | Large OSS audience. `GitHubAdapter` + `ticketlens init` GitHub branch (repo URL → PAT → test → prefix → save). | Medium |
+| 42 | Refactor | ~~**Tracker adapter abstraction**~~ | Done. Pluggable interface so new sources don't fork the whole client. | Medium |
+| 43 | Feature | ~~**GitHub Issues as ticket source**~~ | Done. Large OSS audience. `GitHubAdapter` + `ticketlens init` GitHub branch (repo URL → PAT → test → prefix → save). | Medium |
 | 44 | Feature | ~~**Linear as ticket source**~~ | Done (v0.1.11). `LinearAdapter` backed by Linear GraphQL API. `ticketlens init` → Linear branch: prompts for API key (sent without Bearer prefix), live connection test, optional prefix/path, saves `auth: linear` profile. `ticketlens config` is now tracker-aware: shows correct URL label, skips Jira-only auth/email prompts, uses Linear adapter for connection test and status validation. Always runs connection test on profile edit. 823 tests. | Medium |
 | 45 | Feature | ~~**Confluence/wiki page fetching**~~ | Done (v0.1.14). Fetches Confluence pages referenced via Jira Remote Links API (`application.type === com.atlassian.confluence`). New `confluence-client.mjs`: URL parsing (Cloud `/wiki/spaces/.../pages/{id}` + Server `?pageId={id}`), HTML-to-text, `fetchConfluencePage`. `fetchRemoteLinks` added to `jira-client.mjs`. Origin-validated before forwarding auth (SSRF guard), capped at 10 pages, non-fatal. "Confluence Pages" section rendered in both brief and styled assemblers. Skipped for GitHub/Linear profiles and with `--no-attachments`. 944 tests. | Small |
 
@@ -315,8 +315,8 @@ Phase D:   Multi-tracker + Enterprise
 | Brief templates | No | No | Yes | Yes |
 | Response time metrics | No | No | Yes | Yes |
 | Parallel collision detection | No | No | Yes | Yes |
-| Standup/PR generator (`ticketlens standup`) | No | No | Yes | Yes |
-| Handoff brief (`--handoff`) | No | No | Yes | Yes |
+| Standup/PR generator (`ticketlens standup`) | Yes | Yes | Yes | Yes |
+| Handoff brief (`--handoff`) | No | Yes | Yes | Yes |
 | Shareable triage snapshot (`--share`) | No | No | Yes | Yes |
 | Team compliance analytics | No | No | Yes | Yes |
 | Cloud sync (E2EE) | No | Phase C | Phase C | Phase C |
