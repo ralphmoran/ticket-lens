@@ -1,5 +1,6 @@
-import { describe, it } from 'node:test';
+import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { pushTriageSnapshot, queueUrl } from '../lib/triage-push.mjs';
 
 describe('queueUrl', () => {
   it('production api → app subdomain', () => {
@@ -12,7 +13,6 @@ describe('queueUrl', () => {
     assert.equal(queueUrl('http://ticketlens.test'), 'http://ticketlens.test/console/queue');
   });
 });
-import { pushTriageSnapshot, queueUrl } from '../lib/triage-push.mjs';
 
 // ---------------------------------------------------------------------------
 // Helpers
