@@ -13,7 +13,7 @@
   <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..700;1,14..32,300..700&family=Playfair+Display:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..700;1,14..32,300..700&family=Playfair+Display:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"></noscript>
   <link rel="stylesheet" href="assets/styles.css">
-  <!-- TODO: LemonSqueezy overlay — replace STORE_SLUG + PRO_VARIANT_ID once store is created -->
+  <!-- LemonSqueezy overlay checkout — replace YOUR_STORE_SLUG, YOUR_PRO_VARIANT_ID, YOUR_TEAM_VARIANT_ID with values from LemonSqueezy dashboard -->
   <script src="https://app.lemonsqueezy.com/js/lemon.js" defer></script>
 </head>
 <body>
@@ -429,8 +429,7 @@
             <li>Scheduled daily triage digest (cron)</li>
             <li>Configurable cache TTL (4h, 1d, 7d, 30d)</li>
           </ul>
-          <!-- TODO: replace STORE_SLUG and PRO_VARIANT_ID with values from LemonSqueezy dashboard before launch -->
-          <a href="mailto:hello@ticketlens.io?subject=Pro%20License" class="pricing-cta solid">Get Pro →</a>
+          <a href="https://YOUR_STORE_SLUG.lemonsqueezy.com/checkout/buy/YOUR_PRO_VARIANT_ID?embed=1&media=0" class="pricing-cta solid lemonsqueezy-button">Get Pro →</a>
         </div>
 
         <!-- TEAM -->
@@ -454,7 +453,7 @@
             <li>Slack alerts &amp; digest schedules</li>
             <li>Priority support</li>
           </ul>
-          <a href="mailto:team@ticketlens.io?subject=Team%20License" class="pricing-cta ghost">Get Team →</a>
+          <a href="https://YOUR_STORE_SLUG.lemonsqueezy.com/checkout/buy/YOUR_TEAM_VARIANT_ID?embed=1&media=0" class="pricing-cta ghost lemonsqueezy-button">Get Team →</a>
         </div>
       </div>
       <div class="pricing-enterprise fade-in">
@@ -761,5 +760,41 @@
   </footer>
 
   <script src="assets/app.js" defer></script>
+
+  <!-- Purchase success modal -->
+  <div id="ls-success-overlay" role="dialog" aria-modal="true" aria-labelledby="ls-success-title" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:24px">
+    <div style="background:var(--bg-card);border:1px solid var(--border-2);border-radius:12px;max-width:420px;width:100%;padding:36px 32px;text-align:center;box-shadow:0 24px 80px rgba(0,0,0,.4)">
+      <div style="width:52px;height:52px;border-radius:50%;background:rgba(55,126,165,.15);border:1.5px solid var(--cta);display:flex;align-items:center;justify-content:center;margin:0 auto 20px">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--cta)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <h2 id="ls-success-title" style="font-size:1.2rem;font-weight:600;color:var(--text);margin:0 0 8px">Purchase complete!</h2>
+      <p style="font-size:.9rem;color:var(--text-muted);margin:0 0 20px;line-height:1.55">Your license key is on its way to your inbox. Activate it with:</p>
+      <code style="display:block;background:var(--bg-raised);border:1px solid var(--border);border-radius:var(--r);padding:11px 14px;font-size:.82rem;color:var(--text);font-family:'JetBrains Mono',monospace;text-align:left;word-break:break-all">ticketlens activate &lt;your-key&gt;</code>
+      <button id="ls-success-close" style="margin-top:24px;padding:9px 24px;border-radius:var(--r);background:var(--cta);color:#fff;border:none;font-size:.875rem;font-weight:500;cursor:pointer;transition:background .15s" onmouseover="this.style.background='var(--cta-hover)'" onmouseout="this.style.background='var(--cta)'">Got it</button>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      if (typeof window.createLemonSqueezy !== 'function') return;
+
+      window.createLemonSqueezy();
+      window.LemonSqueezy.Setup({
+        eventHandler: function (event) {
+          if (event.event !== 'Checkout.Success') return;
+          var overlay = document.getElementById('ls-success-overlay');
+          if (overlay) {
+            overlay.style.display = 'flex';
+            document.getElementById('ls-success-close').focus();
+          }
+        }
+      });
+
+      var closeBtn = document.getElementById('ls-success-close');
+      var overlay  = document.getElementById('ls-success-overlay');
+      if (closeBtn) closeBtn.addEventListener('click', function () { overlay.style.display = 'none'; });
+      if (overlay)  overlay.addEventListener('click',  function (e) { if (e.target === overlay) overlay.style.display = 'none'; });
+    });
+  </script>
 </body>
 </html>
