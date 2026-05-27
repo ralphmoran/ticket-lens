@@ -57,18 +57,34 @@ describe('runScheduleWizard', () => {
     assert.ok(calls[0].url.includes('/v1/schedule'));
   });
 
-  it('throws on backend error', async () => {
-    await assert.rejects(
-      () => runScheduleWizard({
-        answers: { time: '07:00', email: 'dev@example.com', timezone: 'UTC' },
-        fetcher: async () => ({ ok: false, status: 401, json: async () => ({}) }),
-        cliToken: 'tl_bad',
-        configDir: tmpDir,
-        platform: 'darwin',
-        writeLocalJob: () => {},
-      }),
-      { message: /schedule api error 401/i }
-    );
+  it('returns { ok: false, status: 401 } and prints session-expired message on 401', async () => {
+    const printed = [];
+    const result = await runScheduleWizard({
+      answers: { time: '07:00', email: 'dev@example.com', timezone: 'UTC' },
+      fetcher: async () => ({ ok: false, status: 401, json: async () => ({}) }),
+      cliToken: 'tl_bad',
+      configDir: tmpDir,
+      platform: 'darwin',
+      writeLocalJob: () => {},
+      print: s => printed.push(s),
+    });
+    assert.deepEqual(result, { ok: false, status: 401 });
+    assert.ok(printed.some(s => s.includes('ticketlens login')));
+  });
+
+  it('returns { ok: false } and prints warning on network error', async () => {
+    const printed = [];
+    const result = await runScheduleWizard({
+      answers: { time: '07:00', email: 'dev@example.com', timezone: 'UTC' },
+      fetcher: async () => { throw new Error('ENOTFOUND'); },
+      cliToken: 'tl_bad',
+      configDir: tmpDir,
+      platform: 'darwin',
+      writeLocalJob: () => {},
+      print: s => printed.push(s),
+    });
+    assert.deepEqual(result, { ok: false });
+    assert.ok(printed.some(s => s.includes('network error')));
   });
 
   it('calls writeLocalJob with plist content on darwin', async () => {

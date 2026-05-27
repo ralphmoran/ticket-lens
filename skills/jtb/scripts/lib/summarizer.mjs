@@ -1,7 +1,8 @@
+import { apiBase } from './api-utils.mjs';
+
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const CLOUD_URL = 'https://api.ticketlens.dev/v1/summarize';
 const DEFAULT_PROMPT = 'Summarize this Jira ticket in 3 sentences. Focus on what matters most for implementation. Be concrete.\n\n';
 const DEFAULT_MAX_TOKENS = 256;
 
@@ -134,7 +135,7 @@ async function callGroq({ brief, apiKey, fetcher, timeoutMs, prompt, maxTokens }
 }
 
 async function cloud({ brief, licenseKey, fetcher, timeoutMs }) {
-  const res = await fetcher(CLOUD_URL, {
+  const res = await fetcher(`${apiBase()}/v1/summarize`, {
     method: 'POST',
     signal: AbortSignal.timeout(timeoutMs),
     headers: {

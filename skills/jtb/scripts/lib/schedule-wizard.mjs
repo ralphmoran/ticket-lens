@@ -2,9 +2,10 @@ import { writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, platform as osPlatform } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { red, green, cyan } from './ansi.mjs';
+import { red, green, yellow, cyan } from './ansi.mjs';
+import { apiBase, warnIfInsecure } from './api-utils.mjs';
 
-const SCHEDULE_URL = 'https://api.ticketlens.dev/v1/schedule';
+const SCHEDULE_PATH = '/v1/schedule';
 
 /**
  * Build a macOS LaunchAgent plist string.
@@ -59,7 +60,9 @@ export async function runScheduleWizard({
   writeLocalJob = defaultWriteLocalJob,
   timeoutMs = 10_000,
   print = s => process.stdout.write(s),
+  warn = s => process.stderr.write(s),
 }) {
+  warnIfInsecure(apiBase(), warn);
   if (!cliToken) {
     print(`  ${red('✗')} schedule requires Console access. Run ${cyan('ticketlens login')} first.\n`);
     return { ok: false };
@@ -69,32 +72,44 @@ export async function runScheduleWizard({
   const hour = parseInt(hourStr, 10);
   const minute = parseInt(minuteStr, 10);
 
-  const res = await fetcher(SCHEDULE_URL, {
-    method: 'POST',
-    signal: AbortSignal.timeout(timeoutMs),
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${cliToken}`,
-    },
-    body: JSON.stringify({ email, timezone, deliverAt: time }),
-  });
+  try {
+    const res = await fetcher(`${apiBase()}${SCHEDULE_PATH}`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${cliToken}`,
+      },
+      body: JSON.stringify({ email, timezone, deliverAt: time }),
+    });
 
-  if (!res.ok) {
-    const err = new Error(`Schedule API error ${res.status}`);
-    err.status = res.status;
-    throw err;
+    if (!res.ok) {
+      if (res.status === 401) {
+        print(`  ${red('✗')} Session expired. Run ${cyan('ticketlens login')} to reconnect.\n`);
+        return { ok: false, status: 401 };
+      }
+      if (res.status === 403) {
+        print(`  ${red('✗')} schedule requires a Pro license\n`);
+        return { ok: false, status: 403 };
+      }
+      print(`  ${yellow('⚠')} Schedule API error (${res.status}) — try again later\n`);
+      return { ok: false, status: res.status };
+    }
+
+    const data = await res.json();
+
+    const ticketlensBin = resolveTicketlensBin();
+    const content = platform === 'darwin'
+      ? buildPlist({ hour, minute, ticketlensBin })
+      : buildCronLine({ hour, minute, ticketlensBin });
+
+    writeLocalJob(content, platform);
+
+    return data;
+  } catch {
+    print(`  ${yellow('⚠')} Schedule API error (network error) — try again later\n`);
+    return { ok: false };
   }
-
-  const data = await res.json();
-
-  const ticketlensBin = resolveTicketlensBin();
-  const content = platform === 'darwin'
-    ? buildPlist({ hour, minute, ticketlensBin })
-    : buildCronLine({ hour, minute, ticketlensBin });
-
-  writeLocalJob(content, platform);
-
-  return data;
 }
 
 export async function runScheduleStop({
@@ -102,17 +117,28 @@ export async function runScheduleStop({
   cliToken,
   platform = osPlatform(),
   print = s => process.stdout.write(s),
+  warn = s => process.stderr.write(s),
 }) {
+  warnIfInsecure(apiBase(), warn);
   if (!cliToken) {
     print(`  ${red('✗')} schedule requires Console access. Run ${cyan('ticketlens login')} first.\n`);
     return;
   }
-  const res = await fetcher(SCHEDULE_URL, {
-    method: 'DELETE',
-    signal: AbortSignal.timeout(10_000),
-    headers: { 'Authorization': `Bearer ${cliToken}` },
-  });
-  if (!res.ok) throw new Error(`Schedule API error ${res.status}`);
+  let res;
+  try {
+    res = await fetcher(`${apiBase()}${SCHEDULE_PATH}`, {
+      method: 'DELETE',
+      signal: AbortSignal.timeout(10_000),
+      headers: { 'Authorization': `Bearer ${cliToken}` },
+    });
+  } catch {
+    print(`  ${yellow('⚠')} Schedule API error (network error) — try again later\n`);
+    return;
+  }
+  if (!res.ok) {
+    print(`  ${yellow('⚠')} Schedule API error (${res.status}) — try again later\n`);
+    return;
+  }
 
   if (platform === 'darwin') {
     const plistPath = join(homedir(), 'Library', 'LaunchAgents', 'io.ticketlens.digest.plist');
@@ -133,18 +159,26 @@ export async function runScheduleStatus({
   fetcher = globalThis.fetch,
   cliToken,
   print = s => process.stdout.write(s),
+  warn = s => process.stderr.write(s),
 }) {
+  warnIfInsecure(apiBase(), warn);
   if (!cliToken) {
     print(`  ${red('✗')} schedule requires Console access. Run ${cyan('ticketlens login')} first.\n`);
     return;
   }
-  const res = await fetcher(SCHEDULE_URL, {
-    method: 'GET',
-    signal: AbortSignal.timeout(10_000),
-    headers: { 'Authorization': `Bearer ${cliToken}` },
-  });
+  let res;
+  try {
+    res = await fetcher(`${apiBase()}${SCHEDULE_PATH}`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(10_000),
+      headers: { 'Authorization': `Bearer ${cliToken}` },
+    });
+  } catch {
+    print(`  ${yellow('⚠')} Schedule API error (network error) — try again later\n`);
+    return;
+  }
   if (!res.ok) {
-    process.stdout.write('No active digest schedule found.\n');
+    print('  No active digest schedule found.\n');
     return;
   }
   const data = await res.json();

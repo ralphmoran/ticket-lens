@@ -17,20 +17,19 @@ import { runInteractiveList } from './lib/interactive-list.mjs';
 import { promptProfileSelect } from './lib/profile-picker.mjs';
 import { printTriageHelp } from './lib/help.mjs';
 import { handleUnknownFlags } from './lib/arg-validator.mjs';
-import { isLicensed, showUpgradePrompt, revalidateIfStale, readLicense } from './lib/license.mjs';
+import { isLicensed, showUpgradePrompt, revalidateIfStale } from './lib/license.mjs';
 import { readCliToken } from './lib/cli-auth.mjs';
+import { apiBase } from './lib/api-utils.mjs';
 
 const DEFAULT_STATUSES = ['In Progress', 'Code Review', 'QA'];
 
-async function defaultDigestDeliverer(payload) {
-  const { readLicense } = await import('./lib/license.mjs');
-  const licenseKey = readLicense()?.key;
-  const res = await fetch('https://api.ticketlens.dev/v1/digest/deliver', {
+async function defaultDigestDeliverer(payload, { cliToken } = {}) {
+  const res = await fetch(`${apiBase()}/v1/digest/deliver`, {
     method: 'POST',
     signal: AbortSignal.timeout(10_000),
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${licenseKey}`,
+      'Authorization': `Bearer ${cliToken}`,
     },
     body: JSON.stringify(payload),
   });
@@ -297,6 +296,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       return;
     }
     const deliverer = opts.digestDeliverer ?? defaultDigestDeliverer;
+    const digestCliToken = opts.cliToken ?? readCliToken(configDir) ?? null;
 
     // Triage history delta (non-fatal — wrapped in try/catch)
     let delta = null;
@@ -321,7 +321,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       },
       tickets: sorted,
       delta,
-    });
+    }, { cliToken: digestCliToken });
     return;
   }
 
