@@ -251,6 +251,23 @@ describe('getBriefCacheEntries', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('returns same array reference on second call within TTL — filesystem not re-read', () => {
+    const dir = makeTmpDir();
+    try {
+      writeBriefCache('PROJ-777', 'memo-test', 1, SAMPLE_TICKET, dir);
+      const first = getBriefCacheEntries(dir);
+      assert.equal(first.length, 1);
+
+      // Write a second entry after the first call — memoized result must not reflect it.
+      writeBriefCache('PROJ-888', 'memo-test', 1, SAMPLE_TICKET, dir);
+      const second = getBriefCacheEntries(dir);
+
+      assert.strictEqual(second, first); // same object reference proves cache was served
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('briefCacheAge', () => {

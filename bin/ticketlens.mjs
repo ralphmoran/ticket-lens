@@ -203,13 +203,17 @@ switch (command) {
         process.stdin.setRawMode(true);
         process.stdin.resume();
         process.stdin.setEncoding('utf8');
-        process.stdin.once('data', char => {
-          process.stdin.setRawMode(false);
-          process.stdin.pause();
+        const cleanup = () => { process.stdin.setRawMode(false); process.stdin.pause(); };
+        const onData = char => {
+          process.stdin.removeListener('end', onEnd);
+          cleanup();
           process.stderr.write('\n');
           if (char === '\x03') process.exit(0);
           res(char === 'y' || char === 'Y');
-        });
+        };
+        const onEnd = () => { process.stdin.removeListener('data', onData); cleanup(); res(false); };
+        process.stdin.once('data', onData);
+        process.stdin.once('end', onEnd);
       });
       if (!answer) {
         process.stderr.write(`  ${s.dim('Cancelled.')}\n`);

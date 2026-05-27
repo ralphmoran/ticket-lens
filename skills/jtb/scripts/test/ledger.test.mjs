@@ -53,6 +53,33 @@ describe('appendLedger', () => {
     try { readFileSync(join(dir, 'ledger.jsonl'), 'utf8'); exists = true; } catch { /* expected */ }
     assert.equal(exists, false);
   });
+
+  it('rotates ledger to 5000 records when file exceeds that limit', () => {
+    // Seed 5005 existing lines via a fake fsModule, then append one more (total 5006).
+    // Rotation must trim to the last 5000, discarding the oldest 6.
+    const existingLines = Array.from({ length: 5005 }, (_, i) =>
+      JSON.stringify({ ts: '2026-01-01T00:00:00.000Z', ticketKey: `P-${i}`, commitSha: 'x', author: 'a', coverage: 1, missing: [] })
+    );
+    let stored = existingLines.join('\n') + '\n';
+
+    const fakeFs = {
+      mkdirSync: () => {},
+      appendFileSync: (_path, data) => { stored += data; },
+      readFileSync: () => stored,
+      writeFileSync: (_path, data) => { stored = data; },
+      statSync: () => ({ size: Infinity }),
+    };
+
+    appendLedger(
+      { ticketKey: 'NEW', commitSha: 'abc', author: 'a@b.com', coverage: 80, missing: [] },
+      { configDir: '/fake', fsModule: fakeFs, isPro: true }
+    );
+
+    const lines = stored.split('\n').filter(l => l.trim().length > 0);
+    assert.equal(lines.length, 5000);
+    assert.equal(JSON.parse(lines[0]).ticketKey, 'P-6');
+    assert.equal(JSON.parse(lines[lines.length - 1]).ticketKey, 'NEW');
+  });
 });
 
 // ── readLedger ────────────────────────────────────────────────────────────────

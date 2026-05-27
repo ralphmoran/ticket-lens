@@ -8,8 +8,9 @@ import { join } from 'node:path';
 import { createHmac, randomBytes } from 'node:crypto';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 
-const LEDGER_FILE = 'ledger.jsonl';
-const KEY_FILE    = 'ledger-key';
+const LEDGER_FILE        = 'ledger.jsonl';
+const KEY_FILE           = 'ledger-key';
+const MAX_LEDGER_RECORDS = 5_000;
 
 /**
  * Append one compliance record to ledger.jsonl.
@@ -25,6 +26,7 @@ export function appendLedger(record, { configDir = DEFAULT_CONFIG_DIR, fsModule 
 
   const line = JSON.stringify({ ts: new Date().toISOString(), ...record }) + '\n';
   fsModule.appendFileSync(join(configDir, LEDGER_FILE), line, 'utf8');
+  _rotateIfNeeded(configDir, fsModule);
 }
 
 /**
@@ -83,6 +85,23 @@ export function exportLedger(format, { configDir = DEFAULT_CONFIG_DIR, fsModule 
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
+
+function _rotateIfNeeded(configDir, fsModule) {
+  const ledgerPath = join(configDir, LEDGER_FILE);
+  // Cheap size check first — each JSONL record averages ~180 bytes, so 5000 records ≈ 900 KB.
+  // Skip the full read when the file is well under the threshold.
+  try {
+    if (fsModule.statSync(ledgerPath).size < 900_000) return;
+  } catch { return; }
+
+  let raw;
+  try { raw = fsModule.readFileSync(ledgerPath, 'utf8'); } catch { return; }
+
+  const lines = raw.split('\n').filter(l => l.trim().length > 0);
+  if (lines.length > MAX_LEDGER_RECORDS) {
+    fsModule.writeFileSync(ledgerPath, lines.slice(-MAX_LEDGER_RECORDS).join('\n') + '\n', 'utf8');
+  }
+}
 
 function _getOrCreateKey(configDir, fsModule) {
   const keyPath = join(configDir, KEY_FILE);

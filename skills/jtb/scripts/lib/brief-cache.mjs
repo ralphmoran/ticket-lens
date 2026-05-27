@@ -82,11 +82,19 @@ export function clearBriefCache(ticketKey, profileName, configDir = DEFAULT_CONF
   } catch { /* non-fatal */ }
 }
 
+// Memoize getBriefCacheEntries per configDir within a single process invocation.
+// 5s TTL is well beyond the lifetime of any CLI run; prevents repeated stat+read+parse
+// when multiple callers (cache list, cache prune, cache status) hit the same directory.
+const _entriesCache = new Map(); // configDir → { entries, time }
+const _ENTRIES_TTL_MS = 5_000;
+
 /**
  * Returns all brief cache entries across all profiles.
  * Each entry: { profileName, ticketKey, filePath, size, mtimeMs, fetchedAt, depth }
  */
 export function getBriefCacheEntries(configDir = DEFAULT_CONFIG_DIR) {
+  const cached = _entriesCache.get(configDir);
+  if (cached && Date.now() - cached.time < _ENTRIES_TTL_MS) return cached.entries;
   const cacheDir = path.join(configDir, 'cache');
   if (!fs.existsSync(cacheDir)) return [];
 
@@ -120,6 +128,7 @@ export function getBriefCacheEntries(configDir = DEFAULT_CONFIG_DIR) {
     }
   }
 
+  _entriesCache.set(configDir, { entries, time: Date.now() });
   return entries;
 }
 
