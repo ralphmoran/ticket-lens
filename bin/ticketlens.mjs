@@ -285,8 +285,11 @@ switch (command) {
     if (!result.ok) { process.exitCode = 1; break; }
 
     const s = createStyler({ isTTY: process.stdout.isTTY });
-    process.stdout.write(`  ${s.green('✔')} Digest scheduled for ${s.cyan(answers.time)} ${answers.timezone}\n`);
-    process.stdout.write(`  Next delivery: ${s.cyan(result.nextDelivery)}\n`);
+    process.stdout.write(`  ${s.green('✔')} ${s.bold('Digest scheduled')}\n\n`);
+    process.stdout.write(`  ${s.dim('Time:         ')} ${s.cyan(answers.time)}  ${s.dim(answers.timezone)}\n`);
+    process.stdout.write(`  ${s.dim('Email:        ')} ${answers.email}\n`);
+    process.stdout.write(`  ${s.dim('Next delivery:')} ${s.cyan(result.nextDelivery)}\n`);
+    process.stdout.write('\n');
     break;
   }
 

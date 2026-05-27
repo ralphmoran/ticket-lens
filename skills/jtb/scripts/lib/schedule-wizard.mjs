@@ -2,7 +2,7 @@ import { writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, platform as osPlatform } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { red, green, yellow, cyan } from './ansi.mjs';
+import { red, green, yellow, cyan, bold, dim } from './ansi.mjs';
 import { apiBase, warnIfInsecure } from './api-utils.mjs';
 
 const SCHEDULE_PATH = '/v1/schedule';
@@ -152,7 +152,7 @@ export async function runScheduleStop({
     spawnSync('crontab', [tmp], { encoding: 'utf8' });
   }
 
-  print(`  ${green('✔')} Digest schedule removed.\n`);
+  print(`\n  ${green('✔')} ${bold('Digest schedule removed.')}\n\n`);
 }
 
 export async function runScheduleStatus({
@@ -182,9 +182,11 @@ export async function runScheduleStatus({
     return;
   }
   const data = await res.json();
-  print(`  ${green('✔')} Digest schedule: ${cyan(data.deliverAt)} ${data.timezone}\n`);
-  print(`  Last delivered:  ${data.lastDeliveredAt ?? 'never'}\n`);
-  print(`  Next delivery:   ${cyan(data.nextDelivery)}\n`);
+  print(`\n  ${green('✔')} ${bold('Active Digest Schedule')}\n\n`);
+  print(`  ${dim('Time:         ')} ${cyan(data.deliverAt)}  ${dim(data.timezone)}\n`);
+  print(`  ${dim('Last delivered:')} ${data.lastDeliveredAt ? cyan(data.lastDeliveredAt) : dim('never')}\n`);
+  print(`  ${dim('Next delivery:')} ${cyan(data.nextDelivery)}\n`);
+  print('\n');
 }
 
 function resolveTicketlensBin() {

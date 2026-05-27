@@ -84,24 +84,46 @@ export async function promptSecret(label, { stream = process.stderr, existingVal
  */
 export async function promptScheduleAnswers(args = [], { stream = process.stderr } = {}) {
   // Allow pre-filling via flags: --time=07:00 --email=dev@example.com --timezone=UTC
-  const timeArg = args.find(a => a.startsWith('--time='))?.split('=')[1];
+  const timeArg  = args.find(a => a.startsWith('--time='))?.split('=')[1];
   const emailArg = args.find(a => a.startsWith('--email='))?.split('=')[1];
-  const tzArg = args.find(a => a.startsWith('--timezone='))?.split('=')[1];
+  const tzArg    = args.find(a => a.startsWith('--timezone='))?.split('=')[1];
 
-  const time = timeArg ?? await promptText('Delivery time (HH:MM, 24h):', {
-    stream,
-    validate: (v) => /^\d{1,2}:\d{2}$/.test(v) ? null : 'Enter time as HH:MM (e.g. 07:00)',
-  });
+  const s = createStyler({ isTTY: stream.isTTY });
 
-  const email = emailArg ?? await promptText('Delivery email:', {
-    stream,
-    validate: (v) => v.includes('@') ? null : 'Enter a valid email address',
-  });
+  // ── Header box ─────────────────────────────────────────────────────────────
+  const headerLines = [
+    `${s.bold(s.cyan('◆ TicketLens'))} — Digest Schedule`,
+    s.dim('Configure your daily triage digest delivery.'),
+  ];
+  const innerWidth = headerLines.reduce((max, l) => Math.max(max, visLen(l)), 0) + 4;
+  const bc = s.cyan;
+  stream.write('\n');
+  stream.write(bc('╭' + '─'.repeat(innerWidth) + '╮') + '\n');
+  for (const line of headerLines) {
+    const pad = innerWidth - 2 - visLen(line);
+    stream.write(bc('│') + ' ' + line + ' '.repeat(Math.max(0, pad)) + bc('│') + '\n');
+  }
+  stream.write(bc('╰' + '─'.repeat(innerWidth) + '╯') + '\n');
+  stream.write('\n');
 
-  const timezone = tzArg ?? await promptText('Timezone (e.g. America/New_York):', {
-    stream,
-    defaultValue: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  });
+  const sysTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  const time = timeArg ?? await promptText(
+    s.dim('Delivery time') + s.dim('  (HH:MM, 24h):'),
+    { stream, validate: (v) => /^\d{1,2}:\d{2}$/.test(v) ? null : 'Enter time as HH:MM (e.g. 07:00)' },
+  );
+
+  const email = emailArg ?? await promptText(
+    s.dim('Delivery email:'),
+    { stream, validate: (v) => v.includes('@') ? null : 'Enter a valid email address' },
+  );
+
+  const timezone = tzArg ?? await promptText(
+    s.dim('Timezone') + s.dim(`  [${sysTimezone}]:`),
+    { stream, defaultValue: sysTimezone },
+  );
+
+  stream.write('\n');
 
   return { time, email, timezone };
 }
