@@ -52,12 +52,17 @@ export function buildCronLine({ hour, minute, ticketlensBin }) {
 export async function runScheduleWizard({
   answers,
   fetcher = globalThis.fetch,
-  licenseKey,
+  cliToken,
   configDir,
   platform = osPlatform(),
   writeLocalJob = defaultWriteLocalJob,
   timeoutMs = 10_000,
+  print = s => process.stdout.write(s),
 }) {
+  if (!cliToken) {
+    print('✗ schedule requires Console access. Run ticketlens login first.\n');
+    return { ok: false };
+  }
   const { time, email, timezone } = answers;
   const [hourStr, minuteStr] = time.split(':');
   const hour = parseInt(hourStr, 10);
@@ -68,7 +73,7 @@ export async function runScheduleWizard({
     signal: AbortSignal.timeout(timeoutMs),
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${licenseKey}`,
+      'Authorization': `Bearer ${cliToken}`,
     },
     body: JSON.stringify({ email, timezone, deliverAt: time }),
   });
@@ -91,11 +96,20 @@ export async function runScheduleWizard({
   return data;
 }
 
-export async function runScheduleStop({ fetcher = globalThis.fetch, licenseKey, platform = osPlatform() }) {
+export async function runScheduleStop({
+  fetcher = globalThis.fetch,
+  cliToken,
+  platform = osPlatform(),
+  print = s => process.stdout.write(s),
+}) {
+  if (!cliToken) {
+    print('✗ schedule requires Console access. Run ticketlens login first.\n');
+    return;
+  }
   const res = await fetcher(SCHEDULE_URL, {
     method: 'DELETE',
     signal: AbortSignal.timeout(10_000),
-    headers: { 'Authorization': `Bearer ${licenseKey}` },
+    headers: { 'Authorization': `Bearer ${cliToken}` },
   });
   if (!res.ok) throw new Error(`Schedule API error ${res.status}`);
 
@@ -114,11 +128,19 @@ export async function runScheduleStop({ fetcher = globalThis.fetch, licenseKey, 
   process.stdout.write('✔ Digest schedule removed.\n');
 }
 
-export async function runScheduleStatus({ fetcher = globalThis.fetch, licenseKey }) {
+export async function runScheduleStatus({
+  fetcher = globalThis.fetch,
+  cliToken,
+  print = s => process.stdout.write(s),
+}) {
+  if (!cliToken) {
+    print('✗ schedule requires Console access. Run ticketlens login first.\n');
+    return;
+  }
   const res = await fetcher(SCHEDULE_URL, {
     method: 'GET',
     signal: AbortSignal.timeout(10_000),
-    headers: { 'Authorization': `Bearer ${licenseKey}` },
+    headers: { 'Authorization': `Bearer ${cliToken}` },
   });
   if (!res.ok) {
     process.stdout.write('No active digest schedule found.\n');

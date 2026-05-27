@@ -29,7 +29,7 @@ function buildTicketPayload(scored, rawMap, baseUrl) {
  * @param {Map}      [opts.rawTicketMap] - Map<key, normalizedTicket>
  * @param {string}   [opts.profile]      - Resolved profile name (max 100 chars)
  * @param {string}   [opts.baseUrl]      - Jira base URL
- * @param {string}   [opts.licenseKey]   - Bearer token
+ * @param {string}   [opts.cliToken]     - CLI session token
  * @param {string}   [opts.capturedAt]   - ISO 8601 timestamp
  * @param {Function} [opts.fetcher]      - Injectable fetch
  * @param {Function} [opts.print]        - Output fn
@@ -40,15 +40,15 @@ export async function shareTriageSnapshot({
   rawTicketMap = new Map(),
   profile,
   baseUrl,
-  licenseKey,
+  cliToken,
   capturedAt,
   fetcher = globalThis.fetch,
   print = (s) => process.stdout.write(s),
   warn = (s) => process.stderr.write(s),
 } = {}) {
   warnIfInsecure(apiBase(), warn);
-  if (!licenseKey) {
-    print('✗ --share requires an active Team license (ticketlens activate <key>)\n');
+  if (!cliToken) {
+    print('✗ --share requires Console access. Run ticketlens login first.\n');
     return { ok: false };
   }
 
@@ -63,7 +63,7 @@ export async function shareTriageSnapshot({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${licenseKey}`,
+        'Authorization': `Bearer ${cliToken}`,
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15_000),
@@ -73,6 +73,11 @@ export async function shareTriageSnapshot({
       const data = await res.json();
       print(`✓ Share link (expires in 24h):\n  ${data.url}\n`);
       return { ok: true, status: res.status };
+    }
+
+    if (res.status === 401) {
+      print('✗ Session expired. Run ticketlens login to reconnect.\n');
+      return { ok: false, status: res.status };
     }
 
     if (res.status === 403) {

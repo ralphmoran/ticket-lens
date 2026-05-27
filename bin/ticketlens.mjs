@@ -262,13 +262,13 @@ switch (command) {
 
     if (subCmd === '--stop') {
       const { runScheduleStop } = await import('../skills/jtb/scripts/lib/schedule-wizard.mjs');
-      await runScheduleStop({ licenseKey: readLicense()?.key });
+      await runScheduleStop({ cliToken: readCliToken() });
       break;
     }
 
     if (subCmd === '--status') {
       const { runScheduleStatus } = await import('../skills/jtb/scripts/lib/schedule-wizard.mjs');
-      await runScheduleStatus({ licenseKey: readLicense()?.key });
+      await runScheduleStatus({ cliToken: readCliToken() });
       break;
     }
 
@@ -281,7 +281,8 @@ switch (command) {
     const { runScheduleWizard } = await import('../skills/jtb/scripts/lib/schedule-wizard.mjs');
     const { promptScheduleAnswers } = await import('../skills/jtb/scripts/lib/prompt-helpers.mjs');
     const answers = await promptScheduleAnswers(cmdArgs);
-    const result = await runScheduleWizard({ answers, licenseKey: readLicense()?.key });
+    const result = await runScheduleWizard({ answers, cliToken: readCliToken() });
+    if (!result.ok) { process.exitCode = 1; break; }
 
     process.stdout.write(`✔ Digest scheduled for ${answers.time} ${answers.timezone}\n`);
     process.stdout.write(`  Next delivery: ${result.nextDelivery}\n`);

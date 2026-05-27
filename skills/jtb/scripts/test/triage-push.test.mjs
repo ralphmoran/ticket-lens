@@ -45,40 +45,40 @@ function makeFetcher(status) {
 }
 
 // ---------------------------------------------------------------------------
-// No license key
+// No CLI token
 // ---------------------------------------------------------------------------
 
-describe('pushTriageSnapshot — no license key', () => {
-  it('shows no-key message and does not call fetcher', async () => {
+describe('pushTriageSnapshot — no cliToken', () => {
+  it('shows no-token message and does not call fetcher', async () => {
     let fetchCalled = false;
     const lines = [];
     const result = await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
       profile: 'default',
-      licenseKey: null,
+      cliToken: null,
       fetcher: () => { fetchCalled = true; },
       print: (s) => lines.push(s),
     });
-    assert.ok(!fetchCalled, 'fetcher must not be called without license key');
-    assert.ok(lines.some(l => l.includes('--push requires an active Team license')));
+    assert.ok(!fetchCalled, 'fetcher must not be called without CLI token');
+    assert.ok(lines.some(l => l.includes('--push requires Console access')));
     assert.equal(result.ok, false);
   });
 
-  it('shows no-key message when licenseKey is empty string', async () => {
+  it('shows no-token message when cliToken is empty string', async () => {
     const lines = [];
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: '',
+      cliToken: '',
       print: (s) => lines.push(s),
     });
-    assert.ok(lines.some(l => l.includes('--push requires an active Team license')));
+    assert.ok(lines.some(l => l.includes('--push requires Console access')));
   });
 
-  it('shows ticketlens activate hint in no-key message', async () => {
+  it('shows ticketlens login hint in no-token message', async () => {
     const lines = [];
-    await pushTriageSnapshot({ sorted: [], licenseKey: null, print: (s) => lines.push(s) });
-    assert.ok(lines.some(l => l.includes('ticketlens activate')));
+    await pushTriageSnapshot({ sorted: [], cliToken: null, print: (s) => lines.push(s) });
+    assert.ok(lines.some(l => l.includes('ticketlens login')));
   });
 });
 
@@ -94,7 +94,7 @@ describe('pushTriageSnapshot — HTTP success', () => {
       rawTicketMap: new Map([['PROJ-1', makeRaw('PROJ-1')]]),
       profile: 'prod',
       baseUrl: 'https://jira.example.com',
-      licenseKey: 'test-key-123',
+      cliToken: 'tl_test-key-123',
       fetcher: makeFetcher(201),
       print: (s) => lines.push(s),
     });
@@ -109,7 +109,7 @@ describe('pushTriageSnapshot — HTTP success', () => {
     const result = await pushTriageSnapshot({
       sorted: [],
       profile: 'dev',
-      licenseKey: 'key',
+      cliToken: 'tl_key',
       fetcher: makeFetcher(200),
       print: (s) => lines.push(s),
     });
@@ -128,7 +128,7 @@ describe('pushTriageSnapshot — HTTP errors (non-fatal)', () => {
     const lines = [];
     const result = await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'key',
+      cliToken: 'tl_key',
       fetcher: makeFetcher(403),
       print: (s) => lines.push(s),
     });
@@ -137,24 +137,24 @@ describe('pushTriageSnapshot — HTTP errors (non-fatal)', () => {
     assert.ok(lines.some(l => l.includes('--push requires a Team license')));
   });
 
-  it('shows warning on 401', async () => {
+  it('shows session-expired message on 401', async () => {
     const lines = [];
     const result = await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'key',
+      cliToken: 'tl_key',
       fetcher: makeFetcher(401),
       print: (s) => lines.push(s),
     });
     assert.ok(!result.ok);
     assert.equal(result.status, 401);
-    assert.ok(lines.some(l => l.includes('Push failed') || l.includes('push failed')));
+    assert.ok(lines.some(l => l.includes('Session expired') && l.includes('ticketlens login')));
   });
 
   it('shows warning on 500', async () => {
     const lines = [];
     const result = await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'key',
+      cliToken: 'tl_key',
       fetcher: makeFetcher(500),
       print: (s) => lines.push(s),
     });
@@ -166,7 +166,7 @@ describe('pushTriageSnapshot — HTTP errors (non-fatal)', () => {
     const lines = [];
     const result = await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'key',
+      cliToken: 'tl_key',
       fetcher: async () => { throw new Error('ECONNREFUSED'); },
       print: (s) => lines.push(s),
     });
@@ -177,7 +177,7 @@ describe('pushTriageSnapshot — HTTP errors (non-fatal)', () => {
   it('never rejects — push errors must not surface', async () => {
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'key',
+      cliToken: 'tl_key',
       fetcher: async () => { throw new TypeError('network broken'); },
       print: () => {},
     });
@@ -199,7 +199,7 @@ describe('pushTriageSnapshot — LOCK: no git_branches by default', () => {
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
       profile: 'default',
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
         return { ok: true, status: 200 };
@@ -213,7 +213,7 @@ describe('pushTriageSnapshot — LOCK: no git_branches by default', () => {
     let capturedBody;
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       gitBranches: undefined,
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
@@ -239,7 +239,7 @@ describe('pushTriageSnapshot — payload shape', () => {
       ]),
       profile: 'production',
       baseUrl: 'https://jira.example.com',
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       capturedAt: now,
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
@@ -271,14 +271,14 @@ describe('pushTriageSnapshot — payload shape', () => {
     let capturedHeaders;
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'my-secret-key',
+      cliToken: 'tl_my-secret-key',
       fetcher: async (_url, opts) => {
         capturedHeaders = opts.headers;
         return { ok: true, status: 201 };
       },
       print: () => {},
     });
-    assert.equal(capturedHeaders.Authorization, 'Bearer my-secret-key');
+    assert.equal(capturedHeaders.Authorization, 'Bearer tl_my-secret-key');
     assert.equal(capturedHeaders['Content-Type'], 'application/json');
   });
 
@@ -287,7 +287,7 @@ describe('pushTriageSnapshot — payload shape', () => {
     await pushTriageSnapshot({
       sorted: [],
       profile: 'x'.repeat(200),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
         return { ok: true, status: 201 };
@@ -302,7 +302,7 @@ describe('pushTriageSnapshot — payload shape', () => {
     const fixedTime = '2026-05-11T10:00:00.000Z';
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       capturedAt: fixedTime,
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
@@ -318,7 +318,7 @@ describe('pushTriageSnapshot — payload shape', () => {
     const before = new Date().toISOString();
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
         return { ok: true, status: 201 };
@@ -335,7 +335,7 @@ describe('pushTriageSnapshot — payload shape', () => {
     await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1', 'clear')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
         return { ok: true, status: 201 };
@@ -350,7 +350,7 @@ describe('pushTriageSnapshot — payload shape', () => {
     await pushTriageSnapshot({
       sorted: [makeScored('PROJ-99')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       baseUrl: 'https://jira.example.com',
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
@@ -370,7 +370,7 @@ describe('pushTriageSnapshot — payload shape', () => {
       sorted: [makeScored('MYPROJ-42')],
       rawTicketMap: new Map(),
       baseUrl: 'https://company.atlassian.net',
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
         return { ok: true, status: 201 };
@@ -384,7 +384,7 @@ describe('pushTriageSnapshot — payload shape', () => {
     let capturedUrl;
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       fetcher: async (url) => {
         capturedUrl = url;
         return { ok: true, status: 201 };
@@ -399,7 +399,7 @@ describe('pushTriageSnapshot — payload shape', () => {
     await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1', 'needs-response')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
         return { ok: true, status: 201 };
@@ -414,7 +414,7 @@ describe('pushTriageSnapshot — payload shape', () => {
     await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       isLicensedFn: () => false,
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
@@ -430,7 +430,7 @@ describe('pushTriageSnapshot — payload shape', () => {
     await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       isLicensedFn: () => false,
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
@@ -452,7 +452,7 @@ describe('pushTriageSnapshot — LOCK: compliance defaults without ledger entry'
     await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       isLicensedFn: () => true,
       readLedgerFn: () => [],
       fetcher: async (_url, opts) => {
@@ -469,7 +469,7 @@ describe('pushTriageSnapshot — LOCK: compliance defaults without ledger entry'
     await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       isLicensedFn: () => true,
       readLedgerFn: () => [],
       fetcher: async (_url, opts) => {
@@ -486,7 +486,7 @@ describe('pushTriageSnapshot — LOCK: compliance defaults without ledger entry'
     await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       isLicensedFn: () => false,
       readLedgerFn: () => { ledgerCalled = true; return []; },
       fetcher: async () => ({ ok: true, status: 201 }),
@@ -510,7 +510,7 @@ describe('pushTriageSnapshot — compliance enrichment from ledger', () => {
     await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       isLicensedFn: () => true,
       readLedgerFn: () => [makeLedgerEntry('PROJ-1', 100, [])],
       fetcher: async (_url, opts) => {
@@ -527,7 +527,7 @@ describe('pushTriageSnapshot — compliance enrichment from ledger', () => {
     await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       isLicensedFn: () => true,
       readLedgerFn: () => [makeLedgerEntry('PROJ-1', 60, ['req-A', 'req-B'])],
       fetcher: async (_url, opts) => {
@@ -544,7 +544,7 @@ describe('pushTriageSnapshot — compliance enrichment from ledger', () => {
     await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       isLicensedFn: () => true,
       readLedgerFn: () => [makeLedgerEntry('PROJ-1', 75, ['req-A'])],
       fetcher: async (_url, opts) => {
@@ -561,7 +561,7 @@ describe('pushTriageSnapshot — compliance enrichment from ledger', () => {
     await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1'), makeScored('PROJ-2')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       isLicensedFn: () => true,
       readLedgerFn: () => [makeLedgerEntry('PROJ-1', 100, [])],
       fetcher: async (_url, opts) => {
@@ -584,7 +584,7 @@ describe('pushTriageSnapshot — compliance enrichment from ledger', () => {
     await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       isLicensedFn: () => true,
       readLedgerFn: () => entries,
       fetcher: async (_url, opts) => {
@@ -603,7 +603,7 @@ describe('pushTriageSnapshot — compliance enrichment from ledger', () => {
     await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       isLicensedFn: () => true,
       readLedgerFn: () => [entry],
       fetcher: async (_url, opts) => {
@@ -620,7 +620,7 @@ describe('pushTriageSnapshot — compliance enrichment from ledger', () => {
     const result = await pushTriageSnapshot({
       sorted: [makeScored('PROJ-1')],
       rawTicketMap: new Map(),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       isLicensedFn: () => true,
       readLedgerFn: () => { throw new Error('ledger read error'); },
       fetcher: async () => ({ ok: true, status: 201 }),
@@ -633,7 +633,7 @@ describe('pushTriageSnapshot — compliance enrichment from ledger', () => {
     const lines = [];
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       isLicensedFn: () => true,
       readLedgerFn: () => { throw new Error('ledger error'); },
       fetcher: async () => ({ ok: true, status: 200 }),
@@ -656,7 +656,7 @@ describe('pushTriageSnapshot — git_branches', () => {
     let capturedBody;
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       gitBranches: sampleBranches,
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
@@ -671,7 +671,7 @@ describe('pushTriageSnapshot — git_branches', () => {
     let capturedBody;
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       gitBranches: null,
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
@@ -686,7 +686,7 @@ describe('pushTriageSnapshot — git_branches', () => {
     let capturedBody;
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       gitBranches: [],
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
@@ -706,7 +706,7 @@ describe('pushTriageSnapshot — git_branches', () => {
     let capturedBody;
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       gitBranches: branches,
       fetcher: async (_url, opts) => {
         capturedBody = JSON.parse(opts.body);
@@ -720,7 +720,7 @@ describe('pushTriageSnapshot — git_branches', () => {
   it('success/failure outcome unchanged when git_branches provided', async () => {
     const result = await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       gitBranches: sampleBranches,
       fetcher: async () => ({ ok: true, status: 200 }),
       print: () => {},
@@ -731,7 +731,7 @@ describe('pushTriageSnapshot — git_branches', () => {
   it('push still succeeds on network error regardless of git_branches', async () => {
     const result = await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       gitBranches: sampleBranches,
       fetcher: async () => { throw new Error('ECONNREFUSED'); },
       print: () => {},
@@ -748,7 +748,7 @@ describe('pushTriageSnapshot — http warning (item 3)', () => {
     const warnings = [];
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       fetcher: async () => ({ ok: true, json: async () => ({}) }),
       print: () => {},
       warn: msg => warnings.push(msg),
@@ -762,11 +762,53 @@ describe('pushTriageSnapshot — http warning (item 3)', () => {
     const warnings = [];
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       fetcher: async () => ({ ok: true, json: async () => ({}) }),
       print: () => {},
       warn: msg => warnings.push(msg),
     });
     assert.equal(warnings.length, 0, 'no warning for .test local domain');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RED: cliToken guard (new behavior — fails until source is updated)
+// ---------------------------------------------------------------------------
+
+describe('pushTriageSnapshot — cliToken guard (new auth)', () => {
+  it('no-token message says "requires Console access. Run ticketlens login first"', async () => {
+    const lines = [];
+    const result = await pushTriageSnapshot({
+      sorted: [],
+      cliToken: null,
+      fetcher: async () => { throw new Error('must not call'); },
+      print: s => lines.push(s),
+    });
+    assert.ok(!result.ok);
+    assert.ok(lines.some(l => l.includes('requires Console access')), `got: ${lines.join(' ')}`);
+    assert.ok(lines.some(l => l.includes('ticketlens login')), `got: ${lines.join(' ')}`);
+  });
+
+  it('401 response says "Session expired. Run ticketlens login to reconnect"', async () => {
+    const lines = [];
+    await pushTriageSnapshot({
+      sorted: [],
+      cliToken: 'tl_test',
+      fetcher: async () => ({ ok: false, status: 401 }),
+      print: s => lines.push(s),
+    });
+    assert.ok(lines.some(l => l.includes('Session expired')), `got: ${lines.join(' ')}`);
+    assert.ok(lines.some(l => l.includes('ticketlens login')), `got: ${lines.join(' ')}`);
+  });
+
+  it('sends Authorization: Bearer <cliToken> in header', async () => {
+    let headers;
+    await pushTriageSnapshot({
+      sorted: [],
+      cliToken: 'tl_mytoken',
+      fetcher: async (_url, opts) => { headers = opts.headers; return { ok: true, status: 200 }; },
+      print: () => {},
+    });
+    assert.equal(headers.Authorization, 'Bearer tl_mytoken');
   });
 });

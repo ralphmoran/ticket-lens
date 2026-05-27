@@ -354,6 +354,8 @@ Use `--manual` when there is no GUI (CI runners, SSH sessions, containers).
 
 `ticketlens sync` pulls any tracker profiles you have configured in the Console and writes them locally, keeping your CLI in sync with your team settings without re-running `init`.
 
+> **Console features** — `ticketlens triage --push`, `--share`, `ticketlens collisions`, and `ticketlens schedule` all require an active Console session. Run `ticketlens login` once and the token is stored automatically.
+
 ---
 
 ### License

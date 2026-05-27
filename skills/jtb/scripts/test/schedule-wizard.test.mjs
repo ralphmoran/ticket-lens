@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { runScheduleWizard, buildPlist, buildCronLine } from '../lib/schedule-wizard.mjs';
+import { runScheduleWizard, runScheduleStop, runScheduleStatus, buildPlist, buildCronLine } from '../lib/schedule-wizard.mjs';
 
 describe('buildPlist', () => {
   it('generates valid plist with correct hour and minute', () => {
@@ -46,7 +46,7 @@ describe('runScheduleWizard', () => {
         calls.push({ url, body: JSON.parse(opts.body) });
         return { ok: true, json: async () => ({ scheduled: true, nextDelivery: '2026-03-29T11:00:00Z' }) };
       },
-      licenseKey: 'lic-test',
+      cliToken: 'tl_lic-test',
       configDir: tmpDir,
       platform: 'darwin',
       writeLocalJob: () => {},
@@ -62,7 +62,7 @@ describe('runScheduleWizard', () => {
       () => runScheduleWizard({
         answers: { time: '07:00', email: 'dev@example.com', timezone: 'UTC' },
         fetcher: async () => ({ ok: false, status: 401, json: async () => ({}) }),
-        licenseKey: 'bad',
+        cliToken: 'tl_bad',
         configDir: tmpDir,
         platform: 'darwin',
         writeLocalJob: () => {},
@@ -76,12 +76,91 @@ describe('runScheduleWizard', () => {
     await runScheduleWizard({
       answers: { time: '07:00', email: 'dev@example.com', timezone: 'UTC' },
       fetcher: async () => ({ ok: true, json: async () => ({ scheduled: true, nextDelivery: '' }) }),
-      licenseKey: 'lic',
+      cliToken: 'tl_lic',
       configDir: tmpDir,
       platform: 'darwin',
       writeLocalJob: (content, platform) => written.push({ content, platform }),
     });
     assert.equal(written[0].platform, 'darwin');
     assert.ok(written[0].content.includes('io.ticketlens.digest'));
+  });
+});
+
+// ── cliToken param and null guard tests ───────────────────────────────────────
+
+describe('runScheduleWizard — cliToken param (new auth)', () => {
+  let tmpDir2;
+  before(() => { tmpDir2 = mkdtempSync(join(tmpdir(), 'schedule-clitoken-test-')); });
+  after(() => { rmSync(tmpDir2, { recursive: true }); });
+
+  it('sends Authorization: Bearer <cliToken> when cliToken provided', async () => {
+    let capturedHeaders;
+    await runScheduleWizard({
+      answers: { time: '08:00', email: 'dev@example.com', timezone: 'UTC' },
+      fetcher: async (url, opts) => {
+        capturedHeaders = opts.headers;
+        return { ok: true, json: async () => ({ scheduled: true, nextDelivery: '' }) };
+      },
+      cliToken: 'tl_schedule_token',
+      configDir: tmpDir2,
+      platform: 'darwin',
+      writeLocalJob: () => {},
+    });
+    assert.equal(capturedHeaders.Authorization, 'Bearer tl_schedule_token');
+  });
+
+  it('returns { ok: false } and prints message when cliToken is null', async () => {
+    const printed = [];
+    const result = await runScheduleWizard({
+      answers: { time: '08:00', email: 'dev@example.com', timezone: 'UTC' },
+      fetcher: async () => { throw new Error('should not fetch'); },
+      cliToken: null,
+      configDir: tmpDir2,
+      platform: 'darwin',
+      writeLocalJob: () => {},
+      print: s => printed.push(s),
+    });
+    assert.deepEqual(result, { ok: false });
+    assert.ok(printed.some(s => s.includes('ticketlens login')), 'expected login hint in output');
+  });
+
+  it('returns { ok: false } and prints message when cliToken is undefined', async () => {
+    const printed = [];
+    const result = await runScheduleWizard({
+      answers: { time: '08:00', email: 'dev@example.com', timezone: 'UTC' },
+      fetcher: async () => { throw new Error('should not fetch'); },
+      cliToken: undefined,
+      configDir: tmpDir2,
+      platform: 'darwin',
+      writeLocalJob: () => {},
+      print: s => printed.push(s),
+    });
+    assert.deepEqual(result, { ok: false });
+    assert.ok(printed.some(s => s.includes('ticketlens login')));
+  });
+});
+
+describe('runScheduleStop — null guard', () => {
+  it('returns early and prints message when cliToken is null', async () => {
+    const printed = [];
+    await runScheduleStop({
+      fetcher: async () => { throw new Error('should not fetch'); },
+      cliToken: null,
+      platform: 'darwin',
+      print: s => printed.push(s),
+    });
+    assert.ok(printed.some(s => s.includes('ticketlens login')));
+  });
+});
+
+describe('runScheduleStatus — null guard', () => {
+  it('returns early and prints message when cliToken is null', async () => {
+    const printed = [];
+    await runScheduleStatus({
+      fetcher: async () => { throw new Error('should not fetch'); },
+      cliToken: null,
+      print: s => printed.push(s),
+    });
+    assert.ok(printed.some(s => s.includes('ticketlens login')));
   });
 });

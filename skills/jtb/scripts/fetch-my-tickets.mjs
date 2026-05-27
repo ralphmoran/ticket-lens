@@ -18,6 +18,7 @@ import { promptProfileSelect } from './lib/profile-picker.mjs';
 import { printTriageHelp } from './lib/help.mjs';
 import { handleUnknownFlags } from './lib/arg-validator.mjs';
 import { isLicensed, showUpgradePrompt, revalidateIfStale, readLicense } from './lib/license.mjs';
+import { readCliToken } from './lib/cli-auth.mjs';
 
 const DEFAULT_STATUSES = ['In Progress', 'Code Review', 'QA'];
 
@@ -334,37 +335,20 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     return;
   }
 
-  // Interactive mode: TTY + not --plain + not --static
-  const wantInteractive = process.stdout.isTTY && !args.includes('--plain') && !args.includes('--static');
-  if (wantInteractive && process.stdin.setRawMode) {
-    const result = await runInteractiveList(sorted, { baseUrl: conn.baseUrl, staleDays, styled: true });
-    if (result === 'switch') {
-      const cleanArgs = args.filter(a => !a.startsWith('--profile=') && !a.startsWith('--project='));
-      return run(cleanArgs, { ...opts, env, fetcher, configDir });
-    }
-    // Fall through to push/share if those flags were passed
-    if (!pushFlag && !shareFlag) return;
-  } else {
-    const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
-    const summary = useStyled
-      ? styleTriageSummary(sorted, { styled: true, staleDays, baseUrl: conn.baseUrl })
-      : assembleTriageSummary(sorted, { staleDays, baseUrl: conn.baseUrl });
-    process.stdout.write(summary + '\n');
-  }
-
+  // push/share run first so their result is visible before (or instead of) the TUI
   if (pushFlag) {
     const { pushTriageSnapshot } = await import('./lib/triage-push.mjs');
     const { scanCurrentBranch } = await import('./lib/branch-scanner.mjs');
     const pushFn = opts.pushFn ?? pushTriageSnapshot;
     const scanFn = opts.scanFn ?? scanCurrentBranch;
-    const licenseKey = readLicense(configDir)?.key ?? null;
+    const cliToken = opts.cliToken ?? readCliToken(configDir) ?? null;
     const printFn = opts.print ?? ((s) => process.stdout.write(s));
     await pushFn({
       sorted,
       rawTicketMap,
       profile: profileName ?? 'default',
       baseUrl: conn.baseUrl,
-      licenseKey,
+      cliToken,
       gitBranches: scanFn(),
       fetcher,
       print: printFn,
@@ -374,18 +358,35 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   if (shareFlag) {
     const { shareTriageSnapshot } = await import('./lib/triage-share.mjs');
     const shareFn = opts.shareFn ?? shareTriageSnapshot;
-    const licenseKey = readLicense(configDir)?.key ?? null;
+    const cliToken = opts.cliToken ?? readCliToken(configDir) ?? null;
     const printFn = opts.print ?? ((s) => process.stdout.write(s));
     await shareFn({
       sorted,
       rawTicketMap,
       profile: profileName ?? 'default',
       baseUrl: conn.baseUrl,
-      licenseKey,
+      cliToken,
       fetcher,
       print: printFn,
     });
   }
+
+  // Interactive mode: TTY + not --plain + not --static
+  const wantInteractive = process.stdout.isTTY && !args.includes('--plain') && !args.includes('--static');
+  if (wantInteractive && process.stdin.setRawMode) {
+    const result = await runInteractiveList(sorted, { baseUrl: conn.baseUrl, staleDays, styled: true });
+    if (result === 'switch') {
+      const cleanArgs = args.filter(a => !a.startsWith('--profile=') && !a.startsWith('--project='));
+      return run(cleanArgs, { ...opts, env, fetcher, configDir });
+    }
+    return;
+  }
+
+  const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
+  const summary = useStyled
+    ? styleTriageSummary(sorted, { styled: true, staleDays, baseUrl: conn.baseUrl })
+    : assembleTriageSummary(sorted, { staleDays, baseUrl: conn.baseUrl });
+  process.stdout.write(summary + '\n');
 }
 
 // Run if invoked directly

@@ -11,7 +11,7 @@ describe('triage-push lock — endpoint not changed', () => {
 
     await pushTriageSnapshot({
       sorted: [],
-      licenseKey: 'test-key',
+      cliToken: 'tl_test-key',
       profile: 'default',
       fetcher: async (url) => { capturedUrl = url; return { ok: true, json: async () => ({}) }; },
       print: () => {},
@@ -42,7 +42,7 @@ describe('shareTriageSnapshot', () => {
     rawTicketMap: new Map([['PROJ-1', { assignee: 'Alice', updated: '2026-05-20T10:00:00Z' }]]),
     profile: 'production',
     baseUrl: 'https://jira.example.com',
-    licenseKey: 'valid-key',
+    cliToken: 'tl_valid-key',
     capturedAt: '2026-05-20T10:00:00Z',
     fetcher: fetcherOverride,
     print: (s) => printLines.push(s),
@@ -82,7 +82,7 @@ describe('shareTriageSnapshot', () => {
 
     await shareTriageSnapshot(baseOpts(fakeFetcher));
 
-    assert.strictEqual(capturedHeaders['Authorization'], 'Bearer valid-key');
+    assert.strictEqual(capturedHeaders['Authorization'], 'Bearer tl_valid-key');
   });
 
   it('sends profile, captured_at, and tickets in payload', async () => {
@@ -100,18 +100,18 @@ describe('shareTriageSnapshot', () => {
     assert.strictEqual(capturedBody.tickets[0].key, 'PROJ-1');
   });
 
-  it('returns ok:false and prints upgrade message when no licenseKey', async () => {
+  it('returns ok:false and shows console-access message when no cliToken', async () => {
     const lines = [];
     const result = await shareTriageSnapshot({
       sorted: [],
-      licenseKey: null,
+      cliToken: null,
       profile: 'default',
       fetcher: async () => { throw new Error('should not be called'); },
       print: (s) => lines.push(s),
     });
 
     assert.strictEqual(result.ok, false);
-    assert.ok(lines.some(l => l.toLowerCase().includes('team')), 'must mention team license');
+    assert.ok(lines.some(l => l.includes('requires Console access')), 'must mention Console access');
   });
 
   it('returns ok:false and prints team-gate message on 403', async () => {
@@ -181,7 +181,7 @@ describe('shareTriageSnapshot', () => {
       sorted: [],
       rawTicketMap: new Map(),
       profile: 'default',
-      licenseKey: 'key',
+      cliToken: 'tl_key',
       capturedAt: '2026-05-20T10:00:00Z',
       fetcher: fakeFetcher,
       print: (s) => lines.push(s),
@@ -198,7 +198,7 @@ describe('shareTriageSnapshot', () => {
 
     await assert.doesNotReject(() => shareTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       profile: 'p',
       capturedAt: new Date().toISOString(),
       fetcher: fakeFetcher,
@@ -216,7 +216,7 @@ describe('shareTriageSnapshot', () => {
       sorted: [],
       rawTicketMap: new Map(),
       profile: 'x'.repeat(200),
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       capturedAt: '2026-05-20T10:00:00Z',
       fetcher: fakeFetcher,
       print: () => {},
@@ -234,7 +234,7 @@ describe('shareTriageSnapshot — http warning (item 3)', () => {
     const warnings = [];
     await shareTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       fetcher: async () => ({ ok: true, json: async () => ({ url: 'https://x' }) }),
       print: () => {},
       warn: msg => warnings.push(msg),
@@ -247,11 +247,56 @@ describe('shareTriageSnapshot — http warning (item 3)', () => {
     const warnings = [];
     await shareTriageSnapshot({
       sorted: [],
-      licenseKey: 'k',
+      cliToken: 'tl_k',
       fetcher: async () => ({ ok: true, json: async () => ({ url: 'https://x' }) }),
       print: () => {},
       warn: msg => warnings.push(msg),
     });
     assert.equal(warnings.length, 0, 'no warning for .test local domain');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RED: cliToken guard (new behavior — fails until source is updated)
+// ---------------------------------------------------------------------------
+
+describe('shareTriageSnapshot — cliToken guard (new auth)', () => {
+  it('no-token message says "requires Console access. Run ticketlens login first"', async () => {
+    const lines = [];
+    const result = await shareTriageSnapshot({
+      sorted: [],
+      cliToken: null,
+      fetcher: async () => { throw new Error('must not call'); },
+      print: s => lines.push(s),
+    });
+    assert.ok(!result.ok);
+    assert.ok(lines.some(l => l.includes('requires Console access')), `got: ${lines.join(' ')}`);
+    assert.ok(lines.some(l => l.includes('ticketlens login')), `got: ${lines.join(' ')}`);
+  });
+
+  it('401 response says "Session expired. Run ticketlens login to reconnect"', async () => {
+    const lines = [];
+    await shareTriageSnapshot({
+      sorted: [],
+      cliToken: 'tl_test',
+      fetcher: async () => ({ ok: false, status: 401, json: async () => ({}) }),
+      print: s => lines.push(s),
+    });
+    assert.ok(lines.some(l => l.includes('Session expired')), `got: ${lines.join(' ')}`);
+    assert.ok(lines.some(l => l.includes('ticketlens login')), `got: ${lines.join(' ')}`);
+  });
+
+  it('sends Authorization: Bearer <cliToken> in header', async () => {
+    let headers;
+    await shareTriageSnapshot({
+      sorted: [],
+      cliToken: 'tl_mytoken',
+      fetcher: async (_url, opts) => {
+        headers = opts.headers;
+        return { ok: true, json: async () => ({ url: 'https://x/s/t', expires_at: '' }) };
+      },
+      print: () => {},
+    });
+    assert.equal(headers.Authorization, 'Bearer tl_mytoken');
   });
 });

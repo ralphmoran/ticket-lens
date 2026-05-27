@@ -649,4 +649,46 @@ describe('triage --share', () => {
     assert.strictEqual(typeof calls[0].profile, 'string');
     assert.ok(Array.isArray(calls[0].sorted));
   });
+
+  it('passes cliToken from opts to shareFn', async () => {
+    const calls = [];
+    await run(['triage', '--share'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      cliToken: 'tl_test_share',
+      shareFn: async (opts) => { calls.push(opts); return { ok: true }; },
+      isLicensed: () => true,
+    });
+    assert.equal(calls[0].cliToken, 'tl_test_share');
+  });
+});
+
+describe('triage --push', () => {
+  it('calls pushFn when --push flag is passed', async () => {
+    const calls = [];
+    await run(['triage', '--push'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      pushFn: async (opts) => { calls.push(opts); return { ok: true }; },
+      scanFn: () => null,
+      isLicensed: () => true,
+    });
+    assert.equal(calls.length, 1);
+    assert.ok('sorted' in calls[0]);
+    assert.ok('profile' in calls[0]);
+  });
+
+  it('passes cliToken from opts to pushFn', async () => {
+    const calls = [];
+    await run(['triage', '--push'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      cliToken: 'tl_test_push',
+      pushFn: async (opts) => { calls.push(opts); return { ok: true }; },
+      scanFn: () => null,
+      isLicensed: () => true,
+    });
+    assert.equal(calls[0].cliToken, 'tl_test_push');
+  });
+
 });

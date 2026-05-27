@@ -6,8 +6,8 @@
 import { readLedger } from './ledger.mjs';
 import { isLicensed } from './license.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
-
 import { apiBase, warnIfInsecure } from './api-utils.mjs';
+import { buildTicketPayload } from './ticket-payload.mjs';
 
 const PUSH_PATH = '/v1/triage/push';
 
@@ -16,27 +16,10 @@ const PUSH_PATH = '/v1/triage/push';
 //   https://api.ticketlens.com      → https://app.ticketlens.com/console/queue
 export function queueUrl(base) {
   const noApi = base.replace(/^(https?:\/\/)api\./, '$1');
-  // Production: ticketlens.com → app.ticketlens.com
-  const console = /ticketlens\.com/.test(noApi)
+  const consoleBase = /ticketlens\.com/.test(noApi)
     ? noApi.replace('://', '://app.')
     : noApi;
-  return console + '/console/queue';
-}
-
-function buildTicketPayload(scored, rawMap, baseUrl) {
-  const raw = rawMap?.get(scored.ticketKey);
-  return {
-    key: scored.ticketKey,
-    summary: scored.summary ?? null,
-    status: scored.status ?? null,
-    assignee: raw?.assignee ?? null,
-    attention_score: null,
-    flags: scored.urgency === 'clear' ? [] : [scored.urgency],
-    compliance_coverage: null,
-    compliance_status: 'unknown',
-    url: baseUrl ? `${baseUrl}/browse/${scored.ticketKey}` : null,
-    last_updated: raw?.updated ?? null,
-  };
+  return consoleBase + '/console/queue';
 }
 
 /**
@@ -47,7 +30,7 @@ function buildTicketPayload(scored, rawMap, baseUrl) {
  * @param {Map}      [opts.rawTicketMap] - Map<key, normalizedTicket>
  * @param {string}   [opts.profile]      - Resolved profile name (max 100 chars)
  * @param {string}   [opts.baseUrl]      - Jira base URL for URL construction
- * @param {string}   [opts.licenseKey]   - Bearer token for the API
+ * @param {string}   [opts.cliToken]     - CLI session token for the API
  * @param {string}   [opts.capturedAt]   - ISO 8601 timestamp (defaults to now)
  * @param {Array}    [opts.gitBranches]  - Branch metadata from scanCurrentBranch (null = not in git repo)
  * @param {Function} [opts.fetcher]      - Injectable fetch (default: globalThis.fetch)
@@ -59,7 +42,7 @@ export async function pushTriageSnapshot({
   rawTicketMap = new Map(),
   profile,
   baseUrl,
-  licenseKey,
+  cliToken,
   capturedAt,
   gitBranches,
   fetcher = globalThis.fetch,
@@ -70,8 +53,8 @@ export async function pushTriageSnapshot({
   configDir = DEFAULT_CONFIG_DIR,
 } = {}) {
   warnIfInsecure(apiBase(), warn);
-  if (!licenseKey) {
-    print('✗ --push requires an active Team license (ticketlens activate <key>)\n');
+  if (!cliToken) {
+    print('✗ --push requires Console access. Run ticketlens login first.\n');
     return { ok: false };
   }
 
@@ -110,7 +93,7 @@ export async function pushTriageSnapshot({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${licenseKey}`,
+        'Authorization': `Bearer ${cliToken}`,
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15_000),
@@ -119,6 +102,11 @@ export async function pushTriageSnapshot({
     if (res.ok) {
       print(`✓ Queue updated — view at ${queueUrl(apiBase())}\n`);
       return { ok: true, status: res.status };
+    }
+
+    if (res.status === 401) {
+      print('✗ Session expired. Run ticketlens login to reconnect.\n');
+      return { ok: false, status: res.status };
     }
 
     if (res.status === 403) {
