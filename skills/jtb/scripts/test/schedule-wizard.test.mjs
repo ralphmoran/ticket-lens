@@ -38,7 +38,7 @@ describe('runScheduleWizard', () => {
   before(() => { tmpDir = mkdtempSync(join(tmpdir(), 'schedule-test-')); });
   after(() => { rmSync(tmpDir, { recursive: true }); });
 
-  it('registers schedule with backend and returns scheduled true', async () => {
+  it('registers schedule with backend and returns ok:true with full payload', async () => {
     const calls = [];
     const result = await runScheduleWizard({
       answers: { time: '07:00', email: 'dev@example.com', timezone: 'America/New_York' },
@@ -51,7 +51,12 @@ describe('runScheduleWizard', () => {
       platform: 'darwin',
       writeLocalJob: () => {},
     });
-    assert.equal(result.scheduled, true);
+    // result.ok must be true — bin/ticketlens.mjs gates on this exact field
+    assert.strictEqual(result.ok, true);
+    // API data fields must be forwarded so the caller can display them
+    assert.strictEqual(result.scheduled, true);
+    assert.strictEqual(result.nextDelivery, '2026-03-29T11:00:00Z');
+    // request payload
     assert.equal(calls[0].body.email, 'dev@example.com');
     assert.equal(calls[0].body.deliverAt, '07:00');
     assert.ok(calls[0].url.includes('/v1/schedule'));

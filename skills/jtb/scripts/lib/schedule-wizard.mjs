@@ -105,7 +105,7 @@ export async function runScheduleWizard({
 
     writeLocalJob(content, platform);
 
-    return data;
+    return { ok: true, ...data };
   } catch {
     print(`  ${yellow('⚠')} Schedule API error (network error) — try again later\n`);
     return { ok: false };
