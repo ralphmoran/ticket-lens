@@ -4,6 +4,7 @@
  */
 
 import { apiBase, warnIfInsecure } from './api-utils.mjs';
+import { red, green, yellow, bold, cyan } from './ansi.mjs';
 
 const SHARE_PATH = '/v1/triage/share';
 
@@ -48,7 +49,7 @@ export async function shareTriageSnapshot({
 } = {}) {
   warnIfInsecure(apiBase(), warn);
   if (!cliToken) {
-    print('✗ --share requires Console access. Run ticketlens login first.\n');
+    print(`  ${red('✗')} ${bold('--share')} requires Console access. Run ${cyan('ticketlens login')} first.\n`);
     return { ok: false };
   }
 
@@ -71,24 +72,24 @@ export async function shareTriageSnapshot({
 
     if (res.ok) {
       const data = await res.json();
-      print(`✓ Share link (expires in 24h):\n  ${data.url}\n`);
+      print(`  ${green('✓')} Share link (expires in 24h):\n  ${data.url}\n`);
       return { ok: true, status: res.status };
     }
 
     if (res.status === 401) {
-      print('✗ Session expired. Run ticketlens login to reconnect.\n');
+      print(`  ${red('✗')} Session expired. Run ${cyan('ticketlens login')} to reconnect.\n`);
       return { ok: false, status: res.status };
     }
 
     if (res.status === 403) {
-      print('✗ --share requires a Team license\n');
+      print(`  ${red('✗')} ${bold('--share')} requires a Team license\n`);
       return { ok: false, status: res.status };
     }
 
-    print(`⚠ Share failed (${res.status}) — triage output unaffected\n`);
+    print(`  ${yellow('⚠')} Share failed (${res.status}) — triage output unaffected\n`);
     return { ok: false, status: res.status };
   } catch {
-    print('⚠ Share failed (network error) — triage output unaffected\n');
+    print(`  ${yellow('⚠')} Share failed (network error) — triage output unaffected\n`);
     return { ok: false };
   }
 }

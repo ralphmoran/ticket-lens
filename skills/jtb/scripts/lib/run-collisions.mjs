@@ -1,8 +1,8 @@
 import { readCliToken } from './cli-auth.mjs';
 import { formatCollisions } from './collision-reporter.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
-
 import { apiBase, warnIfInsecure } from './api-utils.mjs';
+import { red, yellow, bold, cyan } from './ansi.mjs';
 
 const COLLISIONS_PATH = '/v1/triage/collisions';
 
@@ -29,7 +29,7 @@ export async function runCollisions(args = [], opts = {}) {
 
   const cliToken = readCliTokenFn(configDir) ?? null;
   if (!cliToken) {
-    print('✗ collisions requires Console access. Run ticketlens login first.\n');
+    print(`  ${red('✗')} ${bold('collisions')} requires Console access. Run ${cyan('ticketlens login')} first.\n`);
     return { ok: false };
   }
 
@@ -41,14 +41,14 @@ export async function runCollisions(args = [], opts = {}) {
 
     if (!res.ok) {
       if (res.status === 401) {
-        print('✗ Session expired. Run ticketlens login to reconnect.\n');
+        print(`  ${red('✗')} Session expired. Run ${cyan('ticketlens login')} to reconnect.\n`);
         return { ok: false, status: 401 };
       }
       if (res.status === 403) {
-        print('✗ collisions requires a Team license\n');
+        print(`  ${red('✗')} ${bold('collisions')} requires a Team license\n`);
         return { ok: false, status: 403 };
       }
-      print(`⚠ Failed to fetch collisions (${res.status})\n`);
+      print(`  ${yellow('⚠')} Failed to fetch collisions (${res.status})\n`);
       return { ok: false, status: res.status };
     }
 
@@ -67,7 +67,7 @@ export async function runCollisions(args = [], opts = {}) {
 
     return { ok: true };
   } catch {
-    print('⚠ Failed to fetch collisions (network error)\n');
+    print(`  ${yellow('⚠')} Failed to fetch collisions (network error)\n`);
     return { ok: false };
   }
 }

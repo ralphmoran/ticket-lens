@@ -8,6 +8,7 @@ import { isLicensed } from './license.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { apiBase, warnIfInsecure } from './api-utils.mjs';
 import { buildTicketPayload } from './ticket-payload.mjs';
+import { red, green, yellow, bold, cyan } from './ansi.mjs';
 
 const PUSH_PATH = '/v1/triage/push';
 
@@ -54,7 +55,7 @@ export async function pushTriageSnapshot({
 } = {}) {
   warnIfInsecure(apiBase(), warn);
   if (!cliToken) {
-    print('✗ --push requires Console access. Run ticketlens login first.\n');
+    print(`  ${red('✗')} ${bold('--push')} requires Console access. Run ${cyan('ticketlens login')} first.\n`);
     return { ok: false };
   }
 
@@ -100,24 +101,24 @@ export async function pushTriageSnapshot({
     });
 
     if (res.ok) {
-      print(`✓ Queue updated — view at ${queueUrl(apiBase())}\n`);
+      print(`  ${green('✓')} Queue updated — view at ${queueUrl(apiBase())}\n`);
       return { ok: true, status: res.status };
     }
 
     if (res.status === 401) {
-      print('✗ Session expired. Run ticketlens login to reconnect.\n');
+      print(`  ${red('✗')} Session expired. Run ${cyan('ticketlens login')} to reconnect.\n`);
       return { ok: false, status: res.status };
     }
 
     if (res.status === 403) {
-      print('✗ --push requires a Team license\n');
+      print(`  ${red('✗')} ${bold('--push')} requires a Team license\n`);
       return { ok: false, status: res.status };
     }
 
-    print(`⚠ Push failed (${res.status}) — triage output unaffected\n`);
+    print(`  ${yellow('⚠')} Push failed (${res.status}) — triage output unaffected\n`);
     return { ok: false, status: res.status };
   } catch {
-    print('⚠ Push failed (network error) — triage output unaffected\n');
+    print(`  ${yellow('⚠')} Push failed (network error) — triage output unaffected\n`);
     return { ok: false };
   }
 }

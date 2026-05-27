@@ -284,8 +284,9 @@ switch (command) {
     const result = await runScheduleWizard({ answers, cliToken: readCliToken() });
     if (!result.ok) { process.exitCode = 1; break; }
 
-    process.stdout.write(`✔ Digest scheduled for ${answers.time} ${answers.timezone}\n`);
-    process.stdout.write(`  Next delivery: ${result.nextDelivery}\n`);
+    const s = createStyler({ isTTY: process.stdout.isTTY });
+    process.stdout.write(`  ${s.green('✔')} Digest scheduled for ${s.cyan(answers.time)} ${answers.timezone}\n`);
+    process.stdout.write(`  Next delivery: ${s.cyan(result.nextDelivery)}\n`);
     break;
   }
 

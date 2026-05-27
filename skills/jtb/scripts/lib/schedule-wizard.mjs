@@ -2,6 +2,7 @@ import { writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, platform as osPlatform } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { red, green, cyan } from './ansi.mjs';
 
 const SCHEDULE_URL = 'https://api.ticketlens.dev/v1/schedule';
 
@@ -60,7 +61,7 @@ export async function runScheduleWizard({
   print = s => process.stdout.write(s),
 }) {
   if (!cliToken) {
-    print('✗ schedule requires Console access. Run ticketlens login first.\n');
+    print(`  ${red('✗')} schedule requires Console access. Run ${cyan('ticketlens login')} first.\n`);
     return { ok: false };
   }
   const { time, email, timezone } = answers;
@@ -103,7 +104,7 @@ export async function runScheduleStop({
   print = s => process.stdout.write(s),
 }) {
   if (!cliToken) {
-    print('✗ schedule requires Console access. Run ticketlens login first.\n');
+    print(`  ${red('✗')} schedule requires Console access. Run ${cyan('ticketlens login')} first.\n`);
     return;
   }
   const res = await fetcher(SCHEDULE_URL, {
@@ -125,7 +126,7 @@ export async function runScheduleStop({
     spawnSync('crontab', [tmp], { encoding: 'utf8' });
   }
 
-  process.stdout.write('✔ Digest schedule removed.\n');
+  print(`  ${green('✔')} Digest schedule removed.\n`);
 }
 
 export async function runScheduleStatus({
@@ -134,7 +135,7 @@ export async function runScheduleStatus({
   print = s => process.stdout.write(s),
 }) {
   if (!cliToken) {
-    print('✗ schedule requires Console access. Run ticketlens login first.\n');
+    print(`  ${red('✗')} schedule requires Console access. Run ${cyan('ticketlens login')} first.\n`);
     return;
   }
   const res = await fetcher(SCHEDULE_URL, {
@@ -147,9 +148,9 @@ export async function runScheduleStatus({
     return;
   }
   const data = await res.json();
-  process.stdout.write(`Digest schedule: ${data.deliverAt} ${data.timezone}\n`);
-  process.stdout.write(`Last delivered:  ${data.lastDeliveredAt ?? 'never'}\n`);
-  process.stdout.write(`Next delivery:   ${data.nextDelivery}\n`);
+  print(`  ${green('✔')} Digest schedule: ${cyan(data.deliverAt)} ${data.timezone}\n`);
+  print(`  Last delivered:  ${data.lastDeliveredAt ?? 'never'}\n`);
+  print(`  Next delivery:   ${cyan(data.nextDelivery)}\n`);
 }
 
 function resolveTicketlensBin() {
