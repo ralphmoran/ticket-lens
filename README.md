@@ -350,6 +350,8 @@ ticketlens sync            # Pull your latest tracker profiles from the Console
 
 Use `--manual` when there is no GUI (CI runners, SSH sessions, containers).
 
+`ticketlens logout` removes the stored Console auth token and disconnects this machine from your TicketLens account. Local Jira profiles and credentials are kept intact — re-run `ticketlens login` to reconnect.
+
 `ticketlens sync` pulls any tracker profiles you have configured in the Console and writes them locally, keeping your CLI in sync with your team settings without re-running `init`.
 
 ---
