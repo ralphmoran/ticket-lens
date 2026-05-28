@@ -12,7 +12,7 @@ npm test  # 168 tests, no install needed
 
 That's it. No `npm install`, no build step. TicketLens has **zero npm dependencies** — it uses only Node.js built-ins.
 
-**Requirements:** Node.js >= 18.0.0
+**Requirements:** Node.js >= 20.0.0
 
 ## Project Structure
 
@@ -128,6 +128,43 @@ TicketLens supports both Jira Cloud (v3 API) and Jira Server/DC (v2 API). Any Ji
 3. Run `npm test` — all 168+ tests must pass
 4. Push and open a PR with a clear description of what and why
 5. Link any related issues
+
+## Local Dev API URL
+
+When developing features that call the TicketLens backend, the CLI must point at
+your local server. Set the environment variable in your shell profile:
+
+```bash
+# ~/.zshrc or ~/.bashrc
+export TICKETLENS_API_URL=http://ticketlens.test
+```
+
+Or inline for a single session:
+
+```bash
+TICKETLENS_API_URL=http://ticketlens.test ticketlens triage --push
+```
+
+**The CLI never reads `.env` files** — this is intentional (zero-deps constraint).
+The env var is the only override mechanism. End users never need to set it; the
+production URL is baked into the published package.
+
+## Publishing to npm
+
+A pre-publish guard runs automatically (`prepublishOnly` in `package.json`). It blocks
+`npm publish` (to `latest`) when `DEFAULT_API_BASE` in `api-utils.mjs` still contains
+a local URL (`ticketlens.test`, `localhost`, or `127.0.0.1`).
+
+```bash
+# Publish a beta (no URL check — safe for local-URL builds)
+npm publish --tag beta
+
+# Publish to latest (blocked unless DEFAULT_API_BASE is a production URL)
+npm publish
+```
+
+When the production domain is confirmed, update `DEFAULT_API_BASE` in
+`skills/jtb/scripts/lib/api-utils.mjs` and then run `npm publish`.
 
 ## Questions?
 
