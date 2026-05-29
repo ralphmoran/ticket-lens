@@ -31,12 +31,27 @@ import { readCliToken, saveCliToken, deleteCliToken } from '../skills/jtb/script
 import { browserLogin } from '../skills/jtb/scripts/lib/browser-login.mjs';
 import { syncProfiles, getApiBase, getConsoleBase } from '../skills/jtb/scripts/lib/sync.mjs';
 import { promptSecret, promptText } from '../skills/jtb/scripts/lib/prompt-helpers.mjs';
+import { checkForUpdate, getUpdateHint } from '../skills/jtb/scripts/lib/update-check.mjs';
 
 const args = process.argv.slice(2);
 const { command, args: cmdArgs } = parseCommand(args);
 
 // Fire-and-forget: silently refresh license.json at startup if >7 days since last validation
 revalidateIfStale();
+// Fire-and-forget: refresh the cached latest npm version once per 24h
+checkForUpdate();
+
+// Show a one-line update hint on stderr after the command exits (never blocks stdout)
+process.on('exit', () => {
+  try {
+    const latest = getUpdateHint();
+    if (!latest) return;
+    const s = createStyler({ isTTY: process.stderr.isTTY });
+    process.stderr.write(`\n${s.brand('◆')} Update available ${s.dim('→')} ${s.bold(s.cyan(latest))}  ${s.dim('npm install -g ticketlens')}\n`);
+  } catch {
+    // never let the update hint crash the process
+  }
+});
 
 switch (command) {
   case 'fetch':
