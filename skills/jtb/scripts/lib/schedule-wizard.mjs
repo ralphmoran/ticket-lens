@@ -7,13 +7,37 @@ import { apiBase, warnIfInsecure } from './api-utils.mjs';
 
 const SCHEDULE_PATH = '/v1/schedule';
 
+// Safe path: printable ASCII, no shell metacharacters or XML special chars.
+// Allows: letters, digits, /, ., _, -, ~, space (none of which are shell-special in this context).
+const SAFE_PATH_RE = /^[A-Za-z0-9/._~-]+$/;
+
+function xmlEscape(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+function validateOutputFile(outputFile) {
+  if (!outputFile || !SAFE_PATH_RE.test(outputFile)) {
+    throw new Error(`Invalid output file path: must contain only letters, digits, /, ., _, -, ~ (no spaces or shell metacharacters)`);
+  }
+}
+
+function validateTime(hour, minute) {
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) ||
+      hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    throw new Error(`Invalid time: hour must be 0–23, minute must be 0–59`);
+  }
+}
+
+function parseHHMM(time) {
+  const [hourStr, minuteStr] = time.split(':');
+  return { hour: parseInt(hourStr, 10), minute: parseInt(minuteStr, 10) };
+}
+
 /**
  * Build a macOS LaunchAgent plist string.
  */
 export function buildPlist({ hour, minute, ticketlensBin }) {
-  if (!Number.isInteger(hour) || !Number.isInteger(minute)) {
-    throw new Error('hour and minute must be integers');
-  }
+  validateTime(hour, minute);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -68,9 +92,7 @@ export async function runScheduleWizard({
     return { ok: false };
   }
   const { time, email, timezone } = answers;
-  const [hourStr, minuteStr] = time.split(':');
-  const hour = parseInt(hourStr, 10);
-  const minute = parseInt(minuteStr, 10);
+  const { hour, minute } = parseHHMM(time);
 
   try {
     const res = await fetcher(`${apiBase()}${SCHEDULE_PATH}`, {
@@ -146,7 +168,8 @@ export async function runScheduleStop({
     try { unlinkSync(plistPath); } catch { /* already removed */ }
   } else {
     const existing = spawnSync('crontab', ['-l'], { encoding: 'utf8' }).stdout ?? '';
-    const updated = existing.replace(/.*ticketlens triage --digest.*\n?/g, '');
+    // Remove both cloud-digest and local-save ticketlens cron lines
+    const updated = existing.replace(/.*ticketlens triage --(digest|'--save=).*\n?/g, '');
     const tmp = `/tmp/ticketlens-crontab-${Date.now()}`;
     writeFileSync(tmp, updated, 'utf8');
     spawnSync('crontab', [tmp], { encoding: 'utf8' });
@@ -189,10 +212,93 @@ export async function runScheduleStatus({
   print('\n');
 }
 
+/**
+ * Build a local-only cron/plist entry that runs triage --save=FILE.
+ * No cloud auth required — purely local scheduling.
+ */
+export function buildLocalPlist({ hour, minute, ticketlensBin, outputFile }) {
+  const safeFile = xmlEscape(outputFile);
+  const safeBin = xmlEscape(ticketlensBin);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.ticketlens.triage-local</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${safeBin}</string>
+    <string>triage</string>
+    <string>--save=${safeFile}</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>${hour}</integer>
+    <key>Minute</key>
+    <integer>${minute}</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>${safeFile}</string>
+  <key>StandardErrorPath</key>
+  <string>${safeFile}.err</string>
+</dict>
+</plist>`;
+}
+
+export function buildLocalCronLine({ hour, minute, ticketlensBin, outputFile }) {
+  // Single-quote the --save argument to prevent shell word-splitting.
+  // SAFE_PATH_RE already guarantees no single-quote chars in outputFile.
+  return `${minute} ${hour} * * * ${ticketlensBin} triage '--save=${outputFile}' >> '${outputFile}.err' 2>&1`;
+}
+
+/**
+ * Set up a local-only scheduled triage (no Console auth, no cloud push).
+ * Writes a cron/LaunchAgent entry that runs `ticketlens triage --save=FILE`.
+ */
+export async function runScheduleLocal({
+  answers,
+  platform = osPlatform(),
+  writeLocalJob = defaultWriteLocalJob,
+  print = s => process.stdout.write(s),
+  // fetcher is accepted but intentionally ignored — no network calls
+}) {
+  const { time, outputFile } = answers ?? {};
+  if (!time || !outputFile) {
+    print(`  ${red('✗')} Local schedule requires a time and output file.\n`);
+    return { ok: false };
+  }
+  const { hour, minute } = parseHHMM(time);
+  try {
+    validateTime(hour, minute);
+    validateOutputFile(outputFile);
+  } catch (err) {
+    print(`  ${red('✗')} ${err.message}\n`);
+    return { ok: false };
+  }
+
+  const ticketlensBin = resolveTicketlensBin();
+  const content = platform === 'darwin'
+    ? buildLocalPlist({ hour, minute, ticketlensBin, outputFile })
+    : buildLocalCronLine({ hour, minute, ticketlensBin, outputFile });
+
+  writeLocalJob(content, platform);
+
+  print(`\n  ${green('✔')} ${bold('Local triage scheduled')}\n`);
+  print(`  ${dim('Time:   ')} ${cyan(time)} daily\n`);
+  print(`  ${dim('Output: ')} ${cyan(outputFile)}\n\n`);
+
+  return { ok: true, time, outputFile };
+}
+
+let _ticketlensBin;
 function resolveTicketlensBin() {
+  if (_ticketlensBin) return _ticketlensBin;
   const which = spawnSync('which', ['ticketlens'], { encoding: 'utf8' });
-  if (which.status === 0 && which.stdout.trim()) return which.stdout.trim();
-  return `${homedir()}/.npm/bin/ticketlens`;
+  _ticketlensBin = (which.status === 0 && which.stdout.trim())
+    ? which.stdout.trim()
+    : `${homedir()}/.npm/bin/ticketlens`;
+  return _ticketlensBin;
 }
 
 function defaultWriteLocalJob(content, platform) {
@@ -204,7 +310,8 @@ function defaultWriteLocalJob(content, platform) {
     spawnSync('launchctl', ['load', plistPath], { encoding: 'utf8' });
   } else {
     const existing = spawnSync('crontab', ['-l'], { encoding: 'utf8' }).stdout ?? '';
-    const updated = existing.replace(/.*ticketlens triage --digest.*/g, '').trimEnd() + '\n' + content + '\n';
+    // Remove both cloud-digest and local-save ticketlens cron lines before re-adding
+    const updated = existing.replace(/.*ticketlens triage --(digest|'--save=).*\n?/g, '').trimEnd() + '\n' + content + '\n';
     const tmp = `/tmp/ticketlens-crontab-${Date.now()}`;
     writeFileSync(tmp, updated, 'utf8');
     spawnSync('crontab', [tmp], { encoding: 'utf8' });

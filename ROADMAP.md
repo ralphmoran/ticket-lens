@@ -75,10 +75,10 @@ Premium features that run 100% locally. No backend needed. License key via Lemon
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
 | 8 | ~~Feature~~ | ~~**License key system**~~ | Done. LemonSqueezy API activation + validation. `~/.ticketlens/license.json` with tier hierarchy, expiry, revalidation. CLI: `ticketlens activate <KEY>`, `ticketlens license`. 27 tests. | ~~Small~~ |
-| 9 | Feature | **Multi-project triage** | Triage across ALL profiles at once in a combined view. Devs working across repos need this daily. Deprioritized — not a deal-closer for first sale. | Small |
-| 10 | Feature | **Custom attention rules** | User-defined scoring rules in profile config (e.g. "P1 bugs always urgent", "ignore tickets with label=backlog"). | Medium |
-| 11 | Feature | **Scheduled triage (cron)** | Auto-run triage on a schedule, save results to file. Morning triage without remembering to run the command. | Small |
-| 12 | Feature | **Ticket history tracking** | Track ticket state over time locally. "This ticket has bounced between CR and Dev 3 times." Stored in `~/.ticketlens/history/`. | Medium |
+| 9 | ~~Feature~~ | ~~**Multi-project triage**~~ | Done. `ticketlens triage --all` loops every configured profile sequentially, merges output into a single view labelled by profile. Pro-gated. | ~~Small~~ |
+| 10 | ~~Feature~~ | ~~**Custom attention rules**~~ | Done. `attentionRules` array in profile config. `match` keys: priority, label, status, keyPrefix. `action`: force-urgent (bumps to needs-response) or ignore (excludes from output). First match wins. Pro-gated. | ~~Medium~~ |
+| 11 | ~~Feature~~ | ~~**Scheduled triage (cron)**~~ | Done. `ticketlens triage --save=FILE` writes ANSI-stripped output to a file. `ticketlens schedule --local` (auto-detected when no CLI token) creates a cron/LaunchAgent entry using `--save=FILE` — no Console auth required. Pro-gated. | ~~Small~~ |
+| 12 | ~~Feature~~ | ~~**Ticket history tracking**~~ | Done. `ticketlens history TICKET-KEY` reads daily snapshots from `~/.ticketlens/triage-history/`, renders a chronological timeline with urgency, status, reason, and bounce detection (urgency changed on consecutive days). Pro-gated. | ~~Medium~~ |
 
 ### Iteration 5 — Premium CLI Features (Team tier, $19/seat/mo)
 

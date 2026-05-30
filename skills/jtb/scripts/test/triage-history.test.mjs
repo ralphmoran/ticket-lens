@@ -244,3 +244,28 @@ describe('buildDeltaSection', () => {
     assert.ok(result.includes('stale threshold crossed (8 days idle)'));
   });
 });
+
+// ── LOCK TESTS — pin existing API surface before Feature 12 (queryTicketHistory) ──
+
+describe('triage-history — API surface lock', () => {
+  it('saveTriageSnapshot is a function', () => {
+    assert.equal(typeof saveTriageSnapshot, 'function');
+  });
+
+  it('loadYesterdaySnapshot is a function', () => {
+    assert.equal(typeof loadYesterdaySnapshot, 'function');
+  });
+
+  it('diffSnapshots is a function', () => {
+    assert.equal(typeof diffSnapshots, 'function');
+  });
+
+  it('buildDeltaSection is a function', () => {
+    assert.equal(typeof buildDeltaSection, 'function');
+  });
+
+  it('diffSnapshots returns [] on identical input (shape unchanged)', () => {
+    const tickets = [{ ticketKey: 'L-1', urgency: 'clear', daysSinceUpdate: 2 }];
+    assert.deepEqual(diffSnapshots(tickets, tickets), []);
+  });
+});

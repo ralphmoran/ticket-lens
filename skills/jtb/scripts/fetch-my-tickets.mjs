@@ -10,6 +10,8 @@ import { assembleTriageSummary } from './lib/brief-assembler.mjs';
 import { styleTriageSummary } from './lib/styled-assembler.mjs';
 import { resolveConnection, loadProfiles, saveProfile } from './lib/profile-resolver.mjs';
 import { resolveAdapter } from './lib/resolve-adapter.mjs';
+import { writeFileSync, mkdirSync, statSync } from 'node:fs';
+import { resolve as resolvePath, dirname } from 'node:path';
 import { createSpinner } from './lib/spinner.mjs';
 import { createSession } from './lib/banner.mjs';
 import { classifyError } from './lib/error-classifier.mjs';
@@ -20,6 +22,7 @@ import { handleUnknownFlags } from './lib/arg-validator.mjs';
 import { isLicensed, showUpgradePrompt, revalidateIfStale } from './lib/license.mjs';
 import { readCliToken } from './lib/cli-auth.mjs';
 import { apiBase } from './lib/api-utils.mjs';
+import { stripAnsi, bold, cyan, dim, red, green } from './lib/ansi.mjs';
 
 const DEFAULT_STATUSES = ['In Progress', 'Code Review', 'QA'];
 
@@ -74,7 +77,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=', '--assignee=', '--sprint=', '--export=', '--digest', '--push', '--share'],
+    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=', '--assignee=', '--sprint=', '--export=', '--digest', '--push', '--share', '--all', '--save='],
     { hints: ['--depth=', '--no-attachments', '--no-cache'] } // fetch-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
@@ -93,6 +96,8 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const digestFlag = args.includes('--digest');
   const pushFlag = args.includes('--push');
   const shareFlag = args.includes('--share');
+  const allFlag = args.includes('--all');
+  const saveArg = args.find(a => a.startsWith('--save='))?.split('=').slice(1).join('=') ?? null;
 
   if (exportArg && exportArg !== 'csv' && exportArg !== 'json') {
     process.stderr.write(`Error: --export must be csv or json, got: ${exportArg}\n`);
@@ -102,6 +107,111 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const licensedFn = opts.isLicensed ?? isLicensed;
   const upgradeFn = opts.showUpgradePrompt ?? showUpgradePrompt;
+
+  // --save=FILE: Pro gate + validate path is not a directory
+  if (saveArg) {
+    if (!licensedFn('pro', configDir)) {
+      upgradeFn('pro', '--save');
+      process.exitCode = 1;
+      return;
+    }
+    const resolvedSave = resolvePath(saveArg);
+    try {
+      if (statSync(resolvedSave).isDirectory()) {
+        process.stderr.write(`Error: --save path must be a file, not a directory: ${resolvedSave}\n`);
+        process.exitCode = 1;
+        return;
+      }
+    } catch { /* doesn't exist yet — ok */ }
+  }
+
+  // --all: triage all configured profiles in parallel with live status block
+  if (allFlag) {
+    if (!licensedFn('pro', configDir)) {
+      upgradeFn('pro', '--all');
+      process.exitCode = 1;
+      return;
+    }
+    const profilesConfig = loadProfiles(configDir);
+    const profileNames = profilesConfig?.profiles ? Object.keys(profilesConfig.profiles) : [];
+    if (profileNames.length === 0) {
+      process.stderr.write('Error: No profiles configured. Run `ticketlens init` first.\n');
+      process.exitCode = 1;
+      return;
+    }
+
+    const usePlain = args.includes('--plain');
+    const printFn = opts.print ?? ((s) => process.stdout.write(s));
+    const argsBase = args.filter(a => a !== '--all' && !a.startsWith('--profile='));
+    // --static disables interactive mode in sub-runs (isTTY is still true but we're capturing output)
+    const modeFlags = usePlain ? ['--plain'] : ['--styled', '--static'];
+    const isTTY = process.stderr.isTTY;
+    const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    const COL = Math.max(...profileNames.map(n => n.length)) + 2;
+
+    // Per-profile state
+    const entries = profileNames.map(name => ({ name, state: 'pending', output: [], summary: '' }));
+
+    const statusLine = (e, frame = 0) => {
+      const nameCol = e.name.padEnd(COL);
+      if (e.state === 'pending') return `  ${SPIN[frame % SPIN.length]} ${nameCol}${dim('fetching...')}`;
+      if (e.state === 'done')    return `  ${green('✔')} ${nameCol}${dim(e.summary)}`;
+      return                            `  ${red('✗')} ${nameCol}${dim('could not connect')}`;
+    };
+
+    // Suppress all sub-run stderr so banners/spinners don't corrupt the status block.
+    // Status updates bypass suppression via `toStatus` which holds the original reference.
+    const toStatus = isTTY ? process.stderr.write.bind(process.stderr) : null;
+    if (isTTY) {
+      process.stderr.write = () => true;  // silence sub-runs
+      toStatus('\x1b[?25l');
+      for (const e of entries) toStatus(statusLine(e) + '\n');
+    }
+
+    let frame = 0;
+    const timer = isTTY ? setInterval(() => {
+      frame++;
+      toStatus(`\x1b[${entries.length}A`);
+      for (const e of entries) toStatus(`\r\x1b[K${statusLine(e, frame)}\n`);
+    }, 80) : null;
+
+    await Promise.allSettled(entries.map((e, idx) =>
+      run([...argsBase, `--profile=${e.name}`, ...modeFlags],
+          { ...opts, env, fetcher, configDir, print: s => e.output.push(s) })
+        .then(() => {
+          const combined = e.output.join('');
+          const m = combined.match(/(\d+) found/);
+          entries[idx].state   = e.output.length === 0 ? 'error' : 'done';
+          entries[idx].summary = m ? `${m[1]} ticket${m[1] === '1' ? '' : 's'}` : 'done';
+        })
+        .catch(() => { entries[idx].state = 'error'; })
+    ));
+
+    if (isTTY) {
+      clearInterval(timer);
+      toStatus(`\x1b[${entries.length}A`);
+      for (const e of entries) toStatus(`\r\x1b[K${statusLine(e)}\n`);
+      toStatus('\x1b[?25h\n');
+      process.stderr.write = toStatus;  // restore
+    }
+
+    // Render results in profile order
+    for (const e of entries) {
+      printFn(usePlain
+        ? `\n── ${e.name} ──\n`
+        : `\n${dim('──')} ${bold(cyan(e.name))} ${dim('──')}\n`);
+
+      if (e.output.length === 0) {
+        const hint = `ticketlens triage --profile=${e.name}`;
+        printFn(usePlain
+          ? `  [could not connect — run: ${hint}]\n`
+          : `  ${red('✗')} ${dim('Could not connect — run')} ${cyan(hint)} ${dim('for details')}\n`);
+      } else {
+        printFn(e.output.join(''));
+      }
+    }
+    return;
+  }
 
   // Team-tier gate: --assignee and --sprint require a Team license
   if ((assigneeArg || sprintArg) && !licensedFn('team', configDir)) {
@@ -283,10 +393,16 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     process.stderr.write(`Viewing ${assigneeName}'s tickets\n\n`);
   }
 
-  const scored = tickets.map(t => scoreAttention(t, effectiveUser, { staleDays }));
-  const actionable = scored.filter(s => s.urgency !== 'clear');
+  const scored = tickets.map(t => scoreAttention(t, effectiveUser, { staleDays, customRules: conn.attentionRules }));
+  const actionable = scored.filter(s => s.urgency !== 'clear' && s.urgency !== 'ignore');
   const sorted = sortByUrgency(actionable);
   const rawTicketMap = new Map(tickets.map(t => [t.key, t]));
+
+  // Always save a daily snapshot for history tracking (non-fatal)
+  try {
+    const { saveTriageSnapshot } = await import('./lib/triage-history.mjs');
+    saveTriageSnapshot(scored, { profile: profileName ?? 'default', configDir });
+  } catch { /* non-fatal */ }
 
   // --digest: POST scored results to the digest backend endpoint
   if (digestFlag) {
@@ -298,12 +414,11 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const deliverer = opts.digestDeliverer ?? defaultDigestDeliverer;
     const digestCliToken = opts.cliToken ?? readCliToken(configDir) ?? null;
 
-    // Triage history delta (non-fatal — wrapped in try/catch)
+    // Triage history delta (non-fatal — snapshot already saved above)
     let delta = null;
     try {
-      const { saveTriageSnapshot, loadYesterdaySnapshot, diffSnapshots, buildDeltaSection } =
+      const { loadYesterdaySnapshot, diffSnapshots, buildDeltaSection } =
         await import('./lib/triage-history.mjs');
-      saveTriageSnapshot(sorted, { profile: profileName ?? 'default', configDir });
       const yesterday = loadYesterdaySnapshot({ profile: profileName ?? 'default', configDir });
       if (yesterday) {
         const deltas = diffSnapshots(sorted, yesterday);
@@ -314,11 +429,14 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     await deliverer({
       profile: profileName ?? 'default',
       staleDays,
-      summary: {
-        total: sorted.length,
-        needsResponse: sorted.filter(t => t.urgency === 'needs-response').length,
-        aging: sorted.filter(t => t.urgency === 'aging').length,
-      },
+      summary: (() => {
+        let needsResponse = 0, aging = 0;
+        for (const t of sorted) {
+          if (t.urgency === 'needs-response') needsResponse++;
+          else if (t.urgency === 'aging') aging++;
+        }
+        return { total: sorted.length, needsResponse, aging };
+      })(),
       tickets: sorted,
       delta,
     }, { cliToken: digestCliToken });
@@ -372,7 +490,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
 
   // Interactive mode: TTY + not --plain + not --static
-  const wantInteractive = process.stdout.isTTY && !args.includes('--plain') && !args.includes('--static');
+  const wantInteractive = process.stdout.isTTY && !args.includes('--plain') && !args.includes('--static') && !saveArg;
   if (wantInteractive && process.stdin.setRawMode) {
     const result = await runInteractiveList(sorted, { baseUrl: conn.baseUrl, staleDays, styled: true });
     if (result === 'switch') {
@@ -386,7 +504,17 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const summary = useStyled
     ? styleTriageSummary(sorted, { styled: true, staleDays, baseUrl: conn.baseUrl })
     : assembleTriageSummary(sorted, { staleDays, baseUrl: conn.baseUrl });
-  process.stdout.write(summary + '\n');
+
+  // --save=FILE: write ANSI-stripped output to file
+  if (saveArg) {
+    const resolvedSave = resolvePath(saveArg);
+    mkdirSync(dirname(resolvedSave), { recursive: true });
+    const plain = stripAnsi(summary);
+    writeFileSync(resolvedSave, plain + '\n', 'utf8');
+  }
+
+  const printFn = opts.print ?? ((s) => process.stdout.write(s));
+  printFn(summary + '\n');
 }
 
 // Run if invoked directly

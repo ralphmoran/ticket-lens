@@ -75,8 +75,42 @@ export function findLastEffectiveComment(comments, currentUser) {
   return { comment: null, fromCurrentUser: false };
 }
 
+/**
+ * Apply a single custom rule against a ticket.
+ * Returns 'force-urgent' | 'ignore' | null.
+ * A rule must have a valid `match` object and a known `action` to fire.
+ */
+function applyCustomRule(ticket, rule) {
+  if (!rule || typeof rule.match !== 'object' || !rule.match) return null;
+  if (rule.action !== 'force-urgent' && rule.action !== 'ignore') return null;
+
+  const { priority, label, status, keyPrefix } = rule.match;
+  if (priority !== undefined && ticket.priority !== priority) return null;
+  if (status !== undefined && ticket.status !== status) return null;
+  if (label !== undefined) {
+    const labels = Array.isArray(ticket.labels) ? ticket.labels : [];
+    if (!labels.includes(label)) return null;
+  }
+  if (keyPrefix !== undefined && !String(ticket.key).startsWith(keyPrefix)) return null;
+
+  return rule.action;
+}
+
 export function scoreAttention(ticket, currentUser, opts = {}) {
-  const { staleDays = 5, now = new Date() } = opts;
+  const { staleDays = 5, now = new Date(), customRules } = opts;
+
+  // Custom rules evaluated first — first match wins
+  if (Array.isArray(customRules)) {
+    for (const rule of customRules) {
+      const action = applyCustomRule(ticket, rule);
+      if (action === 'ignore') {
+        return { ticketKey: ticket.key, summary: ticket.summary, status: ticket.status, urgency: 'ignore', reason: rule.reason ?? 'Ignored by custom rule', lastComment: null };
+      }
+      if (action === 'force-urgent') {
+        return { ticketKey: ticket.key, summary: ticket.summary, status: ticket.status, urgency: 'needs-response', reason: rule.reason ?? 'Flagged by custom rule', lastComment: null };
+      }
+    }
+  }
 
   const { comment: lastComment, fromCurrentUser } = findLastEffectiveComment(
     ticket.comments || [], currentUser
@@ -145,8 +179,8 @@ export function sortByUrgency(scores) {
     const orderDiff = URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency];
     if (orderDiff !== 0) return orderDiff;
     // Within same urgency, sort by most recent activity (lastComment date or ticket updated)
-    const dateA = a.lastComment?.created ? new Date(a.lastComment.created) : new Date(0);
-    const dateB = b.lastComment?.created ? new Date(b.lastComment.created) : new Date(0);
+    const dateA = a.lastComment?.created ? new Date(a.lastComment.created).getTime() : 0;
+    const dateB = b.lastComment?.created ? new Date(b.lastComment.created).getTime() : 0;
     return dateB - dateA; // most recent first
   });
 }

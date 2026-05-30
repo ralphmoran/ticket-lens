@@ -78,6 +78,31 @@ switch (command) {
     break;
   }
 
+  case 'history': {
+    if (!isLicensed('pro')) { showUpgradePrompt('pro', 'ticketlens history'); break; }
+    const ticketKey = cmdArgs[0];
+    if (!ticketKey || ticketKey.startsWith('-')) {
+      process.stderr.write('Usage: ticketlens history TICKET-KEY\n');
+      process.exitCode = 1;
+      break;
+    }
+    const { queryTicketHistory } = await import('../skills/jtb/scripts/lib/triage-history.mjs');
+    const entries = queryTicketHistory(ticketKey);
+    if (entries.length === 0) {
+      process.stdout.write(`No triage history found for ${ticketKey}.\n`);
+      break;
+    }
+    const hs = createStyler({ isTTY: process.stdout.isTTY });
+    process.stdout.write(`\nHistory for ${hs.bold(ticketKey)} (${entries.length} entries)\n\n`);
+    for (const e of entries) {
+      const bounce = e.bounced ? hs.yellow(' ⟳ bounced') : '';
+      const urg = e.urgency === 'needs-response' ? hs.red(e.urgency) : e.urgency === 'aging' ? hs.yellow(e.urgency) : hs.green(e.urgency);
+      process.stdout.write(`  ${hs.dim(e.date)}  [${e.profile}]  ${urg}${bounce}  ${hs.dim(e.reason)}\n`);
+    }
+    process.stdout.write('\n');
+    break;
+  }
+
   case 'init':
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printInitHelp(); break; }
     runInit().catch(err => {

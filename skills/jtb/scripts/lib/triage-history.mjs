@@ -162,3 +162,71 @@ export function buildDeltaSection(deltas) {
 
   return lines.join('\n') + '\n';
 }
+
+/**
+ * Query the full history for a single ticket key across all dated snapshots.
+ *
+ * Reads ~/.ticketlens/triage-history/YYYY-MM-DD/*.json, finds entries matching
+ * the given ticketKey, and returns a chronologically sorted timeline.
+ * Entries with urgency oscillating in the same direction on consecutive days
+ * are flagged with `bounced: true`.
+ *
+ * @param {string} ticketKey
+ * @param {object} [opts]
+ * @param {string} [opts.configDir]
+ * @param {object} [opts.fsModule]
+ * @returns {{ date: string, profile: string, urgency: string, status: string, reason: string, bounced: boolean }[]}
+ */
+export function queryTicketHistory(ticketKey, {
+  configDir = DEFAULT_CONFIG_DIR,
+  fsModule = defaultFs,
+} = {}) {
+  const histDir = join(configDir, 'triage-history');
+  if (!fsModule.existsSync(histDir)) return [];
+
+  const dates = fsModule.readdirSync(histDir)
+    .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort(); // lexicographic = chronological for YYYY-MM-DD
+
+  const entries = [];
+  for (const date of dates) {
+    const dayDir = join(histDir, date);
+    let profileFiles;
+    try {
+      profileFiles = fsModule.readdirSync(dayDir).filter(f => f.endsWith('.json'));
+    } catch {
+      continue;
+    }
+    for (const file of profileFiles) {
+      const profile = file.slice(0, -5); // strip .json
+      let tickets;
+      try {
+        tickets = JSON.parse(fsModule.readFileSync(join(dayDir, file), 'utf8'));
+      } catch {
+        continue;
+      }
+      const found = Array.isArray(tickets) && tickets.find(t => t.ticketKey === ticketKey);
+      if (found) {
+        entries.push({
+          date,
+          profile,
+          urgency: found.urgency ?? 'unknown',
+          status: found.status ?? '',
+          reason: found.reason ?? '',
+          bounced: false,
+        });
+      }
+    }
+  }
+
+  // Detect bounces: flag entries where urgency changed direction on consecutive days
+  for (let i = 1; i < entries.length; i++) {
+    const prev = entries[i - 1];
+    const cur = entries[i];
+    if (cur.urgency !== prev.urgency && cur.profile === prev.profile) {
+      cur.bounced = true;
+    }
+  }
+
+  return entries;
+}

@@ -85,3 +85,6 @@ export const brightYellow = defaultStyler.brightYellow;
 export const brightCyan   = defaultStyler.brightCyan;
 export const brand        = defaultStyler.brand;
 export const isStyled     = () => defaultStyler.enabled;
+
+export const ANSI_RE = /\[[0-9;]*m/g;
+export function stripAnsi(s) { return s.replace(ANSI_RE, ''); }

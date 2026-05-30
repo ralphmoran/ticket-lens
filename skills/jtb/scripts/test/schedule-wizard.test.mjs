@@ -185,3 +185,37 @@ describe('runScheduleStatus — null guard', () => {
     assert.ok(printed.some(s => s.includes('ticketlens login')));
   });
 });
+
+// ── LOCK TESTS — pin cloud schedule flow before Feature 11 (local mode) ──
+
+describe('schedule-wizard — cloud flow lock', () => {
+  let tmpDirLock;
+  before(() => { tmpDirLock = mkdtempSync(join(tmpdir(), 'schedule-lock-')); });
+  after(() => rmSync(tmpDirLock, { recursive: true }));
+
+  it('runScheduleWizard with valid cliToken still calls fetch with Authorization header', async () => {
+    let capturedHeaders;
+    const fetcher = async (_url, init) => {
+      capturedHeaders = init?.headers;
+      return { ok: true, json: async () => ({ id: 1, deliverAt: '08:00', timezone: 'UTC' }) };
+    };
+    await runScheduleWizard({
+      fetcher,
+      cliToken: 'tl_lic-locktest',
+      configDir: tmpDirLock,
+      platform: 'linux',
+      answers: { time: '08:00', email: 'dev@example.com', timezone: 'UTC' },
+      writeLocalJob: () => {},
+      print: () => {},
+    });
+    assert.equal(capturedHeaders?.['Authorization'], 'Bearer tl_lic-locktest');
+  });
+
+  it('runScheduleStop is a named export', () => {
+    assert.equal(typeof runScheduleStop, 'function');
+  });
+
+  it('runScheduleStatus is a named export', () => {
+    assert.equal(typeof runScheduleStatus, 'function');
+  });
+});

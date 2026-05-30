@@ -300,3 +300,33 @@ describe('sortByUrgency', () => {
     assert.equal(sorted[1].lastComment.created, '2026-03-01T10:00:00Z');
   });
 });
+
+// ── LOCK TESTS — pin existing output shape before Feature 10 (custom rules) ──
+
+describe('scoreAttention — output shape lock (no customRules)', () => {
+  const user = { accountId: 'u1', name: 'dev', displayName: 'Dev' };
+  const base = { key: 'LOCK-1', summary: 'Lock test', status: 'In Progress', comments: [], updated: new Date('2026-03-05T12:00:00Z').toISOString() };
+
+  it('returns all required fields when ticket is clear', () => {
+    const result = scoreAttention({ ...base, updated: new Date('2026-03-05T12:00:00Z').toISOString() }, user, { now: new Date('2026-03-06T12:00:00Z') });
+    assert.ok('ticketKey' in result, 'ticketKey missing');
+    assert.ok('summary' in result, 'summary missing');
+    assert.ok('status' in result, 'status missing');
+    assert.ok('urgency' in result, 'urgency missing');
+    assert.ok('reason' in result, 'reason missing');
+    assert.ok('lastComment' in result, 'lastComment missing');
+  });
+
+  it('urgency is one of needs-response | aging | clear', () => {
+    const result = scoreAttention(base, user, { now: new Date('2026-03-06T12:00:00Z') });
+    assert.ok(['needs-response', 'aging', 'clear'].includes(result.urgency));
+  });
+
+  it('calling with undefined customRules does not throw', () => {
+    assert.doesNotThrow(() => scoreAttention(base, user, { now: new Date('2026-03-06T12:00:00Z'), customRules: undefined }));
+  });
+
+  it('calling with empty customRules array does not throw', () => {
+    assert.doesNotThrow(() => scoreAttention(base, user, { now: new Date('2026-03-06T12:00:00Z'), customRules: [] }));
+  });
+});

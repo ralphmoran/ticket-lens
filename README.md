@@ -137,6 +137,8 @@ ticketlens triage --export=csv                 # Export results to CSV [Team]
 ticketlens triage --export=json                # Export results to JSON [Team]
 ticketlens triage --push                       # Push snapshot to Console queue [Team]
 ticketlens triage --share                      # Generate 24h share URL (no login for recipient) [Team]
+ticketlens triage --all                        # Triage all profiles at once, merged output [Pro]
+ticketlens triage --save=~/triage.txt          # Save ANSI-stripped output to file [Pro]
 ticketlens triage --digest                     # POST scored results to digest endpoint [Pro]
 ticketlens triage --plain                      # Plain markdown — pipe to file or LLM
 ticketlens triage --static                     # Static table, no interactive mode
@@ -331,9 +333,45 @@ Cache locations:
 ticketlens schedule               # Interactive wizard — set digest time, timezone, profile [Pro]
 ticketlens schedule --stop        # Cancel the scheduled digest
 ticketlens schedule --status      # Show current schedule
+ticketlens schedule --local       # Local-only cron (no Console auth) — saves triage to file [Pro]
 ```
 
 Stores the schedule as a cron entry. Delivers your triage digest at the configured time without an open terminal. Requires a Pro license.
+
+---
+
+### History
+
+```bash
+ticketlens history <TICKET-KEY>   # Show urgency timeline for a ticket [Pro]
+```
+
+Reads from your local `~/.ticketlens/triage-history/` snapshots (written automatically on each `ticketlens triage` run) and renders a day-by-day urgency timeline for the requested ticket. Entries where urgency changed direction are flagged as "bounced" — useful for spotting tickets that keep reverting between Code Review and In Progress.
+
+Requires a Pro license. No network call — reads local snapshots only.
+
+---
+
+### Custom Attention Rules
+
+Add an `attentionRules` array to any profile in `~/.ticketlens/profiles.json` to override how `ticketlens triage` scores specific tickets:
+
+```json
+{
+  "profiles": {
+    "work": {
+      "baseUrl": "https://jira.example.com",
+      "attentionRules": [
+        { "match": { "priority": "Highest" }, "action": "force-urgent", "reason": "P1 always urgent" },
+        { "match": { "label": "backlog" },    "action": "ignore",       "reason": "skip backlog" },
+        { "match": { "status": "Parked" },    "action": "ignore",       "reason": "parked tickets" }
+      ]
+    }
+  }
+}
+```
+
+Rules are evaluated in order — first match wins. Supported `match` keys: `priority`, `label`, `status`, `keyPrefix`. Supported `action` values: `force-urgent` (bumps to needs-response) and `ignore` (excludes from output). Requires a Pro license.
 
 ---
 
@@ -486,6 +524,8 @@ ticketlens triage --export=csv               # Export to CSV [Team]
 ticketlens triage --export=json              # Export to JSON [Team]
 ticketlens triage --push                     # Push snapshot to Console queue [Team]
 ticketlens triage --share                    # Generate 24h share URL (no login for recipient) [Team]
+ticketlens triage --all                      # Triage all profiles at once, merged output [Pro]
+ticketlens triage --save=~/triage.txt        # Save ANSI-stripped output to file [Pro]
 ticketlens triage --digest                   # POST results to digest endpoint [Pro]
 ticketlens triage --profile=acme --stale=3 --static          # Combine flags
 
@@ -537,6 +577,10 @@ ticketlens cache clear --older-than=30d --yes            # Skip confirmation (CI
 ticketlens schedule                           # Interactive wizard — set time, timezone, profile [Pro]
 ticketlens schedule --stop                    # Cancel the scheduled digest [Pro]
 ticketlens schedule --status                  # Show current schedule [Pro]
+ticketlens schedule --local                   # Local-only cron/LaunchAgent — no Console auth needed [Pro]
+
+# ── History ───────────────────────────────────────────────────────────────────
+ticketlens history <TICKET-KEY>               # Show urgency timeline for a ticket [Pro]
 
 # ── Compliance ────────────────────────────────────────────────────────────────
 ticketlens compliance <TICKET-KEY>            # Check ticket requirements against local diff [Pro/Free 3/mo]
