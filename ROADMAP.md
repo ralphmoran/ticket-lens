@@ -75,7 +75,7 @@ Premium features that run 100% locally. No backend needed. License key via Lemon
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
 | 8 | ~~Feature~~ | ~~**License key system**~~ | Done. LemonSqueezy API activation + validation. `~/.ticketlens/license.json` with tier hierarchy, expiry, revalidation. CLI: `ticketlens activate <KEY>`, `ticketlens license`. 27 tests. | ~~Small~~ |
-| 9 | ~~Feature~~ | ~~**Multi-project triage**~~ | Done. `ticketlens triage --all` loops every configured profile sequentially, merges output into a single view labelled by profile. Pro-gated. | ~~Small~~ |
+| 9 | ~~Feature~~ | ~~**Multi-project triage**~~ | Done. `ticketlens triage --all` fetches all configured profiles in parallel with a live per-profile status block (⠋→✔/✗), merges output into a single view labelled by profile. Pro-gated. | ~~Small~~ |
 | 10 | ~~Feature~~ | ~~**Custom attention rules**~~ | Done. `attentionRules` array in profile config. `match` keys: priority, label, status, keyPrefix. `action`: force-urgent (bumps to needs-response) or ignore (excludes from output). First match wins. Pro-gated. | ~~Medium~~ |
 | 11 | ~~Feature~~ | ~~**Scheduled triage (cron)**~~ | Done. `ticketlens triage --save=FILE` writes ANSI-stripped output to a file. `ticketlens schedule --local` (auto-detected when no CLI token) creates a cron/LaunchAgent entry using `--save=FILE` — no Console auth required. Pro-gated. | ~~Small~~ |
 | 12 | ~~Feature~~ | ~~**Ticket history tracking**~~ | Done. `ticketlens history TICKET-KEY` reads daily snapshots from `~/.ticketlens/triage-history/`, renders a chronological timeline with urgency, status, reason, and bounce detection (urgency changed on consecutive days). Pro-gated. | ~~Medium~~ |
@@ -86,7 +86,7 @@ Premium features that run 100% locally. No backend needed. License key via Lemon
 |---|------|---------|--------|--------|
 | 15 | Feature | **Triage by project (`--project`)** | Scope triage to a specific Jira project, not just statuses. | Small |
 | 16 | Feature | **Triage by label/priority (`--label`, `--priority`)** | Filter triage to specific labels or priority levels (e.g. only P1/P2). | Small |
-| 17 | Feature | **Triage export (CSV/JSON)** | Export triage results for standups, reports, or piping into other tools. | Small |
+| 17 | ~~Feature~~ | ~~**Triage export (CSV/JSON)**~~ | Done. `ticketlens triage --export=csv` and `--export=json` write scored triage results to a timestamped file. Team-gated. | ~~Small~~ |
 | 18 | Feature | **Brief templates** | Custom output formats per team/project. Configure in profile which sections to include, field ordering, etc. | Small |
 | 19 | Feature | **Response time metrics** | "Your avg response time this week: 4.2 hours." Computed from local triage history. | Medium |
 
