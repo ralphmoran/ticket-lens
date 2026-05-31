@@ -421,7 +421,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
         await import('./lib/triage-history.mjs');
       const yesterday = loadYesterdaySnapshot({ profile: profileName ?? 'default', configDir });
       if (yesterday) {
-        const deltas = diffSnapshots(sorted, yesterday);
+        const deltas = diffSnapshots(sorted, yesterday.tickets);
         delta = buildDeltaSection(deltas) || null;
       }
     } catch { /* non-fatal — digest still sends */ }

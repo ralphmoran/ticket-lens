@@ -8,6 +8,7 @@ import {
   loadYesterdaySnapshot,
   diffSnapshots,
   buildDeltaSection,
+  computeResponseMetrics,
 } from '../lib/triage-history.mjs';
 
 // ---------------------------------------------------------------------------
@@ -50,7 +51,7 @@ after(() => { rmSync(tmpDir, { recursive: true }); });
 // ---------------------------------------------------------------------------
 
 describe('saveTriageSnapshot', () => {
-  it('writes file to {configDir}/triage-history/YYYY-MM-DD/{profile}.json', () => {
+  it('writes envelope { captured_at, tickets } to {configDir}/triage-history/YYYY-MM-DD/{profile}.json', () => {
     const now = new Date('2026-04-14T12:00:00Z');
     const tickets = [makeTicket('PROJ-1')];
     const configDir = mkdtempSync(join(tmpdir(), 'save-test-'));
@@ -59,8 +60,9 @@ describe('saveTriageSnapshot', () => {
       const expectedPath = join(configDir, 'triage-history', '2026-04-14', 'myprofile.json');
       assert.ok(existsSync(expectedPath), `Expected file at ${expectedPath}`);
       const parsed = JSON.parse(readFileSync(expectedPath, 'utf8'));
-      assert.equal(parsed.length, 1);
-      assert.equal(parsed[0].ticketKey, 'PROJ-1');
+      assert.equal(parsed.captured_at, '2026-04-14T12:00:00.000Z');
+      assert.equal(parsed.tickets.length, 1);
+      assert.equal(parsed.tickets[0].ticketKey, 'PROJ-1');
     } finally {
       rmSync(configDir, { recursive: true });
     }
@@ -117,19 +119,36 @@ describe('loadYesterdaySnapshot', () => {
     }
   });
 
-  it('returns parsed array when file exists', () => {
-    const configDir = mkdtempSync(join(tmpdir(), 'load-found-'));
+  it('returns { captured_at, tickets } when new-format file exists', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'load-found-new-'));
     try {
       const now = new Date('2026-04-14T12:00:00Z');
-      const yestDate = '2026-04-13';
-      const dir = join(configDir, 'triage-history', yestDate);
+      const dir = join(configDir, 'triage-history', '2026-04-13');
       mkdirSync(dir, { recursive: true });
       const tickets = [makeTicket('PROJ-99', 'aging')];
+      const envelope = { captured_at: '2026-04-13T08:00:00.000Z', tickets };
+      writeFileSync(join(dir, 'mypro.json'), JSON.stringify(envelope), 'utf8');
+      const result = loadYesterdaySnapshot({ profile: 'mypro', configDir, now });
+      assert.equal(result.captured_at, '2026-04-13T08:00:00.000Z');
+      assert.equal(result.tickets.length, 1);
+      assert.equal(result.tickets[0].ticketKey, 'PROJ-99');
+    } finally {
+      rmSync(configDir, { recursive: true });
+    }
+  });
+
+  it('handles old flat-array format — returns { captured_at: null, tickets }', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'load-found-old-'));
+    try {
+      const now = new Date('2026-04-14T12:00:00Z');
+      const dir = join(configDir, 'triage-history', '2026-04-13');
+      mkdirSync(dir, { recursive: true });
+      const tickets = [makeTicket('PROJ-77', 'clear')];
       writeFileSync(join(dir, 'mypro.json'), JSON.stringify(tickets), 'utf8');
       const result = loadYesterdaySnapshot({ profile: 'mypro', configDir, now });
-      assert.ok(Array.isArray(result));
-      assert.equal(result.length, 1);
-      assert.equal(result[0].ticketKey, 'PROJ-99');
+      assert.equal(result.captured_at, null);
+      assert.equal(result.tickets.length, 1);
+      assert.equal(result.tickets[0].ticketKey, 'PROJ-77');
     } finally {
       rmSync(configDir, { recursive: true });
     }
@@ -245,6 +264,178 @@ describe('buildDeltaSection', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// computeResponseMetrics
+// ---------------------------------------------------------------------------
+
+describe('computeResponseMetrics', () => {
+  function makeFs(files) {
+    // files: { 'absolute/path': 'content', ... }
+    return {
+      existsSync: p => p in files,
+      readFileSync: (p) => {
+        if (!(p in files)) { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; }
+        return files[p];
+      },
+      mkdirSync: () => {},
+      writeFileSync: () => {},
+      readdirSync: () => [],
+    };
+  }
+
+  function snap(tickets, capturedAt) {
+    return JSON.stringify({ captured_at: capturedAt, tickets });
+  }
+
+  const DIR = '/fake';
+  const PROFILE = 'test';
+
+  it('returns all-null metrics and triageRunCount:0 when no snapshot files exist', () => {
+    const fs = makeFs({});
+    const now = new Date('2026-05-30T10:00:00Z');
+    const result = computeResponseMetrics(PROFILE, { days: 7, configDir: DIR, fsModule: fs, now });
+    assert.equal(result.triageRunCount, 0);
+    assert.equal(result.avgResponseHours, null);
+    assert.equal(result.medianResponseHours, null);
+    assert.equal(result.clearRate, null);
+    assert.equal(result.currentUrgency, null);
+    assert.equal(result.trendHours, null);
+    assert.equal(result.windowDays, 7);
+  });
+
+  it('returns triageRunCount:1 and null response metrics when only one snapshot (no pairs)', () => {
+    const now = new Date('2026-05-30T10:00:00Z');
+    const path = `${DIR}/triage-history/2026-05-30/${PROFILE}.json`;
+    const fs = makeFs({ [path]: snap([makeTicket('A-1', 'needs-response')], '2026-05-30T08:00:00Z') });
+    const result = computeResponseMetrics(PROFILE, { days: 1, configDir: DIR, fsModule: fs, now });
+    assert.equal(result.triageRunCount, 1);
+    assert.equal(result.avgResponseHours, null);
+    assert.deepEqual(result.currentUrgency, { needsResponse: 1, aging: 0, clear: 0 });
+  });
+
+  it('computes avgResponseHours from a needs-response → clear transition', () => {
+    const now = new Date('2026-05-30T10:00:00Z');
+    const pathD1 = `${DIR}/triage-history/2026-05-29/${PROFILE}.json`;
+    const pathD2 = `${DIR}/triage-history/2026-05-30/${PROFILE}.json`;
+    // commented at 06:00, cleared at 08:00 = 2 hours
+    const ticketNR = makeTicket('A-1', 'needs-response', {
+      lastComment: { created: '2026-05-29T06:00:00.000Z', author: 'Bob', body: 'hey' },
+    });
+    const ticketClear = makeTicket('A-1', 'clear');
+    const fs = makeFs({
+      [pathD1]: snap([ticketNR],    '2026-05-29T07:00:00.000Z'),
+      [pathD2]: snap([ticketClear], '2026-05-29T08:00:00.000Z'),
+    });
+    const result = computeResponseMetrics(PROFILE, { days: 2, configDir: DIR, fsModule: fs, now });
+    assert.ok(result.avgResponseHours !== null, 'avgResponseHours should be computed');
+    assert.ok(Math.abs(result.avgResponseHours - 2) < 0.001, `Expected ~2h, got ${result.avgResponseHours}`);
+    assert.equal(result.triageRunCount, 2);
+  });
+
+  it('computes correct clearRate: 1 fast (<24h) out of 1 transition = 1.0', () => {
+    const now = new Date('2026-05-30T10:00:00Z');
+    const pathD1 = `${DIR}/triage-history/2026-05-29/${PROFILE}.json`;
+    const pathD2 = `${DIR}/triage-history/2026-05-30/${PROFILE}.json`;
+    const ticketNR = makeTicket('A-1', 'needs-response', {
+      lastComment: { created: '2026-05-29T06:00:00.000Z', author: 'Bob', body: '' },
+    });
+    const fs = makeFs({
+      [pathD1]: snap([ticketNR],             '2026-05-29T07:00:00.000Z'),
+      [pathD2]: snap([makeTicket('A-1','clear')], '2026-05-29T08:00:00.000Z'),
+    });
+    const result = computeResponseMetrics(PROFILE, { days: 2, configDir: DIR, fsModule: fs, now });
+    assert.equal(result.clearRate, 1.0);
+  });
+
+  it('clearRate=0 when transition takes >24h', () => {
+    const now = new Date('2026-05-30T10:00:00Z');
+    const pathD1 = `${DIR}/triage-history/2026-05-29/${PROFILE}.json`;
+    const pathD2 = `${DIR}/triage-history/2026-05-30/${PROFILE}.json`;
+    const ticketNR = makeTicket('A-1', 'needs-response', {
+      lastComment: { created: '2026-05-28T00:00:00.000Z', author: 'Bob', body: '' },
+    });
+    const fs = makeFs({
+      [pathD1]: snap([ticketNR],             '2026-05-29T07:00:00.000Z'),
+      [pathD2]: snap([makeTicket('A-1','clear')], '2026-05-30T08:00:00.000Z'),
+    });
+    const result = computeResponseMetrics(PROFILE, { days: 2, configDir: DIR, fsModule: fs, now });
+    assert.equal(result.clearRate, 0);
+  });
+
+  it('skips transition when lastComment.created is null — no duration, no clearRate', () => {
+    const now = new Date('2026-05-30T10:00:00Z');
+    const pathD1 = `${DIR}/triage-history/2026-05-29/${PROFILE}.json`;
+    const pathD2 = `${DIR}/triage-history/2026-05-30/${PROFILE}.json`;
+    const ticketNR = makeTicket('A-1', 'needs-response'); // lastComment: null by default
+    const fs = makeFs({
+      [pathD1]: snap([ticketNR],                       '2026-05-29T07:00:00.000Z'),
+      [pathD2]: snap([makeTicket('A-1', 'clear')],     '2026-05-29T08:00:00.000Z'),
+    });
+    const result = computeResponseMetrics(PROFILE, { days: 2, configDir: DIR, fsModule: fs, now });
+    assert.equal(result.avgResponseHours, null);
+    assert.equal(result.medianResponseHours, null);
+    assert.equal(result.clearRate, null); // no valid durations → clearRate is null
+  });
+
+  it('skips duration when captured_at is null (old-format snapshot)', () => {
+    const now = new Date('2026-05-30T10:00:00Z');
+    const pathD1 = `${DIR}/triage-history/2026-05-29/${PROFILE}.json`;
+    const pathD2 = `${DIR}/triage-history/2026-05-30/${PROFILE}.json`;
+    const ticketNR = makeTicket('A-1', 'needs-response', {
+      lastComment: { created: '2026-05-29T06:00:00.000Z', author: 'Bob', body: '' },
+    });
+    const fs = makeFs({
+      [pathD1]: snap([ticketNR],             '2026-05-29T07:00:00.000Z'),
+      // old format — no captured_at
+      [pathD2]: JSON.stringify([makeTicket('A-1','clear')]),
+    });
+    const result = computeResponseMetrics(PROFILE, { days: 2, configDir: DIR, fsModule: fs, now });
+    assert.equal(result.avgResponseHours, null); // no duration possible without captured_at
+  });
+
+  it('computes medianResponseHours correctly for multiple transitions', () => {
+    const now = new Date('2026-05-30T20:00:00Z');
+    const d1 = `${DIR}/triage-history/2026-05-28/${PROFILE}.json`;
+    const d2 = `${DIR}/triage-history/2026-05-29/${PROFILE}.json`;
+    const d3 = `${DIR}/triage-history/2026-05-30/${PROFILE}.json`;
+    // A-1: 2h (lastComment 2026-05-29T10:00, cleared d2 captured_at 2026-05-29T12:00)
+    // A-2: 6h (lastComment 2026-05-30T12:00, cleared d3 captured_at 2026-05-30T18:00)
+    // median([2, 6]) = 4
+    const nr1 = makeTicket('A-1','needs-response',{lastComment:{created:'2026-05-29T10:00:00.000Z',author:'X',body:''}});
+    const nr2 = makeTicket('A-2','needs-response',{lastComment:{created:'2026-05-30T12:00:00.000Z',author:'Y',body:''}});
+    const fs = makeFs({
+      [d1]: snap([nr1],                                        '2026-05-28T09:00:00.000Z'),
+      [d2]: snap([makeTicket('A-1', 'clear'), nr2],            '2026-05-29T12:00:00.000Z'),
+      [d3]: snap([makeTicket('A-2', 'clear')],                 '2026-05-30T18:00:00.000Z'),
+    });
+    const result = computeResponseMetrics(PROFILE, { days: 3, configDir: DIR, fsModule: fs, now });
+    assert.ok(result.medianResponseHours !== null);
+    assert.ok(Math.abs(result.medianResponseHours - 4) < 0.001, `Expected median=4, got ${result.medianResponseHours}`);
+  });
+
+  it('trendHours is null when prior window has no data', () => {
+    const now = new Date('2026-05-30T10:00:00Z');
+    const path = `${DIR}/triage-history/2026-05-30/${PROFILE}.json`;
+    const fs = makeFs({ [path]: snap([makeTicket('A-1','clear')], '2026-05-30T08:00:00Z') });
+    const result = computeResponseMetrics(PROFILE, { days: 1, configDir: DIR, fsModule: fs, now });
+    assert.equal(result.trendHours, null);
+  });
+
+  it('currentUrgency reflects counts from most recent snapshot', () => {
+    const now = new Date('2026-05-30T10:00:00Z');
+    const path = `${DIR}/triage-history/2026-05-30/${PROFILE}.json`;
+    const tickets = [
+      makeTicket('A-1','needs-response'),
+      makeTicket('A-2','needs-response'),
+      makeTicket('A-3','aging'),
+      makeTicket('A-4','clear'),
+    ];
+    const fs = makeFs({ [path]: snap(tickets, '2026-05-30T08:00:00Z') });
+    const result = computeResponseMetrics(PROFILE, { days: 1, configDir: DIR, fsModule: fs, now });
+    assert.deepEqual(result.currentUrgency, { needsResponse: 2, aging: 1, clear: 1 });
+  });
+});
+
 // ── LOCK TESTS — pin existing API surface before Feature 12 (queryTicketHistory) ──
 
 describe('triage-history — API surface lock', () => {
@@ -262,6 +453,10 @@ describe('triage-history — API surface lock', () => {
 
   it('buildDeltaSection is a function', () => {
     assert.equal(typeof buildDeltaSection, 'function');
+  });
+
+  it('computeResponseMetrics is a function', () => {
+    assert.equal(typeof computeResponseMetrics, 'function');
   });
 
   it('diffSnapshots returns [] on identical input (shape unchanged)', () => {
