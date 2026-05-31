@@ -65,20 +65,15 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     printTriageHelp();
     return;
   }
-  // Normalize --project= alias once at entry so all recursive calls only see --profile=
-  const projectArg = args.find(a => a.startsWith('--project='));
-  if (projectArg) {
-    process.stderr.write(`Hint: --project recognized as alias for --profile=${projectArg.split('=')[1]}\n\n`);
-    args = args.map(a => a.startsWith('--project=') ? `--profile=${a.split('=')[1]}` : a);
-  }
-
   const profileArg = args.find(a => a.startsWith('--profile='));
   const profileName = profileArg ? profileArg.split('=')[1] : undefined;
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=', '--assignee=', '--sprint=', '--export=', '--digest', '--push', '--share', '--all', '--save='],
-    { hints: ['--depth=', '--no-attachments', '--no-cache'] } // fetch-only flags — shown as hints, not applied
+    ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=',
+     '--assignee=', '--sprint=', '--export=', '--digest', '--push', '--share', '--all', '--save=',
+     '--project=', '--label=', '--priority='],
+    { hints: ['--depth=', '--no-attachments', '--no-cache'] }
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
   args = validatedArgs;
@@ -89,9 +84,12 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const staleArg = args.find(a => a.startsWith('--stale='));
   const staleDays = staleArg ? parseInt(staleArg.split('=')[1], 10) : 5;
 
-  const statusArg = args.find(a => a.startsWith('--status='));
+  const statusArg   = args.find(a => a.startsWith('--status='));
   const assigneeArg = args.find(a => a.startsWith('--assignee='));
-  const sprintArg = args.find(a => a.startsWith('--sprint='));
+  const sprintArg   = args.find(a => a.startsWith('--sprint='));
+  const projectArg  = args.find(a => a.startsWith('--project='));
+  const labelArg    = args.find(a => a.startsWith('--label='));
+  const priorityArg = args.find(a => a.startsWith('--priority='));
   const exportArg = args.find(a => a.startsWith('--export='))?.split('=')[1] ?? null;
   const digestFlag = args.includes('--digest');
   const pushFlag = args.includes('--push');
@@ -123,6 +121,16 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
         return;
       }
     } catch { /* doesn't exist yet — ok */ }
+  }
+
+  // --project / --label / --priority: Team gate
+  if (projectArg || labelArg || priorityArg) {
+    if (!licensedFn('team', configDir)) {
+      const flag = projectArg ? '--project' : labelArg ? '--label' : '--priority';
+      upgradeFn('team', flag);
+      process.exitCode = 1;
+      return;
+    }
   }
 
   // --all: triage all configured profiles in parallel with live status block
@@ -270,10 +278,16 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     : conn.triageStatuses || DEFAULT_STATUSES;
 
   // Build JQL before any I/O — pure computation, no dependency on currentUser
-  const statusList    = statuses.map(s => `"${escapeJql(s)}"`).join(',');
+  const statusList     = statuses.map(s => `"${escapeJql(s)}"`).join(',');
   const assigneeClause = assigneeName ? `assignee = "${escapeJql(assigneeName)}"` : `assignee = currentUser()`;
   const sprintClause   = sprintName   ? ` AND sprint = "${escapeJql(sprintName)}"` : '';
-  const jql = `${assigneeClause} AND status IN (${statusList})${sprintClause} ORDER BY updated DESC`;
+  const projectClause  = projectArg   ? ` AND project = "${escapeJql(projectArg.split('=')[1])}"` : '';
+  const labelValues    = labelArg ? labelArg.split('=')[1].split(',').map(l => l.trim()).filter(Boolean) : [];
+  const labelClause    = labelValues.length > 1
+    ? ` AND labels IN (${labelValues.map(l => `"${escapeJql(l)}"`).join(',')})`
+    : labelValues.length === 1 ? ` AND labels = "${escapeJql(labelValues[0])}"` : '';
+  const priorityClause = priorityArg  ? ` AND priority = "${escapeJql(priorityArg.split('=')[1])}"` : '';
+  const jql = `${assigneeClause} AND status IN (${statusList})${sprintClause}${projectClause}${labelClause}${priorityClause} ORDER BY updated DESC`;
 
   const session = createSession(conn);
   session.spin(`Connecting to ${session.label}…`);

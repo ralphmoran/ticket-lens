@@ -155,41 +155,187 @@ describe('fetch-my-tickets integration', () => {
     }
   });
 
-  it('--project alias hint does not say "not a valid flag" (friendly wording)', async () => {
+  it('--project=PROJ appends project JQL clause (Team gate)', async () => {
     const configDir = setupConfig();
+    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    let capturedJql = '';
     const mockFetch = async (url) => {
       if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
-      if (url.includes('/search')) return { ok: true, json: async () => makeSearchResult([]) };
+      if (url.includes('/search')) {
+        capturedJql = new URL(url).searchParams.get('jql') || '';
+        return { ok: true, json: async () => makeSearchResult([]) };
+      }
       return { ok: false, status: 404, statusText: 'Not Found' };
     };
-
     const out = captureOutput();
     try {
-      await run(['--project=testprofile'], {}, mockFetch, configDir);
-      assert.ok(
-        !out.stderr.includes('not a valid flag'),
-        `hint must not say "not a valid flag", got: ${out.stderr}`
-      );
-      assert.ok(
-        out.stderr.includes('alias') || out.stderr.includes('recognized'),
-        `hint must confirm --project is recognized as an alias, got: ${out.stderr}`
-      );
+      await run(['--project=MYPROJ'], {}, mockFetch, configDir);
+      assert.ok(capturedJql.includes('project'), `JQL must include project clause, got: ${capturedJql}`);
+      assert.ok(capturedJql.includes('MYPROJ'), `JQL must include project key, got: ${capturedJql}`);
     } finally {
       out.restore();
       rmSync(configDir, { recursive: true, force: true });
     }
   });
 
-  it('--project alias hint is shown exactly once when profile is not found (no infinite loop)', async () => {
-    // Uses a real config dir but with an unknown profile name — exercises the
-    // "profile not found → exit with error" path. The hint must appear once only.
+  it('--project does NOT switch the connection profile', async () => {
     const configDir = setupConfig();
+    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    let capturedJql = '';
+    const mockFetch = async (url) => {
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) {
+        capturedJql = new URL(url).searchParams.get('jql') || '';
+        return { ok: true, json: async () => makeSearchResult([]) };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
     const out = captureOutput();
     try {
-      await run(['--project=nonexistent-profile-xyz'], {}, undefined, configDir);
-      const hintCount = (out.stderr.match(/recognized as alias/g) || []).length;
-      assert.equal(hintCount, 1, `hint must appear exactly once, got ${hintCount} occurrences`);
-      assert.equal(process.exitCode, 1, 'must exit with code 1 when profile is not found');
+      await run(['--project=MYPROJ'], {}, mockFetch, configDir);
+      // JQL should have project clause, not use --profile= rewiring
+      assert.ok(capturedJql.includes('project = "MYPROJ"'), `JQL must have project = "MYPROJ", got: ${capturedJql}`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--project blocks for non-Team user and shows upgrade prompt', async () => {
+    const configDir = setupConfig();
+    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'pro', key: 'test-key' }));
+    const out = captureOutput();
+    try {
+      await run(['--project=MYPROJ'], {}, undefined, configDir);
+      assert.equal(process.exitCode, 1, 'must exit 1 for non-Team user');
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--label=Bug appends single label JQL clause', async () => {
+    const configDir = setupConfig();
+    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    let capturedJql = '';
+    const mockFetch = async (url) => {
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) {
+        capturedJql = new URL(url).searchParams.get('jql') || '';
+        return { ok: true, json: async () => makeSearchResult([]) };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+    const out = captureOutput();
+    try {
+      await run(['--label=Bug'], {}, mockFetch, configDir);
+      assert.ok(capturedJql.includes('labels = "Bug"'), `JQL must have labels = "Bug", got: ${capturedJql}`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--label=Bug,Feature appends labels IN (...) JQL clause', async () => {
+    const configDir = setupConfig();
+    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    let capturedJql = '';
+    const mockFetch = async (url) => {
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) {
+        capturedJql = new URL(url).searchParams.get('jql') || '';
+        return { ok: true, json: async () => makeSearchResult([]) };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+    const out = captureOutput();
+    try {
+      await run(['--label=Bug,Feature'], {}, mockFetch, configDir);
+      assert.ok(capturedJql.includes('labels IN'), `JQL must use IN for multiple labels, got: ${capturedJql}`);
+      assert.ok(capturedJql.includes('"Bug"'), `JQL must include "Bug", got: ${capturedJql}`);
+      assert.ok(capturedJql.includes('"Feature"'), `JQL must include "Feature", got: ${capturedJql}`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--priority=High appends priority JQL clause', async () => {
+    const configDir = setupConfig();
+    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    let capturedJql = '';
+    const mockFetch = async (url) => {
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) {
+        capturedJql = new URL(url).searchParams.get('jql') || '';
+        return { ok: true, json: async () => makeSearchResult([]) };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+    const out = captureOutput();
+    try {
+      await run(['--priority=High'], {}, mockFetch, configDir);
+      assert.ok(capturedJql.includes('priority = "High"'), `JQL must have priority = "High", got: ${capturedJql}`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--project, --label, --priority together produce combined JQL', async () => {
+    const configDir = setupConfig();
+    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    let capturedJql = '';
+    const mockFetch = async (url) => {
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) {
+        capturedJql = new URL(url).searchParams.get('jql') || '';
+        return { ok: true, json: async () => makeSearchResult([]) };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+    const out = captureOutput();
+    try {
+      await run(['--project=MYPROJ', '--label=Bug', '--priority=High'], {}, mockFetch, configDir);
+      assert.ok(capturedJql.includes('project = "MYPROJ"'), `missing project clause, got: ${capturedJql}`);
+      assert.ok(capturedJql.includes('labels = "Bug"'),     `missing label clause, got: ${capturedJql}`);
+      assert.ok(capturedJql.includes('priority = "High"'),  `missing priority clause, got: ${capturedJql}`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--label blocks for non-Team user and shows upgrade prompt', async () => {
+    const configDir = setupConfig();
+    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'pro', key: 'test-key' }));
+    const out = captureOutput();
+    try {
+      await run(['--label=Bug'], {}, undefined, configDir);
+      assert.equal(process.exitCode, 1, 'must exit 1 for non-Team user');
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--project special chars are JQL-escaped', async () => {
+    const configDir = setupConfig();
+    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    let capturedJql = '';
+    const mockFetch = async (url) => {
+      if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+      if (url.includes('/search')) {
+        capturedJql = new URL(url).searchParams.get('jql') || '';
+        return { ok: true, json: async () => makeSearchResult([]) };
+      }
+      return { ok: false, status: 404, statusText: 'Not Found' };
+    };
+    const out = captureOutput();
+    try {
+      await run(['--project=MY"PROJ'], {}, mockFetch, configDir);
+      assert.ok(!capturedJql.includes('MY"PROJ'), `raw quote must be escaped in JQL, got: ${capturedJql}`);
+      assert.ok(capturedJql.includes('MY\\"PROJ'), `quote must be escaped as \\", got: ${capturedJql}`);
     } finally {
       out.restore();
       rmSync(configDir, { recursive: true, force: true });
