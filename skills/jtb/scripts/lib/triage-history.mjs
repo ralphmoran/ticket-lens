@@ -8,9 +8,20 @@ import * as defaultFs from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const DEFAULT_CONFIG_DIR = join(homedir(), '.ticketlens');
+export const DEFAULT_CONFIG_DIR = join(homedir(), '.ticketlens');
 
 const URGENCY_ORDER = { 'needs-response': 0, 'aging': 1, 'clear': 2 };
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function median(arr) {
+  if (!arr.length) return null;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -59,7 +70,8 @@ export function saveTriageSnapshot(tickets, {
   const dir = join(configDir, 'triage-history', dateStr);
   fsModule.mkdirSync(dir, { recursive: true });
   const filePath = snapshotPath(configDir, dateStr, profile);
-  fsModule.writeFileSync(filePath, JSON.stringify(tickets, null, 2), 'utf8');
+  const envelope = { captured_at: now.toISOString(), tickets };
+  fsModule.writeFileSync(filePath, JSON.stringify(envelope, null, 2), 'utf8');
 }
 
 /**
@@ -70,7 +82,7 @@ export function saveTriageSnapshot(tickets, {
  * @param {string} [opts.configDir]
  * @param {object} [opts.fsModule]
  * @param {Date}   [opts.now]
- * @returns {object[]|null}
+ * @returns {{ captured_at: string|null, tickets: object[] }|null}
  */
 export function loadYesterdaySnapshot({
   profile,
@@ -85,7 +97,9 @@ export function loadYesterdaySnapshot({
   const filePath = snapshotPath(configDir, dateStr, profile);
   try {
     const raw = fsModule.readFileSync(filePath, 'utf8');
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return { captured_at: null, tickets: parsed };
+    return parsed;
   } catch {
     return null;
   }
@@ -201,11 +215,12 @@ export function queryTicketHistory(ticketKey, {
       const profile = file.slice(0, -5); // strip .json
       let tickets;
       try {
-        tickets = JSON.parse(fsModule.readFileSync(join(dayDir, file), 'utf8'));
+        const raw = JSON.parse(fsModule.readFileSync(join(dayDir, file), 'utf8'));
+        tickets = Array.isArray(raw) ? raw : (raw.tickets ?? []);
       } catch {
         continue;
       }
-      const found = Array.isArray(tickets) && tickets.find(t => t.ticketKey === ticketKey);
+      const found = tickets.find(t => t.ticketKey === ticketKey);
       if (found) {
         entries.push({
           date,
@@ -229,4 +244,135 @@ export function queryTicketHistory(ticketKey, {
   }
 
   return entries;
+}
+
+/**
+ * Load a snapshot file for an arbitrary date string. Returns { captured_at, tickets } or null.
+ *
+ * @param {string} dateStr - YYYY-MM-DD
+ * @param {string} profile
+ * @param {string} configDir
+ * @param {object} fsModule
+ * @returns {{ captured_at: string|null, tickets: object[] }|null}
+ */
+function loadSnapshotForDate(dateStr, profile, configDir, fsModule) {
+  const filePath = snapshotPath(configDir, dateStr, profile);
+  try {
+    const parsed = JSON.parse(fsModule.readFileSync(filePath, 'utf8'));
+    if (Array.isArray(parsed)) return { captured_at: null, tickets: parsed };
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compute response-time and triage-cadence metrics from local triage history.
+ *
+ * A "response transition" is detected when a ticket appears as `needs-response`
+ * in snapshot D and `clear` in snapshot D+1. Response time = captured_at of the
+ * clear snapshot minus lastComment.created of the needs-response snapshot.
+ *
+ * @param {string} profile
+ * @param {object} [opts]
+ * @param {number} [opts.days=7]            Lookback window in calendar days
+ * @param {string} [opts.configDir]
+ * @param {object} [opts.fsModule]
+ * @param {Date}   [opts.now]
+ * @returns {{
+ *   avgResponseHours: number|null,
+ *   medianResponseHours: number|null,
+ *   clearRate: number|null,
+ *   triageRunCount: number,
+ *   currentUrgency: { needsResponse: number, aging: number, clear: number }|null,
+ *   windowDays: number,
+ *   trendHours: number|null,
+ * }}
+ */
+export function computeResponseMetrics(profile, {
+  days = 7,
+  configDir = DEFAULT_CONFIG_DIR,
+  fsModule = defaultFs,
+  now = new Date(),
+} = {}) {
+  validateProfile(profile);
+
+  function windowSnapshots(offsetStart, count) {
+    const snaps = [];
+    for (let i = offsetStart + count - 1; i >= offsetStart; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dateStr = toDateString(d);
+      const snap = loadSnapshotForDate(dateStr, profile, configDir, fsModule);
+      if (snap) snaps.push({ dateStr, ...snap });
+    }
+    return snaps; // chronological order (oldest first)
+  }
+
+  function computeFromSnaps(snaps) {
+    const durations = [];
+    let transitions = 0;
+    let fastTransitions = 0;
+
+    for (let i = 0; i + 1 < snaps.length; i++) {
+      const dayA = snaps[i];
+      const dayB = snaps[i + 1];
+      const mapA = new Map(dayA.tickets.map(t => [t.ticketKey, t]));
+
+      for (const tb of dayB.tickets) {
+        if (tb.urgency !== 'clear') continue;
+        const ta = mapA.get(tb.ticketKey);
+        if (!ta || ta.urgency !== 'needs-response') continue;
+
+        transitions++;
+        const commentCreated = ta.lastComment?.created;
+        const clearedAt = dayB.captured_at;
+        if (!commentCreated || !clearedAt) continue;
+
+        const ms = new Date(clearedAt).getTime() - new Date(commentCreated).getTime();
+        if (isNaN(ms) || ms < 0) continue;
+        const hours = ms / 3_600_000;
+        durations.push(hours);
+        if (hours <= 24) fastTransitions++;
+      }
+    }
+
+    return {
+      avgResponseHours: durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : null,
+      medianResponseHours: median(durations),
+      clearRate: durations.length > 0 ? fastTransitions / durations.length : null,
+      triageRunCount: snaps.length,
+    };
+  }
+
+  const currentSnaps = windowSnapshots(0, days);
+  const current = computeFromSnaps(currentSnaps);
+
+  // Current urgency from the most recent snapshot
+  const latest = currentSnaps[currentSnaps.length - 1] ?? null;
+  const currentUrgency = latest
+    ? {
+        needsResponse: latest.tickets.filter(t => t.urgency === 'needs-response').length,
+        aging:         latest.tickets.filter(t => t.urgency === 'aging').length,
+        clear:         latest.tickets.filter(t => t.urgency === 'clear').length,
+      }
+    : null;
+
+  // Trend: compare current window avg vs prior window avg
+  const priorSnaps = windowSnapshots(days, days);
+  const prior = computeFromSnaps(priorSnaps);
+  const trendHours =
+    current.avgResponseHours !== null && prior.avgResponseHours !== null
+      ? current.avgResponseHours - prior.avgResponseHours
+      : null;
+
+  return {
+    avgResponseHours: current.avgResponseHours,
+    medianResponseHours: current.medianResponseHours,
+    clearRate: current.clearRate,
+    triageRunCount: current.triageRunCount,
+    currentUrgency,
+    windowDays: days,
+    trendHours,
+  };
 }
