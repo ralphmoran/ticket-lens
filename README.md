@@ -133,6 +133,9 @@ ticketlens triage --stale=3                    # Aging threshold: 3 days (defaul
 ticketlens triage --status="Code Review,QA"    # Override statuses to scan
 ticketlens triage --assignee="Jane Dev"        # Another dev's tickets [Team]
 ticketlens triage --sprint="Sprint 12"         # Filter by sprint [Team]
+ticketlens triage --project=MYPROJ             # Scope to a Jira project key [Team]
+ticketlens triage --label=Bug,P1               # Filter by label(s) [Team]
+ticketlens triage --priority=High              # Filter by priority level [Team]
 ticketlens triage --export=csv                 # Export results to CSV [Team]
 ticketlens triage --export=json                # Export results to JSON [Team]
 ticketlens triage --push                       # Push snapshot to Console queue [Team]
@@ -519,6 +522,10 @@ ticketlens triage --static                   # Static table output (no interacti
 ticketlens triage --plain                    # Plain markdown — pipe to LLM or file
 ticketlens triage --assignee="Jane Dev"      # View another dev's tickets [Team]
 ticketlens triage --sprint="Sprint 12"       # Filter by sprint name [Team]
+ticketlens triage --project=MYPROJ           # Scope to a Jira project key [Team]
+ticketlens triage --label=Bug,P1             # Filter by label(s) [Team]
+ticketlens triage --priority=High            # Filter by priority level [Team]
+ticketlens triage --project=MYPROJ --label=Bug --priority=High  # Combined [Team]
 ticketlens triage --assignee="Jane Dev" --sprint="Sprint 12"  # Combined [Team]
 ticketlens triage --export=csv               # Export to CSV [Team]
 ticketlens triage --export=json              # Export to JSON [Team]
@@ -701,6 +708,9 @@ Pro also unlocks configurable brief cache TTL per profile — set `cacheTtl` to 
 ```bash
 ticketlens triage --assignee="Jane Dev"        # View another dev's tickets
 ticketlens triage --sprint="Sprint 12"         # Filter by sprint name
+ticketlens triage --project=MYPROJ             # Scope to a Jira project key
+ticketlens triage --label=Bug,P1               # Filter by label(s)
+ticketlens triage --priority=High              # Filter by priority level
 ticketlens triage --export=csv                 # Export triage to CSV for standups and reports
 ticketlens triage --export=json                # Machine-readable export for dashboards
 ticketlens triage --push                       # Push snapshot to the Console queue

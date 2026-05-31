@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.6.0 -->
+<!-- jtb-skill-version: 0.7.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -29,6 +29,9 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb triage --profile=acme             # explicit profile override
 /jtb triage --all                      # triage all configured profiles at once, merged (Pro)
 /jtb triage --save=~/triage.txt        # save ANSI-stripped output to file (Pro)
+/jtb triage --project=MYPROJ           # scope to a Jira project key (Team)
+/jtb triage --label=Bug,P1             # filter by label(s) (Team)
+/jtb triage --priority=High            # filter by priority level (Team)
 /jtb triage --push                     # push snapshot + git branches to Console (Team)
 /jtb triage --share                    # generate 24h share URL (Team)
 /jtb history PROD-1234                 # show urgency timeline for a ticket (Pro)
