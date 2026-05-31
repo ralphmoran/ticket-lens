@@ -529,6 +529,36 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const printFn = opts.print ?? ((s) => process.stdout.write(s));
   printFn(summary + '\n');
+
+  // Inline stats footer — shown when ≥2 triage runs exist (non-fatal)
+  try {
+    const metricsInjector = opts.metricsInjector;
+    let metrics;
+    if (metricsInjector) {
+      metrics = metricsInjector();
+    } else {
+      const { computeResponseMetrics } = await import('./lib/triage-history.mjs');
+      metrics = computeResponseMetrics(profileName ?? 'default', { days: 7, configDir });
+    }
+    if (metrics && metrics.triageRunCount >= 2 && metrics.avgResponseHours !== null) {
+      const usePlain = args.includes('--plain') || !process.stdout.isTTY;
+      const avgH = metrics.avgResponseHours.toFixed(1) + 'h';
+      const runs = metrics.triageRunCount;
+      const hasClearRate = metrics.clearRate !== null;
+      if (usePlain) {
+        const part = hasClearRate
+          ? `avg ${avgH} response · ${Math.round(metrics.clearRate * 100)}% cleared within 24h (${runs} runs)`
+          : `avg ${avgH} response (${runs} runs)`;
+        printFn(`── This week: ${part} ──\n`);
+      } else {
+        const { dim, bold: boldFn, cyan } = await import('./lib/ansi.mjs');
+        const part = hasClearRate
+          ? `avg ${boldFn(cyan(avgH))} response · ${boldFn(Math.round(metrics.clearRate * 100) + '%')} cleared within 24h (${runs} runs)`
+          : `avg ${boldFn(cyan(avgH))} response (${runs} runs)`;
+        printFn(`${dim('──')} This week: ${part} ${dim('──')}\n`);
+      }
+    }
+  } catch { /* non-fatal */ }
 }
 
 // Run if invoked directly

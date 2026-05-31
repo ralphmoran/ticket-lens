@@ -43,6 +43,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} standup ${s.dim('[--since=N]')}        Standup summary from git log  ${s.dim('(last 24h by default)')}`,
     `    ${s.brand('ticketlens')} compliance ${s.dim('<TICKET-KEY>')}    Check requirements coverage  ${s.dim('[Pro/Free 3/mo]')}`,
     `    ${s.brand('ticketlens')} history ${s.dim('<TICKET-KEY>')}       Urgency timeline for a ticket  ${s.dim('[Pro]')}`,
+    `    ${s.brand('ticketlens')} stats ${s.dim('[options]')}            Personal response-time metrics from local history`,
     '',
     `    ${s.brand('ticketlens')} delete ${s.dim('<PROFILE-NAME>')}     Remove a profile`,
     `    ${s.brand('ticketlens')} activate ${s.dim('<KEY>')}           Activate a license key`,
@@ -683,6 +684,34 @@ export function printCollisionsHelp({ stream = process.stdout } = {}) {
     '',
     `    Branch data is captured automatically when you run ${s.brand('ticketlens triage --push')}.`,
     `    Snapshots older than 7 days are ignored.`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printStatsHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('stats')} ${s.dim('[--days=N] [--format=plain|json] [--profile=NAME]')}`,
+    '',
+    `  Show response-time and triage-cadence metrics from your local triage history.`,
+    `  Reads daily snapshots captured by ${s.brand('ticketlens triage --push')} or the CLI.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--days')}=${s.dim('N')}          Lookback window in days  ${s.dim('(default: 7, Free max: 7, Pro max: 30)')}`,
+    `    ${s.brand('--format')}=${s.dim('plain')}   Human-readable table  ${s.dim('(default)')}`,
+    `    ${s.brand('--format')}=${s.dim('json')}    JSON output for scripting/piping`,
+    `    ${s.brand('--profile')}=${s.dim('NAME')}  Use a specific tracker profile`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}      Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens stats`,
+    `    ${s.dim('$')} ticketlens stats --days=14             ${s.dim('# Pro only')}`,
+    `    ${s.dim('$')} ticketlens stats --format=json | jq .`,
+    `    ${s.dim('$')} ticketlens stats --profile=myteam`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

@@ -355,6 +355,29 @@ Requires a Pro license. No network call — reads local snapshots only.
 
 ---
 
+### Response-Time Stats
+
+```bash
+ticketlens stats                         # Personal metrics from local triage history
+ticketlens stats --profile=acme          # Metrics for a specific profile
+ticketlens stats --days=14               # Extend lookback window [Pro, max 30]
+ticketlens stats --format=json           # JSON output for scripting
+ticketlens stats --format=json | jq '.avgResponseHours'
+```
+
+Shows avg/median response time, clear rate (resolved within 24h), triage run count, and week-over-week trend — all computed from local `~/.ticketlens/triage-history/` snapshots. No network call.
+
+- **Free**: last 7 days (fixed)
+- **Pro**: `--days=N` up to 30 days
+
+A one-line summary footer is also appended automatically to `ticketlens triage` output once you have 2 or more triage runs:
+
+```
+── This week: avg 3.2h response · 80% cleared within 24h (5 runs) ──
+```
+
+---
+
 ### Custom Attention Rules
 
 Add an `attentionRules` array to any profile in `~/.ticketlens/profiles.json` to override how `ticketlens triage` scores specific tickets:
@@ -588,6 +611,12 @@ ticketlens schedule --local                   # Local-only cron/LaunchAgent — 
 
 # ── History ───────────────────────────────────────────────────────────────────
 ticketlens history <TICKET-KEY>               # Show urgency timeline for a ticket [Pro]
+
+# ── Stats ──────────────────────────────────────────────────────────────────────
+ticketlens stats                              # Response-time metrics from local history
+ticketlens stats --profile=acme              # Metrics for a specific profile
+ticketlens stats --days=14                   # Extend lookback window (Pro, max 30)
+ticketlens stats --format=json               # JSON output for scripting
 
 # ── Compliance ────────────────────────────────────────────────────────────────
 ticketlens compliance <TICKET-KEY>            # Check ticket requirements against local diff [Pro/Free 3/mo]

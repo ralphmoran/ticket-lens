@@ -88,7 +88,7 @@ Premium features that run 100% locally. No backend needed. License key via Lemon
 | 16 | ~~Feature~~ | ~~**Triage by label/priority (`--label`, `--priority`)**~~ | Done (v0.7.0). `--label=Bug,P1` adds `labels IN (...)` clause; `--priority=High` adds `priority = "High"`. Team-gated. JQL-injection safe. | ~~Small~~ |
 | 17 | ~~Feature~~ | ~~**Triage export (CSV/JSON)**~~ | Done. `ticketlens triage --export=csv` and `--export=json` write scored triage results to a timestamped file. Team-gated. | ~~Small~~ |
 | 18 | Feature | **Brief templates** | Backend done (v0.7.0): `brief_templates` table, 3 system templates (Full Brief, Quick Scan, Code Review), Console CRUD controllers + API endpoint. CLI flag + Console UI pending. | Medium |
-| 19 | Feature | **Response time metrics** | Data layer done (v0.7.0): snapshot format upgraded to `{ captured_at, tickets }` envelope; `computeResponseMetrics()` computes avg/median response time, clear rate, triage cadence, and week-over-week trend from local history. `ticketlens stats` subcommand + Console graphs pending. | Medium |
+| 19 | ~~Feature~~ | ~~**Response time metrics**~~ | Done (v0.8.0). `ticketlens stats` subcommand: avg/median response time, clear rate, triage run count, week-over-week trend, urgency breakdown. `--days=N` (Pro ≤30), `--format=json`. Inline footer auto-appended to `ticketlens triage` output when ≥2 snapshots exist. Console graphs pending. | ~~Medium~~ |
 
 *Note: #13 (`--assignee`) and #14 (`--sprint`) moved to Iteration 3.5 for pilot client pitch.*
 

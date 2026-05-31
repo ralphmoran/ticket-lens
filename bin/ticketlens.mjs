@@ -24,8 +24,9 @@ import {
   printProfilesHelp, printScheduleHelp,
   printInitHelp, printSwitchHelp, printConfigHelp,
   printReviewHelp, printStandupHelp, printUpdateSkillHelp,
-  printCollisionsHelp,
+  printCollisionsHelp, printStatsHelp,
 } from '../skills/jtb/scripts/lib/help.mjs';
+import { runStats } from '../skills/jtb/scripts/lib/run-stats.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
 import { readCliToken, saveCliToken, deleteCliToken } from '../skills/jtb/scripts/lib/cli-auth.mjs';
 import { browserLogin } from '../skills/jtb/scripts/lib/browser-login.mjs';
@@ -100,6 +101,15 @@ switch (command) {
       process.stdout.write(`  ${hs.dim(e.date)}  [${e.profile}]  ${urg}${bounce}  ${hs.dim(e.reason)}\n`);
     }
     process.stdout.write('\n');
+    break;
+  }
+
+  case 'stats': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printStatsHelp(); break; }
+    runStats(cmdArgs).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
     break;
   }
 
