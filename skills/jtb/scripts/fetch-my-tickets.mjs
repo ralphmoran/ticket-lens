@@ -540,21 +540,20 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const { computeResponseMetrics } = await import('./lib/triage-history.mjs');
       metrics = computeResponseMetrics(profileName ?? 'default', { days: 7, configDir });
     }
-    if (metrics && metrics.triageRunCount >= 2) {
+    // Only show footer when there's a meaningful metric to display
+    const hasAvg = metrics && metrics.avgResponseHours !== null;
+    const hasClearRate = metrics && metrics.clearRate !== null;
+    if (metrics && metrics.triageRunCount >= 2 && (hasAvg || hasClearRate)) {
       const usePlain = args.includes('--plain') || !process.stdout.isTTY;
       const runs = metrics.triageRunCount;
-      const hasAvg = metrics.avgResponseHours !== null;
-      const hasClearRate = metrics.clearRate !== null;
 
       let part;
       if (hasAvg && hasClearRate) {
         part = `avg ${metrics.avgResponseHours.toFixed(1)}h response · ${Math.round(metrics.clearRate * 100)}% cleared within 24h (${runs} runs)`;
       } else if (hasAvg) {
         part = `avg ${metrics.avgResponseHours.toFixed(1)}h response (${runs} runs)`;
-      } else if (hasClearRate) {
-        part = `${Math.round(metrics.clearRate * 100)}% cleared within 24h (${runs} runs)`;
       } else {
-        part = `${runs} triage run${runs === 1 ? '' : 's'} this week`;
+        part = `${Math.round(metrics.clearRate * 100)}% cleared within 24h (${runs} runs)`;
       }
 
       if (usePlain) {
@@ -566,10 +565,8 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
           styledPart = `avg ${boldFn(cyan(metrics.avgResponseHours.toFixed(1) + 'h'))} response · ${boldFn(Math.round(metrics.clearRate * 100) + '%')} cleared within 24h (${runs} runs)`;
         } else if (hasAvg) {
           styledPart = `avg ${boldFn(cyan(metrics.avgResponseHours.toFixed(1) + 'h'))} response (${runs} runs)`;
-        } else if (hasClearRate) {
-          styledPart = `${boldFn(Math.round(metrics.clearRate * 100) + '%')} cleared within 24h (${runs} runs)`;
         } else {
-          styledPart = `${boldFn(String(runs))} triage run${runs === 1 ? '' : 's'} this week`;
+          styledPart = `${boldFn(Math.round(metrics.clearRate * 100) + '%')} cleared within 24h (${runs} runs)`;
         }
         printFn(`${dim('──')} This week: ${styledPart} ${dim('──')}\n`);
       }
