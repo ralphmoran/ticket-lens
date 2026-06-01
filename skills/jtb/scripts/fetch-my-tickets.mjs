@@ -540,22 +540,38 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const { computeResponseMetrics } = await import('./lib/triage-history.mjs');
       metrics = computeResponseMetrics(profileName ?? 'default', { days: 7, configDir });
     }
-    if (metrics && metrics.triageRunCount >= 2 && metrics.avgResponseHours !== null) {
+    if (metrics && metrics.triageRunCount >= 2) {
       const usePlain = args.includes('--plain') || !process.stdout.isTTY;
-      const avgH = metrics.avgResponseHours.toFixed(1) + 'h';
       const runs = metrics.triageRunCount;
+      const hasAvg = metrics.avgResponseHours !== null;
       const hasClearRate = metrics.clearRate !== null;
+
+      let part;
+      if (hasAvg && hasClearRate) {
+        part = `avg ${metrics.avgResponseHours.toFixed(1)}h response · ${Math.round(metrics.clearRate * 100)}% cleared within 24h (${runs} runs)`;
+      } else if (hasAvg) {
+        part = `avg ${metrics.avgResponseHours.toFixed(1)}h response (${runs} runs)`;
+      } else if (hasClearRate) {
+        part = `${Math.round(metrics.clearRate * 100)}% cleared within 24h (${runs} runs)`;
+      } else {
+        part = `${runs} triage run${runs === 1 ? '' : 's'} this week`;
+      }
+
       if (usePlain) {
-        const part = hasClearRate
-          ? `avg ${avgH} response · ${Math.round(metrics.clearRate * 100)}% cleared within 24h (${runs} runs)`
-          : `avg ${avgH} response (${runs} runs)`;
         printFn(`── This week: ${part} ──\n`);
       } else {
         const { dim, bold: boldFn, cyan } = await import('./lib/ansi.mjs');
-        const part = hasClearRate
-          ? `avg ${boldFn(cyan(avgH))} response · ${boldFn(Math.round(metrics.clearRate * 100) + '%')} cleared within 24h (${runs} runs)`
-          : `avg ${boldFn(cyan(avgH))} response (${runs} runs)`;
-        printFn(`${dim('──')} This week: ${part} ${dim('──')}\n`);
+        let styledPart;
+        if (hasAvg && hasClearRate) {
+          styledPart = `avg ${boldFn(cyan(metrics.avgResponseHours.toFixed(1) + 'h'))} response · ${boldFn(Math.round(metrics.clearRate * 100) + '%')} cleared within 24h (${runs} runs)`;
+        } else if (hasAvg) {
+          styledPart = `avg ${boldFn(cyan(metrics.avgResponseHours.toFixed(1) + 'h'))} response (${runs} runs)`;
+        } else if (hasClearRate) {
+          styledPart = `${boldFn(Math.round(metrics.clearRate * 100) + '%')} cleared within 24h (${runs} runs)`;
+        } else {
+          styledPart = `${boldFn(String(runs))} triage run${runs === 1 ? '' : 's'} this week`;
+        }
+        printFn(`${dim('──')} This week: ${styledPart} ${dim('──')}\n`);
       }
     }
   } catch { /* non-fatal */ }

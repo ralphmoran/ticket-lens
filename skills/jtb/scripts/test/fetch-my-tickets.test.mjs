@@ -887,17 +887,19 @@ describe('lock: early-exit paths emit no stats footer', () => {
 
 describe('triage inline stats footer', () => {
   it('footer is NOT shown when fewer than 2 snapshots exist', async () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'footer-nohist-'));
     const out = captureOutput();
     try {
       await run(['triage', '--plain', '--static'], {
         env: mockEnv,
         fetcher: mockFetcher,
         isLicensed: () => true,
-        // No snapshots in configDir → triageRunCount = 0 → no footer
+        configDir, // isolated empty dir → 0 snapshots → triageRunCount=0 → no footer
       });
       assert.ok(!out.stdout.includes('This week:'), `Expected no footer, got: ${out.stdout}`);
     } finally {
       out.restore();
+      rmSync(configDir, { recursive: true, force: true });
     }
   });
 
