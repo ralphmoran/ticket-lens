@@ -10,7 +10,7 @@ import { join } from 'node:path';
 
 export const DEFAULT_CONFIG_DIR = join(homedir(), '.ticketlens');
 
-const URGENCY_ORDER = { 'needs-response': 0, 'aging': 1, 'clear': 2 };
+const URGENCY_ORDER = { 'needs-response': 0, 'aging': 1, 'stale': 2, 'clear': 3 };
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -126,8 +126,8 @@ export function diffSnapshots(today, yesterday) {
     const changes = [];
 
     // Urgency worsened
-    const todayOrder = URGENCY_ORDER[t.urgency] ?? 2;
-    const yesterdayOrder = URGENCY_ORDER[y.urgency] ?? 2;
+    const todayOrder = URGENCY_ORDER[t.urgency] ?? 3;
+    const yesterdayOrder = URGENCY_ORDER[y.urgency] ?? 3;
     if (todayOrder < yesterdayOrder) {
       changes.push(`${y.urgency} \u2192 ${t.urgency}`);
     }
@@ -284,7 +284,7 @@ function loadSnapshotForDate(dateStr, profile, configDir, fsModule) {
  *   medianResponseHours: number|null,
  *   clearRate: number|null,
  *   triageRunCount: number,
- *   currentUrgency: { needsResponse: number, aging: number, clear: number }|null,
+ *   currentUrgency: { needsResponse: number, aging: number, stale: number, clear: number }|null,
  *   windowDays: number,
  *   trendHours: number|null,
  * }}
@@ -354,6 +354,7 @@ export function computeResponseMetrics(profile, {
     ? {
         needsResponse: latest.tickets.filter(t => t.urgency === 'needs-response').length,
         aging:         latest.tickets.filter(t => t.urgency === 'aging').length,
+        stale:         latest.tickets.filter(t => t.urgency === 'stale').length,
         clear:         latest.tickets.filter(t => t.urgency === 'clear').length,
       }
     : null;

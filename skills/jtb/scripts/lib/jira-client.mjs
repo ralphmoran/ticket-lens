@@ -12,19 +12,44 @@ function toText(value) {
   return adfToText(value);
 }
 
+/**
+ * Returns the ISO date string when the ticket entered its current status,
+ * derived from Jira's changelog history. Walks backwards (most recent first)
+ * to find the last transition whose `toString` matches `currentStatus`.
+ * Returns null when changelog is absent or has no matching transition.
+ */
+export function parseStatusChangedAt(changelog, currentStatus) {
+  if (!changelog?.histories?.length || !currentStatus) return null;
+  for (let i = changelog.histories.length - 1; i >= 0; i--) {
+    const history = changelog.histories[i];
+    const item = history.items?.find(it => it.field === 'status' && it.toString === currentStatus);
+    if (item) return history.created ?? null;
+  }
+  return null;
+}
+
 export function normalizeTicket(raw) {
   const f = raw.fields;
+  const currentStatus = f.status?.name ?? null;
+  // statusChangedAt: when the ticket entered its current status.
+  // Only populated when raw.changelog is present (i.e. ?expand=changelog was requested).
+  // Falls back to ticket.created when changelog is present but no matching transition exists
+  // (ticket was created in its current status and never transitioned away then back).
+  const statusChangedAt = raw.changelog !== undefined
+    ? (parseStatusChangedAt(raw.changelog, currentStatus) ?? (f.created ?? null))
+    : null;
   return {
     key: raw.key,
     summary: f.summary,
     type: f.issuetype?.name ?? null,
-    status: f.status?.name ?? null,
+    status: currentStatus,
     priority: f.priority?.name ?? null,
     assignee: f.assignee?.displayName ?? null,
     reporter: f.reporter?.displayName ?? null,
     description: toText(f.description),
     created: f.created ?? null,
     updated: f.updated ?? null,
+    statusChangedAt,
     labels: f.labels ?? [],
     components: (f.components ?? []).map(c => c.name),
     comments: (f.comment?.comments ?? []).map(c => ({
@@ -110,12 +135,13 @@ export async function fetchStatuses(opts = {}) {
 }
 
 export async function searchTickets(jql, opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, maxResults = 50, apiVersion = 2, timeoutMs = 10_000 } = opts;
+  const { env = process.env, fetcher = globalThis.fetch, maxResults = 50, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false } = opts;
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
-  const fields = 'summary,status,assignee,priority,issuetype,comment,updated,statuscategorychangedate';
+  const fields = 'summary,status,assignee,priority,issuetype,comment,updated,statuscategorychangedate,created';
   const params = new URLSearchParams({ jql, fields, maxResults: String(maxResults) });
+  if (expandChangelog) params.set('expand', 'changelog');
   const endpoint = apiVersion >= 3 ? `/rest/api/3/search/jql` : `/rest/api/2/search`;
   const url = `${baseUrl}${endpoint}?${params}`;
   const fetchOpts = { headers };
@@ -153,11 +179,12 @@ export async function fetchRemoteLinks(ticketKey, opts = {}) {
 }
 
 export async function fetchTicket(ticketKey, opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, depth = 1, apiVersion = 2, timeoutMs = 10_000, _visited = new Set(), _currentDepth = 0 } = opts;
+  const { env = process.env, fetcher = globalThis.fetch, depth = 1, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false, _visited = new Set(), _currentDepth = 0 } = opts;
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
-  const url = `${baseUrl}/rest/api/${apiVersion}/issue/${encodeURIComponent(ticketKey)}`;
+  const expand = expandChangelog ? '?expand=changelog' : '';
+  const url = `${baseUrl}/rest/api/${apiVersion}/issue/${encodeURIComponent(ticketKey)}${expand}`;
   const fetchOpts = { headers };
   if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
   const response = await fetcher(url, fetchOpts);
@@ -184,7 +211,8 @@ export async function fetchTicket(ticketKey, opts = {}) {
     linkedKeys.forEach(k => _visited.add(k));
 
     ticket.linkedTicketDetails = await Promise.all(
-      linkedKeys.map(k => fetchTicket(k, { ...opts, _visited, _currentDepth: _currentDepth + 1 }))
+      // Linked tickets are context only — never scored, so skip changelog expansion for them.
+      linkedKeys.map(k => fetchTicket(k, { ...opts, expandChangelog: false, _visited, _currentDepth: _currentDepth + 1 }))
     );
   }
 

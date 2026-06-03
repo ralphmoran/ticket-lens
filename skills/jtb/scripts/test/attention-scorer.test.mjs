@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreAttention, isFromCurrentUser, isBot, isBotCommitByUser, findLastEffectiveComment, sortByUrgency } from '../lib/attention-scorer.mjs';
+import { scoreAttention, isFromCurrentUser, isBot, isBotCommitByUser, findLastEffectiveComment, sortByUrgency, URGENCY_ORDER } from '../lib/attention-scorer.mjs';
 
 const NOW = new Date('2026-03-06T12:00:00Z');
 const currentUser = { accountId: 'user-123', name: 'jdev', displayName: 'John Dev' };
@@ -328,5 +328,119 @@ describe('scoreAttention — output shape lock (no customRules)', () => {
 
   it('calling with empty customRules array does not throw', () => {
     assert.doesNotThrow(() => scoreAttention(base, user, { now: new Date('2026-03-06T12:00:00Z'), customRules: [] }));
+  });
+});
+
+// ─── URGENCY_ORDER export ─────────────────────────────────────────────────
+
+describe('URGENCY_ORDER', () => {
+  it('exports URGENCY_ORDER as a plain object', () => {
+    assert.strictEqual(typeof URGENCY_ORDER, 'object');
+  });
+
+  it('needs-response < aging < stale < clear', () => {
+    assert.ok(URGENCY_ORDER['needs-response'] < URGENCY_ORDER['aging'],    'needs-response must precede aging');
+    assert.ok(URGENCY_ORDER['aging']           < URGENCY_ORDER['stale'],   'aging must precede stale');
+    assert.ok(URGENCY_ORDER['stale']           < URGENCY_ORDER['clear'],   'stale must precede clear');
+  });
+});
+
+// ─── scoreAttention — stale rule ─────────────────────────────────────────
+
+describe('scoreAttention — stale rule', () => {
+  const NOW = new Date('2026-06-02T12:00:00Z');
+  const user = { accountId: 'u1', name: 'dev', displayName: 'Dev' };
+
+  function makeStaleTicket(overrides = {}) {
+    return {
+      key: 'PROJ-55',
+      summary: 'Stuck ticket',
+      status: 'In Review',
+      updated: '2026-06-01T10:00:00Z',
+      statusChangedAt: '2026-04-01T10:00:00Z', // 62 days before NOW
+      comments: [],
+      ...overrides,
+    };
+  }
+
+  const activeRule = { enabled: true, stale_days: 14, statuses: ['In Review', 'In Progress'] };
+
+  it('returns stale when ticket is in a watched status for >= stale_days', () => {
+    const result = scoreAttention(makeStaleTicket(), user, { now: NOW, staleRule: activeRule });
+    assert.strictEqual(result.urgency, 'stale');
+    assert.ok(result.reason.includes('In Review'), `reason should mention status, got: ${result.reason}`);
+    assert.ok(result.reason.includes('62d') || result.reason.includes('d'), `reason should mention days, got: ${result.reason}`);
+  });
+
+  it('includes daysInCurrentStatus in stale result', () => {
+    const result = scoreAttention(makeStaleTicket(), user, { now: NOW, staleRule: activeRule });
+    assert.strictEqual(result.urgency, 'stale');
+    assert.ok(typeof result.daysInCurrentStatus === 'number');
+    assert.ok(result.daysInCurrentStatus >= 14);
+  });
+
+  it('returns clear when no stale rule is provided', () => {
+    const result = scoreAttention(makeStaleTicket(), user, { now: NOW });
+    assert.strictEqual(result.urgency, 'clear');
+  });
+
+  it('returns clear when stale rule is disabled', () => {
+    const disabledRule = { ...activeRule, enabled: false };
+    const result = scoreAttention(makeStaleTicket(), user, { now: NOW, staleRule: disabledRule });
+    assert.strictEqual(result.urgency, 'clear');
+  });
+
+  it('returns clear when ticket status is not in stale rule statuses list', () => {
+    const ticket = makeStaleTicket({ status: 'Code Review' });
+    const result = scoreAttention(ticket, user, { now: NOW, staleRule: activeRule });
+    assert.strictEqual(result.urgency, 'clear');
+  });
+
+  it('returns clear when days in status < stale_days', () => {
+    const recentTicket = makeStaleTicket({ statusChangedAt: '2026-05-30T10:00:00Z' }); // 3 days ago
+    const result = scoreAttention(recentTicket, user, { now: NOW, staleRule: activeRule });
+    assert.strictEqual(result.urgency, 'clear');
+  });
+
+  it('returns clear when statusChangedAt is absent (changelog not fetched)', () => {
+    const ticket = makeStaleTicket({ statusChangedAt: null });
+    const result = scoreAttention(ticket, user, { now: NOW, staleRule: activeRule });
+    assert.strictEqual(result.urgency, 'clear');
+  });
+
+  it('does not override aging — aging takes priority over stale', () => {
+    // Ticket has no last comment AND updated was 30 days ago → aging fires first
+    const agingTicket = makeStaleTicket({ updated: '2026-05-01T10:00:00Z', comments: [] });
+    const result = scoreAttention(agingTicket, user, { now: NOW, staleDays: 5, staleRule: activeRule });
+    assert.strictEqual(result.urgency, 'aging');
+  });
+
+  it('does not override needs-response — needs-response takes priority over stale', () => {
+    const otherUser = { author: 'Reviewer', authorAccountId: 'u-other', authorName: 'reviewer', created: '2026-06-01T10:00:00Z', body: 'Please fix' };
+    const ticket = makeStaleTicket({ comments: [otherUser] });
+    const result = scoreAttention(ticket, user, { now: NOW, staleRule: activeRule });
+    assert.strictEqual(result.urgency, 'needs-response');
+  });
+});
+
+// ─── sortByUrgency — stale slot ───────────────────────────────────────────
+
+describe('sortByUrgency — stale slot', () => {
+  const NOW = new Date('2026-06-02T12:00:00Z');
+
+  function makeResult(urgency, key = 'PROJ-1') {
+    return { ticketKey: key, urgency, status: 'In Review', summary: 'Test', reason: 'Test', lastComment: null };
+  }
+
+  it('sorts stale between aging and clear', () => {
+    const input = [
+      makeResult('clear',          'PROJ-1'),
+      makeResult('stale',          'PROJ-2'),
+      makeResult('aging',          'PROJ-3'),
+      makeResult('needs-response', 'PROJ-4'),
+    ];
+    const sorted = sortByUrgency(input);
+    const urgencies = sorted.map(r => r.urgency);
+    assert.deepEqual(urgencies, ['needs-response', 'aging', 'stale', 'clear']);
   });
 });

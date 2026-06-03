@@ -310,7 +310,7 @@ describe('computeResponseMetrics', () => {
     const result = computeResponseMetrics(PROFILE, { days: 1, configDir: DIR, fsModule: fs, now });
     assert.equal(result.triageRunCount, 1);
     assert.equal(result.avgResponseHours, null);
-    assert.deepEqual(result.currentUrgency, { needsResponse: 1, aging: 0, clear: 0 });
+    assert.deepEqual(result.currentUrgency, { needsResponse: 1, aging: 0, stale: 0, clear: 0 });
   });
 
   it('computes avgResponseHours from a needs-response → clear transition', () => {
@@ -432,7 +432,7 @@ describe('computeResponseMetrics', () => {
     ];
     const fs = makeFs({ [path]: snap(tickets, '2026-05-30T08:00:00Z') });
     const result = computeResponseMetrics(PROFILE, { days: 1, configDir: DIR, fsModule: fs, now });
-    assert.deepEqual(result.currentUrgency, { needsResponse: 2, aging: 1, clear: 1 });
+    assert.deepEqual(result.currentUrgency, { needsResponse: 2, aging: 1, stale: 0, clear: 1 });
   });
 });
 

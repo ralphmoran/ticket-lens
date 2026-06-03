@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchRemoteLinks } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchRemoteLinks, parseStatusChangedAt } from '../lib/jira-client.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -799,5 +799,195 @@ describe('fetchRemoteLinks', () => {
     const fetcher = async () => ({ ok: false, status: 403, statusText: 'Forbidden' });
     const result = await fetchRemoteLinks('PROJ-1', { env: ENV, fetcher });
     assert.deepEqual(result, []);
+  });
+});
+
+// ─── parseStatusChangedAt ──────────────────────────────────────────────────
+
+describe('parseStatusChangedAt', () => {
+  const makeHistory = (toString, created, field = 'status') => ({
+    created,
+    items: [{ field, from: '1', fromString: 'To Do', to: '2', toString }],
+  });
+
+  it('returns null when changelog is absent', () => {
+    assert.strictEqual(parseStatusChangedAt(undefined, 'In Progress'), null);
+  });
+
+  it('returns null when changelog is null', () => {
+    assert.strictEqual(parseStatusChangedAt(null, 'In Progress'), null);
+  });
+
+  it('returns null when changelog.histories is empty', () => {
+    assert.strictEqual(parseStatusChangedAt({ histories: [] }, 'In Progress'), null);
+  });
+
+  it('returns null when no history item matches current status', () => {
+    const changelog = { histories: [makeHistory('Done', '2026-01-10T10:00:00Z')] };
+    assert.strictEqual(parseStatusChangedAt(changelog, 'In Progress'), null);
+  });
+
+  it('returns the created date of a matching status transition', () => {
+    const changelog = { histories: [makeHistory('In Progress', '2026-01-15T09:00:00Z')] };
+    assert.strictEqual(parseStatusChangedAt(changelog, 'In Progress'), '2026-01-15T09:00:00Z');
+  });
+
+  it('returns the MOST RECENT matching transition when multiple exist', () => {
+    const changelog = {
+      histories: [
+        makeHistory('In Progress', '2026-01-05T09:00:00Z'),
+        makeHistory('Done',        '2026-01-10T10:00:00Z'),
+        makeHistory('In Progress', '2026-01-20T08:00:00Z'), // ← most recent re-entry
+      ],
+    };
+    assert.strictEqual(parseStatusChangedAt(changelog, 'In Progress'), '2026-01-20T08:00:00Z');
+  });
+
+  it('ignores non-status field changes in history items', () => {
+    const changelog = {
+      histories: [
+        { created: '2026-01-08T10:00:00Z', items: [{ field: 'assignee', from: null, fromString: null, to: 'u1', toString: 'In Progress' }] },
+        makeHistory('In Progress', '2026-01-15T09:00:00Z'),
+      ],
+    };
+    assert.strictEqual(parseStatusChangedAt(changelog, 'In Progress'), '2026-01-15T09:00:00Z');
+  });
+
+  it('returns null when currentStatus is null', () => {
+    const changelog = { histories: [makeHistory('In Progress', '2026-01-15T09:00:00Z')] };
+    assert.strictEqual(parseStatusChangedAt(changelog, null), null);
+  });
+});
+
+// ─── normalizeTicket — statusChangedAt ────────────────────────────────────
+
+describe('normalizeTicket — statusChangedAt', () => {
+  it('is null when raw has no changelog', () => {
+    const raw = JSON.parse(JSON.stringify(cloudFixture));
+    delete raw.changelog;
+    const result = normalizeTicket(raw);
+    assert.strictEqual(result.statusChangedAt, null);
+  });
+
+  it('falls back to ticket.created when changelog.histories is empty (ticket never transitioned)', () => {
+    const raw = { ...cloudFixture, changelog: { histories: [] } };
+    const result = normalizeTicket(raw);
+    // No transitions → ticket has been in current status since creation
+    assert.strictEqual(result.statusChangedAt, cloudFixture.fields.created);
+  });
+
+  it('is set to transition created date when matching history exists', () => {
+    const currentStatus = normalizeTicket(cloudFixture).status;
+    const raw = {
+      ...cloudFixture,
+      changelog: {
+        histories: [{
+          created: '2026-03-01T12:00:00Z',
+          items: [{ field: 'status', from: '1', fromString: 'To Do', to: '2', toString: currentStatus }],
+        }],
+      },
+    };
+    const result = normalizeTicket(raw);
+    assert.strictEqual(result.statusChangedAt, '2026-03-01T12:00:00Z');
+  });
+
+  it('falls back to ticket.created when changelog present but no matching transition', () => {
+    const raw = {
+      ...cloudFixture,
+      changelog: {
+        histories: [{
+          created: '2026-01-01T00:00:00Z',
+          items: [{ field: 'status', from: '1', fromString: 'To Do', to: '99', toString: 'Done' }],
+        }],
+      },
+    };
+    const result = normalizeTicket(raw);
+    // No matching transition for current status → falls back to ticket.created
+    assert.strictEqual(result.statusChangedAt, cloudFixture.fields.created);
+  });
+});
+
+// ─── searchTickets — expandChangelog opt ─────────────────────────────────
+
+describe('searchTickets — expandChangelog opt', () => {
+  const ENV = { JIRA_BASE_URL: 'https://jira.example.com', JIRA_EMAIL: 'u@e.com', JIRA_API_TOKEN: 'tok' };
+
+  function makeFetcher(onUrl) {
+    return async (url) => {
+      onUrl(url);
+      return {
+        ok: true,
+        json: async () => ({ issues: [] }),
+      };
+    };
+  }
+
+  it('does NOT include expand=changelog by default', async () => {
+    let capturedUrl = '';
+    await searchTickets('project = PROJ', { env: ENV, fetcher: makeFetcher(u => { capturedUrl = u; }) });
+    assert.ok(!capturedUrl.includes('expand'), `should not include expand, got: ${capturedUrl}`);
+  });
+
+  it('includes expand=changelog when expandChangelog opt is true', async () => {
+    let capturedUrl = '';
+    await searchTickets('project = PROJ', { env: ENV, expandChangelog: true, fetcher: makeFetcher(u => { capturedUrl = u; }) });
+    assert.ok(capturedUrl.includes('expand=changelog'), `expected expand=changelog in: ${capturedUrl}`);
+  });
+});
+
+// ─── fetchTicket — expandChangelog opt ──────────────────────────────────
+
+describe('fetchTicket — expandChangelog opt', () => {
+  const ENV = { JIRA_BASE_URL: 'https://jira.example.com', JIRA_EMAIL: 'u@e.com', JIRA_API_TOKEN: 'tok' };
+
+  function makeFetcher(onUrl) {
+    return async (url) => {
+      onUrl(url);
+      return {
+        ok: true,
+        json: async () => ({ key: 'PROJ-1', fields: { summary: 'Test', status: { name: 'In Progress' }, issuetype: { name: 'Story' }, assignee: null, priority: null, reporter: null, description: null, created: '2026-01-01T00:00:00Z', updated: '2026-01-01T00:00:00Z', labels: [], components: [], comment: { comments: [] }, issuelinks: [], attachment: [] } }),
+      };
+    };
+  }
+
+  it('does NOT include expand=changelog by default', async () => {
+    let capturedUrl = '';
+    await fetchTicket('PROJ-1', { env: ENV, fetcher: makeFetcher(u => { capturedUrl = u; }) });
+    assert.ok(!capturedUrl.includes('expand'), `should not include expand, got: ${capturedUrl}`);
+  });
+
+  it('includes expand=changelog when expandChangelog opt is true', async () => {
+    let capturedUrl = '';
+    await fetchTicket('PROJ-1', { env: ENV, expandChangelog: true, fetcher: makeFetcher(u => { capturedUrl = u; }) });
+    assert.ok(capturedUrl.includes('expand=changelog'), `expected expand=changelog in: ${capturedUrl}`);
+  });
+
+  it('does NOT propagate expandChangelog to linked ticket fetches', async () => {
+    const capturedUrls = [];
+    const fetcher = async (url) => {
+      capturedUrls.push(url);
+      return {
+        ok: true,
+        json: async () => ({
+          key: capturedUrls.length === 1 ? 'PROJ-1' : 'PROJ-2',
+          fields: {
+            summary: 'Test', status: { name: 'In Progress' }, issuetype: { name: 'Story' },
+            assignee: null, priority: null, reporter: null, description: null,
+            created: '2026-01-01T00:00:00Z', updated: '2026-01-01T00:00:00Z',
+            labels: [], components: [], comment: { comments: [] }, attachment: [],
+            issuelinks: capturedUrls.length === 1
+              ? [{ type: { name: 'blocks' }, outwardIssue: { key: 'PROJ-2', fields: { summary: 'Linked', status: { name: 'Done' }, issuetype: { name: 'Task' } } } }]
+              : [],
+          },
+        }),
+      };
+    };
+    await fetchTicket('PROJ-1', { env: ENV, expandChangelog: true, depth: 1, fetcher });
+    // Root ticket should have changelog expand
+    assert.ok(capturedUrls[0].includes('expand=changelog'), `root should have expand, got: ${capturedUrls[0]}`);
+    // Linked ticket must NOT have changelog expand
+    if (capturedUrls.length > 1) {
+      assert.ok(!capturedUrls[1].includes('expand'), `linked ticket should not have expand, got: ${capturedUrls[1]}`);
+    }
   });
 });

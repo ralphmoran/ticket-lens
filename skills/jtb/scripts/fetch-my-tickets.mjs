@@ -293,8 +293,13 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   session.spin(`Connecting to ${session.label}…`);
 
   // Fire both requests concurrently — they are independent of each other
+  // expandChangelog is derived from staleRule, which the sync API only sends to Pro/Team/Enterprise
+  // users. A user who manually adds staleRule to their local profile.json would still expand
+  // their own Jira data — that is acceptable (Jira credentials are theirs; we gate TicketLens
+  // features server-side, not Jira API access).
+  const expandChangelog = !!(conn.staleRule?.enabled);
   const userPromise = adapter.fetchCurrentUser();
-  const ticketsPromise = adapter.searchTickets(jql);
+  const ticketsPromise = adapter.searchTickets(jql, { expandChangelog });
 
   let currentUser;
   try {
@@ -407,7 +412,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     process.stderr.write(`Viewing ${assigneeName}'s tickets\n\n`);
   }
 
-  const scored = tickets.map(t => scoreAttention(t, effectiveUser, { staleDays, customRules: conn.attentionRules }));
+  const scored = tickets.map(t => scoreAttention(t, effectiveUser, { staleDays, customRules: conn.attentionRules, staleRule: conn.staleRule ?? null }));
   const actionable = scored.filter(s => s.urgency !== 'clear' && s.urgency !== 'ignore');
   const sorted = sortByUrgency(actionable);
   const rawTicketMap = new Map(tickets.map(t => [t.key, t]));

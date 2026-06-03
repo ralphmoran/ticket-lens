@@ -232,6 +232,7 @@ export function resolveConnection(ticketKey, opts = {}) {
       triageStatuses: profile.triageStatuses || null,
       ticketPrefixes: profile.ticketPrefixes || null,
       attentionRules: profile.attentionRules ?? null,
+      staleRule: profile.staleRule ?? null,
       source: 'profile',
       profileName: profile.name,
     };

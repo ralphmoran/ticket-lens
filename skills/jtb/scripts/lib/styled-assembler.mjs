@@ -28,10 +28,12 @@ export function styleTriageSummary(scoredTickets, opts = {}) {
 
   const needsResponse = actionable.filter(t => t.urgency === 'needs-response');
   const aging = actionable.filter(t => t.urgency === 'aging');
+  const stale = actionable.filter(t => t.urgency === 'stale');
 
   const parts = [];
   if (needsResponse.length > 0) parts.push(`${needsResponse.length} need response`);
   if (aging.length > 0) parts.push(`${aging.length} aging`);
+  if (stale.length > 0) parts.push(`${stale.length} stale`);
 
   const sections = [];
   sections.push(s.bold(`${actionable.length} tickets need attention`) + ' ' + s.dim(`(${parts.join(', ')})`) );
@@ -40,6 +42,7 @@ export function styleTriageSummary(scoredTickets, opts = {}) {
   const legendParts = [];
   if (needsResponse.length > 0) legendParts.push(`${s.red('●')} needs response`);
   if (aging.length > 0) legendParts.push(`${s.yellow('●')} aging`);
+  if (stale.length > 0) legendParts.push(`${s.cyan('●')} stale`);
   let legend = legendParts.join('    ');
   if (browseUrl) legend += `\n${s.dim('Open:')} ${browseUrl}${s.dim('<key>')}`;
   sections.push(legend);
@@ -70,7 +73,21 @@ export function styleTriageSummary(scoredTickets, opts = {}) {
       return [String(agingOffset + i + 1), ticketCell(t.ticketKey, s.yellow), truncate(t.summary, 45), t.status, `${days}d`];
     });
     const table = formatTable(
-      ['#', 'Ticket', 'Title', 'Status', 'Stale'],
+      ['#', 'Ticket', 'Title', 'Status', 'Idle'],
+      tableRows,
+      { maxWidths: { 2: 45 } },
+    );
+    sections.push(table);
+  }
+
+  if (stale.length > 0) {
+    const staleOffset = needsResponse.length + aging.length;
+    const tableRows = stale.map((t, i) => {
+      const days = t.daysInCurrentStatus ?? '?';
+      return [String(staleOffset + i + 1), ticketCell(t.ticketKey, s.cyan), truncate(t.summary, 45), t.status, `${days}d`];
+    });
+    const table = formatTable(
+      ['#', 'Ticket', 'Title', 'Status', 'Stuck'],
       tableRows,
       { maxWidths: { 2: 45 } },
     );

@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.8.0 -->
+<!-- jtb-skill-version: 0.9.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -71,6 +71,12 @@ node ~/.agents/skills/jtb/scripts/fetch-my-tickets.mjs $EXTRA_ARGS
 ```
 
 Where `$EXTRA_ARGS` are any flags passed (e.g. `--stale=3 --status=QA --profile=acme`).
+
+**Urgency levels** (highest → lowest priority):
+- 🔴 `needs-response` — someone commented and you haven't replied
+- 🟡 `aging` — no activity for ≥ `staleDays` (default 5d)
+- 🔵 `stale` — ticket stuck in the same Jira status for ≥ N days (Pro — requires a stale rule configured in the Console)
+- 🟢 `clear` — up to date, no action needed
 
 **IMPORTANT:** Copy the script's stdout and display it directly as your response text (not inside a tool result). This ensures the markdown table renders visibly and URLs are clickable in the terminal. No VCS enrichment, no plan mode. Stop here.
 

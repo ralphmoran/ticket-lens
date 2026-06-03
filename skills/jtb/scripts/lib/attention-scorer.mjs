@@ -97,7 +97,7 @@ function applyCustomRule(ticket, rule) {
 }
 
 export function scoreAttention(ticket, currentUser, opts = {}) {
-  const { staleDays = 5, now = new Date(), customRules } = opts;
+  const { staleDays = 5, now = new Date(), customRules, staleRule } = opts;
 
   // Custom rules evaluated first — first match wins
   if (Array.isArray(customRules)) {
@@ -162,6 +162,27 @@ export function scoreAttention(ticket, currentUser, opts = {}) {
     }
   }
 
+  // Stale check — only when rule is active and statusChangedAt was captured via changelog expand.
+  // Runs as final gate so needs-response and aging always take precedence.
+  if (staleRule?.enabled && ticket.statusChangedAt) {
+    const daysInCurrentStatus = (now - new Date(ticket.statusChangedAt)) / (1000 * 60 * 60 * 24);
+    if (
+      daysInCurrentStatus >= (staleRule.stale_days ?? 14) &&
+      Array.isArray(staleRule.statuses) &&
+      staleRule.statuses.includes(ticket.status)
+    ) {
+      return {
+        ticketKey: ticket.key,
+        summary: ticket.summary,
+        status: ticket.status,
+        urgency: 'stale',
+        reason: `Stuck in '${ticket.status}' for ${Math.floor(daysInCurrentStatus)}d`,
+        lastComment,
+        daysInCurrentStatus: Math.floor(daysInCurrentStatus),
+      };
+    }
+  }
+
   return {
     ticketKey: ticket.key,
     summary: ticket.summary,
@@ -172,7 +193,7 @@ export function scoreAttention(ticket, currentUser, opts = {}) {
   };
 }
 
-const URGENCY_ORDER = { 'needs-response': 0, 'aging': 1, 'clear': 2 };
+export const URGENCY_ORDER = { 'needs-response': 0, 'aging': 1, 'stale': 2, 'clear': 3 };
 
 export function sortByUrgency(scores) {
   return [...scores].sort((a, b) => {

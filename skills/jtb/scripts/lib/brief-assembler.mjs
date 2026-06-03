@@ -103,6 +103,7 @@ export function assembleTriageSummary(scoredTickets, opts = {}) {
 
   const needsResponse = actionable.filter(t => t.urgency === 'needs-response');
   const aging = actionable.filter(t => t.urgency === 'aging');
+  const stale = actionable.filter(t => t.urgency === 'stale');
   const allKeys = [];
 
   if (needsResponse.length > 0) {
@@ -129,11 +130,26 @@ export function assembleTriageSummary(scoredTickets, opts = {}) {
       return [String(agingOffset + i + 1), t.ticketKey, truncate(t.summary, 50), t.status, `${days}d`];
     });
     const table = formatTable(
-      ['#', 'Ticket', 'Summary', 'Status', 'Stale'],
+      ['#', 'Ticket', 'Summary', 'Status', 'Idle'],
       tableRows,
       { maxWidths: { 2: 50 } },
     );
     sections.push(`Aging — no activity > ${staleDays} days (${aging.length})\n\n${table}`);
+  }
+
+  if (stale.length > 0) {
+    const staleOffset = needsResponse.length + aging.length;
+    const tableRows = stale.map((t, i) => {
+      allKeys.push(t.ticketKey);
+      const days = t.daysInCurrentStatus ?? '?';
+      return [String(staleOffset + i + 1), t.ticketKey, truncate(t.summary, 50), t.status, `${days}d`];
+    });
+    const table = formatTable(
+      ['#', 'Ticket', 'Summary', 'Status', 'Stuck'],
+      tableRows,
+      { maxWidths: { 2: 50 } },
+    );
+    sections.push(`Stale — stuck in same status (${stale.length})\n\n${table}`);
   }
 
   if (browseUrl && allKeys.length > 0) {
