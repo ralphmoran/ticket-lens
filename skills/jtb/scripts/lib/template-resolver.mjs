@@ -104,8 +104,10 @@ export async function resolveTemplate(slug, { token, fetcher = globalThis.fetch 
     } else {
       const found = apiTemplates.find(t => t.slug === slug);
       if (found) return found;
+      const available = apiTemplates.map(t => t.slug).join(', ');
       throw new Error(
-        `Template "${slug}" not found. Available templates: ${apiTemplates.map(t => t.slug).join(', ')}.`,
+        `Template "${slug}" not found. Available templates: ${available}.\n` +
+        `  To create custom templates, go to Admin → Brief Templates in your TicketLens Console.`,
       );
     }
   }
