@@ -125,6 +125,29 @@ Confluence pages linked to the ticket via Jira Remote Links are fetched automati
 
 ---
 
+### Brief Templates
+
+Control which sections appear in a brief without changing the default output for everyone else.
+
+```bash
+ticketlens CNV1-2 --template=quick              # Meta + 2 comments only
+ticketlens CNV1-2 --template=code-review        # Meta + description + linked + code refs
+ticketlens CNV1-2 --template=full               # All sections (same as default)
+ticketlens CNV1-2 --template=my-team-template   # Custom team template [Team]
+```
+
+Three system templates ship out of the box:
+
+| Slug | Sections | Best for |
+|------|----------|---------|
+| `full` | Everything (default) | LLM context, deep planning |
+| `quick` | Meta + 2 comments | Standup, daily triage |
+| `code-review` | Meta + description + linked + code refs | PR review |
+
+**Custom templates [Team]** — create your own in the Console under **Admin → Brief Templates**. Pick which sections appear and cap comment count. The slug you set is what you pass to `--template=`.
+
+---
+
 ### Triage
 
 ```bash
@@ -483,13 +506,16 @@ ticketlens update-skill --path=~/.gemini/commands  # sync to a different AI assi
 **Usage in Claude Code:**
 
 ```
-/jtb CNV1-2                    # Fetch ticket + linked issues → plan mode
-/jtb CNV1-2 --depth=0          # Target ticket only (fast)
-/jtb CNV1-2 --depth=2          # Deep: full linked-issue graph
-/jtb CNV1-2 --profile=acme     # Force a specific profile
-/jtb CNV1-2 --no-attachments   # Skip attachment download
-/jtb CNV1-2 --no-cache         # Re-fetch from Jira
-/jtb triage                    # Scan your assigned tickets
+/jtb CNV1-2                         # Fetch ticket + linked issues → plan mode
+/jtb CNV1-2 --depth=0               # Target ticket only (fast)
+/jtb CNV1-2 --depth=2               # Deep: full linked-issue graph
+/jtb CNV1-2 --profile=acme          # Force a specific profile
+/jtb CNV1-2 --no-attachments        # Skip attachment download
+/jtb CNV1-2 --no-cache              # Re-fetch from Jira
+/jtb CNV1-2 --template=quick        # Apply quick template (meta + 2 comments)
+/jtb CNV1-2 --template=code-review  # Apply code-review template
+/jtb CNV1-2 --template=my-slug      # Apply a custom team template [Team]
+/jtb triage                         # Scan your assigned tickets
 ```
 
 Attachments are listed in the brief as absolute paths. Claude Code reads images (multimodal), PDFs, and text files before planning. Files over 10 MB are skipped.
@@ -532,6 +558,7 @@ ticketlens CNV1-2 --handoff --cloud             # AI handoff brief via TicketLen
 ticketlens CNV1-2 --template=quick              # Apply quick template (meta + 2 comments only)
 ticketlens CNV1-2 --template=code-review        # Apply code-review template (meta + desc + linked + code refs)
 ticketlens CNV1-2 --template=full               # Apply full template (all sections, default)
+ticketlens CNV1-2 --template=my-team-template   # Apply a custom team template [Team]
 ticketlens CNV1-2 --depth=2 --profile=acme --plain   # Combine flags freely
 
 # Pipe plain output to clipboard, LLM, or file

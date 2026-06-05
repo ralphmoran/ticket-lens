@@ -151,20 +151,29 @@ production URL is baked into the published package.
 
 ## Publishing to npm
 
-A pre-publish guard runs automatically (`prepublishOnly` in `package.json`). It blocks
-`npm publish` (to `latest`) when `DEFAULT_API_BASE` in `api-utils.mjs` still contains
-a local URL (`ticketlens.test`, `localhost`, or `127.0.0.1`).
+Use the publish script — it swaps `DEFAULT_API_BASE` to the production URL, runs
+`npm pack` to create a tarball, reverts the source file, then publishes the tarball.
+Source code always stays at the local dev URL; only the released package gets the
+production URL.
 
 ```bash
-# Publish a beta (no URL check — safe for local-URL builds)
-npm publish --tag beta
+# Beta release (use while hosting is not yet live)
+npm run publish:beta
 
-# Publish to latest (blocked unless DEFAULT_API_BASE is a production URL)
-npm publish
+# Production release (only when api.ticketlens.app is live)
+npm run publish:latest
 ```
 
-When the production domain is confirmed, update `DEFAULT_API_BASE` in
-`skills/jtb/scripts/lib/api-utils.mjs` and then run `npm publish`.
+The script lives at `scripts/publish.mjs`. It accepts optional overrides:
+
+```bash
+node scripts/publish.mjs --tag=beta --prod-url=https://api.ticketlens.app
+```
+
+A `prepublishOnly` preflight guard still runs on direct `npm publish` calls and
+blocks `latest` publishes when `DEFAULT_API_BASE` is still a local URL — this is a
+safety net, not the intended publish path. Always use `npm run publish:beta` or
+`npm run publish:latest` instead.
 
 ## Questions?
 
