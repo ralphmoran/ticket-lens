@@ -98,7 +98,8 @@ export function styleTriageSummary(scoredTickets, opts = {}) {
 }
 
 export function styleBrief(ticket, codeRefs = null, opts = {}) {
-  const { styled = true } = opts;
+  const { styled = true, templateSections = null } = opts;
+  const ts = templateSections;
   const s = createStyler({ forceColor: styled, noColor: !styled });
 
   const sections = [];
@@ -106,7 +107,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
   // Header: ticket key + summary
   sections.push(s.bold(s.brand(`${ticket.key}: ${ticket.summary}`)));
 
-  // Metadata line
+  // Metadata line (always included)
   const meta = [
     `${s.dim('Type:')} ${ticket.type}`,
     `${s.dim('Status:')} ${statusColor(s, ticket.status)}`,
@@ -118,13 +119,19 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
   sections.push(meta.join(s.dim('  ·  ')));
 
   // Description
-  if (ticket.description) {
+  if (ticket.description && (ts === null || ts.description !== false)) {
     sections.push(`${s.bold(s.brand('Description'))}\n${s.dim('─'.repeat(divWidth()))}\n${stripCr(ticket.description)}`);
   }
 
   // Comments
-  if (ticket.comments?.length > 0) {
-    const commentLines = ticket.comments.map(c => {
+  const commentsEnabled = ts === null || ts.comments?.enabled !== false;
+  const rawMax          = ts?.comments?.max;
+  const commentsMax     = (typeof rawMax === 'number' && rawMax >= 0) ? rawMax : Infinity;
+  const visibleComments = commentsEnabled && ticket.comments?.length > 0
+    ? ticket.comments.slice(0, commentsMax === Infinity ? ticket.comments.length : commentsMax)
+    : [];
+  if (visibleComments.length > 0) {
+    const commentLines = visibleComments.map(c => {
       const date = c.created ? c.created.split('T')[0] : 'unknown';
       return `${s.brand(c.author)} ${s.dim(`(${date})`)}\n${stripCr(c.body)}`;
     });
@@ -132,7 +139,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
   }
 
   // Linked tickets
-  if (ticket.linkedTicketDetails?.length > 0) {
+  if (ticket.linkedTicketDetails?.length > 0 && (ts === null || ts.linked !== false)) {
     const linkedSections = ticket.linkedTicketDetails.map(lt => {
       const parts = [`${s.brand(lt.key)}: ${lt.summary}`, `${s.dim('Type:')} ${lt.type} | ${s.dim('Status:')} ${statusColor(s, lt.status)}`];
       if (lt.description) parts.push(stripCr(lt.description));
@@ -149,7 +156,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
   }
 
   // Confluence pages
-  if (ticket.confluencePages?.length > 0) {
+  if (ticket.confluencePages?.length > 0 && (ts === null || ts.confluence !== false)) {
     const pageLines = ticket.confluencePages.map(p => {
       const parts = [s.brand(p.title ?? p.url)];
       if (p.text) parts.push(p.text);
@@ -159,7 +166,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
   }
 
   // Code references
-  if (codeRefs) {
+  if (codeRefs && (ts === null || ts.code_refs !== false)) {
     const categories = [
       ['File Paths', codeRefs.filePaths],
       ['Methods', codeRefs.methods],
@@ -177,7 +184,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
     }
   }
 
-  if (ticket.attachments?.length > 0) {
+  if (ticket.attachments?.length > 0 && (ts === null || ts.attachments !== false)) {
     const lines = ticket.attachments.map(a => {
       const r = (ticket.localAttachments ?? []).find(x => x.filename === a.filename);
       const sz = formatSize(a.size);

@@ -24,6 +24,8 @@ import { handleUnknownFlags } from './lib/arg-validator.mjs';
 import { TICKET_KEY_PATTERN } from './lib/cli.mjs';
 import { downloadAttachments } from './lib/attachment-downloader.mjs';
 import { readBriefCache, writeBriefCache, briefCacheAge, BRIEF_TTL_MS } from './lib/brief-cache.mjs';
+import { readCliToken } from './lib/cli-auth.mjs';
+import { resolveTemplate } from './lib/template-resolver.mjs';
 import { parseAge } from './lib/cache-manager.mjs';
 import { createStyler } from './lib/ansi.mjs';
 import { isLicensed, showUpgradePrompt, readLicense } from './lib/license.mjs';
@@ -836,11 +838,26 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const validatedArgs = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check', '--summarize', '--cloud', '--compliance', '--budget=', '--handoff', '--provider='],
+    ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check', '--summarize', '--cloud', '--compliance', '--budget=', '--handoff', '--provider=', '--template='],
     { hints: ['--stale=', '--status=', '--static'] } // triage-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
   args = validatedArgs;
+
+  // Resolve --template= before cache check so both paths share the same sections.
+  const templateArg = args.find(a => a.startsWith('--template='));
+  let templateSections = null;
+  if (templateArg) {
+    const templateSlug = templateArg.split('=')[1];
+    try {
+      const tpl = await resolveTemplate(templateSlug, { token: readCliToken(configDir), fetcher });
+      templateSections = tpl.sections;
+    } catch (err) {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+      return;
+    }
+  }
 
   // When multiple profiles share the same ticket prefix and we're in a TTY,
   // ask the user to choose rather than silently picking the first match.
@@ -942,7 +959,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
       // Apply --budget pruning on the plain brief before styling (Pro only).
       // When --budget is active, always output plain text (pruning operates on unescaped chars).
-      let plainBrief = assembleBrief(cached.ticket, codeRefs);
+      let plainBrief = assembleBrief(cached.ticket, codeRefs, templateSections);
       const budgetArgCached = args.find(a => a.startsWith('--budget='));
       if (budgetArgCached) {
         const budgetN = parseInt(budgetArgCached.split('=')[1], 10);
@@ -956,7 +973,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       }
       let brief = (budgetArgCached && licensedFn('pro', configDir))
         ? plainBrief
-        : (useStyled ? styleBrief(cached.ticket, codeRefs, { styled: true }) : plainBrief);
+        : (useStyled ? styleBrief(cached.ticket, codeRefs, { styled: true, templateSections }) : plainBrief);
 
       if (args.includes('--handoff')) {
         const handoffResult = await applyHandoff(cached.ticket, args, opts, configDir, licensedFn, upgradeFn);
@@ -1128,7 +1145,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   // Apply --budget pruning on the plain brief before styling (Pro only).
   // When --budget is active, always output plain text (pruning operates on unescaped chars).
-  let plainOutput = assembleBrief(ticket, codeRefs);
+  let plainOutput = assembleBrief(ticket, codeRefs, templateSections);
   const budgetArg = args.find(a => a.startsWith('--budget='));
   if (budgetArg) {
     const budgetN = parseInt(budgetArg.split('=')[1], 10);
@@ -1142,7 +1159,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
   let output = (budgetArg && licensedFn('pro', configDir))
     ? plainOutput
-    : (useStyled ? styleBrief(ticket, codeRefs, { styled: true }) : plainOutput);
+    : (useStyled ? styleBrief(ticket, codeRefs, { styled: true, templateSections }) : plainOutput);
 
   if (args.includes('--handoff')) {
     const handoffResult = await applyHandoff(ticket, args, opts, configDir, licensedFn, upgradeFn);

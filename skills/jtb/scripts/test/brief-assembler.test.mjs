@@ -335,3 +335,54 @@ describe('assembleBrief — Confluence Pages', () => {
     assert.ok(result.includes('Page B'), result);
   });
 });
+
+// ---------------------------------------------------------------------------
+// LOCK: assembleBrief — no-sections-arg invariant (must survive F18 changes)
+// ---------------------------------------------------------------------------
+describe('assembleBrief — sections filter lock', () => {
+  const fullTicket = {
+    key: 'LOCK-1', summary: 'Lock test ticket', type: 'Task', status: 'Open',
+    priority: 'Medium', assignee: 'Dev', reporter: 'QA',
+    description: 'Some description.',
+    comments: [
+      { author: 'A', body: 'First comment', created: '2026-01-01T00:00:00Z' },
+      { author: 'B', body: 'Second comment', created: '2026-01-02T00:00:00Z' },
+      { author: 'C', body: 'Third comment', created: '2026-01-03T00:00:00Z' },
+    ],
+    linkedTicketDetails: [{ key: 'LOCK-2', summary: 'Linked', type: 'Bug', status: 'Open', description: 'Linked desc' }],
+    confluencePages: [{ title: 'Docs', text: 'Read me.' }],
+    attachments: [{ id: 'a1', filename: 'file.txt', mimeType: 'text/plain', size: 100, content: 'https://example.com/file.txt' }],
+  };
+  const lockCodeRefs = { filePaths: ['/lib/foo.js'], methods: ['bar'], classes: [], shas: [], svnRevisions: [], branches: [], namespaces: [] };
+
+  it('omitting sections arg includes all populated sections', () => {
+    const result = assembleBrief(fullTicket);
+    assert.ok(result.includes('## Description'), 'description section present');
+    assert.ok(result.includes('## Comments'), 'comments section present');
+    assert.ok(result.includes('## Linked Tickets'), 'linked section present');
+    assert.ok(result.includes('## Confluence Pages'), 'confluence section present');
+    assert.ok(result.includes('## Attachments'), 'attachments section present');
+  });
+
+  it('null sections arg includes all populated sections (same as omitting)', () => {
+    const result = assembleBrief(fullTicket, null, null);
+    assert.ok(result.includes('## Description'), 'description section present with null sections');
+    assert.ok(result.includes('## Comments'), 'comments section present with null sections');
+    assert.ok(result.includes('## Linked Tickets'), 'linked section present with null sections');
+    assert.ok(result.includes('## Confluence Pages'), 'confluence section present with null sections');
+    assert.ok(result.includes('## Attachments'), 'attachments section present with null sections');
+  });
+
+  it('null sections arg includes all comments (no max truncation)', () => {
+    const result = assembleBrief(fullTicket, null, null);
+    assert.ok(result.includes('First comment'), '1st comment present');
+    assert.ok(result.includes('Second comment'), '2nd comment present');
+    assert.ok(result.includes('Third comment'), '3rd comment present');
+  });
+
+  it('code_refs with null sections arg renders Code References section', () => {
+    const result = assembleBrief(fullTicket, lockCodeRefs, null);
+    assert.ok(result.includes('## Code References'), 'code refs section present');
+    assert.ok(result.includes('`/lib/foo.js`'), 'file path present');
+  });
+});

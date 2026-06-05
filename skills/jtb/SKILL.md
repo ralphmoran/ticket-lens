@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.9.0 -->
+<!-- jtb-skill-version: 0.9.1 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -23,6 +23,9 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb PROD-1234 --summarize             # AI summary of the brief (Pro)
 /jtb PROD-1234 --summarize --cloud     # summary via TicketLens cloud (Pro)
 /jtb PROD-1234 --handoff               # structured handoff brief from comments (Pro)
+/jtb PROD-1234 --template=quick        # apply quick template (meta + 2 comments only)
+/jtb PROD-1234 --template=code-review  # apply code-review template (meta + desc + linked + code refs)
+/jtb PROD-1234 --template=full         # apply full template (all sections, default)
 /jtb triage                            # scan your assigned tickets for attention
 /jtb triage --stale=3                  # custom aging threshold (days)
 /jtb triage --status=CR,QA             # only check specific statuses

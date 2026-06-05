@@ -6,7 +6,8 @@ import { formatTable } from './table-formatter.mjs';
 import { formatSize } from './attachment-downloader.mjs';
 import { timeAgo, truncate, stripCr } from './config.mjs';
 
-export function assembleBrief(ticket, codeRefs = null) {
+export function assembleBrief(ticket, codeRefs = null, templateSections = null) {
+  const s = templateSections;
   const sections = [];
   sections.push(`# ${ticket.key}: ${ticket.summary}`);
 
@@ -15,19 +16,25 @@ export function assembleBrief(ticket, codeRefs = null) {
   if (ticket.updated) meta.push(`**Updated:** ${ticket.updated.split('T')[0]}`);
   sections.push(meta.join(' | '));
 
-  if (ticket.description) {
+  if (ticket.description && (s === null || s.description !== false)) {
     sections.push(`## Description\n\n${stripCr(ticket.description)}`);
   }
 
-  if (ticket.comments?.length > 0) {
-    const commentLines = ticket.comments.map(c => {
+  const commentsEnabled = s === null || s.comments?.enabled !== false;
+  const rawMax          = s?.comments?.max;
+  const commentsMax     = (typeof rawMax === 'number' && rawMax >= 0) ? rawMax : Infinity;
+  const visibleComments = commentsEnabled && ticket.comments?.length > 0
+    ? ticket.comments.slice(0, commentsMax === Infinity ? ticket.comments.length : commentsMax)
+    : [];
+  if (visibleComments.length > 0) {
+    const commentLines = visibleComments.map(c => {
       const date = c.created ? c.created.split('T')[0] : 'unknown';
       return `### **${c.author}** (${date})\n\n${c.body.replace(/\r/g, '')}`;
     });
     sections.push(`## Comments\n\n${commentLines.join('\n\n---\n\n')}`);
   }
 
-  if (ticket.linkedTicketDetails?.length > 0) {
+  if (ticket.linkedTicketDetails?.length > 0 && (s === null || s.linked !== false)) {
     const linkedSections = ticket.linkedTicketDetails.map(lt => {
       const parts = [`### ${lt.key}: ${lt.summary}`, `**Type:** ${lt.type} | **Status:** ${lt.status}`];
       if (lt.description) parts.push(stripCr(lt.description));
@@ -43,7 +50,7 @@ export function assembleBrief(ticket, codeRefs = null) {
     sections.push(`## Linked Tickets\n\n${linkedSections.join('\n\n---\n\n')}`);
   }
 
-  if (ticket.confluencePages?.length > 0) {
+  if (ticket.confluencePages?.length > 0 && (s === null || s.confluence !== false)) {
     const pageLines = ticket.confluencePages.map(p => {
       const parts = [`### ${p.title ?? p.url}`];
       if (p.text) parts.push(p.text);
@@ -52,7 +59,7 @@ export function assembleBrief(ticket, codeRefs = null) {
     sections.push(`## Confluence Pages\n\n${pageLines.join('\n\n---\n\n')}`);
   }
 
-  if (codeRefs) {
+  if (codeRefs && (s === null || s.code_refs !== false)) {
     const categories = [
       ['File Paths', codeRefs.filePaths],
       ['Methods', codeRefs.methods],
@@ -70,7 +77,7 @@ export function assembleBrief(ticket, codeRefs = null) {
     }
   }
 
-  if (ticket.attachments?.length > 0) {
+  if (ticket.attachments?.length > 0 && (s === null || s.attachments !== false)) {
     const lines = ticket.attachments.map(a => {
       const r = (ticket.localAttachments ?? []).find(x => x.filename === a.filename);
       const sz = formatSize(a.size);

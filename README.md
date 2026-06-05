@@ -102,6 +102,7 @@ ticketlens CNV1-2 --summarize --provider=groq  # Force a specific AI provider [P
 ticketlens CNV1-2 --summarize --cloud          # AI summary routed through TicketLens API [Pro]
 ticketlens CNV1-2 --handoff                    # AI handoff brief from comment thread (BYOK) [Pro]
 ticketlens CNV1-2 --handoff --cloud            # AI handoff brief via TicketLens API [Pro]
+ticketlens CNV1-2 --template=quick             # Apply a brief template (full|quick|code-review, or custom [Team])
 ```
 
 | `--depth` | Scope |
@@ -528,6 +529,9 @@ ticketlens CNV1-2 --summarize --provider=groq   # Force Groq (Llama 3.1, free ti
 ticketlens CNV1-2 --summarize --cloud           # AI summary via TicketLens API [Pro]
 ticketlens CNV1-2 --handoff                     # AI handoff brief from comment thread (BYOK) [Pro]
 ticketlens CNV1-2 --handoff --cloud             # AI handoff brief via TicketLens API [Pro]
+ticketlens CNV1-2 --template=quick              # Apply quick template (meta + 2 comments only)
+ticketlens CNV1-2 --template=code-review        # Apply code-review template (meta + desc + linked + code refs)
+ticketlens CNV1-2 --template=full               # Apply full template (all sections, default)
 ticketlens CNV1-2 --depth=2 --profile=acme --plain   # Combine flags freely
 
 # Pipe plain output to clipboard, LLM, or file
