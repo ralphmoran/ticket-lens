@@ -146,7 +146,11 @@ async function cloud({ brief, licenseKey, fetcher, timeoutMs }) {
   });
 
   if (!res.ok) {
-    const err = new Error(`TicketLens API error ${res.status}`);
+    let detail = '';
+    try { detail = (await res.json()).error ?? ''; } catch {}
+    if (!detail && res.status === 503) detail = 'No AI provider configured on the backend. Run: ticketlens cloud-keys add groq <key>';
+    if (!detail && res.status === 500) detail = 'Server error (the backend may need `php artisan migrate` after a recent update)';
+    const err = new Error(detail || `TicketLens API error ${res.status}`);
     err.status = res.status;
     throw err;
   }

@@ -136,13 +136,13 @@ async function applySummarize(brief, args, opts, configDir, conn, licensedFn, up
   if (mode === 'cloud' && !opts.summarizer && !hasCloudConsent(configDir, profileName)) {
     let consentGiven = !process.stdin.isTTY;
     if (!consentGiven && process.stdout.isTTY) {
-      process.stdout.write(
+      const rl = (await import('node:readline')).createInterface({ input: process.stdin, output: process.stdout });
+      consentGiven = await new Promise(resolve => rl.question(
         '\n  Cloud summary sends your ticket content to api.ticketlens.dev for processing.\n' +
         '  TicketLens calls Claude and returns a summary. No data stored after the request.\n' +
-        '  Proceed? (y/N) '
-      );
-      const rl = (await import('node:readline')).createInterface({ input: process.stdin, output: process.stdout });
-      consentGiven = await new Promise(resolve => rl.question('', ans => { rl.close(); resolve(ans.trim().toLowerCase() === 'y'); }));
+        '  Proceed? (y/N) ',
+        ans => { rl.close(); resolve(ans.trim().toLowerCase() === 'y'); }
+      ));
     }
     if (!consentGiven) { process.exitCode = 1; return null; }
     saveCloudConsent(configDir, profileName);
