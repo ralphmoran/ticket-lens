@@ -659,6 +659,18 @@ ticketlens install-hooks --uninstall          # Remove installed hooks [Pro]
 ticketlens pr <TICKET-KEY>                    # Generate PR description from ticket [Pro]
 ticketlens pr <TICKET-KEY> | pbcopy          # Copy to clipboard [Pro]
 
+# ── AI provider keys (BYOK) ───────────────────────────────────────────────────
+ticketlens cloud-keys list                            # List configured AI providers
+ticketlens cloud-keys add groq gsk_xxxx               # Add Groq key (free tier)
+ticketlens cloud-keys add anthropic sk-ant-xxxx       # Add Anthropic key
+ticketlens cloud-keys add openai sk-xxxx              # Add OpenAI key
+ticketlens cloud-keys add groq gsk_xxxx --timeout=10  # Add with custom timeout
+ticketlens cloud-keys test groq                       # Test a provider key
+ticketlens cloud-keys remove groq                     # Remove a provider
+ticketlens cloud-keys priority groq 1                 # Set provider priority
+ticketlens cloud-keys timeout anthropic 15            # Set per-request timeout
+ticketlens cloud-keys --help                          # Subcommand help
+
 # ── Login ─────────────────────────────────────────────────────────────────────
 ticketlens login                              # Browser flow — opens Console, token saved automatically
 ticketlens login --manual                     # Paste flow — for CI/headless environments
@@ -730,20 +742,30 @@ ticketlens activate YOUR-LICENSE-KEY     # Activate Pro license
 | PDFs | ❌ Binary — no parser included (zero-dependency) |
 | Office documents (`.docx`, `.xlsx`) | ❌ Binary — no parser included |
 
-Add one of the following to `~/.ticketlens/credentials.json` for BYOK, or use `--cloud` to route through the TicketLens API:
-
-| Key | Provider | Cost |
-|---|---|---|
-| `anthropicApiKey` | Anthropic (Claude Haiku) | Paid |
-| `openaiApiKey` | OpenAI (GPT-4o mini) | Paid |
-| `groqApiKey` | Groq (Llama 3.1 8B) | **Free tier** — [console.groq.com](https://console.groq.com) |
-
-**Selecting a provider:** By default, the first available key is used (Anthropic → OpenAI → Groq). To set a persistent default:
+Add your AI provider keys once via `cloud-keys` — they're stored encrypted on your account and used automatically:
 
 ```bash
-ticketlens config set aiProvider groq        # always use Groq
-ticketlens config set aiProvider openai      # always use OpenAI
-ticketlens config set aiProvider anthropic   # always use Anthropic
+ticketlens cloud-keys add groq gsk_xxxx          # Groq (Llama 3.x — free tier)
+ticketlens cloud-keys add anthropic sk-ant-xxxx  # Anthropic Claude
+ticketlens cloud-keys add openai sk-xxxx         # OpenAI GPT-4o mini
+ticketlens cloud-keys list                       # See configured providers
+ticketlens cloud-keys test groq                  # Verify a key works
+ticketlens cloud-keys remove groq                # Remove a provider
+```
+
+Or use `--cloud` to route through the TicketLens API without managing keys yourself.
+
+| Provider | Cost | Sign up |
+|---|---|---|
+| Groq (Llama 3.x) | **Free tier** | [console.groq.com](https://console.groq.com) |
+| Anthropic (Claude) | Paid | console.anthropic.com |
+| OpenAI (GPT-4o mini) | Paid | platform.openai.com |
+
+**Provider priority:** Providers are tried in the order you configure them. To set a default fallback order:
+
+```bash
+ticketlens cloud-keys priority groq 1        # try Groq first
+ticketlens cloud-keys priority anthropic 2   # Anthropic second
 ```
 
 Override per-command with `--provider=`:
@@ -752,6 +774,8 @@ Override per-command with `--provider=`:
 ticketlens CNV1-2 --summarize --provider=groq
 ticketlens CNV1-2 --handoff --provider=openai
 ```
+
+Or manage keys in **Console → Admin → AI Settings**.
 
 <div align="center">
   <img src="docs/demos/pro-triage.gif" alt="ticketlens triage --stale=3 demo" width="700" />

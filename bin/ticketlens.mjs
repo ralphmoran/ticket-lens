@@ -25,6 +25,7 @@ import {
   printInitHelp, printSwitchHelp, printConfigHelp,
   printReviewHelp, printStandupHelp, printUpdateSkillHelp,
   printCollisionsHelp, printStatsHelp,
+  printCloudKeysHelp,
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { runStats } from '../skills/jtb/scripts/lib/run-stats.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
@@ -530,6 +531,122 @@ switch (command) {
       }
 
       process.stderr.write('\n');
+    })().catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+  }
+
+  case 'cloud-keys': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printCloudKeysHelp(); break; }
+
+    const { listCloudKeys, addCloudKey, removeCloudKey, setPriority, setTimeout_, testCloudKey } =
+      await import('../skills/jtb/scripts/lib/cloud-keys.mjs');
+
+    const cliToken = readCliToken();
+    if (!cliToken) {
+      process.stderr.write('Not logged in. Run `ticketlens login` first.\n');
+      process.exitCode = 1;
+      break;
+    }
+
+    const apiBase = getApiBase();
+    const cfg = { cliToken, apiBase };
+    const s = createStyler({ isTTY: process.stderr.isTTY });
+    const subCmd = cmdArgs[0];
+
+    (async () => {
+      if (!subCmd || subCmd === 'list') {
+        const providers = await listCloudKeys(cfg);
+        if (providers.length === 0) {
+          process.stdout.write('No AI providers configured.\n');
+          process.stdout.write(`Add one: ticketlens cloud-keys add <provider> <key>\n`);
+          return;
+        }
+        for (const p of providers) {
+          const status = p.enabled ? s.brand('on') : s.dim('off');
+          process.stdout.write(
+            `  ${p.provider.padEnd(12)} ${p.masked_key.padEnd(28)} priority=${p.priority}  timeout=${p.timeout_seconds}s  [${status}]\n`
+          );
+        }
+        return;
+      }
+
+      if (subCmd === 'add') {
+        const provider = cmdArgs[1];
+        const apiKey   = cmdArgs[2];
+        if (!provider || !apiKey) {
+          process.stderr.write('Usage: ticketlens cloud-keys add <provider> <key> [--timeout=N]\n');
+          process.exitCode = 1;
+          return;
+        }
+        const timeoutArg = cmdArgs.find(a => a.startsWith('--timeout='));
+        const timeout = timeoutArg ? parseInt(timeoutArg.split('=')[1], 10) : 5;
+        await addCloudKey(cfg, provider, apiKey, timeout);
+        process.stdout.write(`${s.brand('✓')} ${provider} key saved.\n`);
+        return;
+      }
+
+      if (subCmd === 'remove') {
+        const provider = cmdArgs[1];
+        if (!provider) {
+          process.stderr.write('Usage: ticketlens cloud-keys remove <provider>\n');
+          process.exitCode = 1;
+          return;
+        }
+        await removeCloudKey(cfg, provider);
+        process.stdout.write(`${s.brand('✓')} ${provider} key removed.\n`);
+        return;
+      }
+
+      if (subCmd === 'test') {
+        const provider = cmdArgs[1];
+        if (!provider) {
+          process.stderr.write('Usage: ticketlens cloud-keys test <provider>\n');
+          process.exitCode = 1;
+          return;
+        }
+        process.stderr.write(`Testing ${provider}…\n`);
+        const result = await testCloudKey(cfg, provider);
+        if (result.ok) {
+          process.stdout.write(`${s.brand('✓')} ${provider} responded: ${result.response}\n`);
+        } else {
+          process.stderr.write(`${s.dim('✗')} ${provider} error: ${result.error ?? 'unknown'}\n`);
+          process.exitCode = 1;
+        }
+        return;
+      }
+
+      if (subCmd === 'priority') {
+        const provider = cmdArgs[1];
+        const priority = parseInt(cmdArgs[2], 10);
+        if (!provider || isNaN(priority)) {
+          process.stderr.write('Usage: ticketlens cloud-keys priority <provider> <N>\n');
+          process.exitCode = 1;
+          return;
+        }
+        await setPriority(cfg, provider, priority);
+        process.stdout.write(`${s.brand('✓')} ${provider} priority set to ${priority}.\n`);
+        return;
+      }
+
+      if (subCmd === 'timeout') {
+        const provider = cmdArgs[1];
+        const seconds  = parseInt(cmdArgs[2], 10);
+        if (!provider || isNaN(seconds)) {
+          process.stderr.write('Usage: ticketlens cloud-keys timeout <provider> <seconds>\n');
+          process.exitCode = 1;
+          return;
+        }
+        await setTimeout_(cfg, provider, seconds);
+        process.stdout.write(`${s.brand('✓')} ${provider} timeout set to ${seconds}s.\n`);
+        return;
+      }
+
+      process.stderr.write(`Unknown subcommand: ${subCmd}\n`);
+      printCloudKeysHelp({ stream: process.stderr });
+      process.exitCode = 1;
     })().catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;

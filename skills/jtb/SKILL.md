@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.9.3 -->
+<!-- jtb-skill-version: 0.9.5 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -43,6 +43,14 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb stats --format=json               # JSON output for scripting
 /jtb collisions                        # show branch collisions with teammates (Team)
 /jtb collisions --json                 # machine-readable output
+/jtb cloud-keys list                   # list configured AI provider keys (Pro)
+/jtb cloud-keys add groq gsk_xxxx      # add Groq key (free tier — console.groq.com)
+/jtb cloud-keys add anthropic sk-ant-x # add Anthropic key
+/jtb cloud-keys add openai sk-xxxx     # add OpenAI key
+/jtb cloud-keys test groq              # verify a provider key works
+/jtb cloud-keys remove groq            # remove a provider
+/jtb cloud-keys priority groq 1        # set provider priority (lower = tried first)
+/jtb cloud-keys timeout anthropic 15   # set per-request timeout in seconds
 ```
 
 ## Prerequisites
