@@ -812,3 +812,73 @@ describe('pushTriageSnapshot — cliToken guard (new auth)', () => {
     assert.equal(headers.Authorization, 'Bearer tl_mytoken');
   });
 });
+
+// ---------------------------------------------------------------------------
+// LOCK: payload shape must not regress when cliActivity is absent
+// ---------------------------------------------------------------------------
+
+describe('pushTriageSnapshot — LOCK: payload unchanged without cliActivity', () => {
+  it('sends only profile, captured_at, and tickets when no cliActivity provided', async () => {
+    let sentBody;
+    await pushTriageSnapshot({
+      sorted: [{ ticketKey: 'LOCK-1', summary: 'Lock test', status: 'Open', urgency: 'clear', reason: '', lastComment: null }],
+      rawTicketMap: new Map([['LOCK-1', { key: 'LOCK-1', summary: 'Lock test', type: 'Task', status: 'Open', assignee: 'Dev', updated: '2026-01-01T00:00:00Z' }]]),
+      profile: 'default',
+      baseUrl: 'https://jira.example.com',
+      cliToken: 'tl_test',
+      capturedAt: '2026-06-01T10:00:00Z',
+      fetcher: async (_url, opts) => { sentBody = JSON.parse(opts.body); return { ok: true, status: 200 }; },
+      print: () => {},
+    });
+    assert.ok(sentBody, 'fetch must have been called');
+    assert.equal(sentBody.profile, 'default');
+    assert.equal(sentBody.captured_at, '2026-06-01T10:00:00Z');
+    assert.ok(Array.isArray(sentBody.tickets));
+    assert.equal(sentBody.cli_activity, undefined, 'cli_activity must be absent when not provided');
+  });
+
+  it('does not include git_branches when gitBranches is null', async () => {
+    let sentBody;
+    await pushTriageSnapshot({
+      sorted: [],
+      cliToken: 'tl_test',
+      capturedAt: '2026-06-01T10:00:00Z',
+      gitBranches: null,
+      fetcher: async (_url, opts) => { sentBody = JSON.parse(opts.body); return { ok: true, status: 200 }; },
+      print: () => {},
+    });
+    assert.equal(sentBody.git_branches, undefined, 'git_branches must be absent when null');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RED: cli_activity included in payload when cliActivity option is provided
+// ---------------------------------------------------------------------------
+
+describe('pushTriageSnapshot — RED: cli_activity in payload', () => {
+  it('includes cli_activity in payload when cliActivity is provided', async () => {
+    let sentBody;
+    await pushTriageSnapshot({
+      sorted: [],
+      cliToken: 'tl_test',
+      capturedAt: '2026-06-01T10:00:00Z',
+      cliActivity: { fetch_count: 5, triage_run_count: 2, invocations: 8 },
+      fetcher: async (_url, opts) => { sentBody = JSON.parse(opts.body); return { ok: true, status: 200 }; },
+      print: () => {},
+    });
+    assert.deepStrictEqual(sentBody.cli_activity, { fetch_count: 5, triage_run_count: 2, invocations: 8 });
+  });
+
+  it('omits cli_activity from payload when cliActivity is null', async () => {
+    let sentBody;
+    await pushTriageSnapshot({
+      sorted: [],
+      cliToken: 'tl_test',
+      capturedAt: '2026-06-01T10:00:00Z',
+      cliActivity: null,
+      fetcher: async (_url, opts) => { sentBody = JSON.parse(opts.body); return { ok: true, status: 200 }; },
+      print: () => {},
+    });
+    assert.equal(sentBody.cli_activity, undefined, 'cli_activity must be absent when null');
+  });
+});

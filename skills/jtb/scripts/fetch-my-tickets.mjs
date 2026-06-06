@@ -10,6 +10,7 @@ import { assembleTriageSummary } from './lib/brief-assembler.mjs';
 import { styleTriageSummary } from './lib/styled-assembler.mjs';
 import { resolveConnection, loadProfiles, saveProfile } from './lib/profile-resolver.mjs';
 import { resolveAdapter } from './lib/resolve-adapter.mjs';
+import { incrementTriageRun, readAndResetActivity } from './lib/activity-counter.mjs';
 import { writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { resolve as resolvePath, dirname } from 'node:path';
 import { createSpinner } from './lib/spinner.mjs';
@@ -423,6 +424,9 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     saveTriageSnapshot(scored, { profile: profileName ?? 'default', configDir });
   } catch { /* non-fatal */ }
 
+  // Track this triage run (best-effort, non-fatal)
+  try { incrementTriageRun(configDir); } catch { /* non-fatal */ }
+
   // --digest: POST scored results to the digest backend endpoint
   if (digestFlag) {
     if (!licensedFn('pro', configDir)) {
@@ -480,6 +484,8 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const scanFn = opts.scanFn ?? scanCurrentBranch;
     const cliToken = opts.cliToken ?? readCliToken(configDir) ?? null;
     const printFn = opts.print ?? ((s) => process.stdout.write(s));
+    let cliActivity = null;
+    try { cliActivity = readAndResetActivity(configDir); } catch { /* non-fatal */ }
     await pushFn({
       sorted,
       rawTicketMap,
@@ -487,6 +493,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       baseUrl: conn.baseUrl,
       cliToken,
       gitBranches: scanFn(),
+      cliActivity,
       fetcher,
       print: printFn,
     });

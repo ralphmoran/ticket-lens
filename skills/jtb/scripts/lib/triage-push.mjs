@@ -34,6 +34,7 @@ export function queueUrl(base) {
  * @param {string}   [opts.cliToken]     - CLI session token for the API
  * @param {string}   [opts.capturedAt]   - ISO 8601 timestamp (defaults to now)
  * @param {Array}    [opts.gitBranches]  - Branch metadata from scanCurrentBranch (null = not in git repo)
+ * @param {object}  [opts.cliActivity]  - Activity counters since last push {fetch_count, triage_run_count, invocations}
  * @param {Function} [opts.fetcher]      - Injectable fetch (default: globalThis.fetch)
  * @param {Function} [opts.print]        - Output fn (default: process.stdout.write)
  * @returns {Promise<{ ok: boolean, status?: number }>}
@@ -46,6 +47,7 @@ export async function pushTriageSnapshot({
   cliToken,
   capturedAt,
   gitBranches,
+  cliActivity,
   fetcher = globalThis.fetch,
   print = (s) => process.stdout.write(s),
   warn = (s) => process.stderr.write(s),
@@ -87,6 +89,7 @@ export async function pushTriageSnapshot({
     captured_at: capturedAt ?? new Date().toISOString(),
     tickets,
     ...(gitBranches != null && { git_branches: gitBranches }),
+    ...(cliActivity != null && { cli_activity: cliActivity }),
   };
 
   try {
