@@ -231,7 +231,7 @@ describe('summarize — explicit provider selection', () => {
 });
 
 describe('summarize — cloud mode', () => {
-  it('calls TicketLens backend with Bearer token', async () => {
+  it('calls TicketLens backend with CLI token as Bearer', async () => {
     const calls = [];
     const fetcher = async (url, opts) => {
       calls.push({ url, auth: opts.headers['Authorization'] });
@@ -240,18 +240,25 @@ describe('summarize — cloud mode', () => {
     const result = await summarize({
       brief: MOCK_BRIEF,
       mode: 'cloud',
-      licenseKey: 'lic-test-123',
+      cliToken: 'cli-tok-test-123',
       fetcher,
     });
     assert.equal(result, 'Cloud summary.');
     assert.ok(calls[0].url.includes('/v1/summarize'));
-    assert.equal(calls[0].auth, 'Bearer lic-test-123');
+    assert.equal(calls[0].auth, 'Bearer cli-tok-test-123');
+  });
+
+  it('throws when no cliToken provided', async () => {
+    await assert.rejects(
+      () => summarize({ brief: MOCK_BRIEF, mode: 'cloud', cliToken: null, fetcher: async () => ({}) }),
+      { message: /not logged in/i }
+    );
   });
 
   it('throws on cloud endpoint error', async () => {
     const fetcher = async () => ({ ok: false, status: 402, json: async () => ({}) });
     await assert.rejects(
-      () => summarize({ brief: MOCK_BRIEF, mode: 'cloud', licenseKey: 'lic', fetcher }),
+      () => summarize({ brief: MOCK_BRIEF, mode: 'cloud', cliToken: 'cli-tok', fetcher }),
       { message: /ticketlens api error 402/i }
     );
   });

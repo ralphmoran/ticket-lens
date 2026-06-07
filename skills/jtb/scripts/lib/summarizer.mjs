@@ -12,18 +12,18 @@ const DEFAULT_MAX_TOKENS = 256;
  * @param {string} opts.brief - Markdown brief text
  * @param {'byok'|'cloud'} opts.mode
  * @param {object} [opts.credentials] - { anthropicApiKey?, openaiApiKey?, groqApiKey? }
- * @param {string} [opts.licenseKey] - Required for cloud mode
+ * @param {string} [opts.cliToken] - CLI session token (required for cloud mode)
  * @param {Function} [opts.fetcher] - Injectable for tests (defaults to globalThis.fetch)
  * @param {number} [opts.timeoutMs]
  * @returns {Promise<string>} Summary text
  */
-export async function summarize({ brief, mode, credentials = null, licenseKey = null, fetcher = globalThis.fetch, timeoutMs = 30_000, prompt, maxTokens, provider }) {
+export async function summarize({ brief, mode, credentials = null, cliToken = null, fetcher = globalThis.fetch, timeoutMs = 30_000, prompt, maxTokens, provider }) {
   const effectivePrompt = prompt ?? DEFAULT_PROMPT;
   const effectiveMaxTokens = maxTokens ?? DEFAULT_MAX_TOKENS;
   if (mode === 'byok') {
     return byok({ brief, credentials, fetcher, timeoutMs, prompt: effectivePrompt, maxTokens: effectiveMaxTokens, provider });
   }
-  return cloud({ brief, licenseKey, fetcher, timeoutMs });
+  return cloud({ brief, cliToken, fetcher, timeoutMs });
 }
 
 async function byok({ brief, credentials, fetcher, timeoutMs, prompt, maxTokens, provider }) {
@@ -134,13 +134,14 @@ async function callGroq({ brief, apiKey, fetcher, timeoutMs, prompt, maxTokens }
   return data.choices[0].message.content;
 }
 
-async function cloud({ brief, licenseKey, fetcher, timeoutMs }) {
+async function cloud({ brief, cliToken, fetcher, timeoutMs }) {
+  if (!cliToken) throw new Error('Not logged in. Run `ticketlens login` first.');
   const res = await fetcher(`${apiBase()}/v1/summarize`, {
     method: 'POST',
     signal: AbortSignal.timeout(timeoutMs),
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${licenseKey}`,
+      'Authorization': `Bearer ${cliToken}`,
     },
     body: JSON.stringify({ brief }),
   });

@@ -13,10 +13,9 @@ import {
   invalidateProfilesCache,
 } from './profile-resolver.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
+import { apiBase } from './api-utils.mjs';
 
-const DEFAULT_API_BASE = 'https://api.ticketlens.app';
-
-export const getApiBase     = () => process.env.TICKETLENS_API_URL ?? DEFAULT_API_BASE;
+export const getApiBase     = () => apiBase();
 // Strip the api. subdomain to get the console base URL (e.g. api.ticketlens.app → ticketlens.app)
 export const getConsoleBase = () => getApiBase().replace('://api.', '://');
 

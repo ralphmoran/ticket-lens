@@ -3,7 +3,7 @@
  * Centralised here to avoid triplicating the regex and warning logic.
  */
 
-export const DEFAULT_API_BASE = 'http://ticketlens.test';
+export const DEFAULT_API_BASE = 'http://api.ticketlens.test';
 
 // Matches localhost, 127.0.0.1, and any hostname ending in .test or .local,
 // with an optional port — all treated as local-only addresses.
