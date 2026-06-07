@@ -73,6 +73,37 @@ export function writeBriefCache(ticketKey, profileName, depth, ticket, configDir
 }
 
 /**
+ * Reads the cached AI summary from an existing brief cache file.
+ * Returns null if the brief cache is missing or contains no summary.
+ * No TTL check here — the summary is implicitly expired when the brief expires.
+ */
+export function readSummaryCache(ticketKey, profileName, configDir = DEFAULT_CONFIG_DIR) {
+  const filePath = briefCachePath(ticketKey, profileName, configDir);
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return typeof data.summary === 'string' ? data.summary : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Patches an existing brief cache file with an AI summary (read-modify-write).
+ * Non-fatal — silently no-ops if the file is missing or unreadable.
+ */
+export function writeSummaryCache(ticketKey, profileName, summary, configDir = DEFAULT_CONFIG_DIR) {
+  const filePath = briefCachePath(ticketKey, profileName, configDir);
+  if (!fs.existsSync(filePath)) return;
+  try {
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    fs.writeFileSync(filePath, JSON.stringify({ ...data, summary }));
+  } catch {
+    // Non-fatal
+  }
+}
+
+/**
  * Removes the brief cache file for a specific ticket + profile.
  */
 export function clearBriefCache(ticketKey, profileName, configDir = DEFAULT_CONFIG_DIR) {

@@ -23,11 +23,12 @@ import { readTextAttachments } from './lib/handoff-assembler.mjs';
 import { handleUnknownFlags } from './lib/arg-validator.mjs';
 import { TICKET_KEY_PATTERN } from './lib/cli.mjs';
 import { downloadAttachments } from './lib/attachment-downloader.mjs';
-import { readBriefCache, writeBriefCache, briefCacheAge, BRIEF_TTL_MS } from './lib/brief-cache.mjs';
+import { readBriefCache, writeBriefCache, readSummaryCache, writeSummaryCache, briefCacheAge, BRIEF_TTL_MS } from './lib/brief-cache.mjs';
 import { readCliToken } from './lib/cli-auth.mjs';
 import { resolveTemplate } from './lib/template-resolver.mjs';
 import { parseAge } from './lib/cache-manager.mjs';
 import { createStyler } from './lib/ansi.mjs';
+import { apiBase } from './lib/api-utils.mjs';
 import { isLicensed, showUpgradePrompt, readLicense } from './lib/license.mjs';
 import { detectVcs } from './lib/vcs-detector.mjs';
 import { runComplianceCheck } from './lib/compliance-checker.mjs';
@@ -118,6 +119,23 @@ function augmentBriefForAi(brief, localAttachments) {
   return brief + `\n\n--- Attached Documents (${textFiles.length} text-readable) ---\n\n${sections.join('\n\n')}`;
 }
 
+const PROVIDER_LABELS = { groq: 'Groq', anthropic: 'Anthropic', openai: 'OpenAI' };
+
+async function fetchPrimaryCloudProvider(cliToken, apiUrl) {
+  try {
+    const res = await fetch(`${apiUrl}/v1/ai-providers`, {
+      headers: { 'Authorization': `Bearer ${cliToken}`, 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (!res.ok) return null;
+    const { providers = [] } = await res.json();
+    const primary = providers.filter(p => p.enabled).sort((a, b) => a.priority - b.priority)[0];
+    return primary?.provider ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Apply --summarize to a brief string.
  * Returns the modified brief, or null if the caller should exit (license gate / consent refused).
@@ -131,17 +149,47 @@ async function applySummarize(brief, args, opts, configDir, conn, licensedFn, up
 
   const mode = args.includes('--cloud') ? 'cloud' : 'byok';
   const profileName = conn.profileName ?? 'default';
+  const ticketKey = ticket?.key ?? null;
+  const noCache = args.includes('--no-cache');
+
+  // Return cached summary if available (skips consent check and AI call).
+  // Bypassed when opts.summarizer is injected (test mode) or --no-cache is set.
+  if (!noCache && !opts.summarizer && ticketKey) {
+    const cachedSummary = readSummaryCache(ticketKey, profileName, configDir);
+    if (cachedSummary) {
+      const divider = '─'.repeat(60);
+      return brief + `\n\n${divider}\n─── AI Summary ${'─'.repeat(45)}\n${cachedSummary}\n${divider}\n`;
+    }
+  }
 
   // Cloud consent check (skipped when summarizer is injected, e.g. tests)
   if (mode === 'cloud' && !opts.summarizer && !hasCloudConsent(configDir, profileName)) {
+    const cliTokenForConsent = opts.cliToken ?? readCliToken(configDir);
+    const apiUrl = apiBase();
+
     let consentGiven = !process.stdin.isTTY;
     if (!consentGiven && process.stdout.isTTY) {
+      const providerKey = cliTokenForConsent
+        ? await fetchPrimaryCloudProvider(cliTokenForConsent, apiUrl)
+        : null;
+      const providerLabel = PROVIDER_LABELS[providerKey] ?? 'your configured AI service';
+
+      const s = createStyler({ isTTY: true });
+      const sep = s.dim('  ' + '─'.repeat(55));
+      const promptText =
+        `\n${sep}\n` +
+        `  ${s.bold('Cloud Summary')}  — consent required once per profile\n` +
+        `${sep}\n` +
+        `  ${s.dim('Destination')}   ${s.cyan(apiUrl)}\n` +
+        `  ${s.dim('Processed by')}  ${s.yellow(providerLabel)}\n` +
+        `  ${s.dim('Retention')}     No data stored after this request\n` +
+        `${sep}\n\n` +
+        `  Allow cloud summarization for "${profileName}" profile? [Y/n] `;
+
       const rl = (await import('node:readline')).createInterface({ input: process.stdin, output: process.stdout });
       consentGiven = await new Promise(resolve => rl.question(
-        '\n  Cloud summary sends your ticket content to api.ticketlens.dev for processing.\n' +
-        '  TicketLens calls Claude and returns a summary. No data stored after the request.\n' +
-        '  Proceed? (y/N) ',
-        ans => { rl.close(); resolve(ans.trim().toLowerCase() === 'y'); }
+        promptText,
+        ans => { rl.close(); const a = ans.trim().toLowerCase(); resolve(a === '' || a === 'y'); }
       ));
     }
     if (!consentGiven) { process.exitCode = 1; return null; }
@@ -158,6 +206,7 @@ async function applySummarize(brief, args, opts, configDir, conn, licensedFn, up
     const provider = opts.provider ?? resolveAiProvider(args, credentials);
     const aiInput = augmentBriefForAi(brief, ticket?.localAttachments);
     const summary = await summarizerFn({ brief: aiInput, mode, credentials, cliToken, provider });
+    if (ticketKey && !opts.summarizer) writeSummaryCache(ticketKey, profileName, summary, configDir);
     const divider = '─'.repeat(60);
     return brief + `\n\n${divider}\n─── AI Summary ${'─'.repeat(45)}\n${summary}\n${divider}\n`;
   } catch (err) {

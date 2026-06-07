@@ -7,6 +7,8 @@ import {
   briefCachePath,
   readBriefCache,
   writeBriefCache,
+  readSummaryCache,
+  writeSummaryCache,
   clearBriefCache,
   getBriefCacheEntries,
   briefCacheAge,
@@ -289,5 +291,57 @@ describe('briefCacheAge', () => {
   it('returns days for very old timestamps', () => {
     const ts = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
     assert.equal(briefCacheAge(ts), '2d ago');
+  });
+});
+
+describe('readSummaryCache / writeSummaryCache', () => {
+  it('returns null when brief cache file does not exist', () => {
+    const dir = makeTmpDir();
+    assert.equal(readSummaryCache('PROJ-1', 'test', dir), null);
+    rmSync(dir, { recursive: true });
+  });
+
+  it('returns null when brief cache exists but has no summary field', () => {
+    const dir = makeTmpDir();
+    writeBriefCache('PROJ-1', 'test', 0, SAMPLE_TICKET, dir);
+    assert.equal(readSummaryCache('PROJ-1', 'test', dir), null);
+    rmSync(dir, { recursive: true });
+  });
+
+  it('round-trips: writeSummaryCache then readSummaryCache returns the text', () => {
+    const dir = makeTmpDir();
+    writeBriefCache('PROJ-1', 'test', 0, SAMPLE_TICKET, dir);
+    writeSummaryCache('PROJ-1', 'test', 'Cart validation fix in 3 bullets.', dir);
+    assert.equal(readSummaryCache('PROJ-1', 'test', dir), 'Cart validation fix in 3 bullets.');
+    rmSync(dir, { recursive: true });
+  });
+
+  it('preserves existing brief cache fields when writing summary', () => {
+    const dir = makeTmpDir();
+    writeBriefCache('PROJ-1', 'test', 2, SAMPLE_TICKET, dir);
+    writeSummaryCache('PROJ-1', 'test', 'Summary text.', dir);
+    const filePath = briefCachePath('PROJ-1', 'test', dir);
+    const data = JSON.parse(readFileSync(filePath, 'utf8'));
+    assert.equal(data.depth, 2);
+    assert.ok(data.fetchedAt, 'fetchedAt should be preserved');
+    assert.equal(data.summary, 'Summary text.');
+    rmSync(dir, { recursive: true });
+  });
+
+  it('writeSummaryCache is a no-op when brief cache file does not exist', () => {
+    const dir = makeTmpDir();
+    // Should not throw
+    writeSummaryCache('PROJ-1', 'test', 'summary', dir);
+    assert.equal(readSummaryCache('PROJ-1', 'test', dir), null);
+    rmSync(dir, { recursive: true });
+  });
+
+  it('overwrites a previously cached summary', () => {
+    const dir = makeTmpDir();
+    writeBriefCache('PROJ-1', 'test', 0, SAMPLE_TICKET, dir);
+    writeSummaryCache('PROJ-1', 'test', 'First summary.', dir);
+    writeSummaryCache('PROJ-1', 'test', 'Updated summary.', dir);
+    assert.equal(readSummaryCache('PROJ-1', 'test', dir), 'Updated summary.');
+    rmSync(dir, { recursive: true });
   });
 });

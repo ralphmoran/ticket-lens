@@ -721,7 +721,7 @@ ticketlens schedule                      # Set up a scheduled daily digest
 ticketlens activate YOUR-LICENSE-KEY     # Activate Pro license
 ```
 
-**`--summarize`** generates a 3-sentence AI summary of the ticket. The AI receives the full ticket context: description, comments, linked Confluence pages, and any text-readable attachments.
+**`--summarize`** generates a 3-sentence AI summary of the ticket. The AI receives the full ticket context: description, comments, linked Confluence pages, and any text-readable attachments. The summary is cached alongside the brief (same 4h TTL) — repeat runs return instantly from cache. Use `--no-cache` to force a fresh AI call.
 
 **`--handoff`** synthesizes the ticket into a structured one-pager for the developer picking up the work. The AI receives the same full context and returns:
 
