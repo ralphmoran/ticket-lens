@@ -81,6 +81,35 @@ export function normalizeTicket(raw) {
   };
 }
 
+// RFC-1918 + link-local + loopback + localhost blocked to prevent SSRF.
+const BLOCKED_PATTERNS = [
+  /^127\./,
+  /^10\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^192\.168\./,
+  /^169\.254\./,
+  /^0\.0\.0\.0$/,
+  /^::1$/,
+  /^::ffff:/i,
+  /^fc00:/i,
+  /^fe80:/i,
+  /^localhost$/i,
+];
+
+export function validateBaseUrl(url) {
+  let parsed;
+  try { parsed = new URL(url); } catch {
+    throw new Error(`JIRA_BASE_URL is not a valid URL: ${url}`);
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`JIRA_BASE_URL must use HTTPS (got ${parsed.protocol})`);
+  }
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
+  if (BLOCKED_PATTERNS.some(re => re.test(hostname))) {
+    throw new Error(`JIRA_BASE_URL hostname is blocked (${hostname})`);
+  }
+}
+
 export function buildAuthHeader(env) {
   if (env.JIRA_PAT) {
     return { Authorization: `Bearer ${env.JIRA_PAT}` };
@@ -91,6 +120,7 @@ export function buildAuthHeader(env) {
 
 export async function fetchCurrentUser(opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, apiVersion = 2, timeoutMs = 10_000 } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
@@ -116,6 +146,7 @@ export async function fetchCurrentUser(opts = {}) {
 
 export async function fetchStatuses(opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, apiVersion = 2, timeoutMs = 10_000 } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
@@ -136,6 +167,7 @@ export async function fetchStatuses(opts = {}) {
 
 export async function searchTickets(jql, opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, maxResults = 50, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
@@ -163,6 +195,7 @@ export async function searchTickets(jql, opts = {}) {
 
 export async function fetchRemoteLinks(ticketKey, opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, apiVersion = 2, timeoutMs = 10_000 } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const url = `${baseUrl}/rest/api/${apiVersion}/issue/${encodeURIComponent(ticketKey)}/remotelink`;
 
@@ -180,6 +213,7 @@ export async function fetchRemoteLinks(ticketKey, opts = {}) {
 
 export async function fetchTicket(ticketKey, opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, depth = 1, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false, _visited = new Set(), _currentDepth = 0 } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 

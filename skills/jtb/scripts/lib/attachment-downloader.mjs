@@ -83,7 +83,8 @@ export async function downloadAttachments(ticket, opts = {}) {
       onProgress?.(`  download  ${a.filename}`);
       try {
         const headers = buildAuthHeader(env);
-        const response = await fetcher(a.content, { headers });
+        // redirect:'error' prevents a Jira redirect from leaking auth headers to a different origin.
+        const response = await fetcher(a.content, { headers, redirect: 'error' });
         if (!response.ok) throw new Error(`HTTP ${response.status} (${response.statusText})`);
         const buffer = await response.arrayBuffer();
         fs.writeFileSync(localPath, Buffer.from(buffer));
