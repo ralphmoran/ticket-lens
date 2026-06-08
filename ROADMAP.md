@@ -53,14 +53,14 @@ Static landing page + LemonSqueezy checkout overlay + first B2B pitch. No backen
 
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
-| A1 | Feature | **Triage by assignee (`--assignee`)** | Triage another dev's tickets. Managers check any team member's queue. JQL change, runs locally. Pulled forward for Team-tier value. | Small |
-| A2 | Feature | **Triage by sprint (`--sprint`)** | Triage all tickets in a sprint regardless of assignee. Full sprint visibility. Pulled forward for Team-tier value. | Small |
+| A1 | ~~Feature~~ | ~~**Triage by assignee (`--assignee`)**~~ | Done (b7683a7). `ticketlens triage --assignee="Jane Dev"` — JQL uses `assignee = "NAME"` instead of `currentUser()`. Team-gated. Scoring uses effective user for correct attention detection. JQL-injection safe via `escapeJql()`. | ~~Small~~ |
+| A2 | ~~Feature~~ | ~~**Triage by sprint (`--sprint`)**~~ | Done (b7683a7). `ticketlens triage --sprint="Sprint 12"` — appends `AND sprint = "NAME"` to JQL. Team-gated. Combinable with `--assignee`. | ~~Small~~ |
 | A3 | Chore | **Static landing page** | Single page on Cloudflare Pages: hero + demo GIF, pricing table, security/data statement, ToS/Privacy, LemonSqueezy overlay checkout, "Contact for Team pricing" CTA. One weekend max. | Small |
 | A4 | Chore | **Pilot client pitch** | Live demo on client's Jira + website link + trial license keys. Validate Team-tier willingness, procurement process, seat count. | Small |
 
 **Pilot client pitch checklist:**
 - [ ] Informal conversation with decision-maker (validate interest before building)
-- [ ] Ship `--assignee` and `--sprint` flags
+- [x] Ship `--assignee` and `--sprint` flags
 - [ ] Deploy landing page with pricing + checkout
 - [ ] Formal pitch: live demo + website + trial keys
 
@@ -202,6 +202,7 @@ Laravel 11 + Inertia.js + Vue 3 + Tailwind v4. Built in parallel with Phase B.7 
 | C-T5 | ~~Feature~~ | ~~**Team compliance analytics**~~ | Done (v0.4.0). Pro-tier `--push` now reads the local compliance ledger and enriches each snapshot with `compliance_status` (pass/gap) and `compliance_coverage`. New Console page `/console/admin/compliance-analytics` (Team+): gap-rate by project prefix (bar chart), gap-rate by ticket status, weekly trend table, summary cards (tickets checked, overall gap rate, avg coverage). Owner picker lets the owner view any team's data. 90-day rolling window. 20 backend tests (666 total). 1112 CLI tests. | ~~Medium~~ |
 | C-T7 | ~~Feature~~ | ~~**Per-user BYOK AI providers**~~ | Done (v0.9.5–v0.9.7). Each user stores their own encrypted AI provider keys (Groq, Anthropic, OpenAI) in the backend. `AiService` iterates providers in priority order with per-provider timeout and fallback. New Console Admin page `/console/admin/ai`. New CLI `ticketlens cloud-keys` subcommand. `/v1/summarize` and `/v1/compliance` moved to `auth.cli` (CLI token Bearer). v0.9.7 polish: consent prompt now shows actual API URL + primary provider fetched from backend, styled with ANSI, default Y; AI summary cached in `brief.json` alongside brief — repeat `--summarize` runs served from cache, `--no-cache` forces fresh AI call. 1376 CLI tests, 687 backend tests. | ~~Large~~ |
 | C-T6 | Feature | **Team-scoped Analytics view (Admin)** | **Backlog.** The current `/console/analytics` page shows per-user AI token savings and call counts from `usage_logs` (Pro+). Team managers have no visibility into their team's aggregate AI usage. Scope: (1) New `/console/admin/analytics` page (Team+) — aggregate token savings, total AI calls, and per-member breakdown (who uses `--summarize`/`--handoff` the most, tokens saved per member, calls over time). (2) Reuse `usage_logs` grouped by `user_id` filtered to team members. (3) Owner picker so the owner can inspect any team. (4) "No data yet" empty state with a nudge to run `ticketlens TICKET-KEY --summarize --cloud`. No new database changes required — `usage_logs` already captures user_id, action, tokens, timestamp. | Small–Medium |
+| C-T8 | Feature | **`ticketlens whoami`** | **Backlog.** Single command showing the user's full local identity in one shot: Console account email (decoded from the stored CLI token), active Jira profile name + server URL, and license tier. Closes the gap where `ticketlens license` shows tier but email is null, and `ticketlens triage` shows profile/server but not account email. CLI-only, no new backend endpoint needed — CLI token payload already contains the email. Output: plain single-panel box, machine-readable with `--format=json`. Free tier. | Small |
 
 ### Iteration 9 — Slack/Teams Alerts
 
