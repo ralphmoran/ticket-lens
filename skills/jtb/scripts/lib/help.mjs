@@ -24,8 +24,11 @@ export function printHelp({ stream = process.stdout } = {}) {
     '',
     `  ${s.bold('USAGE')}`,
     '',
-    // visible widths — target column = 36 visible chars for the command portion
-    // Groups: Console sync ─── Setup ─── Daily use ─── Account / Maintenance
+    // Alignment targets (visible chars before description):
+    //   Groups 1–2 (auth/setup):          column 40  (command portion ≤ 24)
+    //   Group 3 (daily use):              column 42  (longest: "review [--branch=BRANCH]" = 39)
+    //   Group 4 (account/maintenance):    column 43  (longest: "schedule [--stop|--status]" = 41)
+    //   cloud-keys [add|remove|list|test] is an outlier at column 50 — kept with 2-space minimum.
     `    ${s.brand('ticketlens')} login                    Connect CLI to your TicketLens account`,
     `    ${s.brand('ticketlens')} logout                   Remove stored credentials`,
     `    ${s.brand('ticketlens')} sync                     Pull tracker profiles from the console`,
@@ -35,9 +38,9 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} config ${s.dim('[--profile=NAME]')}  Edit profile settings`,
     `    ${s.brand('ticketlens')} profiles                 List all configured profiles  ${s.dim('(alias: ls)')}`,
     '',
-    `    ${s.brand('ticketlens')} ${s.dim('<TICKET-KEY>')} ${s.dim('[options]')}   Fetch a ticket brief`,
-    `    ${s.brand('ticketlens')} get ${s.dim('<TICKET-KEY>')}         Same as above ${s.dim('(explicit alias)')}`,
-    `    ${s.brand('ticketlens')} triage ${s.dim('[options]')}         Scan your assigned tickets`,
+    `    ${s.brand('ticketlens')} ${s.dim('<TICKET-KEY>')} ${s.dim('[options]')}     Fetch a ticket brief`,
+    `    ${s.brand('ticketlens')} get ${s.dim('<TICKET-KEY>')}           Same as above ${s.dim('(explicit alias)')}`,
+    `    ${s.brand('ticketlens')} triage ${s.dim('[options]')}           Scan your assigned tickets`,
     `    ${s.brand('ticketlens')} collisions ${s.dim('[--json]')}        Show branch collisions with teammates  ${s.dim('[Team]')}`,
     `    ${s.brand('ticketlens')} review ${s.dim('[--branch=BRANCH]')}   Code-review context brief from current branch`,
     `    ${s.brand('ticketlens')} standup ${s.dim('[--since=N]')}        Standup summary from git log  ${s.dim('(last 24h by default)')}`,
@@ -45,11 +48,11 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} history ${s.dim('<TICKET-KEY>')}       Urgency timeline for a ticket  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} stats ${s.dim('[options]')}            Personal response-time metrics from local history`,
     '',
-    `    ${s.brand('ticketlens')} delete ${s.dim('<PROFILE-NAME>')}     Remove a profile`,
-    `    ${s.brand('ticketlens')} activate ${s.dim('<KEY>')}           Activate a license key`,
-    `    ${s.brand('ticketlens')} license                  Show license status`,
-    `    ${s.brand('ticketlens')} cache ${s.dim('[size|clear]')}       Manage attachment cache  ${s.dim('(try cache --help)')}`,
-    `    ${s.brand('ticketlens')} schedule ${s.dim('[--stop|--status]')} Manage digest schedule  ${s.dim('[Pro]')}`,
+    `    ${s.brand('ticketlens')} delete ${s.dim('<PROFILE-NAME>')}       Remove a profile`,
+    `    ${s.brand('ticketlens')} activate ${s.dim('<KEY>')}              Activate a license key`,
+    `    ${s.brand('ticketlens')} license                     Show license status`,
+    `    ${s.brand('ticketlens')} cache ${s.dim('[size|clear]')}          Manage attachment cache  ${s.dim('(try cache --help)')}`,
+    `    ${s.brand('ticketlens')} schedule ${s.dim('[--stop|--status]')}  Manage digest schedule  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} cloud-keys ${s.dim('[add|remove|list|test]')}  Manage your encrypted AI provider keys  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} update-skill ${s.dim('[--dry-run]')}    Update /jtb skill in Claude Code and other AI assistants`,
     '',
