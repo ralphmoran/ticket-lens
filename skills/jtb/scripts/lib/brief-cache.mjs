@@ -19,7 +19,14 @@ export const DEFAULT_BRIEF_TTL = '4h'; // human-readable default for display/con
 export function briefCachePath(ticketKey, profileName, configDir = DEFAULT_CONFIG_DIR) {
   const safeProfile = (profileName || '_default').replace(/[^a-zA-Z0-9_\-]/g, '_');
   const safeKey = ticketKey.replace(/[^a-zA-Z0-9_\-]/g, '_');
-  return path.join(configDir, 'cache', safeProfile, safeKey, 'brief.json');
+  const resolvedDir = path.resolve(configDir);
+  const result = path.join(resolvedDir, 'cache', safeProfile, safeKey, 'brief.json');
+  // Defense-in-depth: ensure the final path cannot escape the config directory,
+  // even if configDir itself is manipulated or the sanitization above is weakened.
+  if (!result.startsWith(resolvedDir + path.sep)) {
+    throw new Error(`Cache path escapes config directory: ${result}`);
+  }
+  return result;
 }
 
 /**
