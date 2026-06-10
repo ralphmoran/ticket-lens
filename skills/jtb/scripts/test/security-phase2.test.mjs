@@ -72,15 +72,16 @@ describe('validateBaseUrl', () => {
   });
 });
 
-// ── H4: attachment downloader — SSRF protection via URL validation ────────────
-// redirect:'error' was removed because Jira Cloud legitimate redirects to CDN/S3
-// would break downloads. SSRF protection is enforced by validating the initial
-// content URL against the configured Jira origin (H3, above) before fetch.
+// ── H4: attachment downloader — two-layer SSRF protection ────────────────────
+// Layer 1: origin check blocks cross-origin attachment URLs before any fetch.
+// Layer 2: redirect probe (redirect:'manual') validates the Location URL against
+//          BLOCKED_REDIRECT_PATTERNS before following. Blocks SSRF-via-redirect
+//          attacks where a Jira-origin URL redirects to a private/metadata IP.
 
 describe('attachment-downloader redirect protection', () => {
   const ENV = { JIRA_BASE_URL: 'https://j.example.com', JIRA_PAT: 'token' };
 
-  it('SSRF guard: blocks cross-origin attachment URL before fetch is called', async () => {
+  it('SSRF layer 1: blocks cross-origin attachment URL before fetch is called', async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), 'tl-test-'));
     const ticket = {
       key: 'PROJ-1',
@@ -95,7 +96,7 @@ describe('attachment-downloader redirect protection', () => {
     assert.strictEqual(results[0].skipReason, 'ssrf-blocked');
   });
 
-  it('allows same-origin attachment and does not set redirect:error', async () => {
+  it('SSRF layer 2: probe uses redirect:manual and sends auth to Jira origin', async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), 'tl-test-'));
     const ticket = {
       key: 'PROJ-2',
@@ -109,7 +110,25 @@ describe('attachment-downloader redirect protection', () => {
     };
 
     await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
-    assert.notStrictEqual(capturedOpts?.redirect, 'error', 'redirect:error must not be set — Jira CDN redirects must be followable');
-    assert.ok(capturedOpts?.headers?.Authorization, 'auth header sent to Jira origin');
+    assert.strictEqual(capturedOpts?.redirect, 'manual', 'probe must use redirect:manual for SSRF redirect validation');
+    assert.ok(capturedOpts?.headers?.Authorization, 'auth header sent to Jira origin probe');
+  });
+
+  it('SSRF layer 2: blocks redirect to private IP and marks as error', async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'tl-test-'));
+    const ticket = {
+      key: 'PROJ-3',
+      attachments: [{ filename: 'c.pdf', content: 'https://j.example.com/att/c.pdf', size: 100, mimeType: 'application/pdf' }],
+    };
+
+    const fetcher = async (_url, _opts) => ({
+      ok: false, status: 302,
+      headers: { get: (name) => name.toLowerCase() === 'location' ? 'https://169.254.169.254/metadata' : null },
+      arrayBuffer: async () => new ArrayBuffer(0),
+    });
+
+    const results = await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
+    assert.strictEqual(results[0].skipReason, 'error');
+    assert.ok(results[0].error.includes('blocked'), `expected "blocked" in error message, got: ${results[0].error}`);
   });
 });

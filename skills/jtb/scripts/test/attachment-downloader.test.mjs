@@ -330,10 +330,99 @@ describe('downloadAttachments — parallel downloads', () => {
 
 // ─── Jira Cloud CDN redirect ─────────────────────────────────────────────────
 
-describe('downloadAttachments — Jira Cloud CDN redirect', () => {
-  it('downloads in a single fetch call — redirect handled transparently by Node.js', async () => {
-    // Jira Cloud attachment URLs may redirect to CDN/S3 presigned URLs.
-    // Using the default redirect:'follow', Node.js handles this transparently.
+// Simple Headers-like object for redirect test mocks
+function makeHeaders(map = {}) {
+  const lower = Object.fromEntries(Object.entries(map).map(([k, v]) => [k.toLowerCase(), v]));
+  return { get: (name) => lower[name.toLowerCase()] ?? null };
+}
+
+describe('downloadAttachments — CDN redirect (two-step SSRF-safe)', () => {
+  it('probes with redirect:manual then follows safe HTTPS CDN redirect', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => {
+      calls.push({ url, redirect: opts?.redirect });
+      if (calls.length === 1) {
+        // Probe response: Jira → S3 CDN redirect
+        return { ok: false, status: 302, headers: makeHeaders({ location: 'https://cdn.example.com/file.pdf' }), arrayBuffer: async () => new ArrayBuffer(0) };
+      }
+      // CDN response
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer(Buffer.from('pdf-data')) };
+    };
+    const ticket = makeTicket([makeAttachment({ filename: 'doc.pdf', content: 'https://jira.example.com/attachment/123/doc.pdf' })]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
+
+    assert.equal(calls.length, 2, 'probe + redirect follow');
+    assert.equal(calls[0].redirect, 'manual', 'probe uses redirect:manual');
+    assert.equal(calls[1].url, 'https://cdn.example.com/file.pdf', 'follows to CDN URL');
+    assert.equal(result[0].skipReason, null);
+    assert.ok(result[0].localPath !== null);
+  });
+
+  it('probe does not send auth headers to CDN redirect target', async () => {
+    const capturedByUrl = {};
+    const fetcher = async (url, opts) => {
+      capturedByUrl[url] = opts?.headers ?? {};
+      if (!capturedByUrl['https://jira.example.com/att/1/f.pdf']) {
+        return { ok: false, status: 302, headers: makeHeaders({ location: 'https://cdn.example.com/file.pdf' }), arrayBuffer: async () => new ArrayBuffer(0) };
+      }
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer(Buffer.from('data')) };
+    };
+    const ticket = makeTicket([makeAttachment({ filename: 'f.pdf', content: 'https://jira.example.com/att/1/f.pdf' })]);
+    await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
+
+    assert.ok(capturedByUrl['https://jira.example.com/att/1/f.pdf']?.Authorization, 'auth sent to Jira origin probe');
+    assert.ok(!capturedByUrl['https://cdn.example.com/file.pdf']?.Authorization, 'no auth sent to CDN redirect target');
+  });
+
+  it('blocks redirect to RFC-1918 IP and marks attachment as error', async () => {
+    const fetcher = async (_url, _opts) => ({
+      ok: false, status: 302,
+      headers: makeHeaders({ location: 'https://192.168.1.1/steal' }),
+      arrayBuffer: async () => new ArrayBuffer(0),
+    });
+    const ticket = makeTicket([makeAttachment()]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
+    assert.equal(result[0].skipReason, 'error');
+    assert.ok(result[0].error.includes('blocked'), `expected "blocked" in error, got: ${result[0].error}`);
+  });
+
+  it('blocks redirect to HTTP (non-HTTPS) URL', async () => {
+    const fetcher = async (_url, _opts) => ({
+      ok: false, status: 302,
+      headers: makeHeaders({ location: 'http://cdn.example.com/file.pdf' }),
+      arrayBuffer: async () => new ArrayBuffer(0),
+    });
+    const ticket = makeTicket([makeAttachment()]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
+    assert.equal(result[0].skipReason, 'error');
+    assert.ok(result[0].error.includes('blocked'), `expected "blocked" in error, got: ${result[0].error}`);
+  });
+
+  it('blocks redirect to AWS metadata endpoint (169.254.169.254)', async () => {
+    const fetcher = async (_url, _opts) => ({
+      ok: false, status: 302,
+      headers: makeHeaders({ location: 'https://169.254.169.254/latest/meta-data' }),
+      arrayBuffer: async () => new ArrayBuffer(0),
+    });
+    const ticket = makeTicket([makeAttachment()]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
+    assert.equal(result[0].skipReason, 'error');
+    assert.ok(result[0].error.includes('blocked'), `expected "blocked" in error, got: ${result[0].error}`);
+  });
+
+  it('handles redirect with no Location header as error', async () => {
+    const fetcher = async (_url, _opts) => ({
+      ok: false, status: 302,
+      headers: makeHeaders({}),
+      arrayBuffer: async () => new ArrayBuffer(0),
+    });
+    const ticket = makeTicket([makeAttachment()]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
+    assert.equal(result[0].skipReason, 'error');
+    assert.ok(result[0].error.includes('Location'), `expected Location in error, got: ${result[0].error}`);
+  });
+
+  it('handles direct 200 response (no redirect) with a single fetch call', async () => {
     let callCount = 0;
     const fetcher = async (_url, _opts) => {
       callCount++;
@@ -341,7 +430,7 @@ describe('downloadAttachments — Jira Cloud CDN redirect', () => {
     };
     const ticket = makeTicket([makeAttachment({ filename: 'doc.pdf', content: 'https://jira.example.com/attachment/123/doc.pdf' })]);
     const result = await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
-    assert.equal(callCount, 1, 'single fetch call per attachment');
+    assert.equal(callCount, 1, 'probe returns 200 directly — no second fetch needed');
     assert.equal(result[0].skipReason, null);
     assert.ok(result[0].localPath !== null);
   });
