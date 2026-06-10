@@ -29,6 +29,7 @@ function formatReport({ ticketKey, requirements, analysis, usage, isPro }) {
     const icon = STATUS_ICON[status] ?? '?';
     lines.push(`  ${icon} ${requirement}`);
     if (evidence) lines.push(`      └─ ${evidence}`);
+    lines.push('');
   }
 
   lines.push('');
@@ -47,6 +48,7 @@ function formatReport({ ticketKey, requirements, analysis, usage, isPro }) {
 
 export async function runComplianceCheck({
   brief,
+  description = null,
   ticketKey,
   configDir = DEFAULT_CONFIG_DIR,
   stream = process.stderr,
@@ -70,7 +72,9 @@ export async function runComplianceCheck({
 
   incrementUsageFn(configDir);
 
-  const requirements = extractRequirementsFn(brief);
+  // Extract requirements from the ticket description only — not from comments,
+  // linked tickets, or the styled output, which would produce false positives.
+  const requirements = extractRequirementsFn(description ?? brief);
   const { diff } = findLinkedCommitsFn(ticketKey, { cwd: process.cwd() });
   const analysis = analyzeDiffFn(requirements, diff);
 

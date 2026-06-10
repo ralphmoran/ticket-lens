@@ -115,4 +115,43 @@ describe('runComplianceCheck', () => {
     assert.ok(result !== null);
     assert.equal(result.noCriteria, true);
   });
+
+  it('passes description to extractRequirementsFn when provided (not full brief)', async () => {
+    let textPassedToExtractor = null;
+    const description = 'Acceptance Criteria\n- Must validate email';
+    const fullBrief = description + '\n\nComments\n────\nAuthor (2026-01-01)\nSome comment text';
+    const opts = makeOpts({
+      extractRequirementsFn: (text) => {
+        textPassedToExtractor = text;
+        return ['Must validate email'];
+      },
+    });
+    await runComplianceCheck({ ...opts, brief: fullBrief, description });
+    assert.equal(textPassedToExtractor, description, 'extractor must receive description, not full brief');
+  });
+
+  it('falls back to brief when description is not provided', async () => {
+    let textPassedToExtractor = null;
+    const opts = makeOpts({
+      extractRequirementsFn: (text) => {
+        textPassedToExtractor = text;
+        return ['Must validate email'];
+      },
+    });
+    await runComplianceCheck(opts); // no description provided
+    assert.equal(textPassedToExtractor, BRIEF);
+  });
+
+  it('report has blank line between each requirement item', async () => {
+    const result = await runComplianceCheck(makeOpts());
+    // Each item line should be followed by a blank line
+    const lines = result.report.split('\n');
+    const itemIdx = lines.findIndex(l => l.includes('✔') || l.includes('✖'));
+    assert.ok(itemIdx >= 0, 'should have at least one item');
+    // The line after the item (or after its evidence) should be blank
+    const afterItem = lines[itemIdx + 1];
+    const isEvidenceLine = afterItem?.includes('└─');
+    const lineAfterEvidence = isEvidenceLine ? lines[itemIdx + 2] : afterItem;
+    assert.equal(lineAfterEvidence, '', 'blank line must follow each requirement item');
+  });
 });

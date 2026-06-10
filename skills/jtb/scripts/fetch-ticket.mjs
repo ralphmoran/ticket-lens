@@ -552,6 +552,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const complianceRunner = opts.runComplianceCheck ?? runComplianceCheck;
     const complianceResult = await complianceRunner({
       brief: briefC,
+      description: ticketC.description,
       ticketKey: ticketKeyArg,
       configDir: resolvedConfigDir,
     });
@@ -1041,6 +1042,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       if (args.includes('--compliance')) {
         const checkResult = await runComplianceCheck({
           brief,
+          description: cached.ticket.description,
           ticketKey,
           configDir,
         });
@@ -1227,6 +1229,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   if (args.includes('--compliance')) {
     const checkResult = await runComplianceCheck({
       brief: output,
+      description: ticket.description,
       ticketKey,
       configDir,
     });
