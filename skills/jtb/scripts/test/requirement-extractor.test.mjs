@@ -130,4 +130,47 @@ describe('extractRequirements', () => {
     const result = extractRequirements(text);
     assert.ok(result.length >= 4);
   });
+
+  it('extracts plain sentences under AC header (Jira Cloud ADF output — no list markers)', () => {
+    // ADF converter strips heading markers; items are written as prose, not bullets.
+    // This is the real-world format from CNV1-2.
+    const text = `
+Acceptance criteria
+
+The dashboard should display all social media accounts
+The form must allow picking an account and configuring credentials
+    `;
+    const result = extractRequirements(text);
+    assert.ok(result.length >= 2, `expected ≥2 items, got ${result.length}`);
+    assert.ok(result.some(r => r.includes('dashboard should display')));
+    assert.ok(result.some(r => r.includes('form must allow')));
+  });
+
+  it('handles mixed bullets and plain sentences inside AC section', () => {
+    const text = `
+## Acceptance Criteria
+
+- Must return 200 on success
+Plain prose requirement without bullet
+1. Numbered item as well
+    `;
+    const result = extractRequirements(text);
+    assert.ok(result.length >= 3, `expected ≥3 items, got ${result.length}`);
+    assert.ok(result.some(r => r.includes('Plain prose requirement')));
+  });
+
+  it('exits AC section on wiki-markup heading (h2. Next Section)', () => {
+    const text = `
+h2. Acceptance Criteria
+
+- Must do X
+
+h2. Notes
+
+Implementation detail that is not a requirement
+    `;
+    const result = extractRequirements(text);
+    assert.ok(result.some(r => r.includes('Must do X')));
+    assert.ok(result.every(r => !r.includes('not a requirement')));
+  });
 });

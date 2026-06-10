@@ -8,6 +8,7 @@ const RE_GWT        = /^\s*(given|when|then)\s+(.+)/i;
 const RE_MUST_ITEM  = /^\s*[-*•]\s+((?:must|should|shall|ensure|verify)\b.+|.+(?:must|should|shall|ensure|verify).+)/i;
 const RE_NUM_MUST   = /^\s*\d+\.\s+((?:must|should|shall|ensure|verify)\b.+|.+(?:must|should|shall|ensure|verify).+)/i;
 const RE_AC_HEADER  = /^\s*(?:#+\s*|h[1-6]\.\s*)?acceptance criteria\s*:?\s*$/i;
+const RE_HEADING    = /^\s*(?:#+|h[1-6]\.)\s+/i;
 const RE_BULLET     = /^\s*[-*•]\s+(.+)/;
 const RE_NUM_ITEM   = /^\s*\d+\.\s+(.+)/;
 
@@ -19,32 +20,30 @@ export function extractRequirements(text) {
   let inAcSection = false;
 
   for (const line of lines) {
-    // Given/When/Then
     const gwt = RE_GWT.exec(line);
     if (gwt) { results.push(line.trim()); continue; }
 
-    // Acceptance Criteria section header
     if (RE_AC_HEADER.test(line)) { inAcSection = true; continue; }
 
-    // Exit AC section on next heading
-    if (inAcSection && /^\s*#+\s/.test(line) && !RE_AC_HEADER.test(line)) {
+    // Exit on any explicit heading (markdown ## or wiki h2.) that is not the AC header
+    if (inAcSection && RE_HEADING.test(line) && !RE_AC_HEADER.test(line)) {
       inAcSection = false;
     }
 
-    // must/should/shall in bullet
     const mustItem = RE_MUST_ITEM.exec(line);
     if (mustItem) { results.push(mustItem[1].trim()); continue; }
 
-    // must/should/shall in numbered item
     const numMust = RE_NUM_MUST.exec(line);
     if (numMust) { results.push(numMust[1].trim()); continue; }
 
-    // Inside AC section: capture all bullet and numbered items
     if (inAcSection) {
       const bullet = RE_BULLET.exec(line);
       if (bullet) { results.push(bullet[1].trim()); continue; }
       const numItem = RE_NUM_ITEM.exec(line);
       if (numItem) { results.push(numItem[1].trim()); continue; }
+      // Capture plain sentences — ADF paragraph nodes output as bare text (no list marker)
+      const plain = line.trim();
+      if (plain) { results.push(plain); continue; }
     }
   }
 

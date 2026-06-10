@@ -83,8 +83,19 @@ export async function downloadAttachments(ticket, opts = {}) {
       onProgress?.(`  download  ${a.filename}`);
       try {
         const headers = buildAuthHeader(env);
-        // redirect:'error' prevents a Jira redirect from leaking auth headers to a different origin.
-        const response = await fetcher(a.content, { headers, redirect: 'error' });
+        let response;
+        try {
+          // Prefer no-redirect so auth headers stay on the Jira origin.
+          response = await fetcher(a.content, { headers, redirect: 'error' });
+        } catch (err) {
+          // Jira Cloud attachment URLs sometimes redirect to CDN/S3 presigned URLs.
+          // On redirect, retry without auth — the presigned URL provides its own authentication.
+          if (err?.cause?.message?.includes('redirect mode is set to error')) {
+            response = await fetcher(a.content, { redirect: 'follow' });
+          } else {
+            throw err;
+          }
+        }
         if (!response.ok) throw new Error(`HTTP ${response.status} (${response.statusText})`);
         const buffer = await response.arrayBuffer();
         fs.writeFileSync(localPath, Buffer.from(buffer));

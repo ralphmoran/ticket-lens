@@ -328,6 +328,62 @@ describe('downloadAttachments — parallel downloads', () => {
   });
 });
 
+// ─── Jira Cloud CDN redirect ─────────────────────────────────────────────────
+
+describe('downloadAttachments — Jira Cloud CDN redirect', () => {
+  it('retries without auth headers when Jira redirects to CDN/S3 presigned URL', async () => {
+    let callCount = 0;
+    let firstCallHeaders;
+    let secondCallOpts;
+    const fetcher = async (_url, opts) => {
+      callCount++;
+      if (callCount === 1) {
+        firstCallHeaders = opts?.headers ?? {};
+        const err = new TypeError('fetch failed');
+        err.cause = new Error('redirect mode is set to error: https://s3.amazonaws.com/bucket/file.pdf?X-Amz-Signature=abc');
+        throw err;
+      }
+      secondCallOpts = opts;
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer(Buffer.from('pdf-data')) };
+    };
+
+    const ticket = makeTicket([makeAttachment({ filename: 'doc.pdf', content: 'https://jira.example.com/secure/attachment/123/doc.pdf' })]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
+
+    assert.equal(callCount, 2, 'should retry once after redirect error');
+    assert.ok(firstCallHeaders?.Authorization, 'first attempt sends auth to Jira origin');
+    assert.ok(!secondCallOpts?.headers?.Authorization, 'retry must not send auth to redirect target');
+    assert.equal(result[0].skipReason, null, 'should succeed after retry');
+    assert.ok(result[0].localPath !== null);
+  });
+
+  it('does not retry on non-redirect network errors', async () => {
+    let callCount = 0;
+    const fetcher = async () => {
+      callCount++;
+      throw new Error('ECONNREFUSED');
+    };
+    const ticket = makeTicket([makeAttachment()]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
+    assert.equal(callCount, 1, 'should not retry on connection errors');
+    assert.equal(result[0].skipReason, 'error');
+  });
+
+  it('does not retry on fetch errors without a redirect cause', async () => {
+    let callCount = 0;
+    const fetcher = async () => {
+      callCount++;
+      const err = new TypeError('fetch failed');
+      err.cause = new Error('certificate has expired');
+      throw err;
+    };
+    const ticket = makeTicket([makeAttachment()]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
+    assert.equal(callCount, 1, 'should not retry on non-redirect TypeError');
+    assert.equal(result[0].skipReason, 'error');
+  });
+});
+
 // ─── formatSize ──────────────────────────────────────────────────────────────
 
 describe('formatSize', () => {
