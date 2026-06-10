@@ -7,7 +7,7 @@
 const RE_GWT        = /^\s*(given|when|then)\s+(.+)/i;
 const RE_MUST_ITEM  = /^\s*[-*•]\s+((?:must|should|shall|ensure|verify)\b.+|.+(?:must|should|shall|ensure|verify).+)/i;
 const RE_NUM_MUST   = /^\s*\d+\.\s+((?:must|should|shall|ensure|verify)\b.+|.+(?:must|should|shall|ensure|verify).+)/i;
-const RE_AC_HEADER  = /^\s*#+\s*acceptance criteria\s*$/i;
+const RE_AC_HEADER  = /^\s*(?:#+\s*|h[1-6]\.\s*)?acceptance criteria\s*:?\s*$/i;
 const RE_BULLET     = /^\s*[-*•]\s+(.+)/;
 const RE_NUM_ITEM   = /^\s*\d+\.\s+(.+)/;
 

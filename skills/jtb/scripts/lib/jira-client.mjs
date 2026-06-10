@@ -13,6 +13,24 @@ function toText(value) {
 }
 
 /**
+ * Extracts the active sprint name from customfield_10020.
+ * Cloud v3: array of sprint objects — prefers active, falls back to last.
+ * Server v2: serialized Java string — extracts via name= regex.
+ */
+function parseSprint(value) {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    const sprint = value.find(s => s.state === 'active') ?? value[value.length - 1];
+    return sprint?.name ?? null;
+  }
+  if (typeof value === 'string') {
+    const m = value.match(/name=([^,\]]+)/);
+    return m ? m[1].trim() : null;
+  }
+  return null;
+}
+
+/**
  * Returns the ISO date string when the ticket entered its current status,
  * derived from Jira's changelog history. Walks backwards (most recent first)
  * to find the last transition whose `toString` matches `currentStatus`.
@@ -50,6 +68,7 @@ export function normalizeTicket(raw) {
     created: f.created ?? null,
     updated: f.updated ?? null,
     statusChangedAt,
+    sprint: parseSprint(f.customfield_10020),
     labels: f.labels ?? [],
     components: (f.components ?? []).map(c => c.name),
     comments: (f.comment?.comments ?? []).map(c => ({
@@ -171,7 +190,7 @@ export async function searchTickets(jql, opts = {}) {
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
-  const fields = 'summary,status,assignee,priority,issuetype,comment,updated,statuscategorychangedate,created';
+  const fields = 'summary,status,assignee,priority,issuetype,comment,updated,statuscategorychangedate,created,customfield_10020';
   const params = new URLSearchParams({ jql, fields, maxResults: String(maxResults) });
   if (expandChangelog) params.set('expand', 'changelog');
   const endpoint = apiVersion >= 3 ? `/rest/api/3/search/jql` : `/rest/api/2/search`;

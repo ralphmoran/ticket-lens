@@ -12,6 +12,7 @@ export function assembleBrief(ticket, codeRefs = null, templateSections = null) 
   sections.push(`# ${ticket.key}: ${ticket.summary}`);
 
   const meta = [`**Type:** ${ticket.type}`, `**Status:** ${ticket.status}`, `**Priority:** ${ticket.priority}`, `**Assignee:** ${ticket.assignee ?? 'Unassigned'}`, `**Reporter:** ${ticket.reporter ?? 'Unknown'}`];
+  if (ticket.sprint)  meta.push(`**Sprint:** ${ticket.sprint}`);
   if (ticket.created) meta.push(`**Created:** ${ticket.created.split('T')[0]}`);
   if (ticket.updated) meta.push(`**Updated:** ${ticket.updated.split('T')[0]}`);
   sections.push(meta.join(' | '));

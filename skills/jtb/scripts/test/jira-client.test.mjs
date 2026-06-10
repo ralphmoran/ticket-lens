@@ -991,3 +991,59 @@ describe('fetchTicket — expandChangelog opt', () => {
     }
   });
 });
+
+describe('parseSprint — via normalizeTicket', () => {
+  it('extracts sprint name from Cloud v3 array (active sprint)', () => {
+    const raw = {
+      key: 'T-1',
+      fields: {
+        summary: 'Test', issuetype: { name: 'Task' }, status: { name: 'Open' },
+        customfield_10020: [
+          { id: 1, name: 'Sprint 11', state: 'closed' },
+          { id: 2, name: 'Sprint 12', state: 'active' },
+        ],
+      },
+    };
+    assert.equal(normalizeTicket(raw).sprint, 'Sprint 12');
+  });
+
+  it('falls back to last sprint when none is active (Cloud v3)', () => {
+    const raw = {
+      key: 'T-1',
+      fields: {
+        summary: 'Test', issuetype: { name: 'Task' }, status: { name: 'Done' },
+        customfield_10020: [
+          { id: 1, name: 'Sprint 10', state: 'closed' },
+          { id: 2, name: 'Sprint 11', state: 'closed' },
+        ],
+      },
+    };
+    assert.equal(normalizeTicket(raw).sprint, 'Sprint 11');
+  });
+
+  it('extracts sprint name from Jira Server serialised string', () => {
+    const raw = {
+      key: 'T-1',
+      fields: {
+        summary: 'Test', issuetype: { name: 'Task' }, status: { name: 'Open' },
+        customfield_10020: 'com.atlassian.greenhopper.service.sprint.Sprint@1a2b[id=5,rapidViewId=1,state=ACTIVE,name=Sprint 12,startDate=2026-05-01,endDate=2026-05-14,goal=]',
+      },
+    };
+    assert.equal(normalizeTicket(raw).sprint, 'Sprint 12');
+  });
+
+  it('returns null when customfield_10020 is absent', () => {
+    const raw = { key: 'T-1', fields: { summary: 'Test', issuetype: { name: 'Task' }, status: { name: 'Open' } } };
+    assert.equal(normalizeTicket(raw).sprint, null);
+  });
+
+  it('returns null when customfield_10020 is null', () => {
+    const raw = { key: 'T-1', fields: { summary: 'Test', issuetype: { name: 'Task' }, status: { name: 'Open' }, customfield_10020: null } };
+    assert.equal(normalizeTicket(raw).sprint, null);
+  });
+
+  it('returns null when Cloud array is empty', () => {
+    const raw = { key: 'T-1', fields: { summary: 'Test', issuetype: { name: 'Task' }, status: { name: 'Open' }, customfield_10020: [] } };
+    assert.equal(normalizeTicket(raw).sprint, null);
+  });
+});

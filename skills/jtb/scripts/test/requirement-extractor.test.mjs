@@ -82,6 +82,39 @@ describe('extractRequirements', () => {
     assert.equal(result.length, 2);
   });
 
+  it('recognises plain-text AC header (from Jira Cloud ADF conversion)', () => {
+    // adf-converter strips markdown # prefix — heading lands as plain text
+    const text = `
+      Acceptance Criteria
+
+      - User can log in
+      - Invalid token shows 401
+    `;
+    const result = extractRequirements(text);
+    assert.ok(result.length >= 2, `expected ≥2 items, got ${result.length}`);
+  });
+
+  it('recognises Jira Server wiki-markup AC header (h1.–h6.)', () => {
+    const text = `
+      h2. Acceptance Criteria
+
+      - File must be UTF-8 encoded
+      - Duplicate keys must be rejected
+    `;
+    const result = extractRequirements(text);
+    assert.ok(result.length >= 2, `expected ≥2 items, got ${result.length}`);
+  });
+
+  it('recognises AC header with trailing colon', () => {
+    const text = `
+      ## Acceptance Criteria:
+
+      - Must return 200 on success
+    `;
+    const result = extractRequirements(text);
+    assert.ok(result.length >= 1);
+  });
+
   it('extracts requirements from mixed content', () => {
     const text = `
       Background context here.
