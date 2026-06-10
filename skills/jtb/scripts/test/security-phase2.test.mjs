@@ -72,31 +72,30 @@ describe('validateBaseUrl', () => {
   });
 });
 
-// ── H4: attachment downloader — redirect: 'error' blocks mid-flight redirects ─
+// ── H4: attachment downloader — SSRF protection via URL validation ────────────
+// redirect:'error' was removed because Jira Cloud legitimate redirects to CDN/S3
+// would break downloads. SSRF protection is enforced by validating the initial
+// content URL against the configured Jira origin (H3, above) before fetch.
 
 describe('attachment-downloader redirect protection', () => {
   const ENV = { JIRA_BASE_URL: 'https://j.example.com', JIRA_PAT: 'token' };
 
-  it('blocks fetcher redirect to cross-origin by propagating fetch error', async () => {
+  it('SSRF guard: blocks cross-origin attachment URL before fetch is called', async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), 'tl-test-'));
     const ticket = {
       key: 'PROJ-1',
-      attachments: [{ filename: 'a.txt', content: 'https://j.example.com/secure/attachment/1/a.txt', size: 10, mimeType: 'text/plain' }],
+      attachments: [{ filename: 'a.txt', content: 'https://evil.example.com/steal-creds', size: 10, mimeType: 'text/plain' }],
     };
 
-    // Simulate what a real fetch does when redirect:'error' is set and a redirect occurs.
-    const fetcher = async (_url, opts) => {
-      assert.strictEqual(opts.redirect, 'error', 'redirect option must be "error"');
-      // Simulate a redirect response (TypeError in native fetch with redirect:'error')
-      throw new TypeError('Failed to fetch: redirect not allowed');
-    };
+    let fetchCalled = false;
+    const fetcher = async () => { fetchCalled = true; return { ok: true, arrayBuffer: async () => new ArrayBuffer(4) }; };
 
     const results = await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
-    assert.strictEqual(results[0].error, 'Failed to fetch: redirect not allowed');
-    assert.strictEqual(results[0].skipReason, 'error');
+    assert.strictEqual(fetchCalled, false, 'fetcher must never be called for cross-origin URLs');
+    assert.strictEqual(results[0].skipReason, 'ssrf-blocked');
   });
 
-  it('passes redirect:error option to fetcher on normal download', async () => {
+  it('allows same-origin attachment and does not set redirect:error', async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), 'tl-test-'));
     const ticket = {
       key: 'PROJ-2',
@@ -110,6 +109,7 @@ describe('attachment-downloader redirect protection', () => {
     };
 
     await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
-    assert.strictEqual(capturedOpts?.redirect, 'error');
+    assert.notStrictEqual(capturedOpts?.redirect, 'error', 'redirect:error must not be set — Jira CDN redirects must be followable');
+    assert.ok(capturedOpts?.headers?.Authorization, 'auth header sent to Jira origin');
   });
 });
