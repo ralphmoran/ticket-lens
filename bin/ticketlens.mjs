@@ -34,14 +34,25 @@ import { browserLogin } from '../skills/jtb/scripts/lib/browser-login.mjs';
 import { syncProfiles, getApiBase, getConsoleBase } from '../skills/jtb/scripts/lib/sync.mjs';
 import { promptSecret, promptText } from '../skills/jtb/scripts/lib/prompt-helpers.mjs';
 import { checkForUpdate, getUpdateHint } from '../skills/jtb/scripts/lib/update-check.mjs';
-import { incrementInvocation } from '../skills/jtb/scripts/lib/activity-counter.mjs';
+import { incrementInvocation, incrementCommand } from '../skills/jtb/scripts/lib/activity-counter.mjs';
 import { DEFAULT_CONFIG_DIR } from '../skills/jtb/scripts/lib/config.mjs';
+
+const TRACKED_COMMANDS = new Set([
+  'triage', 'fetch', 'get', 'compliance', 'review', 'standup',
+  'pr', 'ledger', 'stats', 'collisions', 'history', 'schedule',
+  'brief', 'sync',
+]);
 
 const args = process.argv.slice(2);
 const { command, args: cmdArgs } = parseCommand(args);
 
 // Best-effort invocation counter — non-fatal
 try { incrementInvocation(DEFAULT_CONFIG_DIR); } catch { /* non-fatal */ }
+
+// Per-command + per-flag tracking — non-fatal
+if (TRACKED_COMMANDS.has(command)) {
+  try { incrementCommand(DEFAULT_CONFIG_DIR, command, cmdArgs); } catch { /* non-fatal */ }
+}
 
 // Fire-and-forget: silently refresh license.json at startup if >7 days since last validation
 revalidateIfStale();

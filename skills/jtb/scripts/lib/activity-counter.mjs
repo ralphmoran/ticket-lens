@@ -24,7 +24,7 @@ function read(configDir) {
   try {
     return JSON.parse(fs.readFileSync(path.join(configDir, ACTIVITY_FILE), 'utf8'));
   } catch {
-    return { fetch_count: 0, triage_run_count: 0, invocations: 0 };
+    return { fetch_count: 0, triage_run_count: 0, invocations: 0, commands: {} };
   }
 }
 
@@ -60,11 +60,35 @@ export function incrementInvocation(configDir) {
 }
 
 /**
+ * Records one invocation of a named command, plus each --flag present in
+ * flagArgs. Flag values are stripped so "--depth=2" tracks as "--depth".
+ *
+ * @param {string}   configDir
+ * @param {string}   command   - e.g. "triage", "fetch"
+ * @param {string[]} flagArgs  - the raw args passed to the command
+ */
+export function incrementCommand(configDir, command, flagArgs = []) {
+  const data = read(configDir);
+  if (!data.commands) data.commands = {};
+  if (!data.commands[command]) data.commands[command] = { count: 0 };
+
+  data.commands[command].count += 1;
+
+  for (const arg of flagArgs) {
+    if (!arg.startsWith('-')) continue;
+    const flag = arg.replace(/=.*$/, '');
+    data.commands[command][flag] = (data.commands[command][flag] ?? 0) + 1;
+  }
+
+  write(configDir, data);
+}
+
+/**
  * Returns the current counters and resets them to zero.
  * Call only after a confirmed successful push.
  *
  * @param {string} configDir
- * @returns {{ fetch_count: number, triage_run_count: number, invocations: number }}
+ * @returns {{ fetch_count: number, triage_run_count: number, invocations: number, commands: object }}
  */
 export function readAndResetActivity(configDir) {
   const data = read(configDir);
@@ -72,7 +96,8 @@ export function readAndResetActivity(configDir) {
     fetch_count:      data.fetch_count      ?? 0,
     triage_run_count: data.triage_run_count ?? 0,
     invocations:      data.invocations      ?? 0,
+    commands:         data.commands         ?? {},
   };
-  write(configDir, { fetch_count: 0, triage_run_count: 0, invocations: 0 });
+  write(configDir, { fetch_count: 0, triage_run_count: 0, invocations: 0, commands: {} });
   return snapshot;
 }
