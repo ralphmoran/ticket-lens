@@ -84,6 +84,23 @@ export function incrementCommand(configDir, command, flagArgs = []) {
 }
 
 /**
+ * Accumulates estimated tokens saved for a named command.
+ * Called from fetch-ticket.mjs after assembling the brief.
+ * Best-effort — swallows write errors like all other counters.
+ *
+ * @param {string} configDir
+ * @param {string} command   - e.g. "fetch"
+ * @param {number} tokens    - estimated tokens saved (brief.length / 4)
+ */
+export function recordTokensSaved(configDir, command, tokens) {
+  const data = read(configDir);
+  if (!data.commands) data.commands = {};
+  if (!data.commands[command]) data.commands[command] = { count: 0 };
+  data.commands[command].tokens_saved = (data.commands[command].tokens_saved ?? 0) + tokens;
+  write(configDir, data);
+}
+
+/**
  * Returns the current counters and resets them to zero.
  * Call only after a confirmed successful push.
  *

@@ -24,6 +24,7 @@ import { handleUnknownFlags } from './lib/arg-validator.mjs';
 import { TICKET_KEY_PATTERN } from './lib/cli.mjs';
 import { downloadAttachments } from './lib/attachment-downloader.mjs';
 import { readBriefCache, writeBriefCache, readSummaryCache, writeSummaryCache, briefCacheAge, BRIEF_TTL_MS } from './lib/brief-cache.mjs';
+import { recordTokensSaved } from './lib/activity-counter.mjs';
 import { readCliToken } from './lib/cli-auth.mjs';
 import { resolveTemplate } from './lib/template-resolver.mjs';
 import { parseAge } from './lib/cache-manager.mjs';
@@ -1054,6 +1055,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
         }
       }
 
+      recordTokensSaved(configDir, 'fetch', Math.round(brief.length / 4));
       printFn(brief + '\n');
       return;
     }
@@ -1241,6 +1243,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     }
   }
 
+  recordTokensSaved(configDir, 'fetch', Math.round(output.length / 4));
   printFn(output + '\n');
 
   // Contextual upsell: after a deep traversal with a substantial graph, nudge toward --summarize
