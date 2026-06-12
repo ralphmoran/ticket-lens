@@ -11,6 +11,7 @@ import { styleTriageSummary } from './lib/styled-assembler.mjs';
 import { resolveConnection, loadProfiles, saveProfile } from './lib/profile-resolver.mjs';
 import { resolveAdapter } from './lib/resolve-adapter.mjs';
 import { incrementTriageRun, readAndResetActivity } from './lib/activity-counter.mjs';
+import { DEFAULT_CONFIG_DIR } from './lib/config.mjs';
 import { writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { resolve as resolvePath, dirname } from 'node:path';
 import { createSpinner } from './lib/spinner.mjs';
@@ -485,7 +486,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const cliToken = opts.cliToken ?? readCliToken(configDir) ?? null;
     const printFn = opts.print ?? ((s) => process.stdout.write(s));
     let cliActivity = null;
-    try { cliActivity = readAndResetActivity(configDir); } catch { /* non-fatal */ }
+    try { cliActivity = readAndResetActivity(configDir ?? DEFAULT_CONFIG_DIR); } catch { /* non-fatal */ }
     await pushFn({
       sorted,
       rawTicketMap,
