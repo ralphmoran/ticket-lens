@@ -12,7 +12,7 @@ import { extractCodeReferences } from './lib/code-ref-parser.mjs';
 import { assembleBrief } from './lib/brief-assembler.mjs';
 import { styleBrief } from './lib/styled-assembler.mjs';
 import { resolveConnection, loadProfiles, loadCredentials, saveProfile } from './lib/profile-resolver.mjs';
-import { buildJiraEnv } from './lib/config.mjs';
+import { buildJiraEnv, DEFAULT_CONFIG_DIR } from './lib/config.mjs';
 import { resolveAdapter } from './lib/resolve-adapter.mjs';
 import { createSession } from './lib/banner.mjs';
 import { classifyError } from './lib/error-classifier.mjs';
@@ -1055,7 +1055,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
         }
       }
 
-      recordTokensSaved(configDir, 'fetch', Math.round(brief.length / 4));
+      recordTokensSaved(configDir ?? DEFAULT_CONFIG_DIR, 'fetch', Math.round(brief.length / 4));
       printFn(brief + '\n');
       return;
     }
@@ -1243,7 +1243,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     }
   }
 
-  recordTokensSaved(configDir, 'fetch', Math.round(output.length / 4));
+  recordTokensSaved(configDir ?? DEFAULT_CONFIG_DIR, 'fetch', Math.round(output.length / 4));
   printFn(output + '\n');
 
   // Contextual upsell: after a deep traversal with a substantial graph, nudge toward --summarize
