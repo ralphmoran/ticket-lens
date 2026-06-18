@@ -3,6 +3,7 @@ import { randomBytes }       from 'node:crypto';
 import { spawn }             from 'node:child_process';
 import { hostname as osHostname } from 'node:os';
 import { getConsoleBase }    from './sync.mjs';
+import { readLicense }       from './license.mjs';
 
 const PORT_MIN    = 49152;
 const PORT_MAX    = 65535;
@@ -102,20 +103,34 @@ export function startLocalServer(port, expectedState, timeoutMs = TIMEOUT_MS) {
 /**
  * Full browser login flow. Opens the authorize page in the default browser,
  * waits for the callback, and returns the plaintext CLI token.
+ *
+ * @param {object}   [opts]
+ * @param {Function} [opts.readLicenseFn]  - Injectable license reader (default: readLicense)
+ * @param {Function} [opts.openBrowserFn]  - Injectable browser opener (default: openBrowser)
+ * @param {Function} [opts.startServerFn]  - Injectable local server (default: startLocalServer)
  */
-export async function browserLogin() {
+export async function browserLogin({
+  readLicenseFn = () => { try { return readLicense(); } catch { return null; } },
+  openBrowserFn = openBrowser,
+  startServerFn = (port, state) => startLocalServer(port, state),
+} = {}) {
   const state    = generateState();
   const port     = pickPort();
   const hostname = osHostname();
 
   const consoleBase = getConsoleBase();
-  const url = `${consoleBase}/console/auth/cli`
+  let url = `${consoleBase}/console/auth/cli`
     + `?port=${port}`
     + `&state=${encodeURIComponent(state)}`
     + `&hostname=${encodeURIComponent(hostname)}`;
 
-  const tokenPromise = startLocalServer(port, state);
-  openBrowser(url);
+  const license = readLicenseFn();
+  if (license?.email) {
+    url += `&email=${encodeURIComponent(license.email)}`;
+  }
+
+  const tokenPromise = startServerFn(port, state);
+  openBrowserFn(url);
 
   return tokenPromise;
 }

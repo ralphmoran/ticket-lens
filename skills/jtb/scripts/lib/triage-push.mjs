@@ -8,7 +8,7 @@ import { isLicensed } from './license.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { apiBase, warnIfInsecure } from './api-utils.mjs';
 import { buildTicketPayload } from './ticket-payload.mjs';
-import { red, green, yellow, bold, cyan } from './ansi.mjs';
+import { red, green, yellow, bold, cyan, dim } from './ansi.mjs';
 
 const PUSH_PATH = '/v1/triage/push';
 
@@ -109,12 +109,12 @@ export async function pushTriageSnapshot({
     }
 
     if (res.status === 401) {
-      print(`  ${red('✗')} Session expired. Run ${cyan('ticketlens login')} to reconnect.\n`);
+      print(`  ${red('✗')} Session expired.\n  ${dim('→ Run')} ${cyan('ticketlens login')} ${dim('to reconnect.')}\n\n`);
       return { ok: false, status: res.status };
     }
 
     if (res.status === 403) {
-      print(`  ${red('✗')} ${bold('--push')} requires a Team license\n`);
+      print(`  ${red('✗')} ${bold('--push')} requires a Team license.\n  ${dim('→ Log in with a team account:')} ${cyan('ticketlens login')}\n\n`);
       return { ok: false, status: res.status };
     }
 

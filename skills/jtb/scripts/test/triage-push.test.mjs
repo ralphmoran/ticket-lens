@@ -801,6 +801,21 @@ describe('pushTriageSnapshot — cliToken guard (new auth)', () => {
     assert.ok(lines.some(l => l.includes('ticketlens login')), `got: ${lines.join(' ')}`);
   });
 
+  it('401 response is styled as two-line format', async () => {
+    const lines = [];
+    await pushTriageSnapshot({
+      sorted: [],
+      cliToken: 'tl_test',
+      fetcher: async () => ({ ok: false, status: 401 }),
+      print: s => lines.push(s),
+    });
+    const output = lines.join('');
+    // Line 1: "Session expired." (period, not em-dash)
+    assert.ok(output.includes('Session expired.'), `missing period in: ${output}`);
+    // Line 2: indented arrow on a new line before "ticketlens login"
+    assert.ok(output.includes('\n  '), `missing newline+indent in: ${output}`);
+  });
+
   it('sends Authorization: Bearer <cliToken> in header', async () => {
     let headers;
     await pushTriageSnapshot({

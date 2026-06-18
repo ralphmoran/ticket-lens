@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { generateState, pickPort, startLocalServer } from '../lib/browser-login.mjs';
+import { generateState, pickPort, startLocalServer, browserLogin } from '../lib/browser-login.mjs';
 
 // ── generateState ──────────────────────────────────────────────────────────
 
@@ -161,5 +161,29 @@ describe('startLocalServer', () => {
     assert.equal(res.status, 400);
 
     await silenced;
+  });
+});
+
+// ── browserLogin ───────────────────────────────────────────────────────────
+
+describe('browserLogin', () => {
+  it('appends email to URL when license has email', async () => {
+    let capturedUrl;
+    await browserLogin({
+      readLicenseFn: () => ({ email: 'user@test.local' }),
+      openBrowserFn: (url) => { capturedUrl = url; },
+      startServerFn: () => Promise.resolve('tl_faketoken'),
+    });
+    assert.ok(capturedUrl.includes('email=user%40test.local'), `expected email in URL, got: ${capturedUrl}`);
+  });
+
+  it('does not append email to URL when no license stored', async () => {
+    let capturedUrl;
+    await browserLogin({
+      readLicenseFn: () => null,
+      openBrowserFn: (url) => { capturedUrl = url; },
+      startServerFn: () => Promise.resolve('tl_faketoken'),
+    });
+    assert.ok(!capturedUrl.includes('email='), `expected no email in URL, got: ${capturedUrl}`);
   });
 });
