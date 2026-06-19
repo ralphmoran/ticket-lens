@@ -122,7 +122,8 @@ export async function browserLogin({
   let url = `${consoleBase}/console/auth/cli`
     + `?port=${port}`
     + `&state=${encodeURIComponent(state)}`
-    + `&hostname=${encodeURIComponent(hostname)}`;
+    + `&hostname=${encodeURIComponent(hostname)}`
+    + `&fresh=1`;
 
   const license = readLicenseFn();
   if (license?.email) {
