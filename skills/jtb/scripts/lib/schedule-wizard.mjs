@@ -107,7 +107,7 @@ export async function runScheduleWizard({
 
     if (!res.ok) {
       if (res.status === 401) {
-        print(`  ${red('✗')} Session expired. Run ${cyan('ticketlens login')} to reconnect.\n`);
+        print(`  ${red('✗')} Session expired — run ${cyan('ticketlens login')} to reconnect.\n\n`);
         return { ok: false, status: 401 };
       }
       if (res.status === 403) {

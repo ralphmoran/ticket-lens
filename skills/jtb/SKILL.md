@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.9.19 -->
+<!-- jtb-skill-version: 0.10.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -297,3 +297,14 @@ Forces a fresh fetch from Jira, bypassing the local brief cache (4-hour TTL by d
 ### --no-attachments
 
 Skip downloading and reading ticket attachments. Speeds up the fetch for tickets with large or irrelevant file attachments.
+
+### Team Jira config auto-sync (Pro/Team)
+
+Pro and Team members whose manager has configured a shared Jira profile in the Console (`/console/admin/jira`) receive the config automatically — no manual setup needed.
+
+- **On `ticketlens login`:** team config is fetched and written to the local profile immediately after authentication.
+- **On every fetch (including `/jtb TICKET-KEY`):** the CLI silently checks whether the team config has been updated since last sync. If it has, the new config is applied and a banner is printed to stderr after the brief — e.g. `! Team Jira config updated by your manager.`
+- **On `ticketlens sync`:** explicitly force-pulls the latest team config.
+- **If the team config is removed by the manager:** the CLI retains local credentials and shows a `! Team Jira config removed by manager — using local credentials.` banner.
+
+This is background behaviour — no action needed from you as an AI assistant. The banner may appear in CLI output; it is informational only.

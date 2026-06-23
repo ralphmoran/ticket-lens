@@ -2,7 +2,7 @@ import { readCliToken } from './cli-auth.mjs';
 import { formatCollisions } from './collision-reporter.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { apiBase, warnIfInsecure } from './api-utils.mjs';
-import { red, yellow, bold, cyan } from './ansi.mjs';
+import { red, yellow, bold, cyan, dim } from './ansi.mjs';
 
 const COLLISIONS_PATH = '/v1/triage/collisions';
 
@@ -41,11 +41,11 @@ export async function runCollisions(args = [], opts = {}) {
 
     if (!res.ok) {
       if (res.status === 401) {
-        print(`  ${red('✗')} Session expired. Run ${cyan('ticketlens login')} to reconnect.\n`);
+        print(`  ${red('✗')} Session expired — run ${cyan('ticketlens login')} to reconnect.\n\n`);
         return { ok: false, status: 401 };
       }
       if (res.status === 403) {
-        print(`  ${red('✗')} ${bold('collisions')} requires a Team license\n`);
+        print(`  ${red('✗')} ${bold('collisions')} requires a Team license.\n  ${dim('→ Log in with a team account:')} ${cyan('ticketlens login')}\n\n`);
         return { ok: false, status: 403 };
       }
       print(`  ${yellow('⚠')} Failed to fetch collisions (${res.status})\n`);

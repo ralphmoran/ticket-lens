@@ -36,6 +36,7 @@ import { promptSecret, promptText } from '../skills/jtb/scripts/lib/prompt-helpe
 import { checkForUpdate, getUpdateHint } from '../skills/jtb/scripts/lib/update-check.mjs';
 import { incrementInvocation, incrementCommand } from '../skills/jtb/scripts/lib/activity-counter.mjs';
 import { DEFAULT_CONFIG_DIR } from '../skills/jtb/scripts/lib/config.mjs';
+import { applyTeamConfigOnLogin, checkTeamJiraConfigUpdate } from '../skills/jtb/scripts/lib/team-jira-sync.mjs';
 
 const TRACKED_COMMANDS = new Set([
   'triage', 'fetch', 'get', 'compliance', 'review', 'standup',
@@ -72,12 +73,24 @@ process.on('exit', () => {
 });
 
 switch (command) {
-  case 'fetch':
-    runFetch(cmdArgs).catch(err => {
+  case 'fetch': {
+    // Flow 2: fire team config check concurrently; banner shown after brief output
+    const _teamCheck = checkTeamJiraConfigUpdate().catch(() => null);
+    runFetch(cmdArgs).then(async () => {
+      const tcResult = await _teamCheck;
+      if (tcResult?.banner) {
+        const s = createStyler({ isTTY: process.stderr.isTTY });
+        process.stderr.write(`\n  ${s.yellow('!')} ${tcResult.banner}\n`);
+      } else if (tcResult?.deleted) {
+        const s = createStyler({ isTTY: process.stderr.isTTY });
+        process.stderr.write(`\n  ${s.yellow('!')} Team Jira config removed by manager — using local credentials.\n`);
+      }
+    }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
     });
     break;
+  }
 
   case 'triage':
     runTriage(cmdArgs).catch(err => {
@@ -481,6 +494,13 @@ switch (command) {
 
       saveCliToken(token);
       process.stderr.write(`\x1b[A\r\x1b[2K  ${s.green('✔')} Logged in.\n`);
+
+      // Flow 1: pull team Jira config for Pro/Team members (silently skipped for Free)
+      const tcLogin = await applyTeamConfigOnLogin().catch(() => null);
+      if (tcLogin?.ok) {
+        process.stderr.write(`  ${s.dim(`○ Team Jira config applied for ${s.cyan(tcLogin.groupName)}.`)}\n`);
+      }
+
       process.stderr.write(`\n  Run ${s.cyan('ticketlens sync')} to pull your connections.\n\n`);
     })().catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
@@ -539,6 +559,14 @@ switch (command) {
         for (const name of needsCredentials) {
           process.stderr.write(`    ${s.dim('○')} ${s.cyan(name)} — run: ${s.bold(`ticketlens config --profile=${name}`)}\n`);
         }
+      }
+
+      // Flow 3: also pull team Jira config update (Pro/Team); silently skipped for Free
+      const tcSync = await checkTeamJiraConfigUpdate().catch(() => null);
+      if (tcSync?.banner) {
+        process.stderr.write(`\n  ${s.yellow('!')} ${tcSync.banner}\n`);
+      } else if (tcSync?.deleted) {
+        process.stderr.write(`\n  ${s.yellow('!')} Team Jira config removed by manager — using local credentials.\n`);
       }
 
       process.stderr.write('\n');
