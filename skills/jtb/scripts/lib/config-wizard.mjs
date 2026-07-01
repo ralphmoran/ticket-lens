@@ -19,6 +19,7 @@ import { DEFAULT_BRIEF_TTL } from './brief-cache.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { visLen, SERVER_AUTH_TYPES, promptText, promptSecret, promptYN } from './prompt-helpers.mjs';
 import { isLicensed } from './license.mjs';
+import { siteBase } from './api-utils.mjs';
 
 const RETRY_OPTIONS = [
   { label: 'Retry',             sublabel: 'Try again — same credentials (e.g. VPN just connected)', value: 'retry' },
@@ -384,7 +385,7 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
     );
     cacheTtl = ttlInput || curTtl;
   } else {
-    stream.write(`  ${s.dim('○')} Brief cache TTL: ${s.dim('4h')}  ${s.dim('·')}  ${s.cyan('Pro')} ${s.dim('unlocks configurable TTL → ticketlens.dev/pricing')}\n`);
+    stream.write(`  ${s.dim('○')} Brief cache TTL: ${s.dim('4h')}  ${s.dim('·')}  ${s.cyan('Pro')} ${s.dim(`unlocks configurable TTL → ${siteBase()}/#pricing`)}\n`);
   }
 
   // ── Save ───────────────────────────────────────────────────────────────────

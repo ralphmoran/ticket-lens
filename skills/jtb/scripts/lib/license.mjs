@@ -4,6 +4,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { createStyler } from './ansi.mjs';
+import { siteBase } from './api-utils.mjs';
 
 // Mixed into the HMAC key so that knowing the license key alone is not sufficient
 // to forge a valid signature — an attacker also needs this constant from the source.
@@ -14,7 +15,7 @@ const LICENSE_SECRET_FILE = 'license-hmac-secret.json';
 const REVALIDATION_DAYS = 7;   // attempt background revalidation after this many days
 const GRACE_DAYS = 30;          // treat license as invalid if not revalidated within this window
 const MS_PER_DAY = 86400000;
-const UPGRADE_URL = 'https://ticketlens.dev/pricing';
+const upgradeUrl = () => `${siteBase()}/#pricing`;
 
 const ANSI_RE_LIC = /\x1b\[[0-9;]*m|\x1b\]8;[^\x07]*\x07/g;
 const visLen = (s) => s.replace(ANSI_RE_LIC, '').length;
@@ -138,7 +139,8 @@ export function showUpgradePrompt(requiredTier, featureFlag, { stream = process.
   const bc = (t) => s.dim(t);
 
   const featureLine = padInner(` ${s.yellow('◆')} ${s.bold(featureFlag)} requires ${s.bold(s.cyan(tier))}`, W);
-  const upgradeLine = padInner(`  ${s.dim('Upgrade:')}  ${s.link(UPGRADE_URL, s.cyan(UPGRADE_URL))}`, W);
+  const url = upgradeUrl();
+  const upgradeLine = padInner(`  ${s.dim('Upgrade:')}  ${s.link(url, s.cyan(url))}`, W);
   const activateLine = padInner(`  ${s.dim('Or run:')}   ${s.dim('ticketlens activate <KEY>')}`, W);
   const blank = ' '.repeat(W);
 

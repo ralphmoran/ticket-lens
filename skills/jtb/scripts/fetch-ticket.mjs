@@ -987,6 +987,15 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const licensedFn = opts.isLicensed ?? isLicensed;
   const upgradeFn = opts.showUpgradePrompt ?? showUpgradePrompt;
 
+  // Fail-fast: check Pro gate before any network call for Pro-only flags
+  if (args.includes('--summarize') || args.includes('--handoff')) {
+    if (!licensedFn('pro', configDir)) {
+      upgradeFn('pro', args.includes('--handoff') ? '--handoff' : '--summarize');
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   const noCache = args.includes('--no-cache');
 
   // Resolve brief cache TTL: configurable for Pro tier only, else fixed 4h default

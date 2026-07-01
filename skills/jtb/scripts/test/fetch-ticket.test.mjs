@@ -374,6 +374,21 @@ describe('--summarize flag', () => {
     assert.equal(prompts[0].tier, 'pro');
   });
 
+  // RED: unlicensed --summarize must exit before any Jira API call is made
+  // --no-cache forces the non-cache path so the Jira fetch runs before the license gate (F2 bug)
+  it('RED: unlicensed --summarize exits before fetcher is called', async () => {
+    let fetcherCalled = false;
+    const trackingFetcher = async (...a) => { fetcherCalled = true; return mockFetcher(...a); };
+    await run(['PROJ-1', '--summarize', '--no-cache'], {
+      env: mockEnv,
+      fetcher: trackingFetcher,
+      isLicensed: () => false,
+      showUpgradePrompt: () => {},
+    });
+    process.exitCode = undefined;
+    assert.equal(fetcherCalled, false, 'fetcher must NOT be called for unlicensed --summarize');
+  });
+
   it('uses cloud path when --summarize --cloud both present', async () => {
     const calls = [];
     await run(['PROJ-1', '--summarize', '--cloud'], {
@@ -1138,6 +1153,21 @@ describe('--handoff flag', () => {
     assert.equal(prompts.length, 1, 'Expected exactly one upgrade prompt');
     assert.equal(prompts[0].tier, 'pro');
     assert.ok(prompts[0].flag.includes('handoff'));
+  });
+
+  // RED: unlicensed --handoff must exit before any Jira API call is made
+  // --no-cache forces the non-cache path so the Jira fetch runs before the license gate (F2 bug)
+  it('RED: unlicensed --handoff exits before fetcher is called', async () => {
+    let fetcherCalled = false;
+    const trackingFetcher = async (...a) => { fetcherCalled = true; return mockFetcher(...a); };
+    await run(['PROD-1234', '--handoff', '--no-cache'], {
+      env: mockEnv,
+      fetcher: trackingFetcher,
+      isLicensed: () => false,
+      showUpgradePrompt: () => {},
+    });
+    process.exitCode = undefined;
+    assert.equal(fetcherCalled, false, 'fetcher must NOT be called for unlicensed --handoff');
   });
 
   it('uses cloud mode when --handoff --cloud both present', async () => {

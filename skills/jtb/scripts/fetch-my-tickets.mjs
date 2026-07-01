@@ -108,6 +108,16 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const licensedFn = opts.isLicensed ?? isLicensed;
   const upgradeFn = opts.showUpgradePrompt ?? showUpgradePrompt;
 
+  // Fail-fast: --push requires a CLI token — check before the triage scan fires
+  if (pushFlag) {
+    const pushToken = opts.cliToken ?? readCliToken(configDir) ?? null;
+    if (!pushToken) {
+      process.stderr.write('Error: --push requires authentication. Run `ticketlens auth login` to connect your account.\n');
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   // --save=FILE: Pro gate + validate path is not a directory
   if (saveArg) {
     if (!licensedFn('pro', configDir)) {

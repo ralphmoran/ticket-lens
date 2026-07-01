@@ -837,6 +837,21 @@ describe('triage --push', () => {
     assert.equal(calls[0].cliToken, 'tl_test_push');
   });
 
+  // RED: --push with no CLI token must exit before triage Jira calls are made
+  it('RED: --push with missing token exits before triage fetcher is called', async () => {
+    let fetcherCallCount = 0;
+    const trackingFetcher = async (...args) => { fetcherCallCount++; return mockFetcher(...args); };
+    await run(['triage', '--push'], {
+      env: mockEnv,
+      fetcher: trackingFetcher,
+      configDir: '/tmp/no-token-dir-red-test',
+      scanFn: () => null,
+      isLicensed: () => true,
+    });
+    process.exitCode = undefined;
+    assert.equal(fetcherCallCount, 0, 'triage fetcher must NOT be called when --push token is absent');
+  });
+
 });
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@
  */
 
 export const DEFAULT_API_BASE = 'http://api.ticketlens.test';
+export const DEFAULT_SITE_BASE = 'https://ticketlens.dev';
 
 // Matches localhost, 127.0.0.1, and any hostname ending in .test or .local,
 // with an optional port — all treated as local-only addresses.
@@ -11,6 +12,10 @@ const LOCAL_HOST_RE = /^https?:\/\/(localhost|127\.0\.0\.1|[^/:]+\.(test|local))
 
 export function apiBase() {
   return process.env?.TICKETLENS_API_URL ?? DEFAULT_API_BASE;
+}
+
+export function siteBase() {
+  return process.env?.TICKETLENS_SITE_URL ?? DEFAULT_SITE_BASE;
 }
 
 export function warnIfInsecure(url, warn) {
