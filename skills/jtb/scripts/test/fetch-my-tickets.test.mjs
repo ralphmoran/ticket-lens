@@ -815,6 +815,7 @@ describe('triage --push', () => {
     await run(['triage', '--push'], {
       env: mockEnv,
       fetcher: mockFetcher,
+      cliToken: 'tl_test_push',
       pushFn: async (opts) => { calls.push(opts); return { ok: true }; },
       scanFn: () => null,
       isLicensed: () => true,
