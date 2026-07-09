@@ -442,6 +442,57 @@ describe('downloadAttachments — CDN redirect (two-step SSRF-safe)', () => {
     assert.equal(result[0].skipReason, 'error');
     assert.ok(result[0].error.includes('ECONNREFUSED'));
   });
+
+  it('blocks CDN redirect whose hostname passes the string check but resolves to a blocked address', async () => {
+    let fetchCalls = 0;
+    const fetcher = async (_url, _opts) => {
+      fetchCalls++;
+      return {
+        ok: false, status: 302,
+        headers: makeHeaders({ location: 'https://cdn.example.com/file.pdf' }),
+        arrayBuffer: async () => new ArrayBuffer(0),
+      };
+    };
+    const lookup = async (hostname) => {
+      if (hostname === 'cdn.example.com') return [{ address: '169.254.169.254', family: 4 }];
+      return [{ address: '93.184.216.34', family: 4 }];
+    };
+    const ticket = makeTicket([makeAttachment({ filename: 'doc.pdf', content: 'https://jira.example.com/attachment/123/doc.pdf' })]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher, lookup, configDir: tmpDir });
+    assert.equal(result[0].skipReason, 'error');
+    assert.ok(result[0].error.includes('blocked address'), `expected "blocked address" in error, got: ${result[0].error}`);
+    assert.equal(fetchCalls, 1, 'probe only — no follow attempt once DNS-blocked');
+  });
+
+  it('blocks a SECOND redirect hop even after the first hop passed validation', async () => {
+    // Jira -> cdn1.example.com (validated safe) -> 169.254.169.254 (must still be blocked)
+    const calls = [];
+    const fetcher = async (url, opts) => {
+      calls.push({ url, redirect: opts?.redirect });
+      if (calls.length === 1) {
+        return { ok: false, status: 302, headers: makeHeaders({ location: 'https://cdn1.example.com/hop2' }), arrayBuffer: async () => new ArrayBuffer(0) };
+      }
+      // Second hop: a host that itself redirects to a blocked address
+      return { ok: false, status: 302, headers: makeHeaders({ location: 'https://169.254.169.254/steal' }), arrayBuffer: async () => new ArrayBuffer(0) };
+    };
+    const ticket = makeTicket([makeAttachment({ filename: 'doc.pdf', content: 'https://jira.example.com/attachment/123/doc.pdf' })]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
+    assert.equal(result[0].skipReason, 'error');
+    assert.ok(result[0].error.includes('blocked'), `expected "blocked" in error, got: ${result[0].error}`);
+    assert.equal(calls.length, 2, 'probe + hop1 fetch only — hop2 target rejected before any third fetch');
+  });
+
+  it('refuses after exceeding the redirect hop cap (rules out an infinite/excessive redirect chain)', async () => {
+    let hop = 0;
+    const fetcher = async (_url, _opts) => {
+      hop++;
+      return { ok: false, status: 302, headers: makeHeaders({ location: `https://cdn${hop}.example.com/next` }), arrayBuffer: async () => new ArrayBuffer(0) };
+    };
+    const ticket = makeTicket([makeAttachment({ filename: 'doc.pdf', content: 'https://jira.example.com/attachment/123/doc.pdf' })]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher, configDir: tmpDir });
+    assert.equal(result[0].skipReason, 'error');
+    assert.ok(result[0].error.includes('redirect'), `expected a redirect-cap error, got: ${result[0].error}`);
+  });
 });
 
 // ─── formatSize ──────────────────────────────────────────────────────────────

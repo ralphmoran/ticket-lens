@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchRemoteLinks, parseStatusChangedAt } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor } from '../lib/jira-client.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -1045,5 +1045,269 @@ describe('parseSprint — via normalizeTicket', () => {
   it('returns null when Cloud array is empty', () => {
     const raw = { key: 'T-1', fields: { summary: 'Test', issuetype: { name: 'Task' }, status: { name: 'Open' }, customfield_10020: [] } };
     assert.equal(normalizeTicket(raw).sprint, null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// guardedFetch — redirect refusal (audit 2026-07-07 §4.1)
+// ---------------------------------------------------------------------------
+function makeHeaders(map = {}) {
+  return { get: (k) => map[k.toLowerCase()] ?? null };
+}
+
+describe('guardedFetch — redirect refusal', () => {
+  it('refuses 302 redirect to blocked metadata endpoint', async () => {
+    let calls = 0;
+    const fetcher = async () => {
+      calls++;
+      return { status: 302, headers: makeHeaders({ location: 'http://169.254.169.254/latest/meta-data' }) };
+    };
+    await assert.rejects(
+      () => guardedFetch('https://jira.example.com/rest/api/2/myself', {}, { fetcher, lookup: null }),
+      /refusing to follow/
+    );
+    assert.equal(calls, 1, 'fetcher must be called exactly once — no follow attempt');
+  });
+
+  it('refuses redirect to ANY host, even a safe-looking one', async () => {
+    const fetcher = async () => ({ status: 302, headers: makeHeaders({ location: 'https://other.example.com/api' }) });
+    await assert.rejects(
+      () => guardedFetch('https://jira.example.com/rest/api/2/myself', {}, { fetcher, lookup: null }),
+      /refusing to follow/
+    );
+    await assert.rejects(
+      () => guardedFetch('https://jira.example.com/rest/api/2/myself', {}, { fetcher, lookup: null }),
+      /check JIRA_BASE_URL/
+    );
+  });
+
+  it('refuses redirect with missing Location header', async () => {
+    const fetcher = async () => ({ status: 302, headers: makeHeaders() });
+    await assert.rejects(
+      () => guardedFetch('https://jira.example.com/rest/api/2/myself', {}, { fetcher, lookup: null }),
+      /unknown host/
+    );
+  });
+
+  it('redirect error contains hostname only — no path, no query', async () => {
+    const fetcher = async () => ({ status: 302, headers: makeHeaders({ location: 'https://evil.example.com/steal?token=SECRET123' }) });
+    try {
+      await guardedFetch('https://jira.example.com/rest/api/2/myself', {}, { fetcher, lookup: null });
+      assert.fail('expected rejection');
+    } catch (err) {
+      assert.ok(err.message.includes('evil.example.com'), 'must name the hostname');
+      assert.ok(!err.message.includes('SECRET123'), 'must not leak query token');
+      assert.ok(!err.message.includes('/steal'), 'must not leak path');
+    }
+  });
+
+  it('sets err.status to the redirect status', async () => {
+    const fetcher = async () => ({ status: 302, headers: makeHeaders({ location: 'https://other.example.com/x' }) });
+    try {
+      await guardedFetch('https://jira.example.com/rest/api/2/myself', {}, { fetcher, lookup: null });
+      assert.fail('expected rejection');
+    } catch (err) {
+      assert.equal(err.status, 302);
+    }
+  });
+
+  it('forces redirect:manual on the underlying fetch', async () => {
+    let capturedOpts;
+    const fetcher = async (_url, opts) => {
+      capturedOpts = opts;
+      return { ok: true, status: 200, json: async () => ({}) };
+    };
+    await guardedFetch('https://jira.example.com/rest/api/2/myself', { headers: { Authorization: 'Bearer x' } }, { fetcher, lookup: null });
+    assert.equal(capturedOpts.redirect, 'manual');
+  });
+
+  it('passes non-redirect responses through untouched', async () => {
+    const sentinel = { ok: true, status: 200, json: async () => ({ foo: 'bar' }) };
+    const fetcher = async () => sentinel;
+    const result = await guardedFetch('https://jira.example.com/rest/api/2/myself', {}, { fetcher, lookup: null });
+    assert.strictEqual(result, sentinel);
+  });
+
+  it('fetchTicket refuses redirects end-to-end', async () => {
+    const ENV = { JIRA_BASE_URL: 'https://jira.example.com', JIRA_PAT: 'tok' };
+    const fetcher = async () => ({ status: 302, headers: makeHeaders({ location: 'https://internal.example.com/x' }) });
+    await assert.rejects(
+      () => fetchTicket('T-1', { env: ENV, fetcher, depth: 0 }),
+      /refusing to follow/
+    );
+  });
+
+  it('fetchCurrentUser refuses redirects end-to-end', async () => {
+    const ENV = { JIRA_BASE_URL: 'https://jira.example.com', JIRA_PAT: 'tok' };
+    const fetcher = async () => ({ status: 302, headers: makeHeaders({ location: 'https://internal.example.com/x' }) });
+    await assert.rejects(
+      () => fetchCurrentUser({ env: ENV, fetcher }),
+      /refusing to follow/
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateResolvedHost — DNS rebinding guard (audit 2026-07-07 §4.1)
+// ---------------------------------------------------------------------------
+describe('validateResolvedHost — DNS rebinding guard', () => {
+  it('throws when hostname resolves to loopback', async () => {
+    const lookup = async () => [{ address: '127.0.0.1', family: 4 }];
+    await assert.rejects(() => validateResolvedHost('sneaky.example.com', lookup), /blocked address/);
+  });
+
+  it('throws when hostname resolves to AWS metadata endpoint', async () => {
+    const lookup = async () => [{ address: '169.254.169.254', family: 4 }];
+    await assert.rejects(() => validateResolvedHost('sneaky2.example.com', lookup), /blocked address/);
+  });
+
+  it('throws when ANY of multiple resolved addresses is blocked', async () => {
+    const lookup = async () => [{ address: '93.184.216.34', family: 4 }, { address: '10.0.0.5', family: 4 }];
+    await assert.rejects(() => validateResolvedHost('multi.example.com', lookup), /blocked address/);
+  });
+
+  it('throws on IPv6 loopback and IPv4-mapped loopback', async () => {
+    const lookupV6 = async () => [{ address: '::1', family: 6 }];
+    await assert.rejects(() => validateResolvedHost('v6.example.com', lookupV6), /blocked address/);
+    const lookupMapped = async () => [{ address: '::ffff:127.0.0.1', family: 6 }];
+    await assert.rejects(() => validateResolvedHost('mapped.example.com', lookupMapped), /blocked address/);
+  });
+
+  it('passes public addresses', async () => {
+    const lookup = async () => [{ address: '93.184.216.34', family: 4 }];
+    await assert.doesNotReject(() => validateResolvedHost('public.example.com', lookup));
+  });
+
+  it('resolver errors fail closed', async () => {
+    const lookup = async () => { throw new Error('ENOTFOUND'); };
+    await assert.rejects(() => validateResolvedHost('missing.example.com', lookup), /ENOTFOUND/);
+  });
+
+  it('no-op when lookup is null', async () => {
+    await assert.doesNotReject(() => validateResolvedHost('anything.invalid', null));
+    const ENV = { JIRA_BASE_URL: 'https://jira.example.com', JIRA_PAT: 'tok' };
+    const fetcher = async () => ({ ok: true, status: 200, json: async () => cloudFixture });
+    await assert.doesNotReject(() => fetchTicket('PROD-1234', { env: ENV, fetcher, depth: 0 }));
+  });
+
+  it('dedupes genuinely concurrent lookups for the same hostname+resolver', async () => {
+    // Two calls in flight at the SAME instant (e.g. Promise.all over linked-ticket
+    // fetches) must share one resolution — this is what the cache exists for.
+    let calls = 0;
+    const lookup = async () => { calls++; return [{ address: '93.184.216.34', family: 4 }]; };
+    await Promise.all([
+      validateResolvedHost('concurrent.example.com', lookup),
+      validateResolvedHost('concurrent.example.com', lookup),
+    ]);
+    assert.equal(calls, 1, 'concurrent calls for the same hostname must dedupe to one lookup');
+  });
+
+  it('re-resolves on sequential calls after the first has settled (closes rebinding window)', async () => {
+    // A cache that never expires would trust the FIRST resolution for the entire
+    // process lifetime — giving a DNS-rebinding attacker the whole CLI run's
+    // wall-clock duration to flip the record, not just a single-request race.
+    let calls = 0;
+    const lookup = async () => { calls++; return [{ address: '93.184.216.34', family: 4 }]; };
+    await validateResolvedHost('sequential.example.com', lookup);
+    await validateResolvedHost('sequential.example.com', lookup);
+    assert.equal(calls, 2, 'a second call after the first settles must re-resolve, not reuse a stale verdict');
+  });
+
+  it('re-resolves and blocks when a hostname rebinds between sequential calls', async () => {
+    let call = 0;
+    const lookup = async () => {
+      call++;
+      return call === 1
+        ? [{ address: '93.184.216.34', family: 4 }]   // first call: public, passes
+        : [{ address: '127.0.0.1', family: 4 }];       // second call: rebound to loopback
+    };
+    await assert.doesNotReject(() => validateResolvedHost('rebinder.example.com', lookup));
+    await assert.rejects(() => validateResolvedHost('rebinder.example.com', lookup), /blocked address/);
+  });
+
+  it('fetchTicket rejects before fetching when DNS-blocked', async () => {
+    const ENV = { JIRA_BASE_URL: 'https://jira.example.com', JIRA_PAT: 'tok' };
+    let fetcherCalled = false;
+    const fetcher = async () => { fetcherCalled = true; return { ok: true, status: 200, json: async () => cloudFixture }; };
+    const lookup = async () => [{ address: '127.0.0.1', family: 4 }];
+    await assert.rejects(() => fetchTicket('T-1', { env: ENV, fetcher, lookup, depth: 0 }), /blocked address/);
+    assert.equal(fetcherCalled, false, 'fetcher must never be called when DNS validation fails');
+  });
+
+  it('blocks IPv6 ULA fd00::/8 (real-world Docker/K8s/router range)', async () => {
+    const lookup = async () => [{ address: 'fd12:3456:789a::1', family: 6 }];
+    await assert.rejects(() => validateResolvedHost('ula.example.com', lookup), /blocked address/);
+  });
+
+  it('blocks IPv6 link-local across the full fe80::/10 range, not just the fe80 literal', async () => {
+    const lookupFe90 = async () => [{ address: 'fe90::1', family: 6 }];
+    await assert.rejects(() => validateResolvedHost('linklocal1.example.com', lookupFe90), /blocked address/);
+    const lookupFeb0 = async () => [{ address: 'feb0::1', family: 6 }];
+    await assert.rejects(() => validateResolvedHost('linklocal2.example.com', lookupFeb0), /blocked address/);
+  });
+
+  it('blocks the full 0.0.0.0/8 range, not just the literal 0.0.0.0', async () => {
+    const lookup = async () => [{ address: '0.1.2.3', family: 4 }];
+    await assert.rejects(() => validateResolvedHost('zero.example.com', lookup), /blocked address/);
+  });
+
+  it('blocks 100.64.0.0/10 Carrier-Grade NAT range', async () => {
+    const lookup = async () => [{ address: '100.70.1.1', family: 4 }];
+    await assert.rejects(() => validateResolvedHost('cgn.example.com', lookup), /blocked address/);
+  });
+
+  it('does not over-block addresses just outside the CGN range', async () => {
+    const lookupBelow = async () => [{ address: '100.63.1.1', family: 4 }];
+    await assert.doesNotReject(() => validateResolvedHost('below-cgn.example.com', lookupBelow));
+    const lookupAbove = async () => [{ address: '100.128.1.1', family: 4 }];
+    await assert.doesNotReject(() => validateResolvedHost('above-cgn.example.com', lookupAbove));
+  });
+});
+
+describe('validateBaseUrl / isSafeRedirectUrl — blocklist coverage', () => {
+  it('allows a normal public HTTPS hostname (regression guard)', () => {
+    assert.doesNotThrow(() => validateBaseUrl('https://jira.example.com'));
+    assert.equal(isSafeRedirectUrl('https://cdn.example.com/file.pdf'), true);
+  });
+
+  it('blocks IPv6 ULA fd00::/8', () => {
+    assert.throws(() => validateBaseUrl('https://[fd12:3456:789a::1]'), /blocked/);
+    assert.equal(isSafeRedirectUrl('https://[fd12:3456:789a::1]/x'), false);
+  });
+
+  it('blocks fc-prefixed ULA addresses beyond the literal fc00', () => {
+    assert.throws(() => validateBaseUrl('https://[fc01::1]'), /blocked/);
+  });
+
+  it('blocks the full fe80::/10 link-local range', () => {
+    assert.throws(() => validateBaseUrl('https://[fe90::1]'), /blocked/);
+    assert.throws(() => validateBaseUrl('https://[feb0::1]'), /blocked/);
+  });
+
+  it('blocks the full 0.0.0.0/8 range', () => {
+    assert.throws(() => validateBaseUrl('https://0.1.2.3'), /blocked/);
+  });
+
+  it('blocks 100.64.0.0/10 Carrier-Grade NAT range and allows addresses just outside it', () => {
+    assert.throws(() => validateBaseUrl('https://100.70.1.1'), /blocked/);
+    assert.doesNotThrow(() => validateBaseUrl('https://100.63.1.1'));
+    assert.doesNotThrow(() => validateBaseUrl('https://100.128.1.1'));
+  });
+
+  it('blocks localhost with a trailing FQDN dot', () => {
+    assert.throws(() => validateBaseUrl('https://localhost.'), /blocked/);
+    assert.equal(isSafeRedirectUrl('https://localhost./x'), false);
+  });
+});
+
+describe('defaultLookupFor — shared lookup-default helper', () => {
+  it('returns the real resolver when the fetcher is globalThis.fetch', () => {
+    const fn = defaultLookupFor(globalThis.fetch);
+    assert.equal(typeof fn, 'function');
+  });
+
+  it('returns null when the fetcher is a mock', async () => {
+    const mockFetch = async () => ({});
+    assert.equal(defaultLookupFor(mockFetch), null);
   });
 });

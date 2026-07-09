@@ -6,24 +6,43 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { buildAuthHeader } from './jira-client.mjs';
+import { buildAuthHeader, isSafeRedirectUrl, validateResolvedHost, defaultLookupFor } from './jira-client.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 const MAX_ATTACHMENTS = 20;
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_REDIRECT_HOPS = 2;
 
-// Blocks redirect targets to private/internal addresses (SSRF via redirect).
-// Mirrors BLOCKED_PATTERNS in jira-client.mjs; kept local to avoid coupling.
-const BLOCKED_REDIRECT_PATTERNS = [
-  /^127\./, /^10\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./,
-  /^169\.254\./, /^0\.0\.0\.0$/, /^::1$/, /^::ffff:/i, /^fc00:/i, /^fe80:/i, /^localhost$/i,
-];
-
-function isSafeRedirectUrl(url) {
-  let parsed;
-  try { parsed = new URL(url); } catch { return false; }
-  if (parsed.protocol !== 'https:') return false;
-  const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
-  return !BLOCKED_REDIRECT_PATTERNS.some(re => re.test(hostname));
+/**
+ * DNS-validates the initial URL, then follows any redirect chain manually,
+ * re-validating (blocklist + DNS) EVERY hop — not just the first.
+ * `redirect:'follow'` on the first hop's target would let that host issue a
+ * second, unvalidated redirect straight through (audit 2026-07-07 §4.1
+ * code-review remediation). Auth headers are only ever sent on the initial
+ * request — every hop after that is auth-less, matching Jira Cloud's
+ * presigned-URL CDN redirect model.
+ */
+async function followValidatedRedirects(initialUrl, fetcher, lookup, headers) {
+  let url = initialUrl;
+  await validateResolvedHost(new URL(url).hostname, lookup);
+  let response = await fetcher(url, { headers, redirect: 'manual' });
+  let hops = 0;
+  while (response.status >= 300 && response.status < 400) {
+    hops++;
+    if (hops > MAX_REDIRECT_HOPS) {
+      throw new Error(`Too many redirects (>${MAX_REDIRECT_HOPS}) following ${initialUrl}`);
+    }
+    const location = response.headers?.get?.('location');
+    if (!location) throw new Error('Redirect without Location header');
+    const redirectUrl = new URL(location, url).href;
+    if (!isSafeRedirectUrl(redirectUrl)) {
+      throw new Error(`Redirect to blocked host (${new URL(redirectUrl).hostname}) rejected`);
+    }
+    await validateResolvedHost(new URL(redirectUrl).hostname, lookup);
+    url = redirectUrl;
+    // Safe CDN/S3 redirect — follow without auth (presigned URLs are self-authorizing)
+    response = await fetcher(url, { redirect: 'manual' });
+  }
+  return response;
 }
 
 /**
@@ -41,6 +60,7 @@ export async function downloadAttachments(ticket, opts = {}) {
   const {
     env = process.env,
     fetcher = globalThis.fetch,
+    lookup = defaultLookupFor(fetcher),
     configDir = DEFAULT_CONFIG_DIR,
     noCache = false,
     onProgress = null,
@@ -98,23 +118,7 @@ export async function downloadAttachments(ticket, opts = {}) {
       onProgress?.(`  download  ${a.filename}`);
       try {
         const headers = buildAuthHeader(env);
-        // Probe with redirect:'manual' to intercept any redirect before following it.
-        // Validates the redirect target against BLOCKED_REDIRECT_PATTERNS so a
-        // Jira-origin URL that redirects to a private IP (e.g. 169.254.x.x) is rejected.
-        const probe = await fetcher(a.content, { headers, redirect: 'manual' });
-        let response;
-        if (probe.status >= 300 && probe.status < 400) {
-          const location = probe.headers?.get?.('location');
-          if (!location) throw new Error('Redirect without Location header');
-          const redirectUrl = new URL(location, a.content).href;
-          if (!isSafeRedirectUrl(redirectUrl)) {
-            throw new Error(`Redirect to blocked host (${new URL(redirectUrl).hostname}) rejected`);
-          }
-          // Safe CDN/S3 redirect — follow without auth (presigned URLs are self-authorizing)
-          response = await fetcher(redirectUrl, { redirect: 'follow' });
-        } else {
-          response = probe;
-        }
+        const response = await followValidatedRedirects(a.content, fetcher, lookup, headers);
         if (!response.ok) throw new Error(`HTTP ${response.status} (${response.statusText})`);
         const buffer = await response.arrayBuffer();
         fs.writeFileSync(localPath, Buffer.from(buffer));
