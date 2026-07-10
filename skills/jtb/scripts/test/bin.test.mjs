@@ -1,16 +1,23 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const binPath = join(__dirname, '..', '..', '..', '..', 'bin', 'ticketlens.mjs');
+const pkgPath = join(__dirname, '..', '..', '..', '..', 'package.json');
 
 describe('bin/ticketlens.mjs', () => {
   it('file exists', () => {
     assert.ok(existsSync(binPath), `bin/ticketlens.mjs not found at ${binPath}`);
+  });
+
+  it('package.json exposes both "ticketlens" and "tl" bin entries pointing at the same file', () => {
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+    assert.equal(pkg.bin.ticketlens, 'bin/ticketlens.mjs');
+    assert.equal(pkg.bin.tl, 'bin/ticketlens.mjs');
   });
 
   it('--help exits 0 and mentions ticketlens', () => {

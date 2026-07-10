@@ -1,6 +1,20 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildJiraEnv } from '../lib/config.mjs';
+import { buildJiraEnv, getVersion, getPackageMeta } from '../lib/config.mjs';
+
+describe('getPackageMeta', () => {
+  it('returns version matching getVersion()', () => {
+    assert.equal(getPackageMeta().version, getVersion());
+  });
+
+  it('returns a non-empty author', () => {
+    assert.ok(getPackageMeta().author.length > 0);
+  });
+
+  it('returns a repository string referencing ticket-lens', () => {
+    assert.match(getPackageMeta().repository, /ticket-lens/);
+  });
+});
 
 describe('buildJiraEnv', () => {
   it('uses PAT auth when conn.pat is set', () => {

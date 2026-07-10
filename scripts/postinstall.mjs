@@ -12,6 +12,7 @@ import { homedir } from 'node:os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SKILL_SRC = join(__dirname, '..', 'skills', 'jtb', 'SKILL.md');
+const OWN_BIN = join(__dirname, '..', 'bin', 'ticketlens.mjs');
 
 if (!existsSync(SKILL_SRC)) process.exit(0);
 
@@ -59,4 +60,37 @@ for (const { label, path } of TARGETS) {
 if (updated === 0 && skipped === TARGETS.length) {
   console.log('  ℹ /jtb skill not installed in any known location.');
   console.log('    To install: ticketlens update-skill');
+}
+
+// First-run banner + tl-alias status. Best-effort: npm >=7 hides this output
+// unless the user passes --foreground-scripts, so the guaranteed channel is
+// the first bare `tl`/`ticketlens` run added in a later phase. Never throws —
+// a broken banner must not break the install.
+try {
+  const { renderWordmark } = await import('../skills/jtb/scripts/lib/wordmark.mjs');
+  const { checkAliasStatus } = await import('../skills/jtb/scripts/lib/alias-status.mjs');
+  const { loadProfiles } = await import('../skills/jtb/scripts/lib/profile-resolver.mjs');
+
+  console.log('\n' + renderWordmark({ stream: process.stdout }));
+
+  const profiles = loadProfiles();
+  const isConfigured = !!(profiles && Object.keys(profiles.profiles || {}).length > 0);
+
+  const alias = checkAliasStatus({ selfBinPath: OWN_BIN });
+  if (alias.status === 'active') {
+    console.log('  ✔ Also available as: tl');
+  } else if (alias.status === 'shadowed') {
+    console.log(`  ⚠ 'tl' on this machine points to ${alias.foreignPath} — use 'ticketlens' instead.`);
+  }
+  // alias.status === 'missing' → npm bin dir not on PATH is a broader problem
+  // this script can't fix; saying nothing avoids confusing the user further.
+
+  if (isConfigured) {
+    console.log('  → Try  tl triage');
+  } else {
+    console.log('  → New here? Run  tl  to launch the guided setup.');
+  }
+  console.log('');
+} catch {
+  // Silent on failure — never breaks the install.
 }

@@ -4,6 +4,7 @@ import { isLicensed as defaultIsLicensed } from './license.mjs';
 import { createStyler } from './ansi.mjs';
 import { handleUnknownFlags } from './arg-validator.mjs';
 import { printStatsHelp } from './help.mjs';
+import { siteBase } from './api-utils.mjs';
 
 const FREE_DAYS_CAP = 7;
 const MAX_DAYS = 30;
@@ -115,7 +116,7 @@ export async function runStats(args = [], opts = {}) {
 
   if (!isPro) {
     print(`${bar}\n`);
-    print(`  ${s.dim('💡 Pro unlocks --days up to 30 days · $9/mo →')} ${s.cyan('ticketlens.dev')}\n`);
+    print(`  ${s.dim('💡 Pro unlocks --days up to 30 days · $9/mo →')} ${s.cyan(siteBase().replace(/^https?:\/\//, ''))}\n`);
   }
 
   print('\n');

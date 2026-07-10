@@ -366,6 +366,23 @@ describe('runStats tier gate', () => {
       rmSync(configDir, { recursive: true, force: true });
     }
   });
+
+  it('Free user: upsell line uses the current site domain (ticketlens.app), not a hardcoded literal', async () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'stats-tier-domain-'));
+    let output = '';
+    try {
+      setupConfig(configDir);
+      await runStats(['--profile=testprofile'], {
+        configDir,
+        print: (s) => { output += s; },
+        isLicensed: () => false,
+        metricsCalculator: (_profile, opts) => ({ avgResponseHours: 2.5, medianResponseHours: 2, clearRate: 0.8, triageRunCount: 5, currentUrgency: null, windowDays: opts.days, trendHours: null }),
+      });
+      assert.ok(output.includes('ticketlens.app'), `Expected upsell line to include ticketlens.app. Got: ${output}`);
+    } finally {
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

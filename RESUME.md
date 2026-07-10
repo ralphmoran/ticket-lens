@@ -114,4 +114,4 @@ Detailed project state is persisted in Claude's memory system and auto-loaded at
 
 ## Domain
 
-All code uses `ticketlens.dev`. Do not introduce `ticketlens.io` anywhere. Env files (`.env`, `.env.example`) are intentionally left untouched.
+All code uses `ticketlens.app` (`DEFAULT_SITE_BASE` in `skills/jtb/scripts/lib/api-utils.mjs`). Do not introduce `ticketlens.dev` or `ticketlens.io` anywhere. Env files (`.env`, `.env.example`) are intentionally left untouched.

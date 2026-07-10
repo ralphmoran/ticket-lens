@@ -11,21 +11,35 @@ import { homedir } from 'node:os';
 /** Canonical config directory: ~/.ticketlens */
 export const DEFAULT_CONFIG_DIR = join(homedir(), '.ticketlens');
 
-/** Read package.json version once per process, memoized.
+/** Read package.json once per process, memoized.
  * Uses realpathSync to resolve symlinks before navigating, so the correct
- * package.json is found whether the module is loaded via a symlink or directly.
+ * package.json is found whether the module is loaded via a symlink (e.g.
+ * the npm-managed `tl` bin) or directly.
  */
-let _version;
-export function getVersion() {
-  if (_version) return _version;
+let _pkg;
+function _readPkg() {
+  if (_pkg) return _pkg;
   try {
     const realDir = dirname(realpathSync(fileURLToPath(import.meta.url)));
-    const pkg = JSON.parse(readFileSync(join(realDir, '..', '..', '..', '..', 'package.json'), 'utf8'));
-    _version = pkg.version || '0.0.0';
+    _pkg = JSON.parse(readFileSync(join(realDir, '..', '..', '..', '..', 'package.json'), 'utf8'));
   } catch {
-    _version = '0.0.0';
+    _pkg = {};
   }
-  return _version;
+  return _pkg;
+}
+
+export function getVersion() {
+  return _readPkg().version || '0.0.0';
+}
+
+/** Metadata used by the first-run wordmark banner. */
+export function getPackageMeta() {
+  const pkg = _readPkg();
+  return {
+    version: pkg.version || '0.0.0',
+    author: pkg.author || 'unknown',
+    repository: typeof pkg.repository === 'string' ? pkg.repository : (pkg.repository?.url || ''),
+  };
 }
 
 /** Human-readable relative time from an ISO date string. */

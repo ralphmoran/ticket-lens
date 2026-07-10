@@ -378,12 +378,12 @@ describe('showUpgradePrompt', () => {
     assert.ok(out.includes('--compliance'));
   });
 
-  // LOCK: upgrade prompt always includes a ticketlens.dev URL — domain must survive any URL path change
-  it('LOCK: output contains ticketlens.dev upgrade domain', () => {
+  // LOCK: upgrade prompt always includes a ticketlens.app URL — domain must survive any URL path change
+  it('LOCK: output contains ticketlens.app upgrade domain', () => {
     let out = '';
     const stream = { write: (s) => { out += s; }, isTTY: false };
     showUpgradePrompt('pro', '--summarize', { stream });
-    assert.ok(out.includes('ticketlens.dev'), 'upgrade prompt must include ticketlens.dev URL');
+    assert.ok(out.includes('ticketlens.app'), 'upgrade prompt must include ticketlens.app URL');
   });
 
   // RED: upgrade URL must use /#pricing anchor so the landing page section exists

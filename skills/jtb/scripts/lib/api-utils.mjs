@@ -4,7 +4,7 @@
  */
 
 export const DEFAULT_API_BASE = 'http://api.ticketlens.test';
-export const DEFAULT_SITE_BASE = 'https://ticketlens.dev';
+export const DEFAULT_SITE_BASE = 'https://ticketlens.app';
 
 // Matches localhost, 127.0.0.1, and any hostname ending in .test or .local,
 // with an optional port — all treated as local-only addresses.
