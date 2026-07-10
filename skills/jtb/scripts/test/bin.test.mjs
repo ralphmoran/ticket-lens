@@ -73,6 +73,43 @@ describe('bin/ticketlens.mjs', () => {
     );
   });
 
+  it('--help never launches an interactive wizard even when setup is fresh', () => {
+    const result = spawnSync('node', [binPath, '--help'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
+    });
+    assert.equal(result.status, 0, `Expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const combined = result.stdout + result.stderr;
+    assert.ok(combined.includes('USAGE'), 'must print help, not the init wizard');
+    assert.ok(!combined.includes('Setup Wizard'), 'must not launch the interactive wizard');
+  });
+
+  it('bare invocation on non-TTY prints help regardless of setup state', () => {
+    const result = spawnSync('node', [binPath], {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
+    });
+    assert.equal(result.status, 0, `Expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const combined = result.stdout + result.stderr;
+    assert.ok(combined.includes('USAGE'), 'non-TTY bare invocation must print help');
+  });
+
+  it('bare invocation with CI=true never launches an interactive wizard', () => {
+    const result = spawnSync('node', [binPath], {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, HOME: '/tmp/ticketlens-no-home', CI: 'true' },
+    });
+    assert.equal(result.status, 0, `Expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const combined = result.stdout + result.stderr;
+    assert.ok(combined.includes('USAGE'), 'CI bare invocation must print help');
+  });
+
   it('delete without --yes in non-TTY exits 1 with explanation', () => {
     const result = spawnSync('node', [binPath, 'delete', 'nonexistent-profile'], {
       encoding: 'utf8',

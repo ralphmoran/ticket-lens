@@ -182,6 +182,24 @@ switch (command) {
       break;
     }
 
+    const isInteractive = process.stdin.isTTY && process.stdout.isTTY && !process.env.CI;
+    if (isInteractive) {
+      const { runSetupGuidance } = await import('../skills/jtb/scripts/lib/setup-state.mjs');
+      const s = createStyler({ isTTY: process.stderr.isTTY });
+      const { handled } = await runSetupGuidance({
+        stream: process.stderr,
+        runInit,
+        pendingMessage: state => {
+          const n = state.missingCredentials.length;
+          const msg = n > 0
+            ? `${n} profile${n === 1 ? '' : 's'} need${n === 1 ? 's' : ''} credentials — pick below.`
+            : 'no default profile set — pick one below.';
+          return `  ${s.dim('○')} ${s.dim(msg)}\n`;
+        },
+      });
+      if (handled) break;
+    }
+
     const profileArg = cmdArgs.find(a => a.startsWith('--profile='));
     const profileName = profileArg ? profileArg.split('=')[1] : undefined;
     runConfig({ profileName }).catch(err => {
@@ -691,7 +709,19 @@ switch (command) {
   }
 
   case 'help':
-  default:
+  default: {
+    const isInteractive = args.length === 0 && process.stdin.isTTY && process.stdout.isTTY && !process.env.CI;
+    if (isInteractive) {
+      const { runSetupGuidance } = await import('../skills/jtb/scripts/lib/setup-state.mjs');
+      const s = createStyler({ isTTY: process.stderr.isTTY });
+      const { handled } = await runSetupGuidance({
+        stream: process.stderr,
+        runInit,
+        pendingMessage: () => `  ${s.dim('○ Setup incomplete —')} run ${s.cyan('ticketlens config')} ${s.dim('to finish.')}\n\n`,
+      });
+      if (handled) break;
+    }
     printHelp();
     break;
+  }
 }
