@@ -7,8 +7,8 @@
  *   ticketlens triage [--stale=N] [--status=X,Y] [--profile=NAME]
  */
 
-import { createRequire } from 'node:module';
 import { parseCommand } from '../skills/jtb/scripts/lib/cli.mjs';
+import { renderWordmark } from '../skills/jtb/scripts/lib/wordmark.mjs';
 import { run as runFetch } from '../skills/jtb/scripts/fetch-ticket.mjs';
 import { run as runTriage } from '../skills/jtb/scripts/fetch-my-tickets.mjs';
 import { run as runInit } from '../skills/jtb/scripts/lib/init-wizard.mjs';
@@ -329,12 +329,9 @@ switch (command) {
     });
     break;
 
-  case 'version': {
-    const require = createRequire(import.meta.url);
-    const pkg = require('../package.json');
-    process.stdout.write(`ticketlens v${pkg.version}\n`);
+  case 'version':
+    process.stdout.write(renderWordmark({ stream: process.stdout }));
     break;
-  }
 
   case 'schedule': {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printScheduleHelp(); break; }

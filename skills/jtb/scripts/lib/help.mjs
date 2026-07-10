@@ -3,12 +3,11 @@
  */
 
 import { createStyler } from './ansi.mjs';
-import { getVersion } from './config.mjs';
+import { renderWordmark } from './wordmark.mjs';
 
 export function printHelp({ stream = process.stdout } = {}) {
   const isTTY = stream.isTTY;
   const s = createStyler({ isTTY });
-  const v = getVersion();
 
   // Column targets (visible chars):
   //   USAGE: command portion = 36, so descriptions always start at the same column
@@ -18,9 +17,6 @@ export function printHelp({ stream = process.stdout } = {}) {
   // ANSI codes (s.cyan, s.dim) add invisible bytes — they do NOT affect visible width.
 
   const lines = [
-    '',
-    `  ${s.bold(s.brand('◆ TicketLens'))} ${s.dim(`v${v}`)}`,
-    `  ${s.dim('Stop tab-switching. Start building.')}`,
     '',
     `  ${s.bold('USAGE')}`,
     '',
@@ -125,7 +121,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     '',
   ];
 
-  stream.write(lines.join('\n') + '\n');
+  stream.write(renderWordmark({ stream }) + lines.join('\n') + '\n');
 }
 
 export function printFetchHelp({ stream = process.stdout } = {}) {

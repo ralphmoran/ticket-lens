@@ -15,6 +15,25 @@ function captureHelp(fn) {
   return out;
 }
 
+describe('printHelp — banner', () => {
+  it('TTY + wide terminal: shows the big block-art banner before USAGE', () => {
+    let out = '';
+    const stream = { write: (s) => { out += s; }, isTTY: true, columns: 120 };
+    printHelp({ stream });
+    const bannerIdx = out.indexOf('████████');
+    const taglineIdx = out.indexOf('Stop tab-switching. Start building.');
+    const usageIdx = out.indexOf('USAGE');
+    assert.ok(bannerIdx !== -1, 'must include the block-art banner');
+    assert.ok(taglineIdx > bannerIdx, 'tagline must appear after the banner');
+    assert.ok(usageIdx > taglineIdx, 'USAGE must appear after the tagline');
+  });
+
+  it('non-TTY: still includes the tagline and version (plain fallback)', () => {
+    const out = captureHelp(printHelp);
+    assert.ok(out.includes('Stop tab-switching. Start building.'));
+  });
+});
+
 describe('printHelp — main USAGE', () => {
   it('USAGE section documents the get alias before EXAMPLES', () => {
     const out = captureHelp(printHelp);

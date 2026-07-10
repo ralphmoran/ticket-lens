@@ -19,6 +19,12 @@ describe('renderWordmark', () => {
     assert.ok(plain.includes('npmjs.com/package/ticketlens'), 'must include the npm URL');
     assert.ok(plain.includes('ticketlens.app'), 'must include the website domain');
     assert.ok(plain.includes('Ralph Moran'), 'must include the author');
+    assert.ok(plain.includes('Stop tab-switching. Start building.'), 'must include the tagline');
+  });
+
+  it('non-TTY fallback also includes the tagline', () => {
+    const output = renderWordmark({ stream: makeStream({ isTTY: false }) });
+    assert.ok(output.includes('Stop tab-switching. Start building.'));
   });
 
   it('TTY + wide terminal: every line stays within 80 visible columns', () => {

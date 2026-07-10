@@ -34,6 +34,15 @@ describe('bin/ticketlens.mjs', () => {
     assert.ok(/\d+\.\d+\.\d+/.test(output), 'version output must include a version number');
   });
 
+  it('--version shows the wordmark banner with tagline (non-TTY spawn: plain fallback line)', () => {
+    const result = spawnSync('node', [binPath, '--version'], { encoding: 'utf8', timeout: 5000 });
+    assert.equal(result.status, 0);
+    const output = result.stdout + result.stderr;
+    assert.ok(output.includes('TicketLens'), 'must include the TicketLens wordmark');
+    assert.ok(output.includes('Stop tab-switching. Start building.'), 'must include the tagline');
+    assert.ok(output.includes('github.com/ralphmoran/ticket-lens'), 'must include the GitHub URL');
+  });
+
   it('unknown ticket key exits 1', () => {
     // Passing a key with no connection configured should fail gracefully, not crash
     const result = spawnSync('node', [binPath, 'PROJ-999'], {
