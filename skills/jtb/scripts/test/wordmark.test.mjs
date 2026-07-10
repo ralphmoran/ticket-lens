@@ -27,15 +27,28 @@ describe('renderWordmark', () => {
     assert.ok(output.includes('Stop tab-switching. Start building.'));
   });
 
-  it('TTY + wide terminal: each fact is on its own labeled line', () => {
+  it('TTY + wide terminal: each fact is on its own labeled line, URLs have https:// for terminal auto-linkify', () => {
     const output = renderWordmark({ stream: makeStream({ isTTY: true, columns: 120 }) });
     const plain = stripAnsi(output);
 
     assert.match(plain, new RegExp(`Version:\\s+v${getVersion()}`));
-    assert.match(plain, /GitHub:\s+github\.com\/ralphmoran\/ticket-lens/);
-    assert.match(plain, /npm:\s+npmjs\.com\/package\/ticketlens/);
-    assert.match(plain, /Website:\s+ticketlens\.app/);
+    assert.match(plain, /GitHub:\s+https:\/\/github\.com\/ralphmoran\/ticket-lens/);
+    assert.match(plain, /npm:\s+https:\/\/npmjs\.com\/package\/ticketlens/);
+    assert.match(plain, /Website:\s+https:\/\/ticketlens\.app/);
     assert.match(plain, /Author:\s+Ralph Moran/);
+  });
+
+  it('Website: line uses the actual siteBase() scheme, not a hardcoded https://', () => {
+    const original = process.env.TICKETLENS_SITE_URL;
+    process.env.TICKETLENS_SITE_URL = 'http://ticketlens.test';
+    try {
+      const output = renderWordmark({ stream: makeStream({ isTTY: true, columns: 120 }) });
+      const plain = stripAnsi(output);
+      assert.match(plain, /Website:\s+http:\/\/ticketlens\.test/, 'local-dev http:// override must not be silently upgraded to https://');
+    } finally {
+      if (original === undefined) delete process.env.TICKETLENS_SITE_URL;
+      else process.env.TICKETLENS_SITE_URL = original;
+    }
   });
 
   it('TTY + wide terminal: has a blank line above the block art', () => {
