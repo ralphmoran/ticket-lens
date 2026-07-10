@@ -14,6 +14,7 @@ import { loadProfiles, saveProfile, saveDefault } from './profile-resolver.mjs';
 import { resolveAdapter } from './resolve-adapter.mjs';
 import { promptSelect } from './select-prompt.mjs';
 import { runSwitch } from './profile-switcher.mjs';
+import { renderWordmark } from './wordmark.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { visLen, SERVER_AUTH_TYPES, promptText, promptSecret, promptYN } from './prompt-helpers.mjs';
 
@@ -72,20 +73,11 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR } = {}) {
 }
 
 async function _run({ configDir, stream, s }) {
-  // Welcome box
-  const headerLines = [
-    `${s.bold(s.cyan('◆ TicketLens'))} — Setup Wizard`,
-    `${s.dim("Let's configure your tracker connection.")}`,
-  ];
-  const innerWidth = headerLines.reduce((max, l) => Math.max(max, visLen(l)), 0) + 4;
-  const bc = s.cyan;
-  stream.write('\n');
-  stream.write(bc('╭' + '─'.repeat(innerWidth) + '╮') + '\n');
-  for (const line of headerLines) {
-    const pad = innerWidth - visLen(line) - 1;
-    stream.write(bc('│') + ' ' + line + ' '.repeat(Math.max(0, pad)) + bc('│') + '\n');
-  }
-  stream.write(bc('╰' + '─'.repeat(innerWidth) + '╯') + '\n');
+  // Welcome banner — same wordmark as --help/--version, so a brand-new user's
+  // very first output looks like the same product (Phase 1's renderWordmark()
+  // was built reusable for exactly this; not duplicating the art).
+  stream.write(renderWordmark({ stream }));
+  stream.write(`\n${s.dim("Let's configure your tracker connection.")}\n`);
 
   let addedCount = 0;
   let addAnother = true;

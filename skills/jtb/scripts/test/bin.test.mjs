@@ -83,7 +83,7 @@ describe('bin/ticketlens.mjs', () => {
     assert.equal(result.status, 0, `Expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
     const combined = result.stdout + result.stderr;
     assert.ok(combined.includes('USAGE'), 'must print help, not the init wizard');
-    assert.ok(!combined.includes('Setup Wizard'), 'must not launch the interactive wizard');
+    assert.ok(!combined.includes("Let's configure your tracker connection"), 'must not launch the interactive wizard');
   });
 
   it('bare invocation on non-TTY prints help regardless of setup state', () => {
