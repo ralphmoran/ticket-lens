@@ -1,5 +1,8 @@
 name: Tests
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -20,6 +23,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+
+      - name: Generate lockfile for audit (zero-dependency package, no lockfile committed)
+        run: npm install --package-lock-only
+
+      - name: Audit npm dependencies (fail on high/critical only)
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Run tests
         run: npm test
