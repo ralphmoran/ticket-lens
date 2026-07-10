@@ -47,16 +47,18 @@ export function renderWordmark({ stream = process.stdout } = {}) {
   }
 
   const s = envAwareStyler(stream.isTTY);
-  const versionAndRepoLine = [s.dim(`v${version}`), s.dim('·'), s.cyan(repoDisplay), s.dim('·'), s.cyan(NPM_PACKAGE_URL)].join(' ');
-  const siteAndAuthorLine = [s.cyan(siteDisplay), s.dim('·'), s.dim(author)].join(' ');
 
   return [
+    '',
     ...BLOCK_ART.map((line) => s.brand(line)),
     '',
     `  ${s.dim(TAGLINE)}`,
     '',
-    `  ${versionAndRepoLine}`,
-    `  ${siteAndAuthorLine}`,
+    `  ${s.dim('Version:')}  ${s.dim(`v${version}`)}`,
+    `  ${s.dim('GitHub:')}   ${s.cyan(repoDisplay)}`,
+    `  ${s.dim('npm:')}      ${s.cyan(NPM_PACKAGE_URL)}`,
+    `  ${s.dim('Website:')}  ${s.cyan(siteDisplay)}`,
+    `  ${s.dim('Author:')}   ${s.dim(author)}`,
     '',
   ].join('\n') + '\n';
 }

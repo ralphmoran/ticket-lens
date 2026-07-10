@@ -27,6 +27,25 @@ describe('renderWordmark', () => {
     assert.ok(output.includes('Stop tab-switching. Start building.'));
   });
 
+  it('TTY + wide terminal: each fact is on its own labeled line', () => {
+    const output = renderWordmark({ stream: makeStream({ isTTY: true, columns: 120 }) });
+    const plain = stripAnsi(output);
+
+    assert.match(plain, new RegExp(`Version:\\s+v${getVersion()}`));
+    assert.match(plain, /GitHub:\s+github\.com\/ralphmoran\/ticket-lens/);
+    assert.match(plain, /npm:\s+npmjs\.com\/package\/ticketlens/);
+    assert.match(plain, /Website:\s+ticketlens\.app/);
+    assert.match(plain, /Author:\s+Ralph Moran/);
+  });
+
+  it('TTY + wide terminal: has a blank line above the block art', () => {
+    const output = renderWordmark({ stream: makeStream({ isTTY: true, columns: 120 }) });
+    const plain = stripAnsi(output);
+    const firstArtLineIdx = plain.split('\n').findIndex((l) => l.includes('████████'));
+    assert.ok(firstArtLineIdx > 0, 'block art must not be the first line');
+    assert.equal(plain.split('\n')[firstArtLineIdx - 1], '', 'line immediately above the art must be blank');
+  });
+
   it('TTY + wide terminal: every line stays within 80 visible columns', () => {
     const output = renderWordmark({ stream: makeStream({ isTTY: true, columns: 120 }) });
     const plain = stripAnsi(output);
