@@ -182,6 +182,9 @@ switch (command) {
       break;
     }
 
+    const profileArg = cmdArgs.find(a => a.startsWith('--profile='));
+    const profileName = profileArg ? profileArg.split('=')[1] : undefined;
+
     const isInteractive = process.stdin.isTTY && process.stdout.isTTY && !process.env.CI;
     if (isInteractive) {
       const { runSetupGuidance } = await import('../skills/jtb/scripts/lib/setup-state.mjs');
@@ -189,6 +192,8 @@ switch (command) {
       const { handled } = await runSetupGuidance({
         stream: process.stderr,
         runInit,
+        runConfig,
+        profileName,
         pendingMessage: state => {
           const n = state.missingCredentials.length;
           const msg = n > 0
@@ -200,8 +205,6 @@ switch (command) {
       if (handled) break;
     }
 
-    const profileArg = cmdArgs.find(a => a.startsWith('--profile='));
-    const profileName = profileArg ? profileArg.split('=')[1] : undefined;
     runConfig({ profileName }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
@@ -717,7 +720,8 @@ switch (command) {
       const { handled } = await runSetupGuidance({
         stream: process.stderr,
         runInit,
-        pendingMessage: () => `  ${s.dim('○ Setup incomplete —')} run ${s.cyan('ticketlens config')} ${s.dim('to finish.')}\n\n`,
+        runConfig,
+        pendingMessage: () => `  ${s.dim('○ Finishing setup —')} ${s.dim("let's fill in what's missing.")}\n\n`,
       });
       if (handled) break;
     }
