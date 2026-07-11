@@ -37,6 +37,11 @@ describe('parseCommand', () => {
     assert.equal(result.command, 'help');
   });
 
+  it('returns help for --no-input flag (not a fetch attempt on the literal flag text)', () => {
+    const result = parseCommand(['--no-input']);
+    assert.equal(result.command, 'help');
+  });
+
   it('returns version for --version flag', () => {
     const result = parseCommand(['--version']);
     assert.equal(result.command, 'version');

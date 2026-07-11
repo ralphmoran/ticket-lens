@@ -33,39 +33,3 @@ export function detectSetupState({ configDir = DEFAULT_CONFIG_DIR } = {}) {
 
   return { status, profileCount: profileNames.length, missingCredentials, hasDefault, loggedIn, corrupt };
 }
-
-/**
- * Shared first-run routing body for bin/ticketlens.mjs's interactive entry points
- * (bare invocation and `config`). Callers gate the call behind their own cheap
- * `isInteractive` boolean check first, so a non-interactive/CI invocation never
- * pays for this module's dynamic import.
- *
- * `fresh` and `pending` both take action — fresh drops the user into runInit()
- * to create a first profile, pending drops them into runConfig() to fill in
- * what's missing — rather than just printing a hint and leaving the user to
- * type the next command themselves. Returns { handled: true } when the caller
- * should stop; { handled: false } only for `ready` (or when not interactive),
- * where the caller's existing behaviour (printHelp / runConfig) is unchanged.
- */
-export async function runSetupGuidance({ configDir = DEFAULT_CONFIG_DIR, stream, pendingMessage, runInit, runConfig, profileName } = {}) {
-  const state = detectSetupState({ configDir });
-
-  if (state.status === 'fresh') {
-    await runInit().catch(err => {
-      stream.write(`Error: ${err.message}\n`);
-      process.exitCode = 1;
-    });
-    return { handled: true };
-  }
-
-  if (state.status === 'pending') {
-    stream.write(pendingMessage(state));
-    await runConfig({ profileName }).catch(err => {
-      stream.write(`Error: ${err.message}\n`);
-      process.exitCode = 1;
-    });
-    return { handled: true };
-  }
-
-  return { handled: false };
-}

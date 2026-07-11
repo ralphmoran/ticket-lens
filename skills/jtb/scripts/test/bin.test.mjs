@@ -110,6 +110,29 @@ describe('bin/ticketlens.mjs', () => {
     assert.ok(combined.includes('USAGE'), 'CI bare invocation must print help');
   });
 
+  it('--no-input bare invocation prints help, not a fetch attempt on a literal "--no-input" ticket key', () => {
+    const result = spawnSync('node', [binPath, '--no-input'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
+    });
+    assert.equal(result.status, 0, `Expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const combined = result.stdout + result.stderr;
+    assert.ok(combined.includes('USAGE'), 'must print help, not attempt to fetch "--no-input" as a ticket key');
+  });
+
+  it('config --no-input on fresh state falls through to the unchanged dead-end error', () => {
+    const result = spawnSync('node', [binPath, 'config', '--no-input'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
+    });
+    const combined = result.stdout + result.stderr;
+    assert.ok(combined.includes('No profiles configured'), `Expected unchanged dead-end error. Got: ${combined.slice(0, 200)}`);
+  });
+
   it('delete without --yes in non-TTY exits 1 with explanation', () => {
     const result = spawnSync('node', [binPath, 'delete', 'nonexistent-profile'], {
       encoding: 'utf8',

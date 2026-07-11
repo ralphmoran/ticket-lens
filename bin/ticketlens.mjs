@@ -29,14 +29,13 @@ import {
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { runStats } from '../skills/jtb/scripts/lib/run-stats.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
-import { readCliToken, saveCliToken, deleteCliToken } from '../skills/jtb/scripts/lib/cli-auth.mjs';
-import { browserLogin } from '../skills/jtb/scripts/lib/browser-login.mjs';
-import { syncProfiles, getApiBase, getConsoleBase } from '../skills/jtb/scripts/lib/sync.mjs';
-import { promptSecret, promptText } from '../skills/jtb/scripts/lib/prompt-helpers.mjs';
+import { readCliToken, deleteCliToken } from '../skills/jtb/scripts/lib/cli-auth.mjs';
+import { runLogin } from '../skills/jtb/scripts/lib/login-flow.mjs';
+import { syncProfiles, getApiBase } from '../skills/jtb/scripts/lib/sync.mjs';
 import { checkForUpdate, getUpdateHint } from '../skills/jtb/scripts/lib/update-check.mjs';
 import { incrementInvocation, incrementCommand } from '../skills/jtb/scripts/lib/activity-counter.mjs';
 import { DEFAULT_CONFIG_DIR } from '../skills/jtb/scripts/lib/config.mjs';
-import { applyTeamConfigOnLogin, checkTeamJiraConfigUpdate } from '../skills/jtb/scripts/lib/team-jira-sync.mjs';
+import { checkTeamJiraConfigUpdate } from '../skills/jtb/scripts/lib/team-jira-sync.mjs';
 
 const TRACKED_COMMANDS = new Set([
   'triage', 'fetch', 'get', 'compliance', 'review', 'standup',
@@ -184,26 +183,16 @@ switch (command) {
 
     const profileArg = cmdArgs.find(a => a.startsWith('--profile='));
     const profileName = profileArg ? profileArg.split('=')[1] : undefined;
-    const isInteractive = process.stdin.isTTY && process.stdout.isTTY && !process.env.CI;
+    const isInteractive = process.stdin.isTTY && process.stdout.isTTY && !process.env.CI && !cmdArgs.includes('--no-input');
 
     (async () => {
       if (isInteractive) {
-        const { runSetupGuidance } = await import('../skills/jtb/scripts/lib/setup-state.mjs');
-        const s = createStyler({ isTTY: process.stderr.isTTY });
-        const { handled } = await runSetupGuidance({
-          stream: process.stderr,
-          runInit,
-          runConfig,
-          profileName,
-          pendingMessage: state => {
-            const n = state.missingCredentials.length;
-            const msg = n > 0
-              ? `${n} profile${n === 1 ? '' : 's'} need${n === 1 ? 's' : ''} credentials — pick below.`
-              : 'no default profile set — pick one below.';
-            return `  ${s.dim('○')} ${s.dim(msg)}\n`;
-          },
-        });
-        if (handled) return;
+        const { detectSetupState } = await import('../skills/jtb/scripts/lib/setup-state.mjs');
+        if (detectSetupState().status !== 'ready') {
+          const { run: runOnboarding } = await import('../skills/jtb/scripts/lib/onboarding.mjs');
+          await runOnboarding({ stream: process.stderr });
+          return;
+        }
       }
 
       await runConfig({ profileName });
@@ -450,78 +439,7 @@ switch (command) {
     const useManual = cmdArgs.includes('--manual');
 
     (async () => {
-      const s = createStyler({ isTTY: process.stderr.isTTY });
-
-      let token;
-
-      if (useManual) {
-        // ── manual paste flow (CI / headless environments) ──────────────────
-        process.stderr.write(`\n  ${s.bold('TicketLens Login')}\n`);
-        process.stderr.write(`  ${s.dim('─'.repeat(44))}\n`);
-        process.stderr.write(`  ${s.dim(`Generate a CLI token at ${s.cyan(`${getConsoleBase()}/console/account`)}`)}\n`);
-        process.stderr.write(`  ${s.dim('then paste it below.')}\n\n`);
-
-        token = await promptSecret(`CLI Token ${s.dim('(tl_…)')}:`, { stream: process.stderr });
-        if (!token.startsWith('tl_')) {
-          process.stderr.write(`  ${s.red('✖')} Token must start with ${s.dim('tl_')}\n`);
-          process.exitCode = 1;
-          return;
-        }
-      } else {
-        // ── browser flow (default) ────────────────────────────────────────
-        process.stderr.write(`\n  ${s.bold('TicketLens Login')}\n`);
-        process.stderr.write(`  ${s.dim('─'.repeat(44))}\n`);
-        process.stderr.write(`  Opening browser to authorize…\n\n`);
-        process.stderr.write(`  ${s.dim('○ Waiting for authorization (120s)…')}\n`);
-
-        try {
-          token = await browserLogin();
-        } catch (err) {
-          const cancelled = err.message === 'Authorization cancelled';
-          process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} ${cancelled ? 'Login cancelled.' : err.message}\n`);
-          if (!cancelled) {
-            process.stderr.write(`\n  ${s.dim(`Try ${s.cyan('ticketlens login --manual')} to paste a token instead.`)}\n\n`);
-          }
-          process.exitCode = cancelled ? 0 : 1;
-          return;
-        }
-      }
-
-      // ── verify token against API (both flows) ─────────────────────────
-      process.stderr.write(`\n  ${s.dim('○ Verifying token…')}\n`);
-      let res;
-      try {
-        res = await fetch(`${getApiBase()}/v1/profiles`, {
-          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-          signal: AbortSignal.timeout(15000),
-        });
-      } catch {
-        process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} Could not reach ${getApiBase()} — check your connection.\n`);
-        process.exitCode = 1;
-        return;
-      }
-
-      if (res.status === 401) {
-        process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} Invalid token — check the value and try again.\n`);
-        process.exitCode = 1;
-        return;
-      }
-      if (!res.ok) {
-        process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} Server returned ${res.status}. Try again later.\n`);
-        process.exitCode = 1;
-        return;
-      }
-
-      saveCliToken(token);
-      process.stderr.write(`\x1b[A\r\x1b[2K  ${s.green('✔')} Logged in.\n`);
-
-      // Flow 1: pull team Jira config for Pro/Team members (silently skipped for Free)
-      const tcLogin = await applyTeamConfigOnLogin().catch(() => null);
-      if (tcLogin?.ok) {
-        process.stderr.write(`  ${s.dim(`○ Team Jira config applied for ${s.cyan(tcLogin.groupName)}.`)}\n`);
-      }
-
-      process.stderr.write(`\n  Run ${s.cyan('ticketlens sync')} to pull your connections.\n\n`);
+      await runLogin({ manual: useManual });
     })().catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
@@ -719,15 +637,12 @@ switch (command) {
 
     (async () => {
       if (isInteractive) {
-        const { runSetupGuidance } = await import('../skills/jtb/scripts/lib/setup-state.mjs');
-        const s = createStyler({ isTTY: process.stderr.isTTY });
-        const { handled } = await runSetupGuidance({
-          stream: process.stderr,
-          runInit,
-          runConfig,
-          pendingMessage: () => `  ${s.dim('○ Finishing setup —')} ${s.dim("let's fill in what's missing.")}\n\n`,
-        });
-        if (handled) return;
+        const { detectSetupState } = await import('../skills/jtb/scripts/lib/setup-state.mjs');
+        if (detectSetupState().status !== 'ready') {
+          const { run: runOnboarding } = await import('../skills/jtb/scripts/lib/onboarding.mjs');
+          await runOnboarding({ stream: process.stderr });
+          return;
+        }
       }
       printHelp();
     })().catch(err => {

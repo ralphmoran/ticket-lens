@@ -15,8 +15,9 @@ import { resolveAdapter } from './resolve-adapter.mjs';
 import { promptSelect } from './select-prompt.mjs';
 import { runSwitch } from './profile-switcher.mjs';
 import { renderWordmark } from './wordmark.mjs';
+import { printQuickStart } from './quick-start-panel.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
-import { visLen, SERVER_AUTH_TYPES, promptText, promptSecret, promptYN } from './prompt-helpers.mjs';
+import { SERVER_AUTH_TYPES, promptText, promptSecret, promptYN } from './prompt-helpers.mjs';
 
 const RETRY_OPTIONS = [
   { label: 'Retry',             sublabel: 'Try again — same credentials (e.g. VPN just connected)', value: 'retry' },
@@ -52,7 +53,7 @@ async function probeProtocol(host, { stream, s }) {
 
 // ── Main wizard ───────────────────────────────────────────────────────────────
 
-export async function run({ configDir = DEFAULT_CONFIG_DIR } = {}) {
+export async function run({ configDir = DEFAULT_CONFIG_DIR, showBanner = true, showQuickStart = true } = {}) {
   const stream = process.stderr;
   const s = createStyler({ isTTY: stream.isTTY });
 
@@ -66,18 +67,22 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR } = {}) {
   process.on('SIGINT', onSigint);
 
   try {
-    await _run({ configDir, stream, s });
+    await _run({ configDir, stream, s, showBanner, showQuickStart });
   } finally {
     process.removeListener('SIGINT', onSigint);
   }
 }
 
-async function _run({ configDir, stream, s }) {
+async function _run({ configDir, stream, s, showBanner, showQuickStart }) {
   // Welcome banner — same wordmark as --help/--version, so a brand-new user's
   // very first output looks like the same product (Phase 1's renderWordmark()
-  // was built reusable for exactly this; not duplicating the art).
-  stream.write(renderWordmark({ stream }));
-  stream.write(`\n${s.dim("Let's configure your tracker connection.")}\n`);
+  // was built reusable for exactly this; not duplicating the art). Suppressed
+  // when invoked from the onboarding hub, which already showed its own banner
+  // — otherwise the user sees it twice in the fresh-install flow.
+  if (showBanner) {
+    stream.write(renderWordmark({ stream }));
+    stream.write(`\n${s.dim("Let's configure your tracker connection.")}\n`);
+  }
 
   let addedCount = 0;
   let addAnother = true;
@@ -567,25 +572,9 @@ async function _run({ configDir, stream, s }) {
   const profileWord = addedCount === 1 ? '1 profile' : `${addedCount} profiles`;
   stream.write(`\n  ${s.green('✔')} ${profileWord} configured.\n\n`);
 
-  // Quick-start panel
-  const cmds = [
-    ['ticketlens triage',   'Scan your assigned tickets'],
-    ['ticketlens <TICKET-KEY>', 'Fetch a specific ticket'],
-    ['ticketlens switch',   'Switch active profile'],
-    ['ticketlens --help',   'Full command reference'],
-  ];
-  const cmdWidth = cmds.reduce((max, [c]) => Math.max(max, c.length), 0);
-  const cmdRows = cmds.map(([cmd, desc]) =>
-    `  ${s.bold(s.cyan(cmd.padEnd(cmdWidth)))}   ${s.dim(desc)}`
-  );
-  const QTITLE = ' Quick start ';
-  const contentWidth = cmdRows.reduce((max, r) => Math.max(max, visLen(r)), 0);
-  const qWidth = Math.max(contentWidth + 2, QTITLE.length + 4);
-  const qPad = (r) => ' ' + r + ' '.repeat(Math.max(0, qWidth - visLen(r) - 1));
-  const qTitleFill = qWidth - 1 - QTITLE.length;
-  stream.write(bc('╭') + bc('─') + s.bold(s.cyan(QTITLE)) + bc('─'.repeat(Math.max(0, qTitleFill))) + bc('╮') + '\n');
-  stream.write(bc('│') + qPad('') + bc('│') + '\n');
-  for (const r of cmdRows) stream.write(bc('│') + qPad(r) + bc('│') + '\n');
-  stream.write(bc('│') + qPad('') + bc('│') + '\n');
-  stream.write(bc('╰') + bc('─'.repeat(qWidth)) + bc('╯') + '\n\n');
+  // Suppressed when invoked from the onboarding hub, which owns showing this
+  // exactly once after its own menu loop exits — otherwise the user sees it twice.
+  if (showQuickStart) {
+    printQuickStart({ stream, s });
+  }
 }

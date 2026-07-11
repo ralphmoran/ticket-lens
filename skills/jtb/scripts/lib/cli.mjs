@@ -8,7 +8,7 @@ export const TICKET_KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/;
 export function parseCommand(args) {
   const first = args[0];
 
-  if (args.length === 0 || first === '--help' || first === '-h') {
+  if (args.length === 0 || first === '--help' || first === '-h' || first === '--no-input') {
     return { command: 'help', args: [] };
   }
 

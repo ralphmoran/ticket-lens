@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { detectSetupState, runSetupGuidance } from '../lib/setup-state.mjs';
+import { detectSetupState } from '../lib/setup-state.mjs';
 
 let configDir;
 
@@ -128,97 +128,3 @@ describe('detectSetupState', () => {
   });
 });
 
-function fakeStream() {
-  const lines = [];
-  return { write: chunk => lines.push(chunk), lines };
-}
-
-describe('runSetupGuidance', () => {
-  it('routes fresh state into runInit and reports handled: true, without touching runConfig', async () => {
-    const stream = fakeStream();
-    let runInitCalled = false;
-    const runInit = async () => { runInitCalled = true; };
-    const runConfig = async () => { throw new Error('must not be called'); };
-
-    const result = await runSetupGuidance({
-      configDir,
-      stream,
-      runInit,
-      runConfig,
-      pendingMessage: () => 'unused\n',
-    });
-
-    assert.equal(runInitCalled, true);
-    assert.deepEqual(result, { handled: true });
-    assert.deepEqual(stream.lines, []);
-  });
-
-  it('writes the pending message, launches runConfig with the given profileName, and reports handled: true', async () => {
-    writeProfiles(configDir, { profiles: { acme: { baseUrl: 'https://acme.atlassian.net' } } });
-    writeCredentials(configDir, {});
-    const stream = fakeStream();
-    const runInit = async () => { throw new Error('must not be called'); };
-    let runConfigArgs = null;
-    const runConfig = async args => { runConfigArgs = args; };
-
-    const result = await runSetupGuidance({
-      configDir,
-      stream,
-      runInit,
-      runConfig,
-      profileName: 'acme',
-      pendingMessage: state => `pending: ${state.missingCredentials.join(',')}\n`,
-    });
-
-    assert.deepEqual(runConfigArgs, { profileName: 'acme' });
-    assert.deepEqual(result, { handled: true });
-    assert.deepEqual(stream.lines, ['pending: acme\n']);
-  });
-
-  it('writes nothing and reports handled: false when ready, without calling runInit or runConfig', async () => {
-    writeProfiles(configDir, { profiles: { acme: { baseUrl: 'https://acme.atlassian.net' } } });
-    writeCredentials(configDir, { acme: { apiToken: 'tok1' } });
-    const stream = fakeStream();
-    const runInit = async () => { throw new Error('must not be called'); };
-    const runConfig = async () => { throw new Error('must not be called'); };
-
-    const result = await runSetupGuidance({
-      configDir,
-      stream,
-      runInit,
-      runConfig,
-      pendingMessage: () => 'unused\n',
-    });
-
-    assert.deepEqual(result, { handled: false });
-    assert.deepEqual(stream.lines, []);
-  });
-
-  it('reports a failed runInit via the stream and sets exitCode without throwing', async () => {
-    const stream = fakeStream();
-    const runInit = async () => { throw new Error('boom'); };
-    const originalExitCode = process.exitCode;
-
-    const result = await runSetupGuidance({ configDir, stream, runInit, pendingMessage: () => '' });
-
-    assert.deepEqual(result, { handled: true });
-    assert.ok(stream.lines.some(l => l.includes('Error: boom')));
-    assert.equal(process.exitCode, 1);
-    process.exitCode = originalExitCode;
-  });
-
-  it('reports a failed runConfig via the stream and sets exitCode without throwing', async () => {
-    writeProfiles(configDir, { profiles: { acme: { baseUrl: 'https://acme.atlassian.net' } } });
-    writeCredentials(configDir, {});
-    const stream = fakeStream();
-    const runConfig = async () => { throw new Error('boom'); };
-    const originalExitCode = process.exitCode;
-
-    const result = await runSetupGuidance({ configDir, stream, runConfig, pendingMessage: () => '' });
-
-    assert.deepEqual(result, { handled: true });
-    assert.ok(stream.lines.some(l => l.includes('Error: boom')));
-    assert.equal(process.exitCode, 1);
-    process.exitCode = originalExitCode;
-  });
-});
