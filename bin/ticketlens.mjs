@@ -184,28 +184,30 @@ switch (command) {
 
     const profileArg = cmdArgs.find(a => a.startsWith('--profile='));
     const profileName = profileArg ? profileArg.split('=')[1] : undefined;
-
     const isInteractive = process.stdin.isTTY && process.stdout.isTTY && !process.env.CI;
-    if (isInteractive) {
-      const { runSetupGuidance } = await import('../skills/jtb/scripts/lib/setup-state.mjs');
-      const s = createStyler({ isTTY: process.stderr.isTTY });
-      const { handled } = await runSetupGuidance({
-        stream: process.stderr,
-        runInit,
-        runConfig,
-        profileName,
-        pendingMessage: state => {
-          const n = state.missingCredentials.length;
-          const msg = n > 0
-            ? `${n} profile${n === 1 ? '' : 's'} need${n === 1 ? 's' : ''} credentials — pick below.`
-            : 'no default profile set — pick one below.';
-          return `  ${s.dim('○')} ${s.dim(msg)}\n`;
-        },
-      });
-      if (handled) break;
-    }
 
-    runConfig({ profileName }).catch(err => {
+    (async () => {
+      if (isInteractive) {
+        const { runSetupGuidance } = await import('../skills/jtb/scripts/lib/setup-state.mjs');
+        const s = createStyler({ isTTY: process.stderr.isTTY });
+        const { handled } = await runSetupGuidance({
+          stream: process.stderr,
+          runInit,
+          runConfig,
+          profileName,
+          pendingMessage: state => {
+            const n = state.missingCredentials.length;
+            const msg = n > 0
+              ? `${n} profile${n === 1 ? '' : 's'} need${n === 1 ? 's' : ''} credentials — pick below.`
+              : 'no default profile set — pick one below.';
+            return `  ${s.dim('○')} ${s.dim(msg)}\n`;
+          },
+        });
+        if (handled) return;
+      }
+
+      await runConfig({ profileName });
+    })().catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
     });
@@ -714,18 +716,24 @@ switch (command) {
   case 'help':
   default: {
     const isInteractive = args.length === 0 && process.stdin.isTTY && process.stdout.isTTY && !process.env.CI;
-    if (isInteractive) {
-      const { runSetupGuidance } = await import('../skills/jtb/scripts/lib/setup-state.mjs');
-      const s = createStyler({ isTTY: process.stderr.isTTY });
-      const { handled } = await runSetupGuidance({
-        stream: process.stderr,
-        runInit,
-        runConfig,
-        pendingMessage: () => `  ${s.dim('○ Finishing setup —')} ${s.dim("let's fill in what's missing.")}\n\n`,
-      });
-      if (handled) break;
-    }
-    printHelp();
+
+    (async () => {
+      if (isInteractive) {
+        const { runSetupGuidance } = await import('../skills/jtb/scripts/lib/setup-state.mjs');
+        const s = createStyler({ isTTY: process.stderr.isTTY });
+        const { handled } = await runSetupGuidance({
+          stream: process.stderr,
+          runInit,
+          runConfig,
+          pendingMessage: () => `  ${s.dim('○ Finishing setup —')} ${s.dim("let's fill in what's missing.")}\n\n`,
+        });
+        if (handled) return;
+      }
+      printHelp();
+    })().catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
     break;
   }
 }
