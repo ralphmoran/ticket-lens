@@ -10,21 +10,41 @@ export const ANSI_RE = /\x1b\[[0-9;]*m/g;
 export const visLen = (str) => str.replace(ANSI_RE, '').length;
 
 /**
- * Discards any bytes already sitting in stdin's internal buffer.
+ * Discards any bytes already sitting in stdin's internal buffer, plus any
+ * still in flight at the OS file-descriptor level.
  *
  * A raw-mode prompt (promptYN, promptSecret, runRawSelect) consumes exactly
- * one `data` chunk then pauses stdin. If the user's keystrokes arrive as two
- * separate chunks (e.g. "n" then a separate Enter — natural habit, even
- * though Enter isn't required), the second chunk lands after the listener
- * is gone and queues in the paused stream instead of being discarded. The
- * *next* raw-mode prompt to attach a listener receives that stale chunk as
- * its first event, auto-confirming whatever's pre-selected before the user
- * ever sees the prompt. Call this before starting any new raw-mode prompt.
+ * one `data` chunk then calls stdin.pause() — which stops Node from polling
+ * the fd at all. If the user's keystrokes arrive as two separate chunks
+ * (e.g. "n" then a separate Enter — natural habit, even though Enter isn't
+ * required here), the second one almost always arrives *after* pause() has
+ * already run (human reaction time dwarfs a JS tick), so it never reaches
+ * Node's internal buffer — a plain `.read()` drain finds nothing. It sits
+ * unread at the fd until the *next* raw-mode prompt calls resume(), at
+ * which point it's delivered as that prompt's first event, auto-confirming
+ * whatever's pre-selected before the user ever sees the prompt.
+ *
+ * Fix: resume() to reactivate fd polling, then yield to setImmediate (which
+ * runs in the "check" phase, after the event loop's "poll" phase — so any
+ * byte already pending at the fd gets pulled into Node's buffer first),
+ * then drain. Call this — and await it — before starting any new raw-mode
+ * prompt.
  */
 export function flushStdin() {
-  const stdin = process.stdin;
-  if (typeof stdin.read !== 'function') return;
-  while (stdin.read() !== null) { /* discard */ }
+  return new Promise((resolve) => {
+    const stdin = process.stdin;
+    if (typeof stdin.read !== 'function' || typeof stdin.resume !== 'function') {
+      resolve();
+      return;
+    }
+    const wasPaused = typeof stdin.isPaused === 'function' ? stdin.isPaused() : true;
+    stdin.resume();
+    setImmediate(() => {
+      while (stdin.read() !== null) { /* discard */ }
+      if (wasPaused) stdin.pause();
+      resolve();
+    });
+  });
 }
 
 export const SERVER_AUTH_TYPES = [
@@ -58,11 +78,11 @@ export async function promptSecret(label, { stream = process.stderr, existingVal
   const s = createStyler({ isTTY: stream.isTTY });
   while (true) {
     stream.write(`  ${label}  `);
+    await flushStdin();
     const value = await new Promise(res => {
       let buf   = '';
       let stars = 0; // visual asterisk count — may differ from buf.length after a paste
       const stdin = process.stdin;
-      flushStdin();
       stdin.setRawMode(true);
       stdin.resume();
       stdin.setEncoding('utf8');
@@ -150,9 +170,8 @@ export async function promptScheduleAnswers(args = [], { stream = process.stderr
 export function promptYN(question, { stream = process.stderr } = {}) {
   const s = createStyler({ isTTY: stream.isTTY });
   stream.write(`\n  ${question}  ${s.dim('y/N')}  `);
-  return new Promise(res => {
+  return flushStdin().then(() => new Promise(res => {
     const stdin = process.stdin;
-    flushStdin();
     stdin.setRawMode(true);
     stdin.resume();
     stdin.setEncoding('utf8');
@@ -165,5 +184,5 @@ export function promptYN(question, { stream = process.stderr } = {}) {
       res(char === 'y' || char === 'Y');
     }
     stdin.on('data', onData);
-  });
+  }));
 }

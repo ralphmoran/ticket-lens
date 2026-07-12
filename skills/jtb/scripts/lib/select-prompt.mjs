@@ -33,7 +33,8 @@ export function runRawSelect({ count, initialIndex = 0, renderFn, stream = proce
     lineCount = renderFn(selected);
   }
 
-  return new Promise((resolve) => {
+  stream.write('\x1b[?25l');
+  return flushStdin().then(() => new Promise((resolve) => {
     const stdin = process.stdin;
     const wasRaw = stdin.isRaw;
 
@@ -54,14 +55,12 @@ export function runRawSelect({ count, initialIndex = 0, renderFn, stream = proce
       if (key === '\r' || key === '\n') { cleanup(); erase(); resolve(selected); return; }
     }
 
-    stream.write('\x1b[?25l');
-    flushStdin();
     stdin.setRawMode(true);
     stdin.resume();
     stdin.setEncoding('utf8');
     stdin.on('data', onData);
     lineCount = renderFn(selected);
-  });
+  }));
 }
 
 /**
