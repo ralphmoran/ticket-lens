@@ -9,6 +9,24 @@ import { createStyler } from './ansi.mjs';
 export const ANSI_RE = /\x1b\[[0-9;]*m/g;
 export const visLen = (str) => str.replace(ANSI_RE, '').length;
 
+/**
+ * Discards any bytes already sitting in stdin's internal buffer.
+ *
+ * A raw-mode prompt (promptYN, promptSecret, runRawSelect) consumes exactly
+ * one `data` chunk then pauses stdin. If the user's keystrokes arrive as two
+ * separate chunks (e.g. "n" then a separate Enter — natural habit, even
+ * though Enter isn't required), the second chunk lands after the listener
+ * is gone and queues in the paused stream instead of being discarded. The
+ * *next* raw-mode prompt to attach a listener receives that stale chunk as
+ * its first event, auto-confirming whatever's pre-selected before the user
+ * ever sees the prompt. Call this before starting any new raw-mode prompt.
+ */
+export function flushStdin() {
+  const stdin = process.stdin;
+  if (typeof stdin.read !== 'function') return;
+  while (stdin.read() !== null) { /* discard */ }
+}
+
 export const SERVER_AUTH_TYPES = [
   { label: 'PAT  (personal access token)', sublabel: 'Jira Server/DC 8.14+', value: 'pat' },
   { label: 'Basic  (username + password)', sublabel: 'Jira Server/DC older versions', value: 'basic' },
@@ -44,6 +62,7 @@ export async function promptSecret(label, { stream = process.stderr, existingVal
       let buf   = '';
       let stars = 0; // visual asterisk count — may differ from buf.length after a paste
       const stdin = process.stdin;
+      flushStdin();
       stdin.setRawMode(true);
       stdin.resume();
       stdin.setEncoding('utf8');
@@ -133,6 +152,7 @@ export function promptYN(question, { stream = process.stderr } = {}) {
   stream.write(`\n  ${question}  ${s.dim('y/N')}  `);
   return new Promise(res => {
     const stdin = process.stdin;
+    flushStdin();
     stdin.setRawMode(true);
     stdin.resume();
     stdin.setEncoding('utf8');

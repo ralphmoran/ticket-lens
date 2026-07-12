@@ -4,6 +4,7 @@
  */
 
 import { createStyler } from './ansi.mjs';
+import { flushStdin } from './prompt-helpers.mjs';
 
 /**
  * Low-level raw-mode selector. Handles stdin lifecycle, arrow keys, Enter/Esc.
@@ -54,6 +55,7 @@ export function runRawSelect({ count, initialIndex = 0, renderFn, stream = proce
     }
 
     stream.write('\x1b[?25l');
+    flushStdin();
     stdin.setRawMode(true);
     stdin.resume();
     stdin.setEncoding('utf8');
