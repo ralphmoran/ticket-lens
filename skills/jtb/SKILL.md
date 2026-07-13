@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.10.10 -->
+<!-- jtb-skill-version: 0.10.18 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -59,7 +59,7 @@ TicketLens supports two connection methods — check in this order:
 
 **1. Profile config (recommended):** If `~/.ticketlens/profiles.json` exists, no env vars
 are needed. Profile resolution is automatic (by ticket prefix, project path, or `--profile`).
-Setup via `ticketlens init`.
+Setup via `ticketlens init` (`tl init` also works — `tl` is shorthand for `ticketlens`).
 
 **2. Env var fallback:** If no profile config exists, these must be set:
 - `JIRA_BASE_URL` — e.g. `https://yourteam.atlassian.net`

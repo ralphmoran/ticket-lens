@@ -20,6 +20,8 @@ export function printHelp({ stream = process.stdout } = {}) {
     '',
     `  ${s.bold('USAGE')}`,
     '',
+    `    ${s.brand('tl')} ${s.dim('<anything>')}                       Shorthand for ${s.brand('ticketlens')}`,
+    '',
     // Alignment targets (visible chars before description):
     //   Groups 1–2 (auth/setup):          column 40  (command portion ≤ 24)
     //   Group 3 (daily use):              column 42  (longest: "review [--branch=BRANCH]" = 39)

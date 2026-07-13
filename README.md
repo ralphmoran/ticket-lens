@@ -55,7 +55,7 @@ npx ticketlens init
 npx ticketlens CNV1-2
 ```
 
-Tip: running `ticketlens` (no args) or `ticketlens config` before anything is configured also launches guided setup — no dead end. Pass `--no-input` to force non-interactive behavior even in a terminal (scripts, CI).
+Tip: `tl` works everywhere `ticketlens` does — running `tl`/`ticketlens config` before anything is configured also launches guided setup, no dead end. Pass `--no-input` to force non-interactive behavior even in a terminal (scripts, CI).
 
 **Prerequisites:** Node.js >=20
 

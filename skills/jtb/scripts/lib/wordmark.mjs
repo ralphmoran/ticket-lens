@@ -10,6 +10,7 @@ import { siteBase } from './api-utils.mjs';
 
 const NPM_PACKAGE_URL = 'https://npmjs.com/package/ticketlens';
 const TAGLINE = 'Stop tab-switching. Start building.';
+const ALIAS_NOTE = '(alias: tl)';
 const ART_WIDTH = 79;
 
 const BLOCK_ART = [
@@ -47,7 +48,7 @@ export function renderWordmark({ stream = process.stdout } = {}) {
 
   const fitsArt = stream.isTTY && (stream.columns == null || stream.columns >= ART_WIDTH);
   if (!fitsArt) {
-    return `TicketLens v${version} — ${TAGLINE} — ${repoDisplay} · ${NPM_PACKAGE_URL} · ${siteUrl} · ${author}\n`;
+    return `TicketLens v${version} ${ALIAS_NOTE} — ${TAGLINE} — ${repoDisplay} · ${NPM_PACKAGE_URL} · ${siteUrl} · ${author}\n`;
   }
 
   const s = envAwareStyler(stream.isTTY);
@@ -58,7 +59,7 @@ export function renderWordmark({ stream = process.stdout } = {}) {
     '',
     `  ${s.dim(TAGLINE)}`,
     '',
-    `  ${s.dim('Version:')}  ${s.dim(`v${version}`)}`,
+    `  ${s.dim('Version:')}  ${s.dim(`v${version}`)}  ${s.dim(ALIAS_NOTE)}`,
     `  ${s.dim('GitHub:')}   ${s.cyan(repoDisplay)}`,
     `  ${s.dim('npm:')}      ${s.cyan(NPM_PACKAGE_URL)}`,
     `  ${s.dim('Website:')}  ${s.cyan(siteUrl)}`,
