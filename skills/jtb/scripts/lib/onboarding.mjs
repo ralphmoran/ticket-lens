@@ -101,6 +101,43 @@ export function buildMenuItems({ state, profiles, aliasStatus }) {
   };
 }
 
+/**
+ * Sub-menu shown when "Tracker connection" is selected and a default profile
+ * already exists — disambiguates "edit what's there" from "add a new one"
+ * instead of silently launching the add-a-profile wizard (which read as
+ * "starting over" when it fired with no warning).
+ *
+ * @param {object} opts
+ * @param {number} opts.profileCount
+ * @param {string} opts.defaultProfileName
+ */
+export function buildTrackerSubmenuItems({ profileCount, defaultProfileName }) {
+  const items = [
+    {
+      key: 'edit',
+      label: 'Edit connection',
+      sublabel: `Update URL, credentials, or settings for "${defaultProfileName}"`,
+    },
+    {
+      key: 'add',
+      label: 'Add another connection',
+      sublabel: 'Configure a second profile',
+    },
+  ];
+
+  if (profileCount > 1) {
+    items.push({
+      key: 'switch',
+      label: 'Switch active profile',
+      sublabel: `Currently: ${defaultProfileName}`,
+    });
+  }
+
+  items.push({ key: 'back', label: 'Back', sublabel: null });
+
+  return items;
+}
+
 export async function run({ configDir = DEFAULT_CONFIG_DIR, stream = process.stderr } = {}) {
   // Same SIGINT hygiene as init-wizard.mjs:59-71 — restore cursor, exit raw mode.
   function onSigint() {
@@ -136,7 +173,9 @@ async function _run({ configDir, stream }) {
 
   while (true) {
     state = detectSetupState({ configDir });
-    const profiles = loadProfiles(configDir)?.profiles || {};
+    const config = loadProfiles(configDir);
+    const profiles = config?.profiles || {};
+    const defaultProfileName = config?.default || Object.keys(profiles)[0];
     const aliasStatus = checkAliasStatus({ selfBinPath: SELF_BIN_PATH });
     const { items, completedCount, totalCount, aliasWarning } = buildMenuItems({ state, profiles, aliasStatus });
 
@@ -159,10 +198,25 @@ async function _run({ configDir, stream }) {
       // Existing profiles with no default set can't be fixed by adding another
       // profile (init-wizard only offers the switch step right after an add) —
       // route to the switcher directly so this is actually resolvable.
-      if (state.profileCount > 0 && !state.hasDefault) {
+      if (!state.hasDefault) {
         await runSwitch({ configDir, stream });
       } else {
-        await runInit({ configDir, showBanner: false, showQuickStart: false });
+        // A default already exists — ask what "Tracker connection" means here
+        // instead of silently launching the add-a-profile wizard, which read
+        // as the whole flow starting over with no warning.
+        const submenuItems = buildTrackerSubmenuItems({ profileCount: state.profileCount, defaultProfileName });
+        const submenuMenuItems = submenuItems.map(i => ({ label: i.label, sublabel: i.sublabel }));
+        stream.write(`\n  ${s.dim('Tracker connection')}\n`);
+        const subIndex = await promptSelect(submenuMenuItems, { stream });
+        const subSelected = subIndex === null ? null : submenuItems[subIndex];
+        if (subSelected?.key === 'edit') {
+          await runConfig({ configDir });
+        } else if (subSelected?.key === 'add') {
+          await runInit({ configDir, showBanner: false, showQuickStart: false });
+        } else if (subSelected?.key === 'switch') {
+          await runSwitch({ configDir, stream });
+        }
+        // null (Esc) or 'back' -> fall through to the main menu, no-op
       }
     } else if (selected.key === 'credentials') {
       for (const profileName of state.missingCredentials) {

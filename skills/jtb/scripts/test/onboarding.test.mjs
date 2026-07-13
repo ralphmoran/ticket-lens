@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMenuItems } from '../lib/onboarding.mjs';
+import { buildMenuItems, buildTrackerSubmenuItems } from '../lib/onboarding.mjs';
 
 function freshState() {
   return { status: 'fresh', profileCount: 0, missingCredentials: [], hasDefault: false, loggedIn: false, corrupt: false };
@@ -95,5 +95,28 @@ describe('buildMenuItems', () => {
     const missing = buildMenuItems({ state: freshState(), profiles: {}, aliasStatus: { status: 'missing' } });
     assert.equal(active.aliasWarning, null);
     assert.equal(missing.aliasWarning, null);
+  });
+});
+
+describe('buildTrackerSubmenuItems', () => {
+  it('offers edit and add, but not switch, with a single profile', () => {
+    const items = buildTrackerSubmenuItems({ profileCount: 1, defaultProfileName: 'acme' });
+    assert.deepEqual(items.map(i => i.key), ['edit', 'add', 'back']);
+  });
+
+  it('offers switch too when more than one profile exists', () => {
+    const items = buildTrackerSubmenuItems({ profileCount: 2, defaultProfileName: 'acme' });
+    assert.deepEqual(items.map(i => i.key), ['edit', 'add', 'switch', 'back']);
+  });
+
+  it('names the active profile in the edit and switch sublabels', () => {
+    const items = buildTrackerSubmenuItems({ profileCount: 2, defaultProfileName: 'globex' });
+    assert.ok(items.find(i => i.key === 'edit').sublabel.includes('globex'));
+    assert.ok(items.find(i => i.key === 'switch').sublabel.includes('globex'));
+  });
+
+  it('back has no sublabel', () => {
+    const items = buildTrackerSubmenuItems({ profileCount: 1, defaultProfileName: 'acme' });
+    assert.equal(items.find(i => i.key === 'back').sublabel, null);
   });
 });
