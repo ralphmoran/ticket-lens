@@ -188,7 +188,11 @@ switch (command) {
     (async () => {
       if (isInteractive) {
         const { detectSetupState } = await import('../skills/jtb/scripts/lib/setup-state.mjs');
-        if (detectSetupState().status !== 'ready') {
+        // Ready + no explicit --profile= honors the hub's own "Exit" sublabel
+        // promise ("you can rerun this any time: ticketlens config"). An
+        // explicit --profile= is a targeted, scriptable invocation — bypass
+        // the hub and edit that profile directly, unchanged from today.
+        if (detectSetupState().status !== 'ready' || !profileName) {
           const { run: runOnboarding } = await import('../skills/jtb/scripts/lib/onboarding.mjs');
           await runOnboarding({ stream: process.stderr });
           return;
