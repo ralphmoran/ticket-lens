@@ -14,6 +14,7 @@ import { applyTeamConfigOnLogin } from './team-jira-sync.mjs';
 export async function runLogin({
   manual = false,
   stream = process.stderr,
+  showSyncHint = true,
   browserLoginFn = browserLogin,
   fetchFn = globalThis.fetch,
   promptSecretFn = promptSecret,
@@ -91,5 +92,7 @@ export async function runLogin({
     stream.write(`  ${s.dim(`○ Team Jira config applied for ${s.cyan(tcLogin.groupName)}.`)}\n`);
   }
 
-  stream.write(`\n  Run ${s.cyan('ticketlens sync')} to pull your connections.\n\n`);
+  if (showSyncHint) {
+    stream.write(`\n  Run ${s.cyan('ticketlens sync')} to pull your connections.\n\n`);
+  }
 }

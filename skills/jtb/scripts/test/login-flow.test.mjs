@@ -49,6 +49,35 @@ describe('runLogin — manual flow', () => {
     assert.ok(stream.text.includes('Logged in'));
     assert.equal(process.exitCode, originalExitCode);
   });
+
+  it('shows the "run ticketlens sync" hint by default', async () => {
+    const stream = fakeStream();
+    await runLogin({
+      manual: true,
+      stream,
+      promptSecretFn: async () => 'tl_abc123',
+      fetchFn: async () => okResponse(),
+      saveCliTokenFn: () => {},
+      applyTeamConfigOnLoginFn: async () => null,
+    });
+
+    assert.ok(stream.text.includes('ticketlens sync'));
+  });
+
+  it('suppresses the sync hint when showSyncHint is false (hub already prompts to sync)', async () => {
+    const stream = fakeStream();
+    await runLogin({
+      manual: true,
+      stream,
+      showSyncHint: false,
+      promptSecretFn: async () => 'tl_abc123',
+      fetchFn: async () => okResponse(),
+      saveCliTokenFn: () => {},
+      applyTeamConfigOnLoginFn: async () => null,
+    });
+
+    assert.ok(!stream.text.includes('ticketlens sync'));
+  });
 });
 
 describe('runLogin — browser flow', () => {

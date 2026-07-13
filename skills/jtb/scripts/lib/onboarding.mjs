@@ -233,7 +233,9 @@ async function _run({ configDir, stream }) {
     } else if (selected.key === 'ticket-prefixes') {
       await runConfig({ configDir });
     } else if (selected.key === 'console-login') {
-      await runLogin({ stream });
+      // The hub immediately follows up with its own sync prompt below —
+      // login-flow's "run ticketlens sync later" hint would be redundant.
+      await runLogin({ stream, showSyncHint: false });
       if (detectSetupState({ configDir }).loggedIn) {
         const doSync = await promptYN('Pull profiles from the console now?', { stream });
         if (doSync) {
