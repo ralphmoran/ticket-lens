@@ -219,8 +219,14 @@ async function _run({ configDir, stream }) {
         // null (Esc) or 'back' -> fall through to the main menu, no-op
       }
     } else if (selected.key === 'credentials') {
-      for (const profileName of state.missingCredentials) {
-        await runConfig({ configDir, profileName });
+      if (state.missingCredentials.length > 0) {
+        for (const profileName of state.missingCredentials) {
+          await runConfig({ configDir, profileName });
+        }
+      } else {
+        // Nothing missing — let them review/rotate the default profile's
+        // token instead of silently doing nothing.
+        await runConfig({ configDir });
       }
     } else if (selected.key === 'test-connections') {
       await testConnections({ configDir, stream });
