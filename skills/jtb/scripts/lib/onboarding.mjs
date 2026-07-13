@@ -19,7 +19,7 @@ import { run as runInit } from './init-wizard.mjs';
 import { run as runConfig } from './config-wizard.mjs';
 import { runSwitch } from './profile-switcher.mjs';
 import { runLogin } from './login-flow.mjs';
-import { syncProfiles } from './sync.mjs';
+import { syncProfiles, reportSyncResult } from './sync.mjs';
 import { testConnections } from './connection-tester.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 
@@ -238,7 +238,9 @@ async function _run({ configDir, stream }) {
         const doSync = await promptYN('Pull profiles from the console now?', { stream });
         if (doSync) {
           stream.write(`\n  ${s.dim('Syncing...')}\n`);
-          await syncProfiles({ configDir });
+          const result = await syncProfiles({ configDir });
+          stream.write('\x1b[A\r\x1b[2K');
+          reportSyncResult(result, { stream });
         }
       }
     }

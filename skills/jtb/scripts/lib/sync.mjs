@@ -14,6 +14,7 @@ import {
 } from './profile-resolver.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { apiBase } from './api-utils.mjs';
+import { createStyler } from './ansi.mjs';
 
 export const getApiBase     = () => apiBase();
 // Strip the api. subdomain to get the console base URL (e.g. api.ticketlens.app → ticketlens.app)
@@ -119,4 +120,51 @@ export async function syncProfiles({
   }
 
   return { added, updated, unchanged, needsCredentials };
+}
+
+/**
+ * Formats a syncProfiles() result to a stream. Shared by `ticketlens sync`
+ * and the onboarding hub's "Console login" step so both report the same
+ * added/updated/unchanged/needsCredentials/error detail instead of one of
+ * them silently swallowing the result.
+ *
+ * @param {Awaited<ReturnType<typeof syncProfiles>>} result
+ * @param {object} [opts]
+ * @param {NodeJS.WriteStream} [opts.stream=process.stderr]
+ */
+export function reportSyncResult(result, { stream = process.stderr } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+
+  if (result.error === 'no-token') {
+    stream.write(`  ${s.red('✖')} Not logged in. Run ${s.cyan('ticketlens login')} first.\n`);
+    return;
+  }
+  if (result.error === 'unauthorized') {
+    stream.write(`  ${s.red('✖')} Token expired or revoked. Run ${s.cyan('ticketlens login')} to re-authenticate.\n`);
+    return;
+  }
+  if (result.error) {
+    stream.write(`  ${s.red('✖')} Sync failed: ${result.error}\n`);
+    return;
+  }
+
+  const { added, updated, unchanged, needsCredentials } = result;
+  const total = added.length + updated.length + unchanged.length;
+
+  stream.write(`  ${s.green('✔')} Sync complete`);
+  if (total === 0) {
+    stream.write(` — no profiles on console yet.\n`);
+  } else {
+    stream.write(`\n`);
+    if (added.length)     stream.write(`  ${s.dim('+')} ${added.length} added: ${added.map(n => s.cyan(n)).join(', ')}\n`);
+    if (updated.length)   stream.write(`  ${s.dim('↑')} ${updated.length} updated: ${updated.map(n => s.cyan(n)).join(', ')}\n`);
+    if (unchanged.length) stream.write(`  ${s.dim('○')} ${unchanged.length} unchanged\n`);
+  }
+
+  if (needsCredentials.length > 0) {
+    stream.write(`\n  ${s.yellow('!')} These profiles need credentials before they can be used:\n`);
+    for (const name of needsCredentials) {
+      stream.write(`    ${s.dim('○')} ${s.cyan(name)} — run: ${s.bold(`ticketlens config --profile=${name}`)}\n`);
+    }
+  }
 }

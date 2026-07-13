@@ -3,9 +3,18 @@ import assert from 'node:assert/strict';
 import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { Writable } from 'node:stream';
 
-import { syncProfiles, serverToCliProfile, profileNeedsCredentials, getApiBase } from '../lib/sync.mjs';
+import { syncProfiles, serverToCliProfile, profileNeedsCredentials, getApiBase, reportSyncResult } from '../lib/sync.mjs';
 import { saveCliToken } from '../lib/cli-auth.mjs';
+
+function mockStream() {
+  const chunks = [];
+  const s = new Writable({ write(chunk, _enc, cb) { chunks.push(chunk.toString()); cb(); } });
+  s.isTTY = false;
+  s.output = () => chunks.join('');
+  return s;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -288,5 +297,46 @@ describe('syncProfiles', () => {
     assert.equal(getApiBase(), 'http://ticketlens.test');
     if (orig === undefined) delete process.env.TICKETLENS_API_URL;
     else process.env.TICKETLENS_API_URL = orig;
+  });
+});
+
+describe('reportSyncResult', () => {
+  it('reports no-token as a login prompt', () => {
+    const stream = mockStream();
+    reportSyncResult({ error: 'no-token' }, { stream });
+    assert.match(stream.output(), /Not logged in.*ticketlens login/s);
+  });
+
+  it('reports unauthorized as a re-authenticate prompt', () => {
+    const stream = mockStream();
+    reportSyncResult({ error: 'unauthorized' }, { stream });
+    assert.match(stream.output(), /Token expired or revoked.*ticketlens login/s);
+  });
+
+  it('reports a generic error verbatim', () => {
+    const stream = mockStream();
+    reportSyncResult({ error: 'http-500' }, { stream });
+    assert.match(stream.output(), /Sync failed: http-500/);
+  });
+
+  it('reports zero profiles distinctly from a real sync', () => {
+    const stream = mockStream();
+    reportSyncResult({ added: [], updated: [], unchanged: [], needsCredentials: [] }, { stream });
+    assert.match(stream.output(), /Sync complete — no profiles on console yet\./);
+  });
+
+  it('lists added, updated, and unchanged profile names', () => {
+    const stream = mockStream();
+    reportSyncResult({ added: ['acme'], updated: ['globex'], unchanged: ['initech'], needsCredentials: [] }, { stream });
+    const out = stream.output();
+    assert.match(out, /1 added: acme/);
+    assert.match(out, /1 updated: globex/);
+    assert.match(out, /1 unchanged/);
+  });
+
+  it('flags profiles that still need credentials', () => {
+    const stream = mockStream();
+    reportSyncResult({ added: ['acme'], updated: [], unchanged: [], needsCredentials: ['acme'] }, { stream });
+    assert.match(stream.output(), /need credentials.*ticketlens config --profile=acme/s);
   });
 });

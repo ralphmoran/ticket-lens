@@ -31,7 +31,7 @@ import { runStats } from '../skills/jtb/scripts/lib/run-stats.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
 import { readCliToken, deleteCliToken } from '../skills/jtb/scripts/lib/cli-auth.mjs';
 import { runLogin } from '../skills/jtb/scripts/lib/login-flow.mjs';
-import { syncProfiles, getApiBase } from '../skills/jtb/scripts/lib/sync.mjs';
+import { syncProfiles, reportSyncResult, getApiBase } from '../skills/jtb/scripts/lib/sync.mjs';
 import { checkForUpdate, getUpdateHint } from '../skills/jtb/scripts/lib/update-check.mjs';
 import { incrementInvocation, incrementCommand } from '../skills/jtb/scripts/lib/activity-counter.mjs';
 import { DEFAULT_CONFIG_DIR } from '../skills/jtb/scripts/lib/config.mjs';
@@ -467,40 +467,12 @@ switch (command) {
 
       const result = await syncProfiles();
 
-      if (result.error === 'no-token') {
-        process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} Not logged in. Run ${s.cyan('ticketlens login')} first.\n\n`);
-        process.exitCode = 1;
-        return;
-      }
-      if (result.error === 'unauthorized') {
-        process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} Token expired or revoked. Run ${s.cyan('ticketlens login')} to re-authenticate.\n\n`);
-        process.exitCode = 1;
-        return;
-      }
+      process.stderr.write('\x1b[A\r\x1b[2K');
+      reportSyncResult(result, { stream: process.stderr });
       if (result.error) {
-        process.stderr.write(`\x1b[A\r\x1b[2K  ${s.red('✖')} Sync failed: ${result.error}\n\n`);
+        process.stderr.write('\n');
         process.exitCode = 1;
         return;
-      }
-
-      const { added, updated, unchanged, needsCredentials } = result;
-      const total = added.length + updated.length + unchanged.length;
-
-      process.stderr.write(`\x1b[A\r\x1b[2K  ${s.green('✔')} Sync complete`);
-      if (total === 0) {
-        process.stderr.write(` — no profiles on console yet.\n`);
-      } else {
-        process.stderr.write(`\n`);
-        if (added.length)     process.stderr.write(`  ${s.dim('+')} ${added.length} added: ${added.map(n => s.cyan(n)).join(', ')}\n`);
-        if (updated.length)   process.stderr.write(`  ${s.dim('↑')} ${updated.length} updated: ${updated.map(n => s.cyan(n)).join(', ')}\n`);
-        if (unchanged.length) process.stderr.write(`  ${s.dim('○')} ${unchanged.length} unchanged\n`);
-      }
-
-      if (needsCredentials.length > 0) {
-        process.stderr.write(`\n  ${s.yellow('!')} These profiles need credentials before they can be used:\n`);
-        for (const name of needsCredentials) {
-          process.stderr.write(`    ${s.dim('○')} ${s.cyan(name)} — run: ${s.bold(`ticketlens config --profile=${name}`)}\n`);
-        }
       }
 
       // Flow 3: also pull team Jira config update (Pro/Team); silently skipped for Free
