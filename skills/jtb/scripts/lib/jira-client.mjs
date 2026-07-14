@@ -318,6 +318,50 @@ export async function fetchStatuses(opts = {}) {
   return [...new Set(raw.map(s => s.name))].sort();
 }
 
+/**
+ * Lists projects visible to the authenticated user as [{key, name}], key-sorted.
+ * v2 (Server/DC): GET /project returns the full array in one response.
+ * v3 (Cloud): GET /project/search is paginated — walked until isLast, capped
+ * at MAX_PROJECT_PAGES to bound the walk against a misbehaving server.
+ */
+export async function fetchProjects(opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
+
+  async function getJson(url) {
+    const fetchOpts = { headers };
+    if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+    const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
+    if (!response.ok) {
+      const err = new Error(`Jira API error ${response.status} fetching projects`);
+      err.status = response.status;
+      throw err;
+    }
+    return response.json();
+  }
+
+  const projects = [];
+  if (apiVersion >= 3) {
+    const MAX_PROJECT_PAGES = 10;
+    const PAGE_SIZE = 50;
+    let startAt = 0;
+    for (let page = 0; page < MAX_PROJECT_PAGES; page++) {
+      const params = new URLSearchParams({ startAt: String(startAt), maxResults: String(PAGE_SIZE) });
+      const raw = await getJson(`${baseUrl}/rest/api/3/project/search?${params}`);
+      const values = raw.values ?? [];
+      for (const p of values) projects.push({ key: p.key, name: p.name ?? '' });
+      if (raw.isLast || values.length === 0) break;
+      startAt += values.length;
+    }
+  } else {
+    const raw = await getJson(`${baseUrl}/rest/api/2/project`);
+    for (const p of raw) projects.push({ key: p.key, name: p.name ?? '' });
+  }
+  return projects.sort((a, b) => a.key.localeCompare(b.key));
+}
+
 export async function searchTickets(jql, opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), maxResults = 50, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false, allowPrivateIp = false } = opts;
   validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor } from '../lib/jira-client.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -675,6 +675,99 @@ describe('fetchStatuses', () => {
         return true;
       }
     );
+  });
+});
+
+describe('fetchProjects', () => {
+  const ENV = { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' };
+
+  it('v2 uses /rest/api/2/project and returns key-sorted {key, name} pairs', async () => {
+    let capturedUrl = '';
+    const mockFetch = async (url) => {
+      capturedUrl = url;
+      return {
+        ok: true,
+        json: async () => [
+          { key: 'ZETA', name: 'Zeta App' },
+          { key: 'ALPHA', name: 'Alpha App' },
+        ],
+      };
+    };
+    const result = await fetchProjects({ env: ENV, fetcher: mockFetch, apiVersion: 2 });
+    assert.ok(capturedUrl.includes('/rest/api/2/project'), `Expected v2 URL, got: ${capturedUrl}`);
+    assert.deepStrictEqual(result, [
+      { key: 'ALPHA', name: 'Alpha App' },
+      { key: 'ZETA', name: 'Zeta App' },
+    ]);
+  });
+
+  it('v3 uses /rest/api/3/project/search and paginates until isLast', async () => {
+    const urls = [];
+    const pages = [
+      { values: [{ key: 'AAA', name: 'A' }], isLast: false },
+      { values: [{ key: 'BBB', name: 'B' }], isLast: true },
+    ];
+    const mockFetch = async (url) => {
+      urls.push(url);
+      return { ok: true, json: async () => pages[urls.length - 1] };
+    };
+    const result = await fetchProjects({ env: ENV, fetcher: mockFetch, apiVersion: 3 });
+    assert.equal(urls.length, 2, 'should request a second page when isLast is false');
+    assert.ok(urls[0].includes('/rest/api/3/project/search'), `Expected v3 search URL, got: ${urls[0]}`);
+    assert.ok(urls[1].includes('startAt=1'), `second page should advance startAt, got: ${urls[1]}`);
+    assert.deepStrictEqual(result.map(p => p.key), ['AAA', 'BBB']);
+  });
+
+  it('v3 pagination stops at the page cap even if the server never says isLast', async () => {
+    let calls = 0;
+    const mockFetch = async () => {
+      calls++;
+      return { ok: true, json: async () => ({ values: [{ key: `P${calls}`, name: '' }], isLast: false }) };
+    };
+    await fetchProjects({ env: ENV, fetcher: mockFetch, apiVersion: 3 });
+    assert.ok(calls <= 10, `pagination must be capped (made ${calls} requests)`);
+  });
+
+  it('v3 stops when a page returns no values', async () => {
+    let calls = 0;
+    const mockFetch = async () => {
+      calls++;
+      return { ok: true, json: async () => ({ values: [], isLast: false }) };
+    };
+    const result = await fetchProjects({ env: ENV, fetcher: mockFetch, apiVersion: 3 });
+    assert.equal(calls, 1);
+    assert.deepStrictEqual(result, []);
+  });
+
+  it('throws with err.status on HTTP error and does not leak statusText', async () => {
+    const mockFetch = async () => ({ ok: false, status: 403, statusText: 'Forbidden secret detail' });
+    await assert.rejects(
+      () => fetchProjects({ env: ENV, fetcher: mockFetch }),
+      (err) => {
+        assert.equal(err.status, 403, 'fetchProjects must set err.status for error-classifier routing');
+        assert.ok(!err.message.includes('secret detail'), 'statusText must not appear in error message');
+        return true;
+      }
+    );
+  });
+
+  it('validates the base URL (SSRF guard) before fetching', async () => {
+    let fetched = false;
+    const mockFetch = async () => { fetched = true; return { ok: true, json: async () => [] }; };
+    await assert.rejects(
+      () => fetchProjects({ env: { JIRA_BASE_URL: 'https://169.254.169.254', JIRA_PAT: 'tok' }, fetcher: mockFetch }),
+    );
+    assert.equal(fetched, false, 'must reject private/metadata IPs before any request');
+  });
+
+  it('passes AbortSignal to fetcher when timeoutMs is set', async () => {
+    let capturedSignal;
+    const spyFetch = async (_url, opts) => {
+      capturedSignal = opts?.signal;
+      return { ok: true, json: async () => [] };
+    };
+    await fetchProjects({ env: ENV, fetcher: spyFetch, timeoutMs: 5000 });
+    assert.ok(capturedSignal instanceof AbortSignal, 'fetchProjects must pass AbortSignal to fetcher');
   });
 });
 

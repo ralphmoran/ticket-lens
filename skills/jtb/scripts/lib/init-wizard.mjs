@@ -9,7 +9,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { createStyler } from './ansi.mjs';
 import { createSession } from './banner.mjs';
 import { classifyError } from './error-classifier.mjs';
-import { fetchCurrentUser, fetchStatuses } from './jira-client.mjs';
+import { fetchCurrentUser, fetchStatuses, fetchProjects } from './jira-client.mjs';
 import { loadProfiles, saveProfile, saveDefault } from './profile-resolver.mjs';
 import { resolveAdapter } from './resolve-adapter.mjs';
 import { promptSelect } from './select-prompt.mjs';
@@ -18,6 +18,7 @@ import { renderWordmark } from './wordmark.mjs';
 import { printQuickStart } from './quick-start-panel.mjs';
 import { DEFAULT_CONFIG_DIR, hostnameOf } from './config.mjs';
 import { SERVER_AUTH_TYPES, promptText, promptSecret, promptYN } from './prompt-helpers.mjs';
+import { pickTicketPrefixes, pickTriageStatuses, DEFAULT_TRIAGE_STATUSES } from './wizard-pickers.mjs';
 
 const RETRY_OPTIONS = [
   { label: 'Retry',             sublabel: 'Try again — same credentials (e.g. VPN just connected)', value: 'retry' },
@@ -468,13 +469,20 @@ async function _run({ configDir, stream, s, showBanner, showQuickStart }) {
       // ── Optional settings ───────────────────────────────────────────────────
       stream.write(`\n  ${s.dim('──── Optional  (press Enter to skip) ────')}\n\n`);
 
-      // Ticket prefixes
-      const prefixInput = await promptText(
-        s.dim('Ticket prefixes') + s.dim('  (e.g. PROJ,OPS):'), { stream }
-      );
-      const ticketPrefixes = prefixInput
-        ? prefixInput.split(',').map(v => v.trim().toUpperCase()).filter(Boolean)
-        : [];
+      // Ticket prefixes — picked from the instance's project list; free-text
+      // fallback when the picker can't run (non-TTY, fetch failure, Esc)
+      let ticketPrefixes = await pickTicketPrefixes({
+        fetchProjects: () => fetchProjects({ env, apiVersion, allowPrivateIp: isTrustedForCurrentUrl() }),
+        stream,
+      });
+      if (ticketPrefixes === null) {
+        const prefixInput = await promptText(
+          s.dim('Ticket prefixes') + s.dim('  (e.g. PROJ,OPS):'), { stream }
+        );
+        ticketPrefixes = prefixInput
+          ? prefixInput.split(',').map(v => v.trim().toUpperCase()).filter(Boolean)
+          : [];
+      }
 
       // Project path (single — used for auto-profile detection from cwd)
       const home = homedir();
@@ -507,45 +515,55 @@ async function _run({ configDir, stream, s, showBanner, showQuickStart }) {
         }
       }
 
-      // Triage statuses — validate against Jira's actual status names
-      const DEFAULT_TRIAGE = 'In Progress, Code Review, QA';
-      const statusInput = await promptText(
-        s.dim('Triage statuses') + s.dim(`  [default: ${DEFAULT_TRIAGE}]:`), { stream }
-      );
-      let triageStatuses = statusInput
-        ? statusInput.split(',').map(v => v.trim()).filter(Boolean)
-        : DEFAULT_TRIAGE.split(',').map(v => v.trim());
+      // Triage statuses — picked from the instance's status list with the
+      // defaults pre-checked (stale defaults dropped, not user data); free-text
+      // + validate fallback when the picker can't run (non-TTY, fetch failure, Esc)
+      let triageStatuses = await pickTriageStatuses({
+        fetchStatuses: () => fetchStatuses({ env, apiVersion, allowPrivateIp: isTrustedForCurrentUrl() }),
+        current: DEFAULT_TRIAGE_STATUSES,
+        preserveMissing: false,
+        stream,
+      });
+      if (triageStatuses === null) {
+        const DEFAULT_TRIAGE = DEFAULT_TRIAGE_STATUSES.join(', ');
+        const statusInput = await promptText(
+          s.dim('Triage statuses') + s.dim(`  [default: ${DEFAULT_TRIAGE}]:`), { stream }
+        );
+        triageStatuses = statusInput
+          ? statusInput.split(',').map(v => v.trim()).filter(Boolean)
+          : [...DEFAULT_TRIAGE_STATUSES];
 
-      stream.write(`  ${s.dim('Validating statuses...')}\n`);
-      try {
-        const available = await fetchStatuses({ env, apiVersion, allowPrivateIp: isTrustedForCurrentUrl() });
-        const lowerMap = new Map(available.map(n => [n.toLowerCase(), n]));
-        stream.write('\x1b[A\r\x1b[2K'); // clear "Validating..." line
-        const corrected = [];
-        let hasIssues = false;
-        for (const name of triageStatuses) {
-          if (available.includes(name)) {
-            corrected.push(name);
-          } else {
-            const match = lowerMap.get(name.toLowerCase());
-            if (match) {
-              stream.write(`  ${s.yellow('~')} ${s.dim(name)}  →  ${s.cyan(match)}\n`);
-              corrected.push(match);
-              hasIssues = true;
+        stream.write(`  ${s.dim('Validating statuses...')}\n`);
+        try {
+          const available = await fetchStatuses({ env, apiVersion, allowPrivateIp: isTrustedForCurrentUrl() });
+          const lowerMap = new Map(available.map(n => [n.toLowerCase(), n]));
+          stream.write('\x1b[A\r\x1b[2K'); // clear "Validating..." line
+          const corrected = [];
+          let hasIssues = false;
+          for (const name of triageStatuses) {
+            if (available.includes(name)) {
+              corrected.push(name);
             } else {
-              stream.write(`  ${s.red('✖')} ${name}  ${s.dim('(not found in this Jira instance)')}\n`);
-              hasIssues = true;
+              const match = lowerMap.get(name.toLowerCase());
+              if (match) {
+                stream.write(`  ${s.yellow('~')} ${s.dim(name)}  →  ${s.cyan(match)}\n`);
+                corrected.push(match);
+                hasIssues = true;
+              } else {
+                stream.write(`  ${s.red('✖')} ${name}  ${s.dim('(not found in this Jira instance)')}\n`);
+                hasIssues = true;
+              }
             }
           }
+          if (!hasIssues) {
+            stream.write(`  ${s.green('✔')} Statuses validated\n`);
+          } else if (corrected.length > 0) {
+            stream.write(`  ${s.dim('Using:')} ${corrected.map(n => s.cyan(n)).join(s.dim(', '))}\n`);
+          }
+          triageStatuses = corrected;
+        } catch {
+          stream.write('\x1b[A\r\x1b[2K'); // clear silently if Jira call fails
         }
-        if (!hasIssues) {
-          stream.write(`  ${s.green('✔')} Statuses validated\n`);
-        } else if (corrected.length > 0) {
-          stream.write(`  ${s.dim('Using:')} ${corrected.map(n => s.cyan(n)).join(s.dim(', '))}\n`);
-        }
-        triageStatuses = corrected;
-      } catch {
-        stream.write('\x1b[A\r\x1b[2K'); // clear silently if Jira call fails
       }
 
       // ── Save ──────────────────────────────────────────────────────────────

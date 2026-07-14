@@ -30,9 +30,8 @@ export const visLen = (str) => str.replace(ANSI_RE, '').length;
  * then drain. Call this — and await it — before starting any new raw-mode
  * prompt.
  */
-export function flushStdin() {
+export function flushStdin(stdin = process.stdin) {
   return new Promise((resolve) => {
-    const stdin = process.stdin;
     if (typeof stdin.read !== 'function' || typeof stdin.resume !== 'function') {
       resolve();
       return;

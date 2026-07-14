@@ -10,7 +10,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { createStyler } from './ansi.mjs';
 import { createSession } from './banner.mjs';
 import { classifyError } from './error-classifier.mjs';
-import { fetchCurrentUser, fetchStatuses } from './jira-client.mjs';
+import { fetchCurrentUser, fetchStatuses, fetchProjects } from './jira-client.mjs';
 import { resolveAdapter } from './resolve-adapter.mjs';
 import { loadProfiles, loadCredentials, saveProfile } from './profile-resolver.mjs';
 import { promptSelect } from './select-prompt.mjs';
@@ -20,6 +20,7 @@ import { DEFAULT_CONFIG_DIR, hostnameOf } from './config.mjs';
 import { visLen, SERVER_AUTH_TYPES, promptText, promptSecret, promptYN } from './prompt-helpers.mjs';
 import { isLicensed } from './license.mjs';
 import { siteBase } from './api-utils.mjs';
+import { pickTicketPrefixes, pickTriageStatuses, DEFAULT_TRIAGE_STATUSES } from './wizard-pickers.mjs';
 
 const RETRY_OPTIONS = [
   { label: 'Retry',             sublabel: 'Try again — same credentials (e.g. VPN just connected)', value: 'retry' },
@@ -272,19 +273,39 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   // ── Optional settings ──────────────────────────────────────────────────────
   stream.write(`\n  ${s.dim('──── Optional ────')}\n\n`);
 
-  // Ticket prefixes
-  const curPrefixes = (profile.ticketPrefixes || []).join(', ');
-  const prefixInput = await promptText(
-    s.dim('Ticket prefixes') + s.dim(curPrefixes ? `  [current: ${curPrefixes}]:` : '  (e.g. PROJ,OPS — press Enter to skip):'),
-    { stream }
-  );
-  const existing = new Set(profile.ticketPrefixes || []);
-  if (prefixInput) {
-    for (const v of prefixInput.split(',').map(v => v.trim().toUpperCase()).filter(Boolean)) {
-      existing.add(v);
+  // Shared env for post-connection Jira lookups (pickers + fallback validation)
+  const jiraEnv = {
+    JIRA_BASE_URL: url,
+    JIRA_EMAIL: email,
+    JIRA_API_TOKEN: auth !== 'pat' ? token : '',
+    JIRA_PAT: auth === 'pat' ? token : '',
+  };
+  const jiraApiVersion = auth === 'cloud' ? 3 : 2;
+
+  // Ticket prefixes — picked from the instance's project list with current
+  // values pre-checked (replace semantics: deselect removes); legacy add-only
+  // free text when the picker can't run (non-TTY, fetch failure, Esc, non-Jira)
+  let ticketPrefixes = isJira
+    ? await pickTicketPrefixes({
+        fetchProjects: () => fetchProjects({ env: jiraEnv, apiVersion: jiraApiVersion, allowPrivateIp: isTrustedForCurrentUrl() }),
+        current: profile.ticketPrefixes || [],
+        stream,
+      })
+    : null;
+  if (ticketPrefixes === null) {
+    const curPrefixes = (profile.ticketPrefixes || []).join(', ');
+    const prefixInput = await promptText(
+      s.dim('Ticket prefixes') + s.dim(curPrefixes ? `  [current: ${curPrefixes}]:` : '  (e.g. PROJ,OPS — press Enter to skip):'),
+      { stream }
+    );
+    const existing = new Set(profile.ticketPrefixes || []);
+    if (prefixInput) {
+      for (const v of prefixInput.split(',').map(v => v.trim().toUpperCase()).filter(Boolean)) {
+        existing.add(v);
+      }
     }
+    ticketPrefixes = [...existing];
   }
-  const ticketPrefixes = [...existing];
 
   // Project path
   const home = homedir();
@@ -318,76 +339,83 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
     }
   }
 
-  // ── Triage statuses (merge semantics) ────────────────────────────────────
+  // ── Triage statuses ────────────────────────────────────────────────────────
   const currentStatuses = profile.triageStatuses?.length
     ? profile.triageStatuses
-    : ['In Progress', 'Code Review', 'QA'];
-  const curStatusesStr = currentStatuses.join(', ');
+    : DEFAULT_TRIAGE_STATUSES;
 
-  const statusInput = await promptText(
-    s.dim('Add triage statuses') + s.dim(`  [current: ${curStatusesStr} — Enter to keep]:`),
-    { stream }
-  );
+  // Picked from the instance's status list with current values pre-checked
+  // (replace semantics: deselect removes, stale entries kept unless unchecked);
+  // legacy add-only merge free text when the picker can't run
+  let triageStatuses = isJira
+    ? await pickTriageStatuses({
+        fetchStatuses: () => fetchStatuses({ env: jiraEnv, apiVersion: jiraApiVersion, allowPrivateIp: isTrustedForCurrentUrl() }),
+        current: currentStatuses,
+        stream,
+      })
+    : null;
 
-  let triageStatuses = currentStatuses;
+  if (triageStatuses === null) {
+    triageStatuses = currentStatuses;
+    const curStatusesStr = currentStatuses.join(', ');
 
-  if (statusInput) {
-    const newEntries = statusInput.split(',').map(v => v.trim()).filter(Boolean);
-    const existingLower = new Set(currentStatuses.map(n => n.toLowerCase()));
-    const toValidate = newEntries.filter(n => !existingLower.has(n.toLowerCase()));
+    const statusInput = await promptText(
+      s.dim('Add triage statuses') + s.dim(`  [current: ${curStatusesStr} — Enter to keep]:`),
+      { stream }
+    );
 
-    if (toValidate.length > 0) {
-      stream.write(`  ${s.dim('Validating new statuses...')}\n`);
-      try {
-        let available;
-        if (isJira) {
-          const validateEnv = {
-            JIRA_BASE_URL: url,
-            JIRA_EMAIL: email,
-            JIRA_API_TOKEN: auth !== 'pat' ? token : '',
-            JIRA_PAT: auth === 'pat' ? token : '',
-          };
-          available = await fetchStatuses({ env: validateEnv, apiVersion: auth === 'cloud' ? 3 : 2, allowPrivateIp: isTrustedForCurrentUrl() });
-        } else {
-          available = await resolveAdapter({ baseUrl: url, auth: trackerType, apiToken: token }).fetchStatuses();
-        }
+    if (statusInput) {
+      const newEntries = statusInput.split(',').map(v => v.trim()).filter(Boolean);
+      const existingLower = new Set(currentStatuses.map(n => n.toLowerCase()));
+      const toValidate = newEntries.filter(n => !existingLower.has(n.toLowerCase()));
 
-        const lowerMap = new Map(available.map(n => [n.toLowerCase(), n]));
-        stream.write('\x1b[A\r\x1b[2K');
-
-        const toAdd = [];
-        for (const name of toValidate) {
-          if (available.includes(name)) {
-            toAdd.push(name);
-            stream.write(`  ${s.green('✔')} ${name}\n`);
+      if (toValidate.length > 0) {
+        stream.write(`  ${s.dim('Validating new statuses...')}\n`);
+        try {
+          let available;
+          if (isJira) {
+            available = await fetchStatuses({ env: jiraEnv, apiVersion: jiraApiVersion, allowPrivateIp: isTrustedForCurrentUrl() });
           } else {
-            const exact = lowerMap.get(name.toLowerCase());
-            if (exact) {
-              stream.write(`  ${s.yellow('~')} ${s.dim(name)}  →  ${s.cyan(exact)}\n`);
-              toAdd.push(exact);
+            available = await resolveAdapter({ baseUrl: url, auth: trackerType, apiToken: token }).fetchStatuses();
+          }
+
+          const lowerMap = new Map(available.map(n => [n.toLowerCase(), n]));
+          stream.write('\x1b[A\r\x1b[2K');
+
+          const toAdd = [];
+          for (const name of toValidate) {
+            if (available.includes(name)) {
+              toAdd.push(name);
+              stream.write(`  ${s.green('✔')} ${name}\n`);
             } else {
-              const partial = available.find(a =>
-                a.toLowerCase().includes(name.toLowerCase()) ||
-                name.toLowerCase().startsWith(a.toLowerCase().split(' ')[0])
-              );
-              if (partial) {
-                stream.write(`  ${s.yellow('~')} ${s.dim(name)}  →  ${s.cyan(partial)}\n`);
-                toAdd.push(partial);
+              const exact = lowerMap.get(name.toLowerCase());
+              if (exact) {
+                stream.write(`  ${s.yellow('~')} ${s.dim(name)}  →  ${s.cyan(exact)}\n`);
+                toAdd.push(exact);
               } else {
-                stream.write(`  ${s.red('✖')} ${name}  ${s.dim('(not found — skipped)')}\n`);
+                const partial = available.find(a =>
+                  a.toLowerCase().includes(name.toLowerCase()) ||
+                  name.toLowerCase().startsWith(a.toLowerCase().split(' ')[0])
+                );
+                if (partial) {
+                  stream.write(`  ${s.yellow('~')} ${s.dim(name)}  →  ${s.cyan(partial)}\n`);
+                  toAdd.push(partial);
+                } else {
+                  stream.write(`  ${s.red('✖')} ${name}  ${s.dim('(not found — skipped)')}\n`);
+                }
               }
             }
           }
-        }
 
-        triageStatuses = [...currentStatuses, ...toAdd];
-        if (toAdd.length > 0) {
-          stream.write(`  ${s.dim('Updated list:')} ${triageStatuses.map(n => s.cyan(n)).join(s.dim(', '))}\n`);
+          triageStatuses = [...currentStatuses, ...toAdd];
+          if (toAdd.length > 0) {
+            stream.write(`  ${s.dim('Updated list:')} ${triageStatuses.map(n => s.cyan(n)).join(s.dim(', '))}\n`);
+          }
+        } catch {
+          stream.write('\x1b[A\r\x1b[2K');
+          // Tracker unreachable — add without validation, deduped
+          triageStatuses = [...currentStatuses, ...toValidate.filter(n => !existingLower.has(n.toLowerCase()))];
         }
-      } catch {
-        stream.write('\x1b[A\r\x1b[2K');
-        // Tracker unreachable — add without validation, deduped
-        triageStatuses = [...currentStatuses, ...toValidate.filter(n => !existingLower.has(n.toLowerCase()))];
       }
     }
   }
