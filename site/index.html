@@ -195,8 +195,8 @@
           <div class="how-num">02</div>
           <div class="how-content">
             <h3 class="how-name">Fetch</h3>
-            <p class="how-desc">Paste any ticket key. Get a structured brief — linked issues, comments, and attachments cached locally.</p>
-            <code class="how-code">ticketlens PROJ-123</code>
+            <p class="how-desc">Paste any ticket key. Get a structured brief — linked issues, comments, and attachments cached locally. <code>tl</code> is the short alias for <code>ticketlens</code>.</p>
+            <code class="how-code">tl PROJ-123</code>
           </div>
         </div>
         <div class="how-step fade-in">
@@ -299,6 +299,20 @@
             </span>
             <span class="feat-item-name">Claude Code /jtb</span>
             <span class="feat-item-desc">Native slash command skill</span>
+            <span class="feat-tier free">Free</span>
+          </div>
+          <div class="feat-item" data-feat="6" tabindex="0" role="button" aria-pressed="false">
+            <span class="feat-item-icon">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2.5" y="2.5" width="6" height="6" rx="1.5"/>
+                <polyline points="4.5,5.5 5.8,6.8 7.5,4.5"/>
+                <rect x="2.5" y="11.5" width="6" height="6" rx="1.5"/>
+                <line x1="11.5" y1="5.5" x2="17.5" y2="5.5"/>
+                <line x1="11.5" y1="14.5" x2="17.5" y2="14.5"/>
+              </svg>
+            </span>
+            <span class="feat-item-name">Guided setup</span>
+            <span class="feat-item-desc">Pick prefixes &amp; statuses from your Jira</span>
             <span class="feat-tier free">Free</span>
           </div>
           <div class="feat-progress"><div class="feat-progress-bar" id="feat-progress-bar"></div></div>
@@ -652,13 +666,13 @@
           <div class="install-card-title">Global install (recommended)</div>
           <div class="install-card-sub">Install once, use from any directory.</div>
           <div class="code-block">
-            <button class="copy-btn" data-copy="npm install -g ticketlens&#10;ticketlens init&#10;ticketlens CNV1-2">Copy</button>
+            <button class="copy-btn" data-copy="npm install -g ticketlens&#10;tl init&#10;tl CNV1-2">Copy</button>
             <span class="code-comment"># Install</span><br>
             <span class="code-cmd">npm install -g ticketlens</span><br><br>
-            <span class="code-comment"># Connect your Jira instance</span><br>
-            <span class="code-cmd">ticketlens <span class="code-arg">init</span></span><br><br>
+            <span class="code-comment"># Connect your Jira — pick projects &amp; statuses from a live list</span><br>
+            <span class="code-cmd">tl <span class="code-arg">init</span></span><br><br>
             <span class="code-comment"># Fetch a ticket brief</span><br>
-            <span class="code-cmd">ticketlens <span class="code-arg">CNV1-2</span></span>
+            <span class="code-cmd">tl <span class="code-arg">CNV1-2</span></span>
           </div>
           <div class="install-prereq">Prerequisites: <strong>Node.js &ge;20</strong></div>
           <div class="install-prereq"><code>tl</code> works everywhere <code>ticketlens</code> does</div>
@@ -709,7 +723,7 @@
               Does it work with Jira Server and Data Center?
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
-            <div class="faq-a">Yes. TicketLens supports Jira Cloud (API token), Server/DC (Bearer PAT), and older Server/DC versions that require username + password Basic auth (pre-8.14). Auth type is auto-detected from your Jira URL during <code>ticketlens init</code>.</div>
+            <div class="faq-a">Yes. TicketLens supports Jira Cloud (API token), Server/DC (Bearer PAT), and older Server/DC versions that require username + password Basic auth (pre-8.14). Auth type is auto-detected from your Jira URL during <code>ticketlens init</code> — and once connected, ticket prefixes and triage statuses are picked from your instance's real project and status lists, not typed from memory.</div>
           </div>
           <div class="faq-item">
             <button class="faq-q" aria-expanded="false">

@@ -297,6 +297,24 @@
           '<span style="color:#7b8aa0">Entering plan mode. What would you like to implement?</span>',
         ]
       },
+      {
+        label: 'tl init',
+        lines: [
+          '<span style="color:#4A9CC5">✔</span> <span style="color:#e1e8f4">Connected</span> <span style="color:#404958">— https://jira.acme.com · R. Moran</span>',
+          '',
+          '<span style="color:#404958">Triage statuses  (statuses on this instance)</span>',
+          '',
+          '<span style="color:#4A9CC5">❯</span> <span style="color:#4A9CC5">◉</span> <span style="color:#e1e8f4;font-weight:700">In Progress</span>',
+          '  <span style="color:#4A9CC5">◉</span> <span style="color:#e1e8f4">Code Review</span>',
+          '  <span style="color:#404958">○</span> <span style="color:#7b8aa0">Blocked</span>',
+          '  <span style="color:#4A9CC5">◉</span> <span style="color:#e1e8f4">QA Testing</span>',
+          '  <span style="color:#404958">○</span> <span style="color:#7b8aa0">Done</span>',
+          '',
+          '<span style="color:#404958">↑/↓ move · Space toggle · a all · Enter confirm</span>',
+          '',
+          '<span style="color:#4A9CC5">✔</span> <span style="color:#4A9CC5">In Progress</span><span style="color:#404958">, </span><span style="color:#4A9CC5">Code Review</span><span style="color:#404958">, </span><span style="color:#4A9CC5">QA Testing</span>',
+        ]
+      },
     ];
 
     var featActive = 0;
