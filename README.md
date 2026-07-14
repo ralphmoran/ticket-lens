@@ -73,7 +73,7 @@ Tip: `tl` works everywhere `ticketlens` does — running `tl`/`ticketlens config
 
 | Command | Description |
 |---------|-------------|
-| `ticketlens init` | Guided wizard — Jira, GitHub Issues, or Linear — live connection test, optional settings |
+| `ticketlens init` | Guided wizard — Jira, GitHub Issues, or Linear — live connection test; pick ticket prefixes and triage statuses straight from your instance |
 | `ticketlens switch` | Arrow-key panel to switch between configured profiles |
 | `ticketlens config [--profile=NAME]` | Edit any field on an existing profile — always re-validates the connection |
 | `ticketlens profiles` | List all configured profiles (alias: `ticketlens ls`) |
@@ -81,7 +81,7 @@ Tip: `tl` works everywhere `ticketlens` does — running `tl`/`ticketlens config
 
 `init` collects: profile name, tracker type (Jira / GitHub Issues / Linear), URL or workspace, credentials (masked), and optional ticket prefixes, project paths, and triage statuses. On connection failure, a retry menu lets you fix credentials, URL, or skip — all inputs pre-populated. If your Jira instance sits behind a VPN and resolves to a private/internal address, you'll be asked to confirm you trust that connection before it's allowed through — a one-time confirmation, remembered per profile and scoped to that exact host (changing the URL asks again). `config` is tracker-aware and always re-validates the connection after edits.
 
-`config` uses merge semantics: new ticket prefixes and triage statuses are added to existing lists, never replaced. Partial matching resolves `QA` to `QA Testing` if that's the status in your Jira.
+**No more guessing prefixes or status names** — on Jira, once the connection test passes, ticket prefixes and triage statuses are picked from live multi-select lists fetched from your instance (its actual projects and statuses), with sensible defaults pre-checked. Space toggles, `a` toggles all, Enter confirms. When editing with `config`, your current values come pre-selected and unchecking removes them; anything configured that no longer exists on the server is flagged `(not on server)` so you can clean it up — or keep it — deliberately. In non-interactive shells, or if the lists can't be fetched (press Esc to choose this any time), the wizard falls back to classic free-text entry with live validation — free-text `config` entries keep the old add-only merge, and partial matching still resolves `QA` to `QA Testing` if that's the status in your Jira.
 
 ---
 
@@ -879,6 +879,7 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
+- **Prefix & status pickers** (`ticketlens init` / `config`, v0.12.0) — ticket prefixes and triage statuses are picked from your Jira instance's live project/status lists via multi-select; editing pre-selects current values, unchecking removes them, and stale entries are flagged `(not on server)`
 - **Collision detection** (`ticketlens collisions`) — shows which files your branch shares with teammates' in-flight branches; `--push` auto-sends git branch data to the team snapshot. Team tier
 - **Shareable triage snapshot** (`ticketlens triage --share`) — generates a 24h signed URL; recipients open it in any browser, no account needed. Team tier
 - **Compliance push** (`ticketlens triage --push`) — enriches the team snapshot with per-ticket compliance status and coverage from the local ledger. Pro tier
