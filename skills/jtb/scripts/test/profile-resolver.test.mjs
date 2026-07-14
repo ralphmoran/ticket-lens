@@ -155,6 +155,31 @@ describe('profile-resolver', () => {
       const result = resolveConnection('ANY-123', { env, configDir: '/tmp/nonexistent-ticketlens' });
       assert.equal(result.auth, null);
     });
+
+    it('carries allowPrivateIp:true from a profile marked as a trusted VPN-gated on-prem connection', () => {
+      const trustedProfiles = {
+        profiles: {
+          ...sampleProfiles.profiles,
+          forge: { ...sampleProfiles.profiles.forge, allowPrivateIp: true },
+        },
+        default: sampleProfiles.default,
+      };
+      writeConfig(trustedProfiles);
+      const result = resolveConnection('PROD-1234', { configDir });
+      assert.equal(result.allowPrivateIp, true);
+    });
+
+    it('defaults allowPrivateIp to false when the profile never set it (regression)', () => {
+      writeConfig();
+      const result = resolveConnection('CNV1-3', { configDir });
+      assert.equal(result.allowPrivateIp, false);
+    });
+
+    it('does not set allowPrivateIp when falling back to env vars (out of scope for env-var users)', () => {
+      const env = { JIRA_BASE_URL: 'https://fallback.atlassian.net', JIRA_PAT: 'tok' };
+      const result = resolveConnection('ANY-123', { env, configDir: '/tmp/nonexistent-ticketlens' });
+      assert.equal(result.allowPrivateIp, undefined);
+    });
   });
 
   describe('loadProfiles', () => {

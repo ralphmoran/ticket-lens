@@ -1134,7 +1134,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const authHeader = buildAuthHeader(jiraEnv);
       const apiVersion = conn.auth === 'cloud' ? 3 : 2;
       const jiraOrigin = new URL(jiraEnv.JIRA_BASE_URL).origin;
-      const links = await fetchRemoteLinks(ticketKey, { env: jiraEnv, fetcher, apiVersion });
+      const links = await fetchRemoteLinks(ticketKey, { env: jiraEnv, fetcher, apiVersion, allowPrivateIp: conn.allowPrivateIp });
       const MAX_CONFLUENCE_PAGES = 10;
       const safeLinks = links
         .filter(l => { try { return new URL(l.url).origin === jiraOrigin; } catch { return false; } })
@@ -1189,6 +1189,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
         fetcher,
         noCache: args.includes('--no-cache'),
         onProgress: (msg) => process.stderr.write(msg + '\n'),
+        allowPrivateIp: conn.allowPrivateIp,
       });
       const downloaded = ticket.localAttachments.filter(r => !r.skipped).length;
       const cached = ticket.localAttachments.filter(r => r.skipReason === 'cached').length;

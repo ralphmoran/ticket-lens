@@ -495,6 +495,60 @@ describe('downloadAttachments — CDN redirect (two-step SSRF-safe)', () => {
   });
 });
 
+// ─── allowPrivateIp — VPN-gated on-prem Jira trust exception ─────────────────
+
+describe('downloadAttachments — allowPrivateIp trust exception (initial hop only, never redirects)', () => {
+  it('allows the initial hop to resolve to a private address when allowPrivateIp is true (VPN-gated on-prem Jira)', async () => {
+    let fetchCalls = 0;
+    const fetcher = async (_url, _opts) => {
+      fetchCalls++;
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer(Buffer.from('fakeimage')) };
+    };
+    const lookup = async () => [{ address: '10.61.20.32', family: 4 }];
+    const ticket = makeTicket([makeAttachment({ filename: 'doc.pdf', content: 'https://jira.example.com/attachment/123/doc.pdf' })]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher, lookup, configDir: tmpDir, allowPrivateIp: true });
+    assert.equal(result[0].skipReason, null, `expected success, got: ${JSON.stringify(result[0])}`);
+    assert.ok(result[0].localPath !== null);
+    assert.equal(fetchCalls, 1);
+  });
+
+  it('still blocks the initial hop by default when allowPrivateIp is omitted (regression)', async () => {
+    let fetchCalls = 0;
+    const fetcher = async (_url, _opts) => {
+      fetchCalls++;
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer(Buffer.from('fakeimage')) };
+    };
+    const lookup = async () => [{ address: '10.61.20.32', family: 4 }];
+    const ticket = makeTicket([makeAttachment({ filename: 'doc.pdf', content: 'https://jira.example.com/attachment/123/doc.pdf' })]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher, lookup, configDir: tmpDir });
+    assert.equal(result[0].skipReason, 'error');
+    assert.ok(result[0].error.includes('blocked address'), `expected "blocked address" in error, got: ${result[0].error}`);
+    assert.equal(fetchCalls, 0, 'must never fetch when the initial DNS check blocks');
+  });
+
+  it('never trusts a redirect target even when allowPrivateIp is true — the flag must not leak past the initial hop', async () => {
+    let fetchCalls = 0;
+    const fetcher = async (_url, _opts) => {
+      fetchCalls++;
+      if (fetchCalls === 1) {
+        return { ok: false, status: 302, headers: makeHeaders({ location: 'https://cdn.example.com/file.pdf' }), arrayBuffer: async () => new ArrayBuffer(0) };
+      }
+      return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer(Buffer.from('fakeimage')) };
+    };
+    // Jira origin resolves private (trusted via allowPrivateIp); the CDN redirect target ALSO resolves private —
+    // it must still be blocked, proving the trust flag never propagates to redirect hops.
+    const lookup = async (hostname) => {
+      if (hostname === 'jira.example.com') return [{ address: '10.61.20.32', family: 4 }];
+      return [{ address: '169.254.169.254', family: 4 }];
+    };
+    const ticket = makeTicket([makeAttachment({ filename: 'doc.pdf', content: 'https://jira.example.com/attachment/123/doc.pdf' })]);
+    const result = await downloadAttachments(ticket, { env: ENV, fetcher, lookup, configDir: tmpDir, allowPrivateIp: true });
+    assert.equal(result[0].skipReason, 'error');
+    assert.ok(result[0].error.includes('blocked address'), `expected "blocked address" in error, got: ${result[0].error}`);
+    assert.equal(fetchCalls, 1, 'probe fetch only — redirect target rejected by DNS check before a second fetch');
+  });
+});
+
 // ─── formatSize ──────────────────────────────────────────────────────────────
 
 describe('formatSize', () => {

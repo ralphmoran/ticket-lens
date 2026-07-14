@@ -11,9 +11,9 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
 
   return {
     type: 'jira',
-    fetchTicket: (key, opts = {}) => fetchTicket(key, { env, fetcher, apiVersion, ...opts }),
-    fetchCurrentUser: (opts = {}) => fetchCurrentUser({ env, fetcher, apiVersion, ...opts }),
-    searchTickets: (query, opts = {}) => searchTickets(query, { env, fetcher, apiVersion, ...opts }),
-    fetchStatuses: (opts = {}) => fetchStatuses({ env, fetcher, apiVersion, ...opts }),
+    fetchTicket: (key, opts = {}) => fetchTicket(key, { env, fetcher, apiVersion, allowPrivateIp: conn.allowPrivateIp, ...opts }),
+    fetchCurrentUser: (opts = {}) => fetchCurrentUser({ env, fetcher, apiVersion, allowPrivateIp: conn.allowPrivateIp, ...opts }),
+    searchTickets: (query, opts = {}) => searchTickets(query, { env, fetcher, apiVersion, allowPrivateIp: conn.allowPrivateIp, ...opts }),
+    fetchStatuses: (opts = {}) => fetchStatuses({ env, fetcher, apiVersion, allowPrivateIp: conn.allowPrivateIp, ...opts }),
   };
 }

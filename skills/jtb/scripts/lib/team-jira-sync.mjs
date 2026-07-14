@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { readCliToken } from './cli-auth.mjs';
 import { saveProfile, loadProfiles } from './profile-resolver.mjs';
 import { apiBase } from './api-utils.mjs';
-import { DEFAULT_CONFIG_DIR } from './config.mjs';
+import { DEFAULT_CONFIG_DIR, hostnameOf } from './config.mjs';
 
 const META_FILE = 'team-jira-meta.json';
 
@@ -78,11 +78,23 @@ function teamConfigToCliProfile(apiData) {
 
 /**
  * Writes team config to the named profile without touching credentials.
+ * Carries forward `allowPrivateIp` from the existing LOCAL profile only —
+ * never from server data (see teamConfigToCliProfile) — and only when the
+ * synced baseUrl resolves to the SAME hostname the trust was granted for.
+ * A sync that changes the host (legitimate re-point, or a compromised/
+ * malicious sync response) must never inherit trust for a different,
+ * unconfirmed host — the member has to re-confirm via the wizard.
  * Returns { error, message } on failure — never throws.
  */
 async function applyTeamJiraConfig(groupName, profileData, configDir) {
   try {
-    await saveProfile(groupName, profileData, null, configDir);
+    const existing = loadProfiles(configDir)?.profiles?.[groupName];
+    const sameHost = existing?.baseUrl && profileData.baseUrl &&
+      hostnameOf(existing.baseUrl) === hostnameOf(profileData.baseUrl);
+    const merged = (existing?.allowPrivateIp && sameHost)
+      ? { ...profileData, allowPrivateIp: true }
+      : profileData;
+    await saveProfile(groupName, merged, null, configDir);
     return { ok: true };
   } catch (e) {
     return { error: 'save-failed', message: e.message };

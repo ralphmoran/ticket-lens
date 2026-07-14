@@ -330,3 +330,102 @@ describe('checkTeamJiraConfigUpdate', () => {
     assert.strictEqual(result.error, 'meta-write-failed');
   });
 });
+
+describe('team-jira-sync — allowPrivateIp trust flag (VPN-gated on-prem Jira)', () => {
+  it('never reads allow_private_ip (or any key-name variant) from the server response — a synced account cannot grant itself trust', async () => {
+    const dir = makeTmpDir();
+    writeToken(dir, VALID_TOKEN);
+    writeMeta(dir, { group_name: 'acme-team', updated_at: '2026-06-01T00:00:00.000Z' });
+
+    const fakeFetch = async () => ({
+      status: 200,
+      ok: true,
+      json: async () => ({
+        group_name: 'acme-team', jira_base_url: 'https://acme.atlassian.net',
+        auth_type: 'cloud', updated_at: '2026-06-22T12:00:00.000Z',
+        // A compromised or malicious API response attempting to smuggle trust in under every plausible key name.
+        allow_private_ip: true,
+        allowPrivateIp: true,
+        allow_private_ips: true,
+      }),
+    });
+
+    const result = await checkTeamJiraConfigUpdate({ configDir: dir, fetcher: fakeFetch });
+    assert.strictEqual(result.updated, true);
+
+    const profiles = readProfiles(dir);
+    assert.strictEqual(profiles['acme-team'].allowPrivateIp, undefined, 'server data must never grant allowPrivateIp on a fresh profile');
+  });
+
+  it('carries forward allowPrivateIp:true from the existing LOCAL profile when a sync updates it WITHOUT changing the host', async () => {
+    const dir = makeTmpDir();
+    writeToken(dir, VALID_TOKEN);
+    writeProfiles(dir, {
+      'acme-team': { baseUrl: 'https://acme.atlassian.net', auth: 'cloud', allowPrivateIp: true },
+    });
+    writeMeta(dir, { group_name: 'acme-team', updated_at: '2026-06-01T00:00:00.000Z' });
+
+    const fakeFetch = async () => ({
+      status: 200,
+      ok: true,
+      json: async () => ({
+        group_name: 'acme-team', jira_base_url: 'https://acme.atlassian.net',
+        auth_type: 'cloud', prefixes: ['ACME'], updated_at: '2026-06-22T12:00:00.000Z',
+      }),
+    });
+
+    const result = await checkTeamJiraConfigUpdate({ configDir: dir, fetcher: fakeFetch });
+    assert.strictEqual(result.updated, true);
+
+    const profiles = readProfiles(dir);
+    assert.strictEqual(profiles['acme-team'].baseUrl, 'https://acme.atlassian.net', 'new server data must still apply');
+    assert.strictEqual(profiles['acme-team'].allowPrivateIp, true, 'locally-granted trust must survive a sync when the host is unchanged');
+  });
+
+  it('does NOT carry forward allowPrivateIp when a sync changes the host — trust is scoped to the exact hostname it was granted for', async () => {
+    const dir = makeTmpDir();
+    writeToken(dir, VALID_TOKEN);
+    writeProfiles(dir, {
+      'acme-team': { baseUrl: 'https://old.atlassian.net', auth: 'cloud', allowPrivateIp: true },
+    });
+    writeMeta(dir, { group_name: 'acme-team', updated_at: '2026-06-01T00:00:00.000Z' });
+
+    const fakeFetch = async () => ({
+      status: 200,
+      ok: true,
+      json: async () => ({
+        // A compromised/malicious sync (or a legitimate re-point) changes the host — the OLD trust
+        // grant must never silently apply to this NEW, unconfirmed host.
+        group_name: 'acme-team', jira_base_url: 'https://acme.atlassian.net',
+        auth_type: 'cloud', updated_at: '2026-06-22T12:00:00.000Z',
+      }),
+    });
+
+    const result = await checkTeamJiraConfigUpdate({ configDir: dir, fetcher: fakeFetch });
+    assert.strictEqual(result.updated, true);
+
+    const profiles = readProfiles(dir);
+    assert.strictEqual(profiles['acme-team'].baseUrl, 'https://acme.atlassian.net', 'new server data must still apply');
+    assert.strictEqual(profiles['acme-team'].allowPrivateIp, undefined, 'trust for the OLD host must not silently transfer to a NEW, unconfirmed host');
+  });
+
+  it('does not set allowPrivateIp on a brand-new profile with no prior local trust', async () => {
+    const dir = makeTmpDir();
+    writeToken(dir, VALID_TOKEN);
+
+    const fakeFetch = async () => ({
+      status: 200,
+      ok: true,
+      json: async () => ({
+        group_name: 'acme-team', jira_base_url: 'https://acme.atlassian.net',
+        auth_type: 'cloud', updated_at: '2026-06-22T12:00:00.000Z',
+      }),
+    });
+
+    const result = await applyTeamConfigOnLogin({ configDir: dir, fetcher: fakeFetch });
+    assert.strictEqual(result.ok, true);
+
+    const profiles = readProfiles(dir);
+    assert.strictEqual(profiles['acme-team'].allowPrivateIp, undefined);
+  });
+});

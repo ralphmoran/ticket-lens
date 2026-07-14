@@ -16,7 +16,7 @@ import { promptSelect } from './select-prompt.mjs';
 import { runSwitch } from './profile-switcher.mjs';
 import { renderWordmark } from './wordmark.mjs';
 import { printQuickStart } from './quick-start-panel.mjs';
-import { DEFAULT_CONFIG_DIR } from './config.mjs';
+import { DEFAULT_CONFIG_DIR, hostnameOf } from './config.mjs';
 import { SERVER_AUTH_TYPES, promptText, promptSecret, promptYN } from './prompt-helpers.mjs';
 
 const RETRY_OPTIONS = [
@@ -328,6 +328,12 @@ async function _run({ configDir, stream, s, showBanner, showQuickStart }) {
     let baseUrl = '', authType = '', email = '', token = '';
     let env = {}, apiVersion = 2;
     let startFrom = 'url';
+    // Trust is bound to the exact hostname it was granted for — never a flat
+    // per-run boolean. Choosing "Edit from URL" after granting trust for one
+    // host must re-trigger the private-IP block and a fresh confirmation
+    // for the new host, not silently inherit trust.
+    let trustedHostname = null;
+    const isTrustedForCurrentUrl = () => trustedHostname !== null && hostnameOf(baseUrl) === trustedHostname;
 
     setupLoop: while (true) {
       // ── URL + auth type ────────────────────────────────────────────────────
@@ -432,7 +438,7 @@ async function _run({ configDir, stream, s, showBanner, showQuickStart }) {
       session.spin('Testing connection...');
 
       try {
-        await fetchCurrentUser({ env, apiVersion });
+        await fetchCurrentUser({ env, apiVersion, allowPrivateIp: isTrustedForCurrentUrl() });
         session.connected();
         connected = true;
         break setupLoop;
@@ -440,6 +446,15 @@ async function _run({ configDir, stream, s, showBanner, showQuickStart }) {
         session.failed();
         const classified = classifyError(err, { baseUrl, profileName });
         session.footer(classified.message, 'error', classified.hint);
+
+        if (classified.privateIpBlocked) {
+          const trust = await promptYN('Trust this connection?', { stream });
+          if (trust) {
+            trustedHostname = hostnameOf(baseUrl);
+            startFrom = 'retry';
+            continue setupLoop;
+          }
+        }
       }
 
       // ── Retry options ──────────────────────────────────────────────────────
@@ -503,7 +518,7 @@ async function _run({ configDir, stream, s, showBanner, showQuickStart }) {
 
       stream.write(`  ${s.dim('Validating statuses...')}\n`);
       try {
-        const available = await fetchStatuses({ env, apiVersion });
+        const available = await fetchStatuses({ env, apiVersion, allowPrivateIp: isTrustedForCurrentUrl() });
         const lowerMap = new Map(available.map(n => [n.toLowerCase(), n]));
         stream.write('\x1b[A\r\x1b[2K'); // clear "Validating..." line
         const corrected = [];
@@ -540,6 +555,7 @@ async function _run({ configDir, stream, s, showBanner, showQuickStart }) {
         ...(email ? { email } : {}),
         ...(ticketPrefixes.length > 0 ? { ticketPrefixes } : {}),
         ...(projectPaths.length > 0 ? { projectPaths } : {}),
+        ...(isTrustedForCurrentUrl() ? { allowPrivateIp: true } : {}),
         triageStatuses,
       };
       const credData = authType === 'pat' ? { pat: token } : { apiToken: token };

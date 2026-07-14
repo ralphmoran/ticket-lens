@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildJiraEnv, getVersion, getPackageMeta } from '../lib/config.mjs';
+import { buildJiraEnv, getVersion, getPackageMeta, hostnameOf } from '../lib/config.mjs';
 
 describe('getPackageMeta', () => {
   it('returns version matching getVersion()', () => {
@@ -31,5 +31,23 @@ describe('buildJiraEnv', () => {
     assert.equal(env.JIRA_EMAIL, 'user@x.com');
     assert.equal(env.JIRA_API_TOKEN, 'tok');
     assert.equal(env.JIRA_PAT, undefined);
+  });
+});
+
+describe('hostnameOf', () => {
+  it('extracts the hostname from a valid URL', () => {
+    assert.equal(hostnameOf('https://jira.example.com/some/path'), 'jira.example.com');
+  });
+
+  it('returns null for an unparseable URL', () => {
+    assert.equal(hostnameOf('not a url'), null);
+  });
+
+  it('returns null for an empty string', () => {
+    assert.equal(hostnameOf(''), null);
+  });
+
+  it('distinguishes different hosts, including subdomain differences', () => {
+    assert.notEqual(hostnameOf('https://a.example.com'), hostnameOf('https://b.example.com'));
   });
 });

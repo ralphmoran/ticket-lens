@@ -1300,6 +1300,90 @@ describe('validateBaseUrl / isSafeRedirectUrl — blocklist coverage', () => {
   });
 });
 
+describe('allowPrivateIp — VPN-gated on-prem Jira trust exception', () => {
+  it('validateResolvedHost skips the DNS lookup entirely when allowPrivateIp is true', async () => {
+    let calls = 0;
+    const lookup = async () => { calls++; return [{ address: '10.61.20.32', family: 4 }]; };
+    await assert.doesNotReject(() => validateResolvedHost('onprem.example.com', lookup, true));
+    assert.equal(calls, 0, 'must not perform the DNS lookup at all when trust is already established');
+  });
+
+  it('validateResolvedHost still blocks a private-IP resolution by default (regression)', async () => {
+    const lookup = async () => [{ address: '10.61.20.32', family: 4 }];
+    await assert.rejects(() => validateResolvedHost('onprem2.example.com', lookup), /blocked address/);
+  });
+
+  it('validateResolvedHost throws a typed PRIVATE_IP_BLOCKED error carrying hostname and address', async () => {
+    const lookup = async () => [{ address: '10.61.20.32', family: 4 }];
+    try {
+      await validateResolvedHost('typed.example.com', lookup);
+      assert.fail('expected validateResolvedHost to throw');
+    } catch (err) {
+      assert.equal(err.code, 'PRIVATE_IP_BLOCKED');
+      assert.equal(err.blockedHostname, 'typed.example.com');
+      assert.equal(err.blockedAddress, '10.61.20.32');
+    }
+  });
+
+  it('validateBaseUrl skips the blocklist check when allowPrivateIp is true', () => {
+    assert.doesNotThrow(() => validateBaseUrl('https://10.61.20.32', true));
+    assert.doesNotThrow(() => validateBaseUrl('https://localhost', true));
+  });
+
+  it('validateBaseUrl still enforces HTTPS even when allowPrivateIp is true', () => {
+    assert.throws(() => validateBaseUrl('http://10.61.20.32', true), /HTTPS/);
+  });
+
+  it('validateBaseUrl still blocks by default when allowPrivateIp is omitted (regression)', () => {
+    assert.throws(() => validateBaseUrl('https://10.61.20.32'), /blocked/);
+  });
+
+  it('validateBaseUrl throws a typed PRIVATE_IP_BLOCKED error with a null address (string check, no resolution)', () => {
+    try {
+      validateBaseUrl('https://10.61.20.32');
+      assert.fail('expected validateBaseUrl to throw');
+    } catch (err) {
+      assert.equal(err.code, 'PRIVATE_IP_BLOCKED');
+      assert.equal(err.blockedHostname, '10.61.20.32');
+      assert.equal(err.blockedAddress, null);
+    }
+  });
+
+  it('isSafeRedirectUrl has no allowPrivateIp parameter and never trusts, permanently', () => {
+    assert.equal(isSafeRedirectUrl.length, 1, 'signature must stay single-argument — redirect targets never gain a trust escape hatch');
+    assert.equal(isSafeRedirectUrl('https://10.61.20.32/x', true), false, 'a truthy 2nd positional argument must have zero effect');
+  });
+
+  it('guardedFetch threads allowPrivateIp to validateResolvedHost but leaves 3xx refusal untouched', async () => {
+    const lookup = async () => [{ address: '10.61.20.32', family: 4 }];
+    const fetcher = async () => ({ status: 200, ok: true, headers: { get: () => null } });
+    await assert.doesNotReject(() =>
+      guardedFetch('https://onprem3.example.com/x', {}, { fetcher, lookup, allowPrivateIp: true })
+    );
+
+    const redirectFetcher = async () => ({ status: 302, headers: { get: () => 'https://elsewhere.example.com' } });
+    await assert.rejects(
+      () => guardedFetch('https://onprem4.example.com/x', {}, { fetcher: redirectFetcher, lookup, allowPrivateIp: true }),
+      /refusing to follow/,
+      'redirect refusal must fire regardless of allowPrivateIp — it is an orthogonal protection'
+    );
+  });
+
+  it('fetchCurrentUser connects to a private-IP-resolving host when allowPrivateIp is true', async () => {
+    const ENV = { JIRA_BASE_URL: 'https://onprem5.example.com', JIRA_PAT: 'tok' };
+    const fetcher = async () => ({ ok: true, status: 200, json: async () => ({ accountId: 'x' }) });
+    const lookup = async () => [{ address: '10.61.20.32', family: 4 }];
+    await assert.doesNotReject(() => fetchCurrentUser({ env: ENV, fetcher, lookup, allowPrivateIp: true }));
+  });
+
+  it('fetchCurrentUser still blocks a private-IP-resolving host by default (regression)', async () => {
+    const ENV = { JIRA_BASE_URL: 'https://onprem6.example.com', JIRA_PAT: 'tok' };
+    const fetcher = async () => ({ ok: true, status: 200, json: async () => ({ accountId: 'x' }) });
+    const lookup = async () => [{ address: '10.61.20.32', family: 4 }];
+    await assert.rejects(() => fetchCurrentUser({ env: ENV, fetcher, lookup }), /blocked address/);
+  });
+});
+
 describe('defaultLookupFor — shared lookup-default helper', () => {
   it('returns the real resolver when the fetcher is globalThis.fetch', () => {
     const fn = defaultLookupFor(globalThis.fetch);

@@ -105,4 +105,30 @@ describe('testConnections', () => {
     assert.equal(result.failedCount, 0);
     assert.equal(result.results[0].name, 'ghrepo');
   });
+
+  it('passes allowPrivateIp:true through to the conn object for a profile trusted for VPN-gated on-prem Jira', async () => {
+    writeProfiles(configDir, {
+      profiles: { forge: { baseUrl: 'https://jira.forge.com', auth: 'server', allowPrivateIp: true } },
+    });
+    writeCredentials(configDir, { forge: { pat: 'pat-forge' } });
+
+    let capturedConn;
+    const resolveAdapterFn = (conn) => { capturedConn = conn; return { fetchCurrentUser: async () => ({ displayName: 'Dev' }) }; };
+
+    await testConnections({ configDir, stream: fakeStream(), resolveAdapterFn });
+    assert.equal(capturedConn.allowPrivateIp, true);
+  });
+
+  it('does not set allowPrivateIp when the profile never granted trust (regression)', async () => {
+    writeProfiles(configDir, {
+      profiles: { acme: { baseUrl: 'https://acme.atlassian.net', auth: 'cloud', email: 'dev@acme.com' } },
+    });
+    writeCredentials(configDir, { acme: { apiToken: 'tok1' } });
+
+    let capturedConn;
+    const resolveAdapterFn = (conn) => { capturedConn = conn; return { fetchCurrentUser: async () => ({ displayName: 'Dev' }) }; };
+
+    await testConnections({ configDir, stream: fakeStream(), resolveAdapterFn });
+    assert.equal(capturedConn.allowPrivateIp, undefined);
+  });
 });

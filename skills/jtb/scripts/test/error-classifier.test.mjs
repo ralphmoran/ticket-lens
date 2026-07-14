@@ -149,4 +149,26 @@ describe('classifyError', () => {
     const result = classifyError(err, conn);
     assert.ok(result.message.includes('timed out'), `expected "timed out" in: ${result.message}`);
   });
+
+  it('classifies PRIVATE_IP_BLOCKED with a VPN hint and flags privateIpBlocked', () => {
+    const err = new Error('Hostname jira.advent.com resolves to a blocked address (10.61.20.32) — refusing to connect');
+    err.code = 'PRIVATE_IP_BLOCKED';
+    err.blockedHostname = 'jira.advent.com';
+    err.blockedAddress = '10.61.20.32';
+    const result = classifyError(err, conn);
+    assert.ok(result.message.includes('jira.advent.com'), `expected hostname in: ${result.message}`);
+    assert.ok(result.message.includes('10.61.20.32'), `expected address in: ${result.message}`);
+    assert.ok(result.hint.includes('VPN'), `expected VPN hint in: ${result.hint}`);
+    assert.equal(result.privateIpBlocked, true);
+  });
+
+  it('classifies PRIVATE_IP_BLOCKED from the string-based check (no resolved address) without crashing', () => {
+    const err = new Error('JIRA_BASE_URL hostname is blocked (10.61.20.32)');
+    err.code = 'PRIVATE_IP_BLOCKED';
+    err.blockedHostname = '10.61.20.32';
+    err.blockedAddress = null;
+    const result = classifyError(err, conn);
+    assert.ok(result.message.includes('10.61.20.32'), `expected hostname in: ${result.message}`);
+    assert.equal(result.privateIpBlocked, true);
+  });
 });

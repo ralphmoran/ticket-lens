@@ -16,7 +16,7 @@ import { loadProfiles, loadCredentials, saveProfile } from './profile-resolver.m
 import { promptSelect } from './select-prompt.mjs';
 import { parseAge } from './cache-manager.mjs';
 import { DEFAULT_BRIEF_TTL } from './brief-cache.mjs';
-import { DEFAULT_CONFIG_DIR } from './config.mjs';
+import { DEFAULT_CONFIG_DIR, hostnameOf } from './config.mjs';
 import { visLen, SERVER_AUTH_TYPES, promptText, promptSecret, promptYN } from './prompt-helpers.mjs';
 import { isLicensed } from './license.mjs';
 import { siteBase } from './api-utils.mjs';
@@ -103,6 +103,10 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   let email = profile.email || '';
   const existingToken = profileCreds.pat || profileCreds.apiToken || '';
   let token = existingToken;
+  // Trust is bound to the exact hostname it was granted for — never a flat
+  // per-profile boolean. Editing the URL to a different host must re-trigger
+  // the private-IP block and a fresh "Trust this connection?" prompt.
+  let trustedHostname = (profile.allowPrivateIp && hostnameOf(profile.baseUrl)) || null;
 
   // ── URL ───────────────────────────────────────────────────────────────────
   const urlTyped = await promptText(
@@ -157,6 +161,24 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   // ── Connection test (always) ──────────────────────────────────────────────
   let connected = false;
   let startFrom = 'test';
+
+  function isTrustedForCurrentUrl() {
+    return trustedHostname !== null && hostnameOf(url) === trustedHostname;
+  }
+
+  async function attemptConnection() {
+    if (isJira) {
+      const testEnv = {
+        JIRA_BASE_URL: url,
+        JIRA_EMAIL: email,
+        JIRA_API_TOKEN: auth !== 'pat' ? token : '',
+        JIRA_PAT: auth === 'pat' ? token : '',
+      };
+      await fetchCurrentUser({ env: testEnv, apiVersion: auth === 'cloud' ? 3 : 2, allowPrivateIp: isTrustedForCurrentUrl() });
+    } else {
+      await resolveAdapter({ baseUrl: url, auth: trackerType, apiToken: token }).fetchCurrentUser();
+    }
+  }
 
   setupLoop: while (true) {
     // Re-prompt URL + auth (on retry with 'url' option)
@@ -216,17 +238,7 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
       session.spin('Testing connection...');
 
       try {
-        if (isJira) {
-          const testEnv = {
-            JIRA_BASE_URL: url,
-            JIRA_EMAIL: email,
-            JIRA_API_TOKEN: auth !== 'pat' ? token : '',
-            JIRA_PAT: auth === 'pat' ? token : '',
-          };
-          await fetchCurrentUser({ env: testEnv, apiVersion: auth === 'cloud' ? 3 : 2 });
-        } else {
-          await resolveAdapter({ baseUrl: url, auth: trackerType, apiToken: token }).fetchCurrentUser();
-        }
+        await attemptConnection();
         session.connected();
         connected = true;
         break setupLoop;
@@ -234,6 +246,15 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
         session.failed();
         const classified = classifyError(err, { baseUrl: url, profileName: target });
         session.footer(classified.message, 'error', classified.hint);
+
+        if (classified.privateIpBlocked) {
+          const trust = await promptYN('Trust this connection?', { stream });
+          if (trust) {
+            trustedHostname = hostnameOf(url);
+            startFrom = 'test';
+            continue setupLoop;
+          }
+        }
       }
 
       stream.write(`\n  ${s.dim('What would you like to do?')}\n\n`);
@@ -326,7 +347,7 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
             JIRA_API_TOKEN: auth !== 'pat' ? token : '',
             JIRA_PAT: auth === 'pat' ? token : '',
           };
-          available = await fetchStatuses({ env: validateEnv, apiVersion: auth === 'cloud' ? 3 : 2 });
+          available = await fetchStatuses({ env: validateEnv, apiVersion: auth === 'cloud' ? 3 : 2, allowPrivateIp: isTrustedForCurrentUrl() });
         } else {
           available = await resolveAdapter({ baseUrl: url, auth: trackerType, apiToken: token }).fetchStatuses();
         }
@@ -397,6 +418,8 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   else delete updated.projectPaths;
   if (cacheTtl && cacheTtl !== DEFAULT_BRIEF_TTL) updated.cacheTtl = cacheTtl;
   else delete updated.cacheTtl;
+  if (isTrustedForCurrentUrl()) updated.allowPrivateIp = true;
+  else delete updated.allowPrivateIp;
 
   const credData = (token !== existingToken)
     ? (auth === 'pat' ? { pat: token } : { apiToken: token })

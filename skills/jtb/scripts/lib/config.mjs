@@ -68,6 +68,12 @@ export function stripCr(str) {
   return str.replace(/\r/g, '');
 }
 
+/** Parse a URL's hostname, or null if unparseable. Used to scope trust
+ * grants (e.g. allowPrivateIp) to the exact host they were confirmed for. */
+export function hostnameOf(url) {
+  try { return new URL(url).hostname; } catch { return null; }
+}
+
 /**
  * Build the env-like object expected by jira-client functions.
  * @param {{ baseUrl: string, pat?: string, email?: string, apiToken?: string }} conn

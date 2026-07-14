@@ -18,6 +18,15 @@ export function classifyError(err, { baseUrl, profileName } = {}) {
   const profile = profileName || 'your profile';
   const code = getNetworkCode(err);
 
+  if (err.code === 'PRIVATE_IP_BLOCKED') {
+    const address = err.blockedAddress ? ` (${err.blockedAddress})` : '';
+    return {
+      message: `${err.blockedHostname} resolves to a private address${address}`,
+      hint: "This is expected if you're on a VPN connecting to an on-prem Jira instance. It could also mean something is wrong.",
+      privateIpBlocked: true,
+    };
+  }
+
   // Network-level errors (fetch threw before getting an HTTP response)
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
     return {

@@ -29,6 +29,7 @@ export async function testConnections({
       email: profile.email,
       apiToken: profileCreds.apiToken,
       pat: profileCreds.pat,
+      allowPrivateIp: profile.allowPrivateIp,
     };
 
     const session = createSession(

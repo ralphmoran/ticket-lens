@@ -125,7 +125,14 @@ function normalizeHostname(hostname) {
   return hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '');
 }
 
-export function validateBaseUrl(url) {
+/**
+ * @param {string} url
+ * @param {boolean} [allowPrivateIp] - skip the private/internal blocklist check
+ *   for THIS hostname. Set only via explicit interactive user confirmation
+ *   during setup, persisted per-profile — never from synced/network data
+ *   (see team-jira-sync.mjs). HTTPS enforcement is never skippable.
+ */
+export function validateBaseUrl(url, allowPrivateIp = false) {
   let parsed;
   try { parsed = new URL(url); } catch {
     throw new Error(`JIRA_BASE_URL is not a valid URL: ${url}`);
@@ -133,9 +140,14 @@ export function validateBaseUrl(url) {
   if (parsed.protocol !== 'https:') {
     throw new Error(`JIRA_BASE_URL must use HTTPS (got ${parsed.protocol})`);
   }
+  if (allowPrivateIp) return;
   const hostname = normalizeHostname(parsed.hostname);
   if (BLOCKED_PATTERNS.some(re => re.test(hostname))) {
-    throw new Error(`JIRA_BASE_URL hostname is blocked (${hostname})`);
+    const err = new Error(`JIRA_BASE_URL hostname is blocked (${hostname})`);
+    err.code = 'PRIVATE_IP_BLOCKED';
+    err.blockedHostname = hostname;
+    err.blockedAddress = null;
+    throw err;
   }
 }
 
@@ -189,9 +201,17 @@ const dnsValidationCaches = new WeakMap();
  * `lookup` is null when the fetcher is mocked (tests) — no socket opens, so
  * there is nothing to protect. Production always uses globalThis.fetch, which
  * always gets the real resolver (see defaultLookupFor).
+ *
+ * `allowPrivateIp` skips the lookup entirely (not just the block) when a
+ * profile has an explicit, user-confirmed trust exception for this exact
+ * hostname — set only during interactive setup, never from synced/network
+ * data. Skipping the resolution outright (rather than resolving-then-
+ * ignoring) avoids the DNS round-trip and sidesteps any question of how the
+ * per-lookup-fn cache should key on a flag that no real caller varies
+ * concurrently for the same hostname.
  */
-export async function validateResolvedHost(hostname, lookup) {
-  if (!lookup) return;
+export async function validateResolvedHost(hostname, lookup, allowPrivateIp = false) {
+  if (!lookup || allowPrivateIp) return;
   let cache = dnsValidationCaches.get(lookup);
   if (!cache) {
     cache = new Map();
@@ -202,7 +222,11 @@ export async function validateResolvedHost(hostname, lookup) {
       const addresses = await lookup(hostname, { all: true });
       for (const { address } of addresses) {
         if (BLOCKED_PATTERNS.some(re => re.test(address))) {
-          throw new Error(`Hostname ${hostname} resolves to a blocked address (${address}) — refusing to connect`);
+          const err = new Error(`Hostname ${hostname} resolves to a blocked address (${address}) — refusing to connect`);
+          err.code = 'PRIVATE_IP_BLOCKED';
+          err.blockedHostname = hostname;
+          err.blockedAddress = address;
+          throw err;
         }
       }
     })();
@@ -223,8 +247,8 @@ export async function validateResolvedHost(hostname, lookup) {
  * Error message carries the redirect target's HOSTNAME only — Location values
  * can contain presigned tokens in path/query.
  */
-export async function guardedFetch(url, fetchOpts, { fetcher, lookup }) {
-  await validateResolvedHost(new URL(url).hostname, lookup);
+export async function guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp = false }) {
+  await validateResolvedHost(new URL(url).hostname, lookup, allowPrivateIp);
   const response = await fetcher(url, { ...fetchOpts, redirect: 'manual' });
   if (response.status >= 300 && response.status < 400) {
     let target = 'unknown host';
@@ -248,15 +272,15 @@ export function buildAuthHeader(env) {
 }
 
 export async function fetchCurrentUser(opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000 } = opts;
-  validateBaseUrl(env.JIRA_BASE_URL);
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
   const url = `${baseUrl}/rest/api/${apiVersion}/myself`;
   const fetchOpts = { headers };
   if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
-  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup });
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
 
   if (!response.ok) {
     const err = new Error(`Jira API error ${response.status} fetching current user`);
@@ -274,15 +298,15 @@ export async function fetchCurrentUser(opts = {}) {
 }
 
 export async function fetchStatuses(opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000 } = opts;
-  validateBaseUrl(env.JIRA_BASE_URL);
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
   const url = `${baseUrl}/rest/api/${apiVersion}/status`;
   const fetchOpts = { headers };
   if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
-  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup });
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
 
   if (!response.ok) {
     const err = new Error(`Jira API error ${response.status} fetching statuses`);
@@ -295,8 +319,8 @@ export async function fetchStatuses(opts = {}) {
 }
 
 export async function searchTickets(jql, opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), maxResults = 50, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false } = opts;
-  validateBaseUrl(env.JIRA_BASE_URL);
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), maxResults = 50, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
@@ -307,7 +331,7 @@ export async function searchTickets(jql, opts = {}) {
   const url = `${baseUrl}${endpoint}?${params}`;
   const fetchOpts = { headers };
   if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
-  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup });
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
 
   if (!response.ok) {
     let detail = '';
@@ -323,15 +347,15 @@ export async function searchTickets(jql, opts = {}) {
 }
 
 export async function fetchRemoteLinks(ticketKey, opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000 } = opts;
-  validateBaseUrl(env.JIRA_BASE_URL);
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const url = `${baseUrl}/rest/api/${apiVersion}/issue/${encodeURIComponent(ticketKey)}/remotelink`;
 
   const fetchOpts = { headers: { ...buildAuthHeader(env), 'Content-Type': 'application/json' } };
   if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
 
-  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup });
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
   if (!response.ok) return [];
 
   const raw = await response.json();
@@ -341,8 +365,8 @@ export async function fetchRemoteLinks(ticketKey, opts = {}) {
 }
 
 export async function fetchTicket(ticketKey, opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), depth = 1, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false, _visited = new Set(), _currentDepth = 0 } = opts;
-  validateBaseUrl(env.JIRA_BASE_URL);
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), depth = 1, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false, allowPrivateIp = false, _visited = new Set(), _currentDepth = 0 } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
@@ -350,7 +374,7 @@ export async function fetchTicket(ticketKey, opts = {}) {
   const url = `${baseUrl}/rest/api/${apiVersion}/issue/${encodeURIComponent(ticketKey)}${expand}`;
   const fetchOpts = { headers };
   if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
-  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup });
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
 
   if (!response.ok) {
     const err = new Error(`Jira API error ${response.status} fetching ${ticketKey}`);

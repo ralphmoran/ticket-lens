@@ -79,7 +79,7 @@ Tip: `tl` works everywhere `ticketlens` does — running `tl`/`ticketlens config
 | `ticketlens profiles` | List all configured profiles (alias: `ticketlens ls`) |
 | `ticketlens delete <NAME>` | Remove a profile and its credentials (prompts `y/N` in TTY; use `--yes` in scripts/CI) |
 
-`init` collects: profile name, tracker type (Jira / GitHub Issues / Linear), URL or workspace, credentials (masked), and optional ticket prefixes, project paths, and triage statuses. On connection failure, a retry menu lets you fix credentials, URL, or skip — all inputs pre-populated. `config` is tracker-aware and always re-validates the connection after edits.
+`init` collects: profile name, tracker type (Jira / GitHub Issues / Linear), URL or workspace, credentials (masked), and optional ticket prefixes, project paths, and triage statuses. On connection failure, a retry menu lets you fix credentials, URL, or skip — all inputs pre-populated. If your Jira instance sits behind a VPN and resolves to a private/internal address, you'll be asked to confirm you trust that connection before it's allowed through — a one-time confirmation, remembered per profile and scoped to that exact host (changing the URL asks again). `config` is tracker-aware and always re-validates the connection after edits.
 
 `config` uses merge semantics: new ticket prefixes and triage statuses are added to existing lists, never replaced. Partial matching resolves `QA` to `QA Testing` if that's the status in your Jira.
 

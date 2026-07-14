@@ -20,10 +20,15 @@ const MAX_REDIRECT_HOPS = 2;
  * code-review remediation). Auth headers are only ever sent on the initial
  * request — every hop after that is auth-less, matching Jira Cloud's
  * presigned-URL CDN redirect model.
+ *
+ * `allowPrivateIp` only ever applies to the initial hop (the user's own
+ * trusted Jira origin). A redirect target is server-controlled — a
+ * categorically different trust domain — so it is never passed through,
+ * regardless of the caller's trust level.
  */
-async function followValidatedRedirects(initialUrl, fetcher, lookup, headers) {
+async function followValidatedRedirects(initialUrl, fetcher, lookup, headers, allowPrivateIp = false) {
   let url = initialUrl;
-  await validateResolvedHost(new URL(url).hostname, lookup);
+  await validateResolvedHost(new URL(url).hostname, lookup, allowPrivateIp);
   let response = await fetcher(url, { headers, redirect: 'manual' });
   let hops = 0;
   while (response.status >= 300 && response.status < 400) {
@@ -53,6 +58,7 @@ async function followValidatedRedirects(initialUrl, fetcher, lookup, headers) {
  * @param {string} opts.configDir Base config dir (default: ~/.ticketlens)
  * @param {boolean} opts.noCache  Force re-download even if cached (default: false)
  * @param {Function} opts.onProgress  Optional callback(msg: string) for progress lines
+ * @param {boolean} opts.allowPrivateIp  Skip the private-IP DNS check on the initial hop only (default: false)
  *
  * @returns {Promise<Array<{filename, mimeType, size, localPath, skipped, skipReason, error}>>}
  */
@@ -64,6 +70,7 @@ export async function downloadAttachments(ticket, opts = {}) {
     configDir = DEFAULT_CONFIG_DIR,
     noCache = false,
     onProgress = null,
+    allowPrivateIp = false,
   } = opts;
 
   const attachments = (ticket.attachments ?? []).filter(a => a.content);
@@ -118,7 +125,7 @@ export async function downloadAttachments(ticket, opts = {}) {
       onProgress?.(`  download  ${a.filename}`);
       try {
         const headers = buildAuthHeader(env);
-        const response = await followValidatedRedirects(a.content, fetcher, lookup, headers);
+        const response = await followValidatedRedirects(a.content, fetcher, lookup, headers, allowPrivateIp);
         if (!response.ok) throw new Error(`HTTP ${response.status} (${response.statusText})`);
         const buffer = await response.arrayBuffer();
         fs.writeFileSync(localPath, Buffer.from(buffer));

@@ -118,6 +118,7 @@ export async function runSwitch({ configDir = DEFAULT_CONFIG_DIR, stream = proce
     JIRA_PAT: profileCreds.pat || '',
   };
   const apiVersion = profile.auth === 'cloud' ? 3 : 2;
+  const allowPrivateIp = profile.allowPrivateIp;
 
   let frame = 0;
   const spinLine = () => `  ${s.cyan(SPINNER_FRAMES[frame])} Connecting to ${s.bold(chosen.name)}...`;
@@ -129,7 +130,7 @@ export async function runSwitch({ configDir = DEFAULT_CONFIG_DIR, stream = proce
   }, 80);
 
   try {
-    await fetchCurrentUser({ env, apiVersion });
+    await fetchCurrentUser({ env, apiVersion, allowPrivateIp });
     clearInterval(timer);
     stream.write('\r\x1b[2K\x1b[A\r\x1b[2K');
     await saveDefault(chosen.name, configDir);
