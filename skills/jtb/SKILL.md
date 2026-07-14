@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.11.0 -->
+<!-- jtb-skill-version: 0.12.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
