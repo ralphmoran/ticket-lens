@@ -239,17 +239,19 @@ describe('styleBrief', () => {
 
 describe('styleRecallResults', () => {
   const digests = [
-    { title: 'Retry gotcha', tickets: ['PROD-1'], created: '2026-07-10T00:00:00.000Z' },
-    { title: 'General note', tickets: [], created: '2026-07-09T00:00:00.000Z' },
+    { id: 'note-1.md', title: 'Retry gotcha', tickets: ['PROD-1'], created: '2026-07-10T00:00:00.000Z', body: 'Add exponential backoff to the retry loop.' },
+    { id: 'note-2.md', title: 'General note', tickets: [], created: '2026-07-09T00:00:00.000Z', body: 'Onboarding context.' },
   ];
 
-  it('renders each note title, its tickets, and its date', () => {
+  it('renders each note title, its tickets, its date, and its id', () => {
     const result = styleRecallResults(digests, { styled: false });
     assert.match(result, /Retry gotcha/);
     assert.match(result, /PROD-1/);
     assert.match(result, /2026-07-10/);
+    assert.match(result, /note-1\.md/);
     assert.match(result, /General note/);
     assert.match(result, /2026-07-09/);
+    assert.match(result, /note-2\.md/);
   });
 
   it('a note with no linked tickets renders without a ticket list', () => {
@@ -274,6 +276,26 @@ describe('styleRecallResults', () => {
 
   it('regression: unstyled output is the exact plain-text format --plain must reproduce, no bullet/decoration', () => {
     const result = styleRecallResults(digests, { styled: false });
-    assert.equal(result, 'Retry gotcha (PROD-1) — 2026-07-10\nGeneral note — 2026-07-09');
+    assert.equal(result, 'Retry gotcha (PROD-1) — 2026-07-10  [note-1.md]\nGeneral note — 2026-07-09  [note-2.md]');
+  });
+
+  it('by default (full: false) body content is never printed, even though the digest carries it', () => {
+    const result = styleRecallResults(digests, { styled: false });
+    assert.doesNotMatch(result, /Add exponential backoff/);
+    assert.doesNotMatch(result, /Onboarding context/);
+  });
+
+  it('full: true additionally prints each note\'s body content', () => {
+    const result = styleRecallResults(digests, { styled: false, full: true });
+    assert.match(result, /Add exponential backoff to the retry loop\./);
+    assert.match(result, /Onboarding context\./);
+  });
+
+  it('regression: unstyled full-content output is the exact plain-text format --plain --full must reproduce', () => {
+    const result = styleRecallResults(digests, { styled: false, full: true });
+    assert.equal(
+      result,
+      'Retry gotcha (PROD-1) — 2026-07-10  [note-1.md]\nAdd exponential backoff to the retry loop.\n\nGeneral note — 2026-07-09  [note-2.md]\nOnboarding context.',
+    );
   });
 });

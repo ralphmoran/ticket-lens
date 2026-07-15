@@ -35,6 +35,7 @@ export async function runRecall(cmdArgs, {
   const results = listDigestsFn(filter, { configDir });
 
   const styled = !cmdArgs.includes('--plain') && stream.isTTY;
-  stream.write(styleRecallResults(results, { styled }) + '\n');
+  const full = cmdArgs.includes('--full');
+  stream.write(styleRecallResults(results, { styled, full }) + '\n');
   return { ok: true };
 }

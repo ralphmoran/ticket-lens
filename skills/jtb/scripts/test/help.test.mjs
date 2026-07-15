@@ -364,4 +364,10 @@ describe('printRecallHelp', () => {
     const out = captureHelp(printRecallHelp);
     assert.match(out, /Pro/);
   });
+
+  it('documents --plain and --full', () => {
+    const out = captureHelp(printRecallHelp);
+    assert.match(out, /--plain/);
+    assert.match(out, /--full/);
+  });
 });

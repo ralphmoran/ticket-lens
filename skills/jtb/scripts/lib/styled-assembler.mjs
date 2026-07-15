@@ -98,29 +98,30 @@ export function styleTriageSummary(scoredTickets, opts = {}) {
 }
 
 export function styleRecallResults(digests, opts = {}) {
-  const { styled = true } = opts;
+  const { styled = true, full = false } = opts;
 
   if (digests.length === 0) {
     return 'No matching notes found.';
   }
 
   if (!styled) {
-    return digests
-      .map(d => {
-        const ticketList = d.tickets?.length > 0 ? ` (${d.tickets.join(', ')})` : '';
-        return `${d.title}${ticketList} — ${d.created.split('T')[0]}`;
-      })
-      .join('\n');
+    const entries = digests.map(d => {
+      const ticketList = d.tickets?.length > 0 ? ` (${d.tickets.join(', ')})` : '';
+      const summary = `${d.title}${ticketList} — ${d.created.split('T')[0]}  [${d.id}]`;
+      return full ? `${summary}\n${d.body}` : summary;
+    });
+    return entries.join(full ? '\n\n' : '\n');
   }
 
   const s = createStyler({ forceColor: true });
-  return digests
-    .map(d => {
-      const ticketList = d.tickets?.length > 0 ? ` ${s.dim(`(${d.tickets.join(', ')})`)}` : '';
-      const date = s.dim(d.created.split('T')[0]);
-      return `${s.brand('●')} ${s.bold(d.title)}${ticketList} ${s.dim('—')} ${date}`;
-    })
-    .join('\n');
+  const entries = digests.map(d => {
+    const ticketList = d.tickets?.length > 0 ? ` ${s.dim(`(${d.tickets.join(', ')})`)}` : '';
+    const date = s.dim(d.created.split('T')[0]);
+    const id = s.dim(`[${d.id}]`);
+    const summary = `${s.brand('●')} ${s.bold(d.title)}${ticketList} ${s.dim('—')} ${date}  ${id}`;
+    return full ? `${summary}\n${d.body}` : summary;
+  });
+  return entries.join(full ? '\n\n' : '\n');
 }
 
 export function styleBrief(ticket, codeRefs = null, opts = {}) {

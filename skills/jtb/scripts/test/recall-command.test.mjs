@@ -92,7 +92,7 @@ describe('runRecall — output', () => {
 });
 
 describe('runRecall — styled vs --plain output', () => {
-  const oneNote = () => [{ title: 'Retry gotcha', tickets: ['PROD-1'], created: '2026-07-10T00:00:00.000Z' }];
+  const oneNote = () => [{ id: 'note-1.md', title: 'Retry gotcha', tickets: ['PROD-1'], created: '2026-07-10T00:00:00.000Z', body: 'Add backoff.' }];
 
   test('a TTY stream without --plain gets styled output (ANSI codes present)', async () => {
     const deps = baseDeps({ stream: makeStream({ isTTY: true }), listDigestsFn: oneNote });
@@ -105,12 +105,36 @@ describe('runRecall — styled vs --plain output', () => {
     await runRecall(['retry', '--plain'], deps);
     const output = deps.stream.lines.join('');
     assert.doesNotMatch(output, /\x1b\[/);
-    assert.equal(output, 'Retry gotcha (PROD-1) — 2026-07-10\n');
+    assert.equal(output, 'Retry gotcha (PROD-1) — 2026-07-10  [note-1.md]\n');
   });
 
   test('a non-TTY stream (piped) gets plain output even without --plain', async () => {
     const deps = baseDeps({ stream: makeStream({ isTTY: false }), listDigestsFn: oneNote });
     await runRecall(['retry'], deps);
     assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/);
+  });
+});
+
+describe('runRecall — --full prints note content', () => {
+  const oneNote = () => [{ id: 'note-1.md', title: 'Retry gotcha', tickets: ['PROD-1'], created: '2026-07-10T00:00:00.000Z', body: 'Add exponential backoff.' }];
+
+  test('without --full, body content is not printed', async () => {
+    const deps = baseDeps({ listDigestsFn: oneNote });
+    await runRecall(['retry'], deps);
+    assert.doesNotMatch(deps.stream.lines.join(''), /Add exponential backoff/);
+  });
+
+  test('--full prints each matching note\'s body content', async () => {
+    const deps = baseDeps({ listDigestsFn: oneNote });
+    await runRecall(['retry', '--full'], deps);
+    assert.match(deps.stream.lines.join(''), /Add exponential backoff\./);
+  });
+
+  test('--full works together with --plain (exact bare format, with body)', async () => {
+    const deps = baseDeps({ stream: makeStream({ isTTY: true }), listDigestsFn: oneNote });
+    await runRecall(['retry', '--plain', '--full'], deps);
+    const output = deps.stream.lines.join('');
+    assert.doesNotMatch(output, /\x1b\[/);
+    assert.equal(output, 'Retry gotcha (PROD-1) — 2026-07-10  [note-1.md]\nAdd exponential backoff.\n');
   });
 });

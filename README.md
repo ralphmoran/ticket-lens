@@ -387,6 +387,7 @@ Requires a Pro license. No network call — reads local snapshots only.
 echo "Refresh tokens expire silently after 30 days" | ticketlens note add --title="Token refresh gotcha" --ticket=PROJ-123 --tags=auth
 ticketlens recall PROJ-123                 # Search saved notes by ticket key
 ticketlens recall "refresh token"          # Free-text search across all your notes
+ticketlens recall PROJ-123 --full          # Print each matching note's full content
 ```
 
 Save short notes to yourself — gotchas, context, decisions — and they're automatically matched and injected into future `ticketlens PROJ-123` briefs under a `## Recall` section, clearly marked as your own reference material (never treated as instructions). Notes are stored locally at `~/.ticketlens/recall/` as plain markdown files with frontmatter, so they're readable in any editor or Obsidian vault.
@@ -395,7 +396,7 @@ The note body is read from stdin, not a flag — this avoids shell-quoting issue
 
 Every note is scanned before saving — anything shaped like a real secret (API key, private key, token) is rejected outright, never silently redacted. Requires a Pro license. No network call — everything stays on your machine.
 
-`note add`'s save confirmation and `recall`'s search results are styled by default in a terminal; add `--plain` to either for bare, pipe-safe output.
+`note add`'s save confirmation and `recall`'s search results are styled by default in a terminal; add `--plain` to either for bare, pipe-safe output. `recall` always shows each note's file ID (e.g. `[1784135399545-fe01c4.md]`) so you can open it directly (`cat ~/.ticketlens/recall/<PREFIX>/<id>`), or pass `--full` to print the full body content inline instead.
 
 ---
 
