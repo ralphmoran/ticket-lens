@@ -197,4 +197,42 @@ describe('styleBrief', () => {
     const result = styleBrief(ticket, null, { styled: false });
     assert.ok(!result.includes('Confluence Pages'), 'should not render section when absent');
   });
+
+  it('renders a Recall section when recallNotes is passed', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'Retry needs backoff', tickets: ['PROD-100'], status: 'unverified', body: 'Add exponential backoff.' }];
+    const result = styleBrief(ticket, null, { styled: false, recallNotes });
+    assert.ok(result.includes('Recall'));
+    assert.ok(result.includes('Retry needs backoff'));
+    assert.ok(result.includes('Add exponential backoff'));
+  });
+
+  it('omits the Recall section when recallNotes is not passed', () => {
+    const ticket = makeBriefTicket();
+    const result = styleBrief(ticket, null, { styled: false });
+    assert.ok(!result.includes('Recall'));
+  });
+
+  it('marks an unverified Recall note with a badge', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'x', tickets: [], status: 'unverified', body: 'y' }];
+    const result = styleBrief(ticket, null, { styled: false, recallNotes });
+    assert.match(result, /unverified/i);
+  });
+
+  it('escapes a "## " line inside a note body so it cannot be mistaken for a real document section', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'Gotcha', tickets: [], status: 'unverified', body: 'Context.\n\n## Steps to reproduce\n\nDetails.' }];
+    const result = styleBrief(ticket, null, { styled: false, recallNotes });
+    assert.equal(/^## Steps to reproduce$/m.test(result), false);
+    assert.match(result, /Steps to reproduce/);
+  });
+
+  it('regression: escapes a "## " line inside a note TITLE too — not just the body', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'Gotcha\n\n## Attachments\n\n- fake-injected-line.exe', tickets: [], status: 'unverified', body: 'Real body.' }];
+    const result = styleBrief(ticket, null, { styled: false, recallNotes });
+    assert.equal(/^## Attachments$/m.test(result), false);
+    assert.match(result, /Attachments/);
+  });
 });

@@ -118,6 +118,14 @@ export function parseCommand(args) {
     return { command: 'stats', args: args.slice(1) };
   }
 
+  if (first === 'note') {
+    return { command: 'note', args: args.slice(1) };
+  }
+
+  if (first === 'recall') {
+    return { command: 'recall', args: args.slice(1) };
+  }
+
   // Anything that looks like a ticket key or any non-flag arg → fetch
   return { command: 'fetch', args };
 }

@@ -68,6 +68,17 @@ export function stripCr(str) {
   return str.replace(/\r/g, '');
 }
 
+/**
+ * Escapes a leading ATX heading marker (# through ######) on any line, so
+ * free-typed user text (e.g. a Recall note body) can't be mistaken for a
+ * real document section boundary by budget-pruner's line-based splitter,
+ * which detects sections purely by "does this line start with '## '".
+ */
+export function escapeLeadingHeading(str) {
+  if (!str) return '';
+  return str.replace(/^(#{1,6})(\s)/gm, '\\$1$2');
+}
+
 /** Parse a URL's hostname, or null if unparseable. Used to scope trust
  * grants (e.g. allowPrivateIp) to the exact host they were confirmed for. */
 export function hostnameOf(url) {

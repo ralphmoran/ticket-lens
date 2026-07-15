@@ -26,6 +26,7 @@ import {
   printReviewHelp, printStandupHelp, printUpdateSkillHelp,
   printCollisionsHelp, printStatsHelp,
   printCloudKeysHelp,
+  printNoteHelp, printRecallHelp,
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { runStats } from '../skills/jtb/scripts/lib/run-stats.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
@@ -40,7 +41,7 @@ import { checkTeamJiraConfigUpdate } from '../skills/jtb/scripts/lib/team-jira-s
 const TRACKED_COMMANDS = new Set([
   'triage', 'fetch', 'get', 'compliance', 'review', 'standup',
   'pr', 'ledger', 'stats', 'collisions', 'history', 'schedule',
-  'brief', 'sync',
+  'brief', 'sync', 'note', 'recall',
 ]);
 
 const args = process.argv.slice(2);
@@ -601,6 +602,35 @@ switch (command) {
       printCloudKeysHelp({ stream: process.stderr });
       process.exitCode = 1;
     })().catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+  }
+
+  case 'note': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printNoteHelp(); break; }
+    if (cmdArgs[0] !== 'add') {
+      process.stderr.write('Usage: ticketlens note add --title="..." [--ticket=KEY] [--tags=a,b]\n');
+      process.exitCode = 1;
+      break;
+    }
+    const { runNoteAdd } = await import('../skills/jtb/scripts/lib/note-command.mjs');
+    runNoteAdd(cmdArgs.slice(1)).then(({ written }) => {
+      if (!written) process.exitCode = 1;
+    }).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+  }
+
+  case 'recall': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printRecallHelp(); break; }
+    const { runRecall } = await import('../skills/jtb/scripts/lib/recall-command.mjs');
+    runRecall(cmdArgs).then(({ ok }) => {
+      if (!ok) process.exitCode = 1;
+    }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
     });

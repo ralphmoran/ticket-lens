@@ -24,7 +24,7 @@ function read(configDir) {
   try {
     return JSON.parse(fs.readFileSync(path.join(configDir, ACTIVITY_FILE), 'utf8'));
   } catch {
-    return { fetch_count: 0, triage_run_count: 0, invocations: 0, commands: {} };
+    return { fetch_count: 0, triage_run_count: 0, invocations: 0, commands: {}, drafts_kept: 0, drafts_deleted: 0, briefs_with_recall_injection: 0 };
   }
 }
 
@@ -45,6 +45,7 @@ function increment(configDir, field) {
   const data = read(configDir);
   data[field] = (data[field] ?? 0) + 1;
   write(configDir, data);
+  return data[field];
 }
 
 export function incrementFetch(configDir) {
@@ -57,6 +58,51 @@ export function incrementTriageRun(configDir) {
 
 export function incrementInvocation(configDir) {
   increment(configDir, 'invocations');
+}
+
+export function incrementDraftKept(configDir) {
+  increment(configDir, 'drafts_kept');
+}
+
+export function incrementDraftDeleted(configDir) {
+  increment(configDir, 'drafts_deleted');
+}
+
+/**
+ * @param {string} configDir
+ * @returns {number} the new running count, so callers can decide whether to fire the pulse prompt
+ */
+export function incrementBriefWithRecall(configDir) {
+  return increment(configDir, 'briefs_with_recall_injection');
+}
+
+const PULSE_INTERVAL = 25;
+
+/**
+ * @param {number} briefsWithRecallCount
+ * @returns {boolean} true on exact multiples of 25 (never for 0)
+ */
+export function shouldPromptPulse(briefsWithRecallCount) {
+  return briefsWithRecallCount > 0 && briefsWithRecallCount % PULSE_INTERVAL === 0;
+}
+
+const MAX_PULSES = 20;
+
+/**
+ * Records a response to the "is Recall pulling its weight?" pulse prompt.
+ * Kept separate from the counters readAndResetActivity manages — pulses are
+ * a local log for the founder to review, not a count that gets pushed and
+ * zeroed out.
+ *
+ * @param {string} configDir
+ * @param {'y'|'n'|'skip'} response
+ */
+export function recordPulseResponse(configDir, response) {
+  const data = read(configDir);
+  if (!data.pulses) data.pulses = [];
+  data.pulses.push({ ts: new Date().toISOString(), response });
+  data.pulses = data.pulses.slice(-MAX_PULSES);
+  write(configDir, data);
 }
 
 /**
@@ -110,11 +156,18 @@ export function recordTokensSaved(configDir, command, tokens) {
 export function readAndResetActivity(configDir) {
   const data = read(configDir);
   const snapshot = {
-    fetch_count:      data.fetch_count      ?? 0,
-    triage_run_count: data.triage_run_count ?? 0,
-    invocations:      data.invocations      ?? 0,
-    commands:         data.commands         ?? {},
+    fetch_count:                  data.fetch_count                  ?? 0,
+    triage_run_count:             data.triage_run_count             ?? 0,
+    invocations:                  data.invocations                  ?? 0,
+    commands:                     data.commands                     ?? {},
+    drafts_kept:                  data.drafts_kept                  ?? 0,
+    drafts_deleted:               data.drafts_deleted               ?? 0,
+    briefs_with_recall_injection: data.briefs_with_recall_injection ?? 0,
   };
-  write(configDir, { fetch_count: 0, triage_run_count: 0, invocations: 0, commands: {} });
+  write(configDir, {
+    fetch_count: 0, triage_run_count: 0, invocations: 0, commands: {},
+    drafts_kept: 0, drafts_deleted: 0, briefs_with_recall_injection: 0,
+    ...(data.pulses ? { pulses: data.pulses } : {}),
+  });
   return snapshot;
 }

@@ -1,8 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -185,6 +186,10 @@ describe('bin/ticketlens.mjs', () => {
     ['switch', '-h'],
     ['config', '--help'],
     ['config', '-h'],
+    ['note', '--help'],
+    ['note', '-h'],
+    ['recall', '--help'],
+    ['recall', '-h'],
   ]) {
     it(`"ticketlens ${cmd} ${flag}" exits 0 and prints help`, () => {
       const result = spawnSync('node', [binPath, cmd, flag], {
@@ -201,4 +206,35 @@ describe('bin/ticketlens.mjs', () => {
       );
     });
   }
+
+  it('"ticketlens note add" with no Pro license writes nothing under ~/.ticketlens/recall/', () => {
+    const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-note-gate-'));
+    try {
+      const result = spawnSync('node', [binPath, 'note', 'add', '--title=x', '--ticket=PROD-1'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        input: 'Body text.',
+        env: { ...process.env, HOME: freshHome, CI: 'true' },
+      });
+      assert.equal(existsSync(join(freshHome, '.ticketlens', 'recall')), false);
+      assert.notEqual(result.status, 0);
+    } finally {
+      rmSync(freshHome, { recursive: true, force: true });
+    }
+  });
+
+  it('"ticketlens recall" with no Pro license shows an upgrade prompt and exits non-zero', () => {
+    const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-recall-gate-'));
+    try {
+      const result = spawnSync('node', [binPath, 'recall', 'backoff'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        env: { ...process.env, HOME: freshHome, CI: 'true' },
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /pro/i);
+    } finally {
+      rmSync(freshHome, { recursive: true, force: true });
+    }
+  });
 });

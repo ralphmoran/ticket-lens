@@ -184,4 +184,23 @@ describe('parseCommand', () => {
     assert.equal(result.command, 'collisions');
     assert.deepEqual(result.args, ['--json']);
   });
+
+  it('routes "note" to note command', () => {
+    const result = parseCommand(['note', 'add', '--title=x']);
+    assert.equal(result.command, 'note');
+    assert.deepEqual(result.args, ['add', '--title=x']);
+  });
+
+  it('routes "recall" to recall command', () => {
+    const result = parseCommand(['recall', 'backoff']);
+    assert.equal(result.command, 'recall');
+    assert.deepEqual(result.args, ['backoff']);
+  });
+
+  it('lock — adding "note"/"recall" does not change the ticket-key fallback for anything else', () => {
+    const stillFetch = parseCommand(['PROJ-999']);
+    assert.equal(stillFetch.command, 'fetch');
+    const stillFetch2 = parseCommand(['notATicketButNotACommandEither']);
+    assert.equal(stillFetch2.command, 'fetch');
+  });
 });

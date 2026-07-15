@@ -4,9 +4,10 @@
  *
  * Pruning priority order:
  *   1. Remove individual comment blocks older than 30 days
- *   2. Remove the entire ## Attachments section
- *   3. Truncate ## Description to first 500 chars
- *   4. Remove comment bodies from ## Linked Tickets, keep key+summary lines
+ *   2. Remove the entire ## Recall section (your own saved notes — speculative, cheapest to cut)
+ *   3. Remove the entire ## Attachments section
+ *   4. Truncate ## Description to first 500 chars
+ *   5. Remove comment bodies from ## Linked Tickets, keep key+summary lines
  */
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -163,7 +164,20 @@ export function pruneBrief(brief, { budget, stream, now } = {}) {
     }
   }
 
-  // ── Priority 2: Remove Attachments section ─────────────────────────────────
+  // ── Priority 2: Remove Recall section ───────────────────────────────────────
+  // Recall is speculative augmentation (your own saved notes), not primary
+  // ticket data — it's the cheapest thing to drop, before Attachments/
+  // Description/Linked Tickets. A no-op whenever there is no Recall section.
+  if (estimateTokens(joinSections(sections)) > budget) {
+    const recallIdx = sections.findIndex(s => s.heading === 'Recall');
+    if (recallIdx !== -1) {
+      const recallTokens = estimateTokens(sections[recallIdx].content);
+      dropped.push(`Recall notes (−${recallTokens}t)`);
+      sections.splice(recallIdx, 1);
+    }
+  }
+
+  // ── Priority 3: Remove Attachments section ─────────────────────────────────
   if (estimateTokens(joinSections(sections)) > budget) {
     const attIdx = sections.findIndex(s => s.heading === 'Attachments');
     if (attIdx !== -1) {
@@ -176,7 +190,7 @@ export function pruneBrief(brief, { budget, stream, now } = {}) {
     }
   }
 
-  // ── Priority 3: Truncate Description to 500 chars ─────────────────────────
+  // ── Priority 4: Truncate Description to 500 chars ─────────────────────────
   if (estimateTokens(joinSections(sections)) > budget) {
     const descIdx = sections.findIndex(s => s.heading === 'Description');
     if (descIdx !== -1) {
@@ -195,7 +209,7 @@ export function pruneBrief(brief, { budget, stream, now } = {}) {
     }
   }
 
-  // ── Priority 4: Remove linked ticket comment bodies ────────────────────────
+  // ── Priority 5: Remove linked ticket comment bodies ────────────────────────
   if (estimateTokens(joinSections(sections)) > budget) {
     const ltIdx = sections.findIndex(s => s.heading === 'Linked Tickets');
     if (ltIdx !== -1) {

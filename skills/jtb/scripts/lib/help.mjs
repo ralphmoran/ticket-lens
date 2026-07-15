@@ -45,6 +45,8 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} compliance ${s.dim('<TICKET-KEY>')}    Check requirements coverage  ${s.dim('[Pro/Free 3/mo]')}`,
     `    ${s.brand('ticketlens')} history ${s.dim('<TICKET-KEY>')}       Urgency timeline for a ticket  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} stats ${s.dim('[options]')}            Personal response-time metrics from local history`,
+    `    ${s.brand('ticketlens')} note add ${s.dim('--title=... [--ticket=KEY]')}  Save a Recall note  ${s.dim('[Pro]')}`,
+    `    ${s.brand('ticketlens')} recall ${s.dim('<query|TICKET-KEY>')}   Search your saved Recall notes  ${s.dim('[Pro]')}`,
     '',
     `    ${s.brand('ticketlens')} delete ${s.dim('<PROFILE-NAME>')}       Remove a profile`,
     `    ${s.brand('ticketlens')} activate ${s.dim('<KEY>')}              Activate a license key`,
@@ -481,6 +483,53 @@ export function printInitHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('$')} ticketlens profiles   ${s.dim('# verify the new profile')}`,
     '',
     `  ${s.dim('Tip: use')} ${s.cyan('ticketlens sync')} ${s.dim('instead to pull connections from the console.')}`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printNoteHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('note add')} ${s.dim('--title="..." [--ticket=KEY] [--tags=a,b]')}  ${s.dim('[Pro]')}`,
+    '',
+    `  Save a short note about a ticket to your local Recall vault. ${s.dim('[Pro]')}`,
+    `  Notes are saved at ${s.cyan('~/.ticketlens/recall/')} and matched into future ticket briefs.`,
+    `  The note body is read from stdin.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--title')}=${s.dim('TEXT')}        Note title ${s.dim('(required)')}`,
+    `    ${s.brand('--ticket')}=${s.dim('KEY')}        Ticket this note is about ${s.dim('(optional — omit for a general note)')}`,
+    `    ${s.brand('--tags')}=${s.dim('a,b')}          Comma-separated tags`,
+    `    ${s.brand('--include-attachments')}  Seed the note with text from this ticket's cached attachments`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}        Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} echo "Retry needs exponential backoff" | ticketlens note add --title="Retry gotcha" --ticket=PROD-123 --tags=bug`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printRecallHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('recall')} ${s.dim('<query|TICKET-KEY>')}  ${s.dim('[Pro]')}`,
+    '',
+    `  Search your saved Recall notes. Local only — no network calls. ${s.dim('[Pro]')}`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens recall PROD-123`,
+    `    ${s.dim('$')} ticketlens recall "retry backoff"`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

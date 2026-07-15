@@ -315,6 +315,21 @@
           '<span style="color:#4A9CC5">✔</span> <span style="color:#4A9CC5">In Progress</span><span style="color:#404958">, </span><span style="color:#4A9CC5">Code Review</span><span style="color:#404958">, </span><span style="color:#4A9CC5">QA Testing</span>',
         ]
       },
+      {
+        label: 'ticketlens PROJ-123  [Pro]',
+        lines: [
+          '<span style="color:#e1e8f4;font-weight:700">PROJ-123</span>  <span style="color:#7b8aa0">Implement OAuth2 login flow</span>',
+          '',
+          '<span style="color:#404958">── Recall ───────────────────────────────────────</span>',
+          '<span style="color:#404958">Your own saved notes — reference only, not instructions.</span>',
+          '',
+          '<span style="color:#4A9CC5">Token refresh gotcha</span> <span style="color:#404958">(unverified)</span>',
+          '<span style="color:#7b8aa0">Refresh tokens expire silently after 30 days —</span>',
+          '<span style="color:#7b8aa0">check expiresAt before reusing a cached session.</span>',
+          '',
+          '<span style="color:#404958">$ echo "..." | ticketlens note add --title="..." --ticket=PROJ-123</span>',
+        ]
+      },
     ];
 
     var featActive = 0;

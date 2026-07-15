@@ -381,6 +381,22 @@ Requires a Pro license. No network call — reads local snapshots only.
 
 ---
 
+### Recall
+
+```bash
+echo "Refresh tokens expire silently after 30 days" | ticketlens note add --title="Token refresh gotcha" --ticket=PROJ-123 --tags=auth
+ticketlens recall PROJ-123                 # Search saved notes by ticket key
+ticketlens recall "refresh token"          # Free-text search across all your notes
+```
+
+Save short notes to yourself — gotchas, context, decisions — and they're automatically matched and injected into future `ticketlens PROJ-123` briefs under a `## Recall` section, clearly marked as your own reference material (never treated as instructions). Notes are stored locally at `~/.ticketlens/recall/` as plain markdown files with frontmatter, so they're readable in any editor or Obsidian vault.
+
+The note body is read from stdin, not a flag — this avoids shell-quoting issues with multi-line text. A note can be tied to one ticket (`--ticket=KEY`), or left general (omit `--ticket`) for onboarding-style knowledge that isn't about a specific ticket. Add `--include-attachments` to seed the note with text from that ticket's already-cached attachments (`.txt`/`.md`/`.csv`/`.json` only).
+
+Every note is scanned before saving — anything shaped like a real secret (API key, private key, token) is rejected outright, never silently redacted. Requires a Pro license. No network call — everything stays on your machine.
+
+---
+
 ### Response-Time Stats
 
 ```bash
@@ -645,6 +661,11 @@ ticketlens schedule --local                   # Local-only cron/LaunchAgent — 
 # ── History ───────────────────────────────────────────────────────────────────
 ticketlens history <TICKET-KEY>               # Show urgency timeline for a ticket [Pro]
 
+# ── Recall ────────────────────────────────────────────────────────────────────
+echo "note body" | ticketlens note add --title="..." --ticket=CNV1-2 --tags=a,b  # Save a note [Pro]
+ticketlens recall CNV1-2                      # Search saved notes by ticket key [Pro]
+ticketlens recall "retry backoff"             # Free-text search across all notes [Pro]
+
 # ── Stats ──────────────────────────────────────────────────────────────────────
 ticketlens stats                              # Response-time metrics from local history
 ticketlens stats --profile=acme              # Metrics for a specific profile
@@ -720,6 +741,8 @@ ticketlens CNV1-2 --compliance           # Check ticket requirements against loc
 ticketlens triage --stale=3              # Custom stale threshold (default is 5)
 ticketlens triage --digest               # POST scored triage results to digest endpoint
 ticketlens schedule                      # Set up a scheduled daily digest
+ticketlens note add --title="..."        # Save a Recall note (body from stdin)
+ticketlens recall <query|TICKET-KEY>     # Search your saved Recall notes
 ticketlens activate YOUR-LICENSE-KEY     # Activate Pro license
 ```
 

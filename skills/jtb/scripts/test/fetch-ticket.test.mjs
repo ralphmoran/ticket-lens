@@ -5,6 +5,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { run } from '../fetch-ticket.mjs';
+import { writeDigest } from '../lib/recall-vault.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -282,6 +283,113 @@ describe('fetch-ticket integration', () => {
       assert.ok(!out.stderr.includes('requires Pro'), 'depth=1 must not trigger upgrade prompt');
     } finally {
       out.restore();
+    }
+  });
+});
+
+describe('Recall injection', () => {
+  function withRecallConfigDir() {
+    const configDir = mkdtempSync(join(tmpdir(), 'ticketlens-recall-'));
+    writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({
+      profiles: { work: { baseUrl: 'https://test.atlassian.net', auth: 'server', ticketPrefixes: ['PROD'] } },
+      default: 'work',
+    }));
+    writeFileSync(join(configDir, 'credentials.json'), JSON.stringify({
+      work: { pat: 'test-token' },
+    }));
+    return configDir;
+  }
+
+  function withProLicense(run) {
+    const prev = process.env.TICKETLENS_SKIP_LICENSE;
+    process.env.TICKETLENS_SKIP_LICENSE = 'true';
+    return run().finally(() => {
+      if (prev === undefined) delete process.env.TICKETLENS_SKIP_LICENSE;
+      else process.env.TICKETLENS_SKIP_LICENSE = prev;
+    });
+  }
+
+  it('a Pro user with a matching saved note sees it injected into the brief', async () => {
+    const configDir = withRecallConfigDir();
+    writeDigest(
+      { title: 'Payment validation gotcha', ticketKeys: ['PROD-1234'], tags: [], author: 'ralph', body: 'Empty carts need a special case.' },
+      { configDir },
+    );
+    const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
+    const out = captureOutput();
+    try {
+      await withProLicense(() => run(['PROD-1234', '--depth=0', '--no-cache'], {}, mockFetch, configDir));
+      assert.ok(out.stdout.includes('Recall'), `expected a Recall section, got: ${out.stdout.slice(0, 400)}`);
+      assert.ok(out.stdout.includes('Payment validation gotcha'));
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('the same note also appears in styled (--styled) output', async () => {
+    const configDir = withRecallConfigDir();
+    writeDigest(
+      { title: 'Payment validation gotcha', ticketKeys: ['PROD-1234'], tags: [], author: 'ralph', body: 'Empty carts need a special case.' },
+      { configDir },
+    );
+    const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
+    const out = captureOutput();
+    try {
+      await withProLicense(() => run(['PROD-1234', '--depth=0', '--no-cache', '--styled'], {}, mockFetch, configDir));
+      assert.ok(out.stdout.includes('Recall'));
+      assert.ok(out.stdout.includes('Payment validation gotcha'));
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('a non-Pro user never sees a saved note, even with an exact ticket match', async () => {
+    const configDir = withRecallConfigDir();
+    writeDigest(
+      { title: 'Payment validation gotcha', ticketKeys: ['PROD-1234'], tags: [], author: 'ralph', body: 'Empty carts need a special case.' },
+      { configDir },
+    );
+    const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
+    const out = captureOutput();
+    try {
+      await run(['PROD-1234', '--depth=0', '--no-cache'], {}, mockFetch, configDir);
+      assert.ok(!out.stdout.includes('Payment validation gotcha'));
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('a Recall-injected brief increments the briefs_with_recall_injection counter', async () => {
+    const configDir = withRecallConfigDir();
+    writeDigest(
+      { title: 'Payment validation gotcha', ticketKeys: ['PROD-1234'], tags: [], author: 'ralph', body: 'Empty carts need a special case.' },
+      { configDir },
+    );
+    const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
+    const out = captureOutput();
+    try {
+      await withProLicense(() => run(['PROD-1234', '--depth=0', '--no-cache'], {}, mockFetch, configDir));
+      const activity = JSON.parse(readFileSync(join(configDir, 'activity.json'), 'utf8'));
+      assert.equal(activity.briefs_with_recall_injection, 1);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('a ticket with no matching notes never renders a Recall section, even for a Pro user', async () => {
+    const configDir = withRecallConfigDir();
+    const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
+    const out = captureOutput();
+    try {
+      await withProLicense(() => run(['PROD-1234', '--depth=0', '--no-cache'], {}, mockFetch, configDir));
+      assert.ok(!out.stdout.includes('## Recall'));
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
     }
   });
 });

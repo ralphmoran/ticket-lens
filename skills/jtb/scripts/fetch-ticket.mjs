@@ -250,6 +250,39 @@ async function applyHandoff(ticket, args, opts, configDir, licensedFn, upgradeFn
   }
 }
 
+/**
+ * Loads Recall notes matching this ticket, if the user is licensed. This is
+ * the ONLY place recallNotes ever gets populated — a lapsed-Pro user never
+ * sees their own saved notes injected into a brief, regardless of what's on
+ * disk, because this function returns null before touching the vault at all.
+ *
+ * @returns {Promise<object[]|null>}
+ */
+async function loadRecallNotes(ticket, configDir, licensedFn, opts) {
+  if (!licensedFn('pro', configDir)) return null;
+  const vault = opts.recallVault ?? (await import('./lib/recall-vault.mjs'));
+  const matcher = opts.recallMatcher ?? (await import('./lib/recall-matcher.mjs'));
+  const digests = vault.listDigests({ ticketKey: ticket.key }, { configDir });
+  const matches = matcher.matchDigests(ticket, digests);
+  return matches.length > 0 ? matches.map(m => m.digest) : null;
+}
+
+/**
+ * Counts a brief that actually had Recall notes injected, and — every 25th
+ * such brief, on an interactive terminal — asks the founder's pulse question.
+ */
+async function countRecallInjection(recallNotes, configDir, opts) {
+  if (!recallNotes || recallNotes.length === 0) return;
+  const activityCounter = opts.activityCounter ?? (await import('./lib/activity-counter.mjs'));
+  const resolvedConfigDir = configDir ?? DEFAULT_CONFIG_DIR;
+  const count = activityCounter.incrementBriefWithRecall(resolvedConfigDir);
+  if (activityCounter.shouldPromptPulse(count) && process.stdin.isTTY && process.stderr.isTTY) {
+    const promptHelpers = opts.promptHelpers ?? (await import('./lib/prompt-helpers.mjs'));
+    const response = await promptHelpers.promptRecallPulse('Is Recall pulling its weight?', { stream: process.stderr });
+    activityCounter.recordPulseResponse(resolvedConfigDir, response);
+  }
+}
+
 function makeSpinner(s) {
   // setInterval won't fire while spawnSync blocks the event loop, so we draw
   // synchronously on update() and only use setInterval during async fetch phases.
@@ -1017,9 +1050,11 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const codeRefs = extractCodeReferences(allText);
       const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
 
+      const recallNotes = await loadRecallNotes(cached.ticket, configDir, licensedFn, opts);
+
       // Apply --budget pruning on the plain brief before styling (Pro only).
       // When --budget is active, always output plain text (pruning operates on unescaped chars).
-      let plainBrief = assembleBrief(cached.ticket, codeRefs, templateSections);
+      let plainBrief = assembleBrief(cached.ticket, codeRefs, templateSections, recallNotes);
       const budgetArgCached = args.find(a => a.startsWith('--budget='));
       if (budgetArgCached) {
         const budgetN = parseInt(budgetArgCached.split('=')[1], 10);
@@ -1033,7 +1068,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       }
       let brief = (budgetArgCached && licensedFn('pro', configDir))
         ? plainBrief
-        : (useStyled ? styleBrief(cached.ticket, codeRefs, { styled: true, templateSections }) : plainBrief);
+        : (useStyled ? styleBrief(cached.ticket, codeRefs, { styled: true, templateSections, recallNotes }) : plainBrief);
 
       if (args.includes('--handoff')) {
         const handoffResult = await applyHandoff(cached.ticket, args, opts, configDir, licensedFn, upgradeFn);
@@ -1066,6 +1101,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
       recordTokensSaved(configDir ?? DEFAULT_CONFIG_DIR, 'fetch', Math.round(brief.length / 4));
       printFn(brief + '\n');
+      await countRecallInjection(recallNotes, configDir, opts);
       return;
     }
   }
@@ -1206,9 +1242,11 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
 
+  const recallNotes = await loadRecallNotes(ticket, configDir, licensedFn, opts);
+
   // Apply --budget pruning on the plain brief before styling (Pro only).
   // When --budget is active, always output plain text (pruning operates on unescaped chars).
-  let plainOutput = assembleBrief(ticket, codeRefs, templateSections);
+  let plainOutput = assembleBrief(ticket, codeRefs, templateSections, recallNotes);
   const budgetArg = args.find(a => a.startsWith('--budget='));
   if (budgetArg) {
     const budgetN = parseInt(budgetArg.split('=')[1], 10);
@@ -1222,7 +1260,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
   let output = (budgetArg && licensedFn('pro', configDir))
     ? plainOutput
-    : (useStyled ? styleBrief(ticket, codeRefs, { styled: true, templateSections }) : plainOutput);
+    : (useStyled ? styleBrief(ticket, codeRefs, { styled: true, templateSections, recallNotes }) : plainOutput);
 
   if (args.includes('--handoff')) {
     const handoffResult = await applyHandoff(ticket, args, opts, configDir, licensedFn, upgradeFn);
@@ -1255,6 +1293,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   recordTokensSaved(configDir ?? DEFAULT_CONFIG_DIR, 'fetch', Math.round(output.length / 4));
   printFn(output + '\n');
+  await countRecallInjection(recallNotes, configDir, opts);
 
   // Contextual upsell: after a deep traversal with a substantial graph, nudge toward --summarize
   if (depth > 1 && !args.includes('--summarize') && (ticket.linked?.length ?? 0) >= 2) {

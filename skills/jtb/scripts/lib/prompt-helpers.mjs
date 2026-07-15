@@ -166,6 +166,34 @@ export async function promptScheduleAnswers(args = [], { stream = process.stderr
   return { time, email, timezone };
 }
 
+/**
+ * Three-way single-keystroke prompt: y / n / anything else counts as skip.
+ * Used for the Recall "is this pulling its weight?" pulse check.
+ *
+ * @returns {Promise<'y'|'n'|'skip'>}
+ */
+export function promptRecallPulse(question, { stream = process.stderr } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  stream.write(`\n  ${question}  ${s.dim('y/n/skip')}  `);
+  return flushStdin().then(() => new Promise(res => {
+    const stdin = process.stdin;
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+    function onData(char) {
+      stdin.setRawMode(false);
+      stdin.pause();
+      stdin.removeListener('data', onData);
+      stream.write('\n');
+      if (char === '\x03') process.exit(0);
+      if (char === 'y' || char === 'Y') { res('y'); return; }
+      if (char === 'n' || char === 'N') { res('n'); return; }
+      res('skip');
+    }
+    stdin.on('data', onData);
+  }));
+}
+
 export function promptYN(question, { stream = process.stderr } = {}) {
   const s = createStyler({ isTTY: stream.isTTY });
   stream.write(`\n  ${question}  ${s.dim('y/N')}  `);

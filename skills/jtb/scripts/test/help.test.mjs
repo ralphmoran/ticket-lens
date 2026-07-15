@@ -6,6 +6,7 @@ import {
   printActivateHelp, printLicenseHelp, printDeleteHelp,
   printProfilesHelp, printScheduleHelp,
   printInitHelp, printSwitchHelp, printConfigHelp,
+  printNoteHelp, printRecallHelp,
 } from '../lib/help.mjs';
 
 function captureHelp(fn) {
@@ -318,5 +319,49 @@ describe('printTriageHelp — interactive mode keys', () => {
     const out = captureHelp(printTriageHelp);
     assert.ok(out.includes('q') || out.includes('Esc'),
       'triage --help must document q/Esc to exit');
+  });
+});
+
+describe('printHelp — Recall commands', () => {
+  it('USAGE section documents ticketlens note command', () => {
+    const out = captureHelp(printHelp);
+    const usageIdx = out.indexOf('USAGE');
+    const noteIdx = out.indexOf('ticketlens note');
+    assert.ok(noteIdx !== -1 && noteIdx > usageIdx, '"ticketlens note" must appear in USAGE');
+  });
+
+  it('USAGE section documents ticketlens recall command', () => {
+    const out = captureHelp(printHelp);
+    const usageIdx = out.indexOf('USAGE');
+    const recallIdx = out.indexOf('ticketlens recall');
+    assert.ok(recallIdx !== -1 && recallIdx > usageIdx, '"ticketlens recall" must appear in USAGE');
+  });
+});
+
+describe('printNoteHelp', () => {
+  it('documents the add subcommand and its flags', () => {
+    const out = captureHelp(printNoteHelp);
+    assert.match(out, /note add/);
+    assert.match(out, /--title/);
+    assert.match(out, /--ticket/);
+    assert.match(out, /--tags/);
+  });
+
+  it('documents the Pro tier gate', () => {
+    const out = captureHelp(printNoteHelp);
+    assert.match(out, /Pro/);
+  });
+});
+
+describe('printRecallHelp', () => {
+  it('documents the query/ticket-key argument', () => {
+    const out = captureHelp(printRecallHelp);
+    assert.match(out, /recall/);
+    assert.match(out, /query|TICKET-KEY/);
+  });
+
+  it('documents the Pro tier gate', () => {
+    const out = captureHelp(printRecallHelp);
+    assert.match(out, /Pro/);
   });
 });
