@@ -2,9 +2,9 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { runNoteAdd } from '../lib/note-command.mjs';
 
-function makeStream() {
+function makeStream({ isTTY = false } = {}) {
   const lines = [];
-  return { write: (s) => lines.push(s), lines };
+  return { write: (s) => lines.push(s), lines, isTTY };
 }
 
 function baseDeps(overrides = {}) {
@@ -56,6 +56,28 @@ describe('runNoteAdd — happy path', () => {
     const result = await runNoteAdd(['--title=Fix retry bug', '--ticket=PROD-1', '--tags=bug,auth'], deps);
     assert.equal(result.written, true);
     assert.equal(kept, 1);
+  });
+
+  test('regression: a TTY stream without --plain styles the save confirmation (green checkmark, blank line above)', async () => {
+    const deps = baseDeps({ stream: makeStream({ isTTY: true }) });
+    await runNoteAdd(['--title=x'], deps);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /\x1b\[/, 'must contain ANSI color codes');
+    assert.match(output, /^\n\s+.*✔/, 'must have a blank line above a checkmark');
+  });
+
+  test('regression: --plain reproduces the exact bare confirmation, no ANSI codes', async () => {
+    const deps = baseDeps({ stream: makeStream({ isTTY: true }) });
+    await runNoteAdd(['--title=x', '--plain'], deps);
+    const output = deps.stream.lines.join('');
+    assert.doesNotMatch(output, /\x1b\[/);
+    assert.equal(output, '  Saved note "x" (note-1.md)\n');
+  });
+
+  test('a non-TTY stream (piped) gets the bare confirmation even without --plain', async () => {
+    const deps = baseDeps({ stream: makeStream({ isTTY: false }) });
+    await runNoteAdd(['--title=x'], deps);
+    assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/);
   });
 
   test('passes parsed --tags as a trimmed array to writeDigest', async () => {

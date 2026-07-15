@@ -14,6 +14,7 @@ import { writeDigest } from './recall-vault.mjs';
 import { incrementDraftKept, incrementDraftDeleted } from './activity-counter.mjs';
 import { extractText } from './attachment-text.mjs';
 import { TICKET_KEY_PATTERN } from './cli.mjs';
+import { createStyler } from './ansi.mjs';
 
 function defaultListAttachments(configDir, ticketKey) {
   const cacheDir = path.join(configDir, 'cache', ticketKey);
@@ -113,6 +114,8 @@ export async function runNoteAdd(cmdArgs, {
     { configDir },
   );
   incrementDraftKeptFn(configDir);
-  stream.write(`  Saved note "${title}" (${id})\n`);
+  const styled = !cmdArgs.includes('--plain') && stream.isTTY;
+  const s = createStyler({ forceColor: styled, noColor: !styled });
+  stream.write(styled ? `\n  ${s.green('✔')} Saved note "${title}" (${id})\n\n` : `  Saved note "${title}" (${id})\n`);
   return { written: true };
 }

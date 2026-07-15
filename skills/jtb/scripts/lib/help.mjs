@@ -504,6 +504,7 @@ export function printNoteHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--ticket')}=${s.dim('KEY')}        Ticket this note is about ${s.dim('(optional — omit for a general note)')}`,
     `    ${s.brand('--tags')}=${s.dim('a,b')}          Comma-separated tags`,
     `    ${s.brand('--include-attachments')}  Seed the note with text from this ticket's cached attachments`,
+    `    ${s.brand('--plain')}       Plain confirmation, no color (default when piped)`,
     `    ${s.brand('-h')}, ${s.brand('--help')}        Show this help`,
     '',
     `  ${s.bold('EXAMPLES')}`,

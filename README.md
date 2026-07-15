@@ -395,7 +395,7 @@ The note body is read from stdin, not a flag — this avoids shell-quoting issue
 
 Every note is scanned before saving — anything shaped like a real secret (API key, private key, token) is rejected outright, never silently redacted. Requires a Pro license. No network call — everything stays on your machine.
 
-`recall` search results are styled by default in a terminal; add `--plain` for bare, pipe-safe output.
+`note add`'s save confirmation and `recall`'s search results are styled by default in a terminal; add `--plain` to either for bare, pipe-safe output.
 
 ---
 
