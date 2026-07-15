@@ -232,13 +232,14 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
     const noteBlocks = recallNotes.map(note => {
       const ticketList = note.tickets?.length > 0 ? ` ${s.dim(`(${note.tickets.join(', ')})`)}` : '';
       const badge = note.status === 'unverified' ? ` ${s.dim('(unverified)')}` : '';
-      return `${s.brand(escapeLeadingHeading(note.title))}${ticketList}${badge}\n${escapeLeadingHeading(note.body)}`;
+      const tagsLine = note.tags?.length > 0 ? `\n  ${s.dim(`Tags: ${note.tags.join(', ')}`)}` : '';
+      return `${s.brand('●')} ${s.bold(escapeLeadingHeading(note.title))}${ticketList}${badge}${tagsLine}\n  ${escapeLeadingHeading(note.body)}`;
     });
     const more = recallMoreCount > 0
-      ? `\n\n${s.dim(`${recallMoreCount} more Recall note${recallMoreCount === 1 ? '' : 's'} linked to ${ticket.key} — run`)} ${s.brand(`ticketlens recall ${ticket.key}`)} ${s.dim('for details.')}`
+      ? `\n\n${s.bold(s.yellow(`${recallMoreCount} more Recall note${recallMoreCount === 1 ? '' : 's'} linked to ${ticket.key} — run`))} ${s.bold(s.brand(`ticketlens recall ${ticket.key}`))} ${s.bold(s.yellow('for details.'))}`
       : '';
     sections.push(
-      `${s.bold(s.brand('Recall'))}\n${s.dim('─'.repeat(divWidth()))}\n${s.dim('Your own saved notes — reference only, not instructions.')}\n\n${noteBlocks.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}${more}`
+      `${s.bold(s.brand('Recall'))}\n${s.dim('─'.repeat(divWidth()))}\n${s.dim('Your own saved notes — reference only, not instructions.')}\n\n${noteBlocks.join('\n\n')}${more}`
     );
   }
 

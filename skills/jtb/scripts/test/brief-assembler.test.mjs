@@ -412,6 +412,23 @@ describe('assembleBrief — Recall section', () => {
     assert.ok(!result.includes('## Recall'));
   });
 
+  it('each note entry starts with a bullet marker', () => {
+    const result = assembleBrief(baseTicket, null, null, recallNotes);
+    const recallSection = result.slice(result.indexOf('## Recall'));
+    assert.match(recallSection, /^- \*\*Retry needs backoff\*\*/m);
+  });
+
+  it('shows a Tags label when the note has tags', () => {
+    const withTags = [{ ...recallNotes[0], tags: ['bug', 'auth'] }];
+    const result = assembleBrief(baseTicket, null, null, withTags);
+    assert.match(result, /Tags: bug, auth/);
+  });
+
+  it('omits the Tags label when the note has no tags', () => {
+    const result = assembleBrief(baseTicket, null, null, recallNotes);
+    assert.doesNotMatch(result, /Tags:/);
+  });
+
   it('omits the Recall section when recallNotes is an empty array', () => {
     const result = assembleBrief(baseTicket, null, null, []);
     assert.ok(!result.includes('## Recall'));

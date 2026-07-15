@@ -207,6 +207,35 @@ describe('styleBrief', () => {
     assert.ok(result.includes('Add exponential backoff'));
   });
 
+  it('each note entry starts with a bullet marker', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'Retry needs backoff', tickets: [], status: 'unverified', body: 'y' }];
+    const result = styleBrief(ticket, null, { styled: false, recallNotes });
+    assert.match(result, /^● Retry needs backoff/m);
+  });
+
+  it('shows a Tags label when the note has tags', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'x', tickets: [], status: 'unverified', body: 'y', tags: ['bug', 'auth'] }];
+    const result = styleBrief(ticket, null, { styled: false, recallNotes });
+    assert.match(result, /Tags: bug, auth/);
+  });
+
+  it('omits the Tags label when the note has no tags', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'x', tickets: [], status: 'unverified', body: 'y' }];
+    const result = styleBrief(ticket, null, { styled: false, recallNotes });
+    assert.doesNotMatch(result, /Tags:/);
+  });
+
+  it('the "more notes" pointer is bold/highlighted, not dimmed, when styled', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'x', tickets: [], status: 'unverified', body: 'y' }];
+    const styled = styleBrief(ticket, null, { styled: true, recallNotes, recallMoreCount: 2 });
+    const pointerLine = styled.split('\n').find(l => l.includes('more Recall note'));
+    assert.match(pointerLine, /\x1b\[1m/, 'expected a bold ANSI code on the pointer line');
+  });
+
   it('omits the Recall section when recallNotes is not passed', () => {
     const ticket = makeBriefTicket();
     const result = styleBrief(ticket, null, { styled: false });
