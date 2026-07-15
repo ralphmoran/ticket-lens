@@ -524,12 +524,14 @@ export function printRecallHelp({ stream = process.stdout } = {}) {
     '',
     `  ${s.bold('OPTIONS')}`,
     '',
+    `    ${s.brand('--plain')}       Plain output, no color (default when piped)`,
     `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
     '',
     `  ${s.bold('EXAMPLES')}`,
     '',
     `    ${s.dim('$')} ticketlens recall PROD-123`,
     `    ${s.dim('$')} ticketlens recall "retry backoff"`,
+    `    ${s.dim('$')} ticketlens recall PROD-123 --plain`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

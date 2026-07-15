@@ -7,6 +7,7 @@ import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { TICKET_KEY_PATTERN } from './cli.mjs';
 import { isLicensed, showUpgradePrompt } from './license.mjs';
 import { listDigests } from './recall-vault.mjs';
+import { styleRecallResults } from './styled-assembler.mjs';
 
 /**
  * @param {string[]} cmdArgs
@@ -33,14 +34,7 @@ export async function runRecall(cmdArgs, {
   const filter = TICKET_KEY_PATTERN.test(arg) ? { ticketKey: arg } : { query: arg };
   const results = listDigestsFn(filter, { configDir });
 
-  if (results.length === 0) {
-    stream.write('No matching notes found.\n');
-    return { ok: true };
-  }
-
-  for (const digest of results) {
-    const ticketList = digest.tickets?.length ? ` (${digest.tickets.join(', ')})` : '';
-    stream.write(`${digest.title}${ticketList} — ${digest.created.split('T')[0]}\n`);
-  }
+  const styled = !cmdArgs.includes('--plain') && stream.isTTY;
+  stream.write(styleRecallResults(results, { styled }) + '\n');
   return { ok: true };
 }

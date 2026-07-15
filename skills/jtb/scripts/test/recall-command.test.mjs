@@ -2,9 +2,9 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { runRecall } from '../lib/recall-command.mjs';
 
-function makeStream() {
+function makeStream({ isTTY = false } = {}) {
   const lines = [];
-  return { write: (s) => lines.push(s), lines };
+  return { write: (s) => lines.push(s), lines, isTTY };
 }
 
 function baseDeps(overrides = {}) {
@@ -88,5 +88,29 @@ describe('runRecall — output', () => {
     });
     const result = await runRecall(['x'], deps);
     assert.equal(result.ok, true);
+  });
+});
+
+describe('runRecall — styled vs --plain output', () => {
+  const oneNote = () => [{ title: 'Retry gotcha', tickets: ['PROD-1'], created: '2026-07-10T00:00:00.000Z' }];
+
+  test('a TTY stream without --plain gets styled output (ANSI codes present)', async () => {
+    const deps = baseDeps({ stream: makeStream({ isTTY: true }), listDigestsFn: oneNote });
+    await runRecall(['retry'], deps);
+    assert.match(deps.stream.lines.join(''), /\x1b\[/);
+  });
+
+  test('a TTY stream with --plain gets the exact bare format, no ANSI codes', async () => {
+    const deps = baseDeps({ stream: makeStream({ isTTY: true }), listDigestsFn: oneNote });
+    await runRecall(['retry', '--plain'], deps);
+    const output = deps.stream.lines.join('');
+    assert.doesNotMatch(output, /\x1b\[/);
+    assert.equal(output, 'Retry gotcha (PROD-1) — 2026-07-10\n');
+  });
+
+  test('a non-TTY stream (piped) gets plain output even without --plain', async () => {
+    const deps = baseDeps({ stream: makeStream({ isTTY: false }), listDigestsFn: oneNote });
+    await runRecall(['retry'], deps);
+    assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/);
   });
 });

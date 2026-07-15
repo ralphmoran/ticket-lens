@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { styleTriageSummary, styleBrief } from '../lib/styled-assembler.mjs';
+import { styleTriageSummary, styleBrief, styleRecallResults } from '../lib/styled-assembler.mjs';
 
 function makeTicket(overrides = {}) {
   return {
@@ -234,5 +234,46 @@ describe('styleBrief', () => {
     const result = styleBrief(ticket, null, { styled: false, recallNotes });
     assert.equal(/^## Attachments$/m.test(result), false);
     assert.match(result, /Attachments/);
+  });
+});
+
+describe('styleRecallResults', () => {
+  const digests = [
+    { title: 'Retry gotcha', tickets: ['PROD-1'], created: '2026-07-10T00:00:00.000Z' },
+    { title: 'General note', tickets: [], created: '2026-07-09T00:00:00.000Z' },
+  ];
+
+  it('renders each note title, its tickets, and its date', () => {
+    const result = styleRecallResults(digests, { styled: false });
+    assert.match(result, /Retry gotcha/);
+    assert.match(result, /PROD-1/);
+    assert.match(result, /2026-07-10/);
+    assert.match(result, /General note/);
+    assert.match(result, /2026-07-09/);
+  });
+
+  it('a note with no linked tickets renders without a ticket list', () => {
+    const result = styleRecallResults([digests[1]], { styled: false });
+    assert.doesNotMatch(result, /\(\)/);
+  });
+
+  it('applies ANSI color codes when styled', () => {
+    const result = styleRecallResults(digests, { styled: true });
+    assert.match(result, /\x1b\[/);
+  });
+
+  it('has no ANSI escape codes when not styled', () => {
+    const result = styleRecallResults(digests, { styled: false });
+    assert.doesNotMatch(result, /\x1b\[/);
+  });
+
+  it('an empty result set renders a clear empty-state message', () => {
+    const result = styleRecallResults([], { styled: false });
+    assert.match(result, /No matching notes/i);
+  });
+
+  it('regression: unstyled output is the exact plain-text format --plain must reproduce, no bullet/decoration', () => {
+    const result = styleRecallResults(digests, { styled: false });
+    assert.equal(result, 'Retry gotcha (PROD-1) — 2026-07-10\nGeneral note — 2026-07-09');
   });
 });

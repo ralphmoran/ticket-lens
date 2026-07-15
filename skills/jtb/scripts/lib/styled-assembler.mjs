@@ -97,6 +97,32 @@ export function styleTriageSummary(scoredTickets, opts = {}) {
   return sections.join('\n\n');
 }
 
+export function styleRecallResults(digests, opts = {}) {
+  const { styled = true } = opts;
+
+  if (digests.length === 0) {
+    return 'No matching notes found.';
+  }
+
+  if (!styled) {
+    return digests
+      .map(d => {
+        const ticketList = d.tickets?.length > 0 ? ` (${d.tickets.join(', ')})` : '';
+        return `${d.title}${ticketList} — ${d.created.split('T')[0]}`;
+      })
+      .join('\n');
+  }
+
+  const s = createStyler({ forceColor: true });
+  return digests
+    .map(d => {
+      const ticketList = d.tickets?.length > 0 ? ` ${s.dim(`(${d.tickets.join(', ')})`)}` : '';
+      const date = s.dim(d.created.split('T')[0]);
+      return `${s.brand('●')} ${s.bold(d.title)}${ticketList} ${s.dim('—')} ${date}`;
+    })
+    .join('\n');
+}
+
 export function styleBrief(ticket, codeRefs = null, opts = {}) {
   const { styled = true, templateSections = null, recallNotes = null } = opts;
   const ts = templateSections;
