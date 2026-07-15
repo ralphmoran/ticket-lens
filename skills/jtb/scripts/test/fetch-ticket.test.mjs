@@ -392,6 +392,28 @@ describe('Recall injection', () => {
       rmSync(configDir, { recursive: true, force: true });
     }
   });
+
+  it('more than 3 matching notes: only 3 are injected in full, plus a pointer to `ticketlens recall` for the rest', async () => {
+    const configDir = withRecallConfigDir();
+    for (let i = 1; i <= 5; i++) {
+      writeDigest(
+        { title: `Gotcha ${i}`, ticketKeys: ['PROD-1234'], tags: [], author: 'ralph', body: `Body ${i}.` },
+        { configDir },
+      );
+    }
+    const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
+    const out = captureOutput();
+    try {
+      await withProLicense(() => run(['PROD-1234', '--depth=0', '--no-cache'], {}, mockFetch, configDir));
+      const gotchaCount = (out.stdout.match(/Gotcha \d/g) ?? []).length;
+      assert.equal(gotchaCount, 3, `expected exactly 3 notes injected in full, got: ${out.stdout}`);
+      assert.match(out.stdout, /2 more Recall notes linked to PROD-1234/);
+      assert.match(out.stdout, /ticketlens recall PROD-1234/);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
 });
 
 const mockEnv = {

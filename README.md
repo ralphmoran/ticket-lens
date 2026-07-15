@@ -390,7 +390,7 @@ ticketlens recall "refresh token"          # Free-text search across all your no
 ticketlens recall PROJ-123 --full          # Print each matching note's full content
 ```
 
-Save short notes to yourself — gotchas, context, decisions — and they're automatically matched and injected into future `ticketlens PROJ-123` briefs under a `## Recall` section, clearly marked as your own reference material (never treated as instructions). Notes are stored locally at `~/.ticketlens/recall/` as plain markdown files with frontmatter, so they're readable in any editor or Obsidian vault.
+Save short notes to yourself — gotchas, context, decisions — and they're automatically matched and injected into future `ticketlens PROJ-123` briefs under a `## Recall` section, clearly marked as your own reference material (never treated as instructions). A brief injects at most 3 notes in full; beyond that it points you at `ticketlens recall PROJ-123` instead of flooding the brief (`recall` itself has no such cap — it always shows everything that matches). Notes are stored locally at `~/.ticketlens/recall/` as plain markdown files with frontmatter, so they're readable in any editor or Obsidian vault.
 
 The note body is read from stdin, not a flag — this avoids shell-quoting issues with multi-line text. A note can be tied to one ticket (`--ticket=KEY`), or left general (omit `--ticket`) for onboarding-style knowledge that isn't about a specific ticket. Add `--include-attachments` to seed the note with text from that ticket's already-cached attachments (`.txt`/`.md`/`.csv`/`.json` only).
 

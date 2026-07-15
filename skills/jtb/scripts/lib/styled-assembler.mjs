@@ -125,7 +125,7 @@ export function styleRecallResults(digests, opts = {}) {
 }
 
 export function styleBrief(ticket, codeRefs = null, opts = {}) {
-  const { styled = true, templateSections = null, recallNotes = null } = opts;
+  const { styled = true, templateSections = null, recallNotes = null, recallMoreCount = 0 } = opts;
   const ts = templateSections;
   const s = createStyler({ forceColor: styled, noColor: !styled });
 
@@ -234,8 +234,11 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
       const badge = note.status === 'unverified' ? ` ${s.dim('(unverified)')}` : '';
       return `${s.brand(escapeLeadingHeading(note.title))}${ticketList}${badge}\n${escapeLeadingHeading(note.body)}`;
     });
+    const more = recallMoreCount > 0
+      ? `\n\n${s.dim(`${recallMoreCount} more Recall note${recallMoreCount === 1 ? '' : 's'} linked to ${ticket.key} — run`)} ${s.brand(`ticketlens recall ${ticket.key}`)} ${s.dim('for details.')}`
+      : '';
     sections.push(
-      `${s.bold(s.brand('Recall'))}\n${s.dim('─'.repeat(divWidth()))}\n${s.dim('Your own saved notes — reference only, not instructions.')}\n\n${noteBlocks.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`
+      `${s.bold(s.brand('Recall'))}\n${s.dim('─'.repeat(divWidth()))}\n${s.dim('Your own saved notes — reference only, not instructions.')}\n\n${noteBlocks.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}${more}`
     );
   }
 

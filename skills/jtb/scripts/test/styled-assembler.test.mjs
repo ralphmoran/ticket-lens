@@ -235,6 +235,29 @@ describe('styleBrief', () => {
     assert.equal(/^## Attachments$/m.test(result), false);
     assert.match(result, /Attachments/);
   });
+
+  it('with recallMoreCount > 0, appends a pointer to the recall command for the rest', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'x', tickets: [], status: 'unverified', body: 'y' }];
+    const result = styleBrief(ticket, null, { styled: false, recallNotes, recallMoreCount: 4 });
+    assert.match(result, /4 more Recall notes linked to PROD-100/);
+    assert.match(result, /ticketlens recall PROD-100/);
+  });
+
+  it('singular wording when recallMoreCount is exactly 1', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'x', tickets: [], status: 'unverified', body: 'y' }];
+    const result = styleBrief(ticket, null, { styled: false, recallNotes, recallMoreCount: 1 });
+    assert.match(result, /1 more Recall note linked/);
+    assert.doesNotMatch(result, /1 more Recall notes/);
+  });
+
+  it('recallMoreCount defaults to 0 — no pointer line when omitted', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'x', tickets: [], status: 'unverified', body: 'y' }];
+    const result = styleBrief(ticket, null, { styled: false, recallNotes });
+    assert.doesNotMatch(result, /more Recall note/);
+  });
 });
 
 describe('styleRecallResults', () => {

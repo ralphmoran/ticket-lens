@@ -477,4 +477,22 @@ describe('assembleBrief — Recall section', () => {
     assert.ok(result.includes('First note'));
     assert.ok(result.includes('Second note'));
   });
+
+  it('with recallMoreCount > 0, appends a pointer to the recall command for the rest', () => {
+    const result = assembleBrief(baseTicket, null, null, recallNotes, 4);
+    const recallSection = result.slice(result.indexOf('## Recall'));
+    assert.match(recallSection, /4 more Recall notes linked to PROD-1234/);
+    assert.match(recallSection, /ticketlens recall PROD-1234/);
+  });
+
+  it('singular wording when recallMoreCount is exactly 1', () => {
+    const result = assembleBrief(baseTicket, null, null, recallNotes, 1);
+    assert.match(result, /1 more Recall note linked/);
+    assert.doesNotMatch(result, /1 more Recall notes/);
+  });
+
+  it('recallMoreCount defaults to 0 — no pointer line when omitted', () => {
+    const result = assembleBrief(baseTicket, null, null, recallNotes);
+    assert.doesNotMatch(result, /more Recall note/);
+  });
 });

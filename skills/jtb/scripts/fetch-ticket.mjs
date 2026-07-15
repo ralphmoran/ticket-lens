@@ -250,13 +250,19 @@ async function applyHandoff(ticket, args, opts, configDir, licensedFn, upgradeFn
   }
 }
 
+// A brief injects at most this many notes in full — beyond it, a note is
+// still "relevant" but the brief just points at `ticketlens recall <key>`
+// instead of dumping every match inline. Keeps the brief from growing
+// unbounded as notes accumulate over time; `recall` itself has no such cap.
+const MAX_INJECTED_RECALL_NOTES = 3;
+
 /**
  * Loads Recall notes matching this ticket, if the user is licensed. This is
  * the ONLY place recallNotes ever gets populated — a lapsed-Pro user never
  * sees their own saved notes injected into a brief, regardless of what's on
  * disk, because this function returns null before touching the vault at all.
  *
- * @returns {Promise<object[]|null>}
+ * @returns {Promise<{ notes: object[], moreCount: number }|null>}
  */
 async function loadRecallNotes(ticket, configDir, licensedFn, opts) {
   if (!licensedFn('pro', configDir)) return null;
@@ -264,7 +270,11 @@ async function loadRecallNotes(ticket, configDir, licensedFn, opts) {
   const matcher = opts.recallMatcher ?? (await import('./lib/recall-matcher.mjs'));
   const digests = vault.listDigests({ ticketKey: ticket.key }, { configDir });
   const matches = matcher.matchDigests(ticket, digests);
-  return matches.length > 0 ? matches.map(m => m.digest) : null;
+  if (matches.length === 0) return null;
+  return {
+    notes: matches.slice(0, MAX_INJECTED_RECALL_NOTES).map(m => m.digest),
+    moreCount: Math.max(0, matches.length - MAX_INJECTED_RECALL_NOTES),
+  };
 }
 
 /**
@@ -1050,11 +1060,11 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const codeRefs = extractCodeReferences(allText);
       const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
 
-      const recallNotes = await loadRecallNotes(cached.ticket, configDir, licensedFn, opts);
+      const { notes: recallNotes, moreCount: recallMoreCount = 0 } = (await loadRecallNotes(cached.ticket, configDir, licensedFn, opts)) ?? {};
 
       // Apply --budget pruning on the plain brief before styling (Pro only).
       // When --budget is active, always output plain text (pruning operates on unescaped chars).
-      let plainBrief = assembleBrief(cached.ticket, codeRefs, templateSections, recallNotes);
+      let plainBrief = assembleBrief(cached.ticket, codeRefs, templateSections, recallNotes, recallMoreCount);
       const budgetArgCached = args.find(a => a.startsWith('--budget='));
       if (budgetArgCached) {
         const budgetN = parseInt(budgetArgCached.split('=')[1], 10);
@@ -1068,7 +1078,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       }
       let brief = (budgetArgCached && licensedFn('pro', configDir))
         ? plainBrief
-        : (useStyled ? styleBrief(cached.ticket, codeRefs, { styled: true, templateSections, recallNotes }) : plainBrief);
+        : (useStyled ? styleBrief(cached.ticket, codeRefs, { styled: true, templateSections, recallNotes, recallMoreCount }) : plainBrief);
 
       if (args.includes('--handoff')) {
         const handoffResult = await applyHandoff(cached.ticket, args, opts, configDir, licensedFn, upgradeFn);
@@ -1242,11 +1252,11 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
 
-  const recallNotes = await loadRecallNotes(ticket, configDir, licensedFn, opts);
+  const { notes: recallNotes, moreCount: recallMoreCount = 0 } = (await loadRecallNotes(ticket, configDir, licensedFn, opts)) ?? {};
 
   // Apply --budget pruning on the plain brief before styling (Pro only).
   // When --budget is active, always output plain text (pruning operates on unescaped chars).
-  let plainOutput = assembleBrief(ticket, codeRefs, templateSections, recallNotes);
+  let plainOutput = assembleBrief(ticket, codeRefs, templateSections, recallNotes, recallMoreCount);
   const budgetArg = args.find(a => a.startsWith('--budget='));
   if (budgetArg) {
     const budgetN = parseInt(budgetArg.split('=')[1], 10);
@@ -1260,7 +1270,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
   let output = (budgetArg && licensedFn('pro', configDir))
     ? plainOutput
-    : (useStyled ? styleBrief(ticket, codeRefs, { styled: true, templateSections, recallNotes }) : plainOutput);
+    : (useStyled ? styleBrief(ticket, codeRefs, { styled: true, templateSections, recallNotes, recallMoreCount }) : plainOutput);
 
   if (args.includes('--handoff')) {
     const handoffResult = await applyHandoff(ticket, args, opts, configDir, licensedFn, upgradeFn);
