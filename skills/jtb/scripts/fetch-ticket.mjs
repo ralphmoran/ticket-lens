@@ -278,6 +278,26 @@ async function loadRecallNotes(ticket, configDir, licensedFn, opts) {
 }
 
 /**
+ * Computes ephemeral cross-ticket gaps for this ticket, if the user is
+ * licensed. Nothing here is persisted — every call recomputes from data
+ * already attached to the ticket object (linkedTicketDetails, localAttachments).
+ * A throw inside computeGaps must never abort brief assembly — this is
+ * enrichment, not core ticket data.
+ *
+ * @returns {Promise<object[]|null>}
+ */
+async function loadGapDiff(ticket, configDir, licensedFn, opts) {
+  if (!licensedFn('pro', configDir)) return null;
+  try {
+    const gapDiff = opts.gapDiff ?? (await import('./lib/gap-diff.mjs'));
+    const gaps = gapDiff.computeGaps(ticket);
+    return gaps.length > 0 ? gaps : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Counts a brief that actually had Recall notes injected, and — every 25th
  * such brief, on an interactive terminal — asks the founder's pulse question.
  */
@@ -1061,10 +1081,11 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
 
       const { notes: recallNotes, moreCount: recallMoreCount = 0 } = (await loadRecallNotes(cached.ticket, configDir, licensedFn, opts)) ?? {};
+      const gaps = await loadGapDiff(cached.ticket, configDir, licensedFn, opts);
 
       // Apply --budget pruning on the plain brief before styling (Pro only).
       // When --budget is active, always output plain text (pruning operates on unescaped chars).
-      let plainBrief = assembleBrief(cached.ticket, codeRefs, templateSections, recallNotes, recallMoreCount);
+      let plainBrief = assembleBrief(cached.ticket, codeRefs, templateSections, recallNotes, recallMoreCount, gaps);
       const budgetArgCached = args.find(a => a.startsWith('--budget='));
       if (budgetArgCached) {
         const budgetN = parseInt(budgetArgCached.split('=')[1], 10);
@@ -1078,7 +1099,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       }
       let brief = (budgetArgCached && licensedFn('pro', configDir))
         ? plainBrief
-        : (useStyled ? styleBrief(cached.ticket, codeRefs, { styled: true, templateSections, recallNotes, recallMoreCount }) : plainBrief);
+        : (useStyled ? styleBrief(cached.ticket, codeRefs, { styled: true, templateSections, recallNotes, recallMoreCount, gaps }) : plainBrief);
 
       if (args.includes('--handoff')) {
         const handoffResult = await applyHandoff(cached.ticket, args, opts, configDir, licensedFn, upgradeFn);
@@ -1253,10 +1274,11 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const useStyled = args.includes('--styled') || (!args.includes('--plain') && process.stdout.isTTY);
 
   const { notes: recallNotes, moreCount: recallMoreCount = 0 } = (await loadRecallNotes(ticket, configDir, licensedFn, opts)) ?? {};
+  const gaps = await loadGapDiff(ticket, configDir, licensedFn, opts);
 
   // Apply --budget pruning on the plain brief before styling (Pro only).
   // When --budget is active, always output plain text (pruning operates on unescaped chars).
-  let plainOutput = assembleBrief(ticket, codeRefs, templateSections, recallNotes, recallMoreCount);
+  let plainOutput = assembleBrief(ticket, codeRefs, templateSections, recallNotes, recallMoreCount, gaps);
   const budgetArg = args.find(a => a.startsWith('--budget='));
   if (budgetArg) {
     const budgetN = parseInt(budgetArg.split('=')[1], 10);
@@ -1270,7 +1292,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
   let output = (budgetArg && licensedFn('pro', configDir))
     ? plainOutput
-    : (useStyled ? styleBrief(ticket, codeRefs, { styled: true, templateSections, recallNotes, recallMoreCount }) : plainOutput);
+    : (useStyled ? styleBrief(ticket, codeRefs, { styled: true, templateSections, recallNotes, recallMoreCount, gaps }) : plainOutput);
 
   if (args.includes('--handoff')) {
     const handoffResult = await applyHandoff(ticket, args, opts, configDir, licensedFn, upgradeFn);

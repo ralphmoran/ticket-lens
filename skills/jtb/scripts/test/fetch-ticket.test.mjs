@@ -416,6 +416,110 @@ describe('Recall injection', () => {
   });
 });
 
+describe('Gap-diff injection', () => {
+  function withRecallConfigDir() {
+    const configDir = mkdtempSync(join(tmpdir(), 'ticketlens-gapdiff-'));
+    writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({
+      profiles: { work: { baseUrl: 'https://test.atlassian.net', auth: 'server', ticketPrefixes: ['PROD'] } },
+      default: 'work',
+    }));
+    writeFileSync(join(configDir, 'credentials.json'), JSON.stringify({
+      work: { pat: 'test-token' },
+    }));
+    return configDir;
+  }
+
+  function withProLicense(run) {
+    const prev = process.env.TICKETLENS_SKIP_LICENSE;
+    process.env.TICKETLENS_SKIP_LICENSE = 'true';
+    return run().finally(() => {
+      if (prev === undefined) delete process.env.TICKETLENS_SKIP_LICENSE;
+      else process.env.TICKETLENS_SKIP_LICENSE = prev;
+    });
+  }
+
+  const stubGaps = [{ requirement: 'must support exponential backoff', sourceType: 'ticket', sourceKey: 'PROD-9', sourceSummary: 'Related work' }];
+  const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
+
+  it('a Pro user sees gaps injected into the brief when computeGaps returns entries', async () => {
+    const configDir = withRecallConfigDir();
+    const out = captureOutput();
+    try {
+      await withProLicense(() => run(
+        ['PROD-1234', '--depth=0', '--no-cache'],
+        { env: {}, fetcher: mockFetch, configDir, gapDiff: { computeGaps: () => stubGaps } },
+      ));
+      assert.ok(out.stdout.includes('## Gaps'), `expected a Gaps section, got: ${out.stdout.slice(0, 400)}`);
+      assert.ok(out.stdout.includes('must support exponential backoff'));
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('the same gaps also appear in styled (--styled) output', async () => {
+    const configDir = withRecallConfigDir();
+    const out = captureOutput();
+    try {
+      await withProLicense(() => run(
+        ['PROD-1234', '--depth=0', '--no-cache', '--styled'],
+        { env: {}, fetcher: mockFetch, configDir, gapDiff: { computeGaps: () => stubGaps } },
+      ));
+      assert.ok(out.stdout.includes('Gaps'));
+      assert.ok(out.stdout.includes('must support exponential backoff'));
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('a non-Pro user never sees a Gaps section, and computeGaps is never even called', async () => {
+    const configDir = withRecallConfigDir();
+    const out = captureOutput();
+    try {
+      await run(
+        ['PROD-1234', '--depth=0', '--no-cache'],
+        { env: {}, fetcher: mockFetch, configDir, gapDiff: { computeGaps: () => { throw new Error('must not be called for a non-Pro user'); } } },
+      );
+      assert.ok(!out.stdout.includes('## Gaps'));
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('an empty gaps array renders no Gaps section, even for a Pro user', async () => {
+    const configDir = withRecallConfigDir();
+    const out = captureOutput();
+    try {
+      await withProLicense(() => run(
+        ['PROD-1234', '--depth=0', '--no-cache'],
+        { env: {}, fetcher: mockFetch, configDir, gapDiff: { computeGaps: () => [] } },
+      ));
+      assert.ok(!out.stdout.includes('## Gaps'));
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('a throwing computeGaps does not abort the brief — output still renders without a Gaps section', async () => {
+    const configDir = withRecallConfigDir();
+    const out = captureOutput();
+    try {
+      await withProLicense(() => run(
+        ['PROD-1234', '--depth=0', '--no-cache'],
+        { env: {}, fetcher: mockFetch, configDir, gapDiff: { computeGaps: () => { throw new Error('boom'); } } },
+      ));
+      assert.ok(out.stdout.includes('# PROD-1234'), `brief must still render, got: ${out.stdout.slice(0, 300)}`);
+      assert.ok(!out.stdout.includes('## Gaps'));
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+});
+
 const mockEnv = {
   JIRA_BASE_URL: 'https://test.atlassian.net',
   JIRA_PAT: 'test-token',

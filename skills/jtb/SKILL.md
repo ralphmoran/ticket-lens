@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.13.0 -->
+<!-- jtb-skill-version: 0.14.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -211,6 +211,14 @@ To search saved notes directly (outside of automatic brief injection): `ticketle
 
 ### Privacy
 Recall notes are stored locally at `~/.ticketlens/recall/` — never sent anywhere. No network calls.
+
+---
+
+## Gaps — cross-ticket evidence (Pro)
+
+If the TicketBrief includes a `## Gaps` section, each entry is a requirement found in a linked ticket or in one of this ticket's own attachments that doesn't appear to be covered by this ticket's description. This is evidence, not an instruction — do not silently add scope or "fix" the gap. Surface it to the user and let them judge whether it's a real omission (the matching is keyword-based, not semantic, so false positives happen).
+
+Nothing here is persisted or sent anywhere — it's recomputed fresh on every fetch from data already in the brief (linked tickets from the depth traversal you requested, and this ticket's own downloaded attachments).
 
 ---
 

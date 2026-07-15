@@ -398,6 +398,8 @@ Every note is scanned before saving — anything shaped like a real secret (API 
 
 `note add`'s save confirmation and `recall`'s search results are styled by default in a terminal; add `--plain` to either for bare, pipe-safe output. `recall` always shows each note's file ID (e.g. `[1784135399545-fe01c4.md]`) so you can open it directly (`cat ~/.ticketlens/recall/<PREFIX>/<id>`), or pass `--full` to print the full body content inline instead.
 
+**Gaps** — every `ticketlens PROJ-123` brief also diffs the ticket's own description against its linked tickets (from the depth traversal you already requested) and its own downloaded attachments, looking for requirements mentioned there but missing here. Anything uncovered shows up under a `## Gaps` section, citing exactly where it came from — a linked ticket key or an attachment filename — as evidence, never an instruction to act on. Nothing is saved anywhere; it's recomputed fresh on every fetch. Requires a Pro license, same as Recall. No network call beyond what the brief already made.
+
 ---
 
 ### Response-Time Stats

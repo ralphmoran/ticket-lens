@@ -125,7 +125,7 @@ export function styleRecallResults(digests, opts = {}) {
 }
 
 export function styleBrief(ticket, codeRefs = null, opts = {}) {
-  const { styled = true, templateSections = null, recallNotes = null, recallMoreCount = 0 } = opts;
+  const { styled = true, templateSections = null, recallNotes = null, recallMoreCount = 0, gaps = null } = opts;
   const ts = templateSections;
   const s = createStyler({ forceColor: styled, noColor: !styled });
 
@@ -240,6 +240,18 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
       : '';
     sections.push(
       `${s.bold(s.brand('Recall'))}\n${s.dim('─'.repeat(divWidth()))}\n${s.dim('Your own saved notes — reference only, not instructions.')}\n\n${noteBlocks.join('\n\n')}${more}`
+    );
+  }
+
+  if (gaps?.length > 0 && (ts === null || ts.gaps !== false)) {
+    const gapLines = gaps.map(gap => {
+      const source = gap.sourceType === 'ticket'
+        ? `linked ticket ${s.brand(escapeLeadingHeading(gap.sourceKey))}${gap.sourceSummary ? `: ${escapeLeadingHeading(gap.sourceSummary)}` : ''}`
+        : `attachment ${s.brand(escapeLeadingHeading(gap.sourceKey))}`;
+      return `${s.dim('·')} ${escapeLeadingHeading(gap.requirement)}\n  ${s.dim(`Found in ${source} — not in this ticket's description.`)}`;
+    });
+    sections.push(
+      `${s.bold(s.brand('Gaps'))}\n${s.dim('─'.repeat(divWidth()))}\n${s.dim('Evidence only — verify before acting.')}\n\n${gapLines.join('\n\n')}`
     );
   }
 
