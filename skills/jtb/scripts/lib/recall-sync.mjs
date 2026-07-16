@@ -102,7 +102,18 @@ export async function pushNote(note, {
   }
 
   if (res.status === 403) {
-    warn(`  ${yellow('⚠')} Your plan doesn't include team Recall sync — saved locally only.\n`);
+    // Found via Local Live Test: a single generic "plan doesn't include this"
+    // message was actively misleading for a real, valid state — a Pro user
+    // entitled to Recall but not on any team yet (PushController's two
+    // distinct 403 reasons: not entitled vs. no team). Matched against known
+    // server-controlled strings rather than relaying the raw body verbatim.
+    let reason;
+    try { reason = (await res.json())?.error; } catch { /* fall through to the generic message below */ }
+    if (reason === 'No team found') {
+      warn(`  ${yellow('⚠')} You're not on a team yet, so there's nowhere to sync this note — saved locally only.\n`);
+    } else {
+      warn(`  ${yellow('⚠')} Your plan doesn't include team Recall sync — saved locally only.\n`);
+    }
     return { ok: false, status: res.status };
   }
 

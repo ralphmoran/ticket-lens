@@ -81,9 +81,24 @@ describe('pushNote — HTTP outcomes', () => {
 
   it('reports failure clearly on 403 not-entitled', async () => {
     const warnings = [];
-    const result = await pushNote(sampleNote, { cliToken: 'tl_key', configDir: freshConfigDir(), fetcher: makeFetcher(403), warn: (s) => warnings.push(s) });
+    const result = await pushNote(sampleNote, { cliToken: 'tl_key', configDir: freshConfigDir(), fetcher: makeFetcher(403, { error: 'Recall is not enabled for your account' }), warn: (s) => warnings.push(s) });
     assert.equal(result.ok, false);
-    assert.ok(warnings.some(w => w.length > 0), 'a 403 must produce a visible warning, not silence');
+    assert.ok(warnings.some(w => /plan doesn't include/i.test(w)), 'not-entitled 403 must say the plan/entitlement is the blocker');
+  });
+
+  it('reports a distinct message on 403 no-team — found via Local Live Test: the generic "plan doesn\'t include" message is actively misleading when a Pro user is simply not on any team yet', async () => {
+    const warnings = [];
+    const result = await pushNote(sampleNote, { cliToken: 'tl_key', configDir: freshConfigDir(), fetcher: makeFetcher(403, { error: 'No team found' }), warn: (s) => warnings.push(s) });
+    assert.equal(result.ok, false);
+    assert.ok(warnings.some(w => /team/i.test(w) && !/plan doesn't include/i.test(w)), 'no-team 403 must say the user has no team, not misattribute it to plan/entitlement');
+  });
+
+  it('falls back to the generic message on a 403 with no recognizable body (e.g. json() throws)', async () => {
+    const warnings = [];
+    const fetcher = async () => ({ ok: false, status: 403, json: async () => { throw new Error('not json'); } });
+    const result = await pushNote(sampleNote, { cliToken: 'tl_key', configDir: freshConfigDir(), fetcher, warn: (s) => warnings.push(s) });
+    assert.equal(result.ok, false);
+    assert.ok(warnings.some(w => w.length > 0), 'must still warn even if the error body cannot be parsed');
   });
 
   it('reports failure clearly on a network error, never throws', async () => {
