@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.14.0 -->
+<!-- jtb-skill-version: 0.15.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -210,7 +210,7 @@ Do not capture: routine/obvious information, anything already fully covered by t
 To search saved notes directly (outside of automatic brief injection): `ticketlens recall "<query>"`.
 
 ### Privacy
-Recall notes are stored locally at `~/.ticketlens/recall/` — never sent anywhere. No network calls.
+Recall notes are stored locally at `~/.ticketlens/recall/`. On a Free/Pro account with no Team Recall entitlement, they never leave the machine — no network calls. On a Team account with Recall enabled (owner-managed, may vary per user), notes also sync to the team's shared pool in the background so teammates can benefit from them too; a team manager reviews and verifies each incoming note before it's marked trusted.
 
 ---
 

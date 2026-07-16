@@ -256,11 +256,22 @@ async function applyHandoff(ticket, args, opts, configDir, licensedFn, upgradeFn
 // unbounded as notes accumulate over time; `recall` itself has no such cap.
 const MAX_INJECTED_RECALL_NOTES = 3;
 
+// Brief-fetch is a passive path that must feel instant — never the full
+// request timeout `tl recall` (a command the user explicitly waits on) can
+// afford. A slow/unreachable team pull here degrades to "use what's already
+// local," it must never make every ticket fetch feel slow.
+const BRIEF_FETCH_RECALL_PULL_TIMEOUT_MS = 2_000;
+
 /**
  * Loads Recall notes matching this ticket, if the user is licensed. This is
  * the ONLY place recallNotes ever gets populated — a lapsed-Pro user never
  * sees their own saved notes injected into a brief, regardless of what's on
  * disk, because this function returns null before touching the vault at all.
+ *
+ * When logged in, best-effort refreshes the local mirror from the team
+ * backend first (short-timeout, TTL-gated inside pullNotes itself — a stale
+ * or unreachable pull silently falls back to whatever is already on disk;
+ * it must never delay or fail the brief).
  *
  * @returns {Promise<{ notes: object[], moreCount: number }|null>}
  */
@@ -268,11 +279,23 @@ async function loadRecallNotes(ticket, configDir, licensedFn, opts) {
   if (!licensedFn('pro', configDir)) return null;
   const vault = opts.recallVault ?? (await import('./lib/recall-vault.mjs'));
   const matcher = opts.recallMatcher ?? (await import('./lib/recall-matcher.mjs'));
-  const digests = vault.listDigests({ ticketKey: ticket.key }, { configDir });
-  const matches = matcher.matchDigests(ticket, digests);
+
+  const readCliTokenFn = opts.readCliToken ?? readCliToken;
+  const pullNotesFn = opts.pullNotes ?? (await import('./lib/recall-sync.mjs')).pullNotes;
+  const cliToken = readCliTokenFn(configDir);
+  if (cliToken) {
+    try {
+      await pullNotesFn({ cliToken, configDir, timeoutMs: BRIEF_FETCH_RECALL_PULL_TIMEOUT_MS });
+    } catch {
+      // Best-effort — a failed/rejected pull must never block the brief.
+    }
+  }
+
+  const notes = vault.listNotes({ ticketKey: ticket.key }, { configDir });
+  const matches = matcher.matchNotes(ticket, notes);
   if (matches.length === 0) return null;
   return {
-    notes: matches.slice(0, MAX_INJECTED_RECALL_NOTES).map(m => m.digest),
+    notes: matches.slice(0, MAX_INJECTED_RECALL_NOTES).map(m => m.note),
     moreCount: Math.max(0, matches.length - MAX_INJECTED_RECALL_NOTES),
   };
 }

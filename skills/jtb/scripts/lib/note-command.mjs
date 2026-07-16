@@ -10,7 +10,9 @@ import path from 'node:path';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { isLicensed, showUpgradePrompt } from './license.mjs';
 import { scanForSecrets } from './secret-scanner.mjs';
-import { writeDigest } from './recall-vault.mjs';
+import { writeNote } from './recall-vault.mjs';
+import { readCliToken } from './cli-auth.mjs';
+import { pushNote } from './recall-sync.mjs';
 import { incrementDraftKept, incrementDraftDeleted } from './activity-counter.mjs';
 import { extractText } from './attachment-text.mjs';
 import { TICKET_KEY_PATTERN } from './cli.mjs';
@@ -65,7 +67,9 @@ export async function runNoteAdd(cmdArgs, {
   readStdin = defaultReadStdin,
   isLicensedFn = isLicensed,
   scanForSecretsFn = scanForSecrets,
-  writeDigestFn = writeDigest,
+  writeNoteFn = writeNote,
+  readCliTokenFn = readCliToken,
+  pushNoteFn = pushNote,
   incrementDraftKeptFn = incrementDraftKept,
   incrementDraftDeletedFn = incrementDraftDeleted,
   listAttachmentsFn = defaultListAttachments,
@@ -109,13 +113,22 @@ export async function runNoteAdd(cmdArgs, {
     stream.write(`  Warning: ${warning}\n`);
   }
 
-  const { id } = writeDigestFn(
-    { title, ticketKeys: ticketKey ? [ticketKey] : [], tags, author, body },
-    { configDir },
-  );
+  const ticketKeys = ticketKey ? [ticketKey] : [];
+  const { id } = writeNoteFn({ title, ticketKeys, tags, author, body }, { configDir });
   incrementDraftKeptFn(configDir);
   const styled = !cmdArgs.includes('--plain') && stream.isTTY;
   const s = createStyler({ forceColor: styled, noColor: !styled });
   stream.write(styled ? `\n  ${s.green('✔')} Saved note "${title}" (${id})\n\n` : `  Saved note "${title}" (${id})\n`);
+
+  const cliToken = readCliTokenFn(configDir);
+  if (cliToken) {
+    // Field names match PushRequest's validation rules (external_id, tickets) —
+    // the backend wire contract, not the local vault's internal camelCase shape.
+    await pushNoteFn(
+      { external_id: id, title, tickets: ticketKeys, tags, author, sources: [], body },
+      { cliToken, configDir, warn: (s) => stream.write(s) },
+    );
+  }
+
   return { written: true };
 }

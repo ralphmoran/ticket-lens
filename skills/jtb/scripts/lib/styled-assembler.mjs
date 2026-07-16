@@ -106,20 +106,20 @@ export function styleRecallResults(digests, opts = {}) {
 
   if (!styled) {
     const entries = digests.map(d => {
-      const ticketList = d.tickets?.length > 0 ? ` (${d.tickets.join(', ')})` : '';
-      const summary = `${d.title}${ticketList} — ${d.created.split('T')[0]}  [${d.id}]`;
-      return full ? `${summary}\n${d.body}` : summary;
+      const ticketList = d.tickets?.length > 0 ? ` (${escapeLeadingHeading(d.tickets.join(', '))})` : '';
+      const summary = `${escapeLeadingHeading(d.title)}${ticketList} — ${d.created.split('T')[0]}  [${d.id}]`;
+      return full ? `${summary}\n${escapeLeadingHeading(d.body)}` : summary;
     });
     return entries.join(full ? '\n\n' : '\n');
   }
 
   const s = createStyler({ forceColor: true });
   const entries = digests.map(d => {
-    const ticketList = d.tickets?.length > 0 ? ` ${s.dim(`(${d.tickets.join(', ')})`)}` : '';
+    const ticketList = d.tickets?.length > 0 ? ` ${s.dim(`(${escapeLeadingHeading(d.tickets.join(', '))})`)}` : '';
     const date = s.dim(d.created.split('T')[0]);
     const id = s.dim(`[${d.id}]`);
-    const summary = `${s.brand('●')} ${s.bold(d.title)}${ticketList} ${s.dim('—')} ${date}  ${id}`;
-    return full ? `${summary}\n${d.body}` : summary;
+    const summary = `${s.brand('●')} ${s.bold(escapeLeadingHeading(d.title))}${ticketList} ${s.dim('—')} ${date}  ${id}`;
+    return full ? `${summary}\n${escapeLeadingHeading(d.body)}` : summary;
   });
   return entries.join(full ? '\n\n' : '\n');
 }
@@ -230,9 +230,9 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
 
   if (recallNotes?.length > 0 && (ts === null || ts.recall !== false)) {
     const noteBlocks = recallNotes.map(note => {
-      const ticketList = note.tickets?.length > 0 ? ` ${s.dim(`(${note.tickets.join(', ')})`)}` : '';
+      const ticketList = note.tickets?.length > 0 ? ` ${s.dim(`(${escapeLeadingHeading(note.tickets.join(', '))})`)}` : '';
       const badge = note.status === 'unverified' ? ` ${s.dim('(unverified)')}` : '';
-      const tagsLine = note.tags?.length > 0 ? `\n  ${s.dim(`Tags: ${note.tags.join(', ')}`)}` : '';
+      const tagsLine = note.tags?.length > 0 ? `\n  ${s.dim(`Tags: ${escapeLeadingHeading(note.tags.join(', '))}`)}` : '';
       return `${s.brand('●')} ${s.bold(escapeLeadingHeading(note.title))}${ticketList}${badge}${tagsLine}\n  ${escapeLeadingHeading(note.body)}`;
     });
     const more = recallMoreCount > 0

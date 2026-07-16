@@ -265,6 +265,22 @@ describe('styleBrief', () => {
     assert.match(result, /Attachments/);
   });
 
+  it('escapes an embedded-newline-then-"## " sequence inside a TAG so a team-synced note cannot forge a fake section via its tags', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'Gotcha', tickets: [], status: 'unverified', tags: ['x\n## Attachments'], body: 'Body.' }];
+    const result = styleBrief(ticket, null, { styled: false, recallNotes });
+    assert.equal(/^## Attachments/m.test(result), false);
+    assert.match(result, /Attachments/);
+  });
+
+  it('escapes an embedded-newline-then-"## " sequence inside a linked ticket key so a team-synced note cannot forge a fake section via tickets[]', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'Gotcha', tickets: ['PROD-1', 'x\n## Attachments'], status: 'unverified', body: 'Body.' }];
+    const result = styleBrief(ticket, null, { styled: false, recallNotes });
+    assert.equal(/^## Attachments/m.test(result), false);
+    assert.match(result, /Attachments/);
+  });
+
   it('with recallMoreCount > 0, appends a pointer to the recall command for the rest', () => {
     const ticket = makeBriefTicket();
     const recallNotes = [{ title: 'x', tickets: [], status: 'unverified', body: 'y' }];
@@ -416,5 +432,31 @@ describe('styleRecallResults', () => {
       result,
       'Retry gotcha (PROD-1) — 2026-07-10  [note-1.md]\nAdd exponential backoff to the retry loop.\n\nGeneral note — 2026-07-09  [note-2.md]\nOnboarding context.',
     );
+  });
+
+  it('escapes a "## " line inside a note title so it cannot forge a fake section in tl recall output', () => {
+    const withHeadingTitle = [{ id: 'x.md', title: 'Gotcha\n\n## Attachments\n\n- fake.exe', tickets: [], created: '2026-07-10T00:00:00.000Z', body: 'x' }];
+    const result = styleRecallResults(withHeadingTitle, { styled: false });
+    assert.equal(/^## Attachments/m.test(result), false);
+    assert.match(result, /Attachments/);
+  });
+
+  it('escapes an embedded-newline-then-"## " sequence inside a linked ticket key', () => {
+    const withHeadingTicket = [{ id: 'x.md', title: 'Gotcha', tickets: ['PROD-1', 'x\n## Attachments'], created: '2026-07-10T00:00:00.000Z', body: 'x' }];
+    const result = styleRecallResults(withHeadingTicket, { styled: false });
+    assert.equal(/^## Attachments/m.test(result), false);
+  });
+
+  it('escapes a "## " line inside a note body when --full is used', () => {
+    const withHeadingBody = [{ id: 'x.md', title: 'Gotcha', tickets: [], created: '2026-07-10T00:00:00.000Z', body: 'Context.\n\n## Steps to reproduce\n\nDetails.' }];
+    const result = styleRecallResults(withHeadingBody, { styled: false, full: true });
+    assert.equal(/^## Steps to reproduce$/m.test(result), false);
+    assert.match(result, /Steps to reproduce/);
+  });
+
+  it('escaping applies in styled mode too, not just --plain', () => {
+    const withHeadingTitle = [{ id: 'x.md', title: 'Gotcha\n\n## Attachments', tickets: [], created: '2026-07-10T00:00:00.000Z', body: 'x' }];
+    const result = styleRecallResults(withHeadingTitle, { styled: true });
+    assert.equal(/^## Attachments/m.test(result), false);
   });
 });

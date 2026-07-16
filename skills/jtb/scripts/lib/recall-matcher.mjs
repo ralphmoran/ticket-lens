@@ -15,26 +15,26 @@ function extractKeywords(text) {
 
 /**
  * @param {{ key: string, summary?: string, description?: string }} ticket
- * @param {object[]} digests
- * @returns {{ digest: object, score: number }[]} sorted strongest match first
+ * @param {object[]} notes
+ * @returns {{ note: object, score: number }[]} sorted strongest match first
  */
-export function matchDigests(ticket, digests) {
+export function matchNotes(ticket, notes) {
   const ticketKeywords = extractKeywords(`${ticket.summary ?? ''} ${ticket.description ?? ''}`);
 
-  return digests
-    .map(digest => {
+  return notes
+    .map(note => {
       let score = 0;
 
-      if (digest.tickets?.includes(ticket.key)) score += EXACT_TICKET_SCORE;
+      if (note.tickets?.includes(ticket.key)) score += EXACT_TICKET_SCORE;
 
-      const tagOverlap = (digest.tags ?? []).filter(tag => ticketKeywords.has(tag.toLowerCase())).length;
+      const tagOverlap = (note.tags ?? []).filter(tag => ticketKeywords.has(tag.toLowerCase())).length;
       score += tagOverlap * TAG_OVERLAP_SCORE;
 
-      const titleKeywords = extractKeywords(digest.title);
+      const titleKeywords = extractKeywords(note.title);
       const titleOverlap = [...titleKeywords].filter(word => ticketKeywords.has(word)).length;
       score += titleOverlap * TITLE_WORD_OVERLAP_SCORE;
 
-      return { digest, score };
+      return { note, score };
     })
     .filter(match => match.score > 0)
     .sort((a, b) => b.score - a.score);

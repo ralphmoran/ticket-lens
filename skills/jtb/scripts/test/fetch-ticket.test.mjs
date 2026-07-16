@@ -5,7 +5,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { run } from '../fetch-ticket.mjs';
-import { writeDigest } from '../lib/recall-vault.mjs';
+import { writeNote } from '../lib/recall-vault.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -311,7 +311,7 @@ describe('Recall injection', () => {
 
   it('a Pro user with a matching saved note sees it injected into the brief', async () => {
     const configDir = withRecallConfigDir();
-    writeDigest(
+    writeNote(
       { title: 'Payment validation gotcha', ticketKeys: ['PROD-1234'], tags: [], author: 'ralph', body: 'Empty carts need a special case.' },
       { configDir },
     );
@@ -329,7 +329,7 @@ describe('Recall injection', () => {
 
   it('the same note also appears in styled (--styled) output', async () => {
     const configDir = withRecallConfigDir();
-    writeDigest(
+    writeNote(
       { title: 'Payment validation gotcha', ticketKeys: ['PROD-1234'], tags: [], author: 'ralph', body: 'Empty carts need a special case.' },
       { configDir },
     );
@@ -347,7 +347,7 @@ describe('Recall injection', () => {
 
   it('a non-Pro user never sees a saved note, even with an exact ticket match', async () => {
     const configDir = withRecallConfigDir();
-    writeDigest(
+    writeNote(
       { title: 'Payment validation gotcha', ticketKeys: ['PROD-1234'], tags: [], author: 'ralph', body: 'Empty carts need a special case.' },
       { configDir },
     );
@@ -364,7 +364,7 @@ describe('Recall injection', () => {
 
   it('a Recall-injected brief increments the briefs_with_recall_injection counter', async () => {
     const configDir = withRecallConfigDir();
-    writeDigest(
+    writeNote(
       { title: 'Payment validation gotcha', ticketKeys: ['PROD-1234'], tags: [], author: 'ralph', body: 'Empty carts need a special case.' },
       { configDir },
     );
@@ -396,7 +396,7 @@ describe('Recall injection', () => {
   it('more than 3 matching notes: only 3 are injected in full, plus a pointer to `ticketlens recall` for the rest', async () => {
     const configDir = withRecallConfigDir();
     for (let i = 1; i <= 5; i++) {
-      writeDigest(
+      writeNote(
         { title: `Gotcha ${i}`, ticketKeys: ['PROD-1234'], tags: [], author: 'ralph', body: `Body ${i}.` },
         { configDir },
       );
@@ -409,6 +409,66 @@ describe('Recall injection', () => {
       assert.equal(gotchaCount, 3, `expected exactly 3 notes injected in full, got: ${out.stdout}`);
       assert.match(out.stdout, /2 more Recall notes linked to PROD-1234/);
       assert.match(out.stdout, /ticketlens recall PROD-1234/);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('with a cliToken, pulls team notes using a short timeout (brief-fetch is a passive path, never the full 15s)', async () => {
+    const configDir = withRecallConfigDir();
+    const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
+    let capturedTimeout;
+    const out = captureOutput();
+    try {
+      await withProLicense(() => run(
+        ['PROD-1234', '--depth=0', '--no-cache'],
+        {
+          fetcher: mockFetch,
+          configDir,
+          readCliToken: () => 'tl_key',
+          pullNotes: (opts) => { capturedTimeout = opts.timeoutMs; return Promise.resolve({ ok: true, count: 0 }); },
+        },
+      ));
+      assert.ok(typeof capturedTimeout === 'number', 'a timeoutMs must be explicitly passed');
+      assert.ok(capturedTimeout < 15_000, `brief-fetch must use a short timeout, got ${capturedTimeout}ms`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('without a cliToken, never attempts a pull', async () => {
+    const configDir = withRecallConfigDir();
+    const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
+    let pullCalls = 0;
+    const out = captureOutput();
+    try {
+      await withProLicense(() => run(
+        ['PROD-1234', '--depth=0', '--no-cache'],
+        { fetcher: mockFetch, configDir, readCliToken: () => null, pullNotes: () => { pullCalls++; return Promise.resolve({ ok: true, count: 0 }); } },
+      ));
+      assert.equal(pullCalls, 0);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('a pull failure never blocks the brief from rendering already-local notes', async () => {
+    const configDir = withRecallConfigDir();
+    writeNote(
+      { title: 'Local-only gotcha', ticketKeys: ['PROD-1234'], tags: [], author: 'ralph', body: 'Already on disk.' },
+      { configDir },
+    );
+    const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
+    const out = captureOutput();
+    try {
+      await withProLicense(() => run(
+        ['PROD-1234', '--depth=0', '--no-cache'],
+        { fetcher: mockFetch, configDir, readCliToken: () => 'tl_key', pullNotes: () => Promise.reject(new Error('network down')) },
+      ));
+      assert.ok(out.stdout.includes('Local-only gotcha'), 'local notes must still render even if the pull rejects');
     } finally {
       out.restore();
       rmSync(configDir, { recursive: true, force: true });

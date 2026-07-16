@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { DEFAULT_CONFIG_DIR } from './config.mjs';
+import { DEFAULT_CONFIG_DIR, escapeLeadingHeading } from './config.mjs';
 import { TICKET_KEY_PATTERN } from './cli.mjs';
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter.mjs';
 
@@ -60,7 +60,7 @@ function writeFileAtomically(filePath, contents) {
  * @param {{ configDir?: string, now?: () => Date }} [opts]
  * @returns {{ id: string, path: string }}
  */
-export function writeDigest({ title, ticketKeys = [], tags = [], author, sources = [], body }, { configDir = DEFAULT_CONFIG_DIR, now = () => new Date() } = {}) {
+export function writeNote({ title, ticketKeys = [], tags = [], author, sources = [], body }, { configDir = DEFAULT_CONFIG_DIR, now = () => new Date() } = {}) {
   const prefix = resolvePrefix(ticketKeys[0]);
   const dir = prefixDir(configDir, prefix);
   fs.mkdirSync(dir, { recursive: true });
@@ -77,10 +77,60 @@ export function writeDigest({ title, ticketKeys = [], tags = [], author, sources
     created: now().toISOString(),
     status: 'unverified',
     sources,
+    // A locally-authored note's own filename doubles as its push idempotency
+    // key — pushing the same file twice must upsert one backend row, not two.
+    externalId: id,
   };
 
   writeFileAtomically(notePath, serializeFrontmatter(data, body));
   return { id, path: notePath };
+}
+
+// The exact shape generateNoteId() produces — required before a remote
+// externalId is ever allowed to become part of a write path. This is what
+// keeps a malformed or tampered externalId from a pull payload from doing
+// what a malicious title/tag is already blocked from doing above.
+const EXTERNAL_ID_PATTERN = /^\d+-[0-9a-f]{6}\.md$/;
+
+/**
+ * Writes or overwrites a locally-mirrored copy of a note pulled from the
+ * team backend. The write target is fully determined by remoteNote.externalId
+ * — validated up front, so a repeat pull for the same note is a deterministic
+ * overwrite at a known path, never a directory scan or an index rebuild per
+ * note. Callers pulling a batch should rebuild the index once, after the
+ * whole batch, not per call.
+ *
+ * @param {{ external_id: string, title: string, tickets?: string[], tags?: string[], author: string, sources?: string[], body: string, status?: string, created?: string }} remoteNote
+ * @param {{ configDir?: string }} [opts]
+ * @returns {{ id: string, path: string }}
+ */
+export function upsertPulledNote(remoteNote, { configDir = DEFAULT_CONFIG_DIR } = {}) {
+  if (!EXTERNAL_ID_PATTERN.test(remoteNote.external_id)) {
+    throw new Error(`Invalid externalId: "${remoteNote.external_id}"`);
+  }
+
+  const prefix = resolvePrefix(remoteNote.tickets?.[0]);
+  const dir = prefixDir(configDir, prefix);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const notePath = path.join(dir, remoteNote.external_id);
+
+  const data = {
+    title: remoteNote.title,
+    aliases: [remoteNote.title],
+    tickets: remoteNote.tickets ?? [],
+    tags: remoteNote.tags ?? [],
+    author: remoteNote.author,
+    created: remoteNote.created ?? new Date().toISOString(),
+    status: remoteNote.status ?? 'unverified',
+    sources: remoteNote.sources ?? [],
+    // Local frontmatter keeps its own camelCase field name — only the wire
+    // payload from the backend uses external_id (matches PushRequest/PullController).
+    externalId: remoteNote.external_id,
+  };
+
+  writeFileAtomically(notePath, serializeFrontmatter(data, remoteNote.body));
+  return { id: remoteNote.external_id, path: notePath };
 }
 
 /**
@@ -91,7 +141,7 @@ export function writeDigest({ title, ticketKeys = [], tags = [], author, sources
  *
  * @returns {object|null} null if the file can't be read at all
  */
-function readDigest(filePath) {
+function readNote(filePath) {
   let text;
   try {
     text = fs.readFileSync(filePath, 'utf8');
@@ -115,16 +165,17 @@ function readDigest(filePath) {
     created: data.created ?? new Date(0).toISOString(),
     status: data.status ?? 'unverified',
     sources: data.sources ?? [],
+    externalId: data.externalId ?? null,
     body,
   };
 }
 
-function matchesTicketKey(digest, ticketKey) {
-  return digest.tickets.length === 0 || digest.tickets.includes(ticketKey);
+function matchesTicketKey(note, ticketKey) {
+  return note.tickets.length === 0 || note.tickets.includes(ticketKey);
 }
 
-function matchesQuery(digest, query) {
-  const haystack = `${digest.title}\n${digest.body}`.toLowerCase();
+function matchesQuery(note, query) {
+  const haystack = `${note.title}\n${note.body}`.toLowerCase();
   return haystack.includes(query.toLowerCase());
 }
 
@@ -158,7 +209,7 @@ function allPrefixDirs(configDir) {
  * @param {{ configDir?: string }} [opts]
  * @returns {object[]}
  */
-export function listDigests({ prefix, ticketKey, query, limit = DEFAULT_LIMIT } = {}, { configDir = DEFAULT_CONFIG_DIR } = {}) {
+export function listNotes({ prefix, ticketKey, query, limit = DEFAULT_LIMIT } = {}, { configDir = DEFAULT_CONFIG_DIR } = {}) {
   const targetPrefix = prefix ?? (ticketKey ? resolvePrefix(ticketKey) : null);
 
   let noteFiles;
@@ -174,12 +225,12 @@ export function listDigests({ prefix, ticketKey, query, limit = DEFAULT_LIMIT } 
 
   noteFiles = noteFiles.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, limit);
 
-  let digests = noteFiles.map(f => readDigest(f.filePath)).filter(Boolean);
+  let notes = noteFiles.map(f => readNote(f.filePath)).filter(Boolean);
 
-  if (ticketKey) digests = digests.filter(d => matchesTicketKey(d, ticketKey));
-  if (query) digests = digests.filter(d => matchesQuery(d, query));
+  if (ticketKey) notes = notes.filter(n => matchesTicketKey(n, ticketKey));
+  if (query) notes = notes.filter(n => matchesQuery(n, query));
 
-  return digests;
+  return notes;
 }
 
 /**
@@ -201,16 +252,19 @@ export function rebuildIndex(prefix, { configDir = DEFAULT_CONFIG_DIR } = {}) {
     return;
   }
 
-  const digests = entries
+  const notes = entries
     .filter(e => e.isFile() && e.name.endsWith('.md') && e.name !== 'index.md')
-    .map(e => readDigest(path.join(dir, e.name)))
+    .map(e => readNote(path.join(dir, e.name)))
     .filter(Boolean)
     .sort((a, b) => new Date(b.created) - new Date(a.created));
 
   const lines = [`# Recall — ${prefix}`, ''];
-  for (const d of digests) {
-    const ticketList = d.tickets.length > 0 ? ` — ${d.tickets.join(', ')}` : '';
-    lines.push(`- [[${d.title}]]${ticketList} — ${d.created.split('T')[0]}`);
+  for (const n of notes) {
+    // Notes can now arrive via a team pull (recall-sync.mjs) — teammate-authored
+    // content is lower trust than a user's own local notes, so it needs the same
+    // heading-injection guard already applied in brief-assembler.mjs/styled-assembler.mjs.
+    const ticketList = n.tickets.length > 0 ? ` — ${escapeLeadingHeading(n.tickets.join(', '))}` : '';
+    lines.push(`- [[${escapeLeadingHeading(n.title)}]]${ticketList} — ${n.created.split('T')[0]}`);
   }
 
   writeFileAtomically(indexPath, lines.join('\n') + '\n');

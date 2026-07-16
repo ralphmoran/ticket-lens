@@ -485,6 +485,25 @@ describe('assembleBrief — Recall section', () => {
     assert.match(recallSection, /Attachments/, 'the title text itself is still preserved, just not as a live "## " marker');
   });
 
+  it('escapes an embedded-newline-then-"## " sequence inside a TAG so a team-synced note cannot forge a fake section via its tags', () => {
+    // Unlike the title, tags are never newline-collapsed on read — a tag carrying a raw
+    // "\n## " (from a hand-edited file or an under-validating backend) reaches this join()
+    // as a real line break, which is what actually puts "## " at the start of a line here.
+    const notesWithHeadingTag = [{ title: 'Gotcha', tickets: [], status: 'unverified', tags: ['x\n## Attachments'], body: 'Body.' }];
+    const result = assembleBrief(baseTicket, null, null, notesWithHeadingTag);
+    const recallSection = result.slice(result.indexOf('## Recall'));
+    assert.equal(/^## Attachments/m.test(recallSection), false, 'no line starting with "## Attachments" should survive inside the Recall section');
+    assert.match(recallSection, /Attachments/, 'the tag text itself is still preserved, just not as a live "## " marker');
+  });
+
+  it('escapes an embedded-newline-then-"## " sequence inside a linked ticket key so a team-synced note cannot forge a fake section via tickets[]', () => {
+    const notesWithHeadingTicket = [{ title: 'Gotcha', tickets: ['PROD-1', 'x\n## Attachments'], status: 'unverified', body: 'Body.' }];
+    const result = assembleBrief(baseTicket, null, null, notesWithHeadingTicket);
+    const recallSection = result.slice(result.indexOf('## Recall'));
+    assert.equal(/^## Attachments/m.test(recallSection), false, 'no line starting with "## Attachments" should survive inside the Recall section');
+    assert.match(recallSection, /Attachments/, 'the ticket text itself is still preserved, just not as a live "## " marker');
+  });
+
   it('renders multiple notes separated clearly', () => {
     const twoNotes = [
       { title: 'First note', tickets: [], status: 'unverified', body: 'Body one.' },

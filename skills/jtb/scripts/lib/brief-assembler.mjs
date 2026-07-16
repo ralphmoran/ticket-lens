@@ -96,9 +96,13 @@ export function assembleBrief(ticket, codeRefs = null, templateSections = null, 
 
   if (recallNotes?.length > 0 && (s === null || s.recall !== false)) {
     const noteBlocks = recallNotes.map(note => {
-      const ticketList = note.tickets?.length > 0 ? ` (${note.tickets.join(', ')})` : '';
+      // Title and body are escaped here too — unlike title, tickets/tags are never
+      // newline-collapsed on read, so a value carrying a raw embedded newline (from a
+      // hand-edited file, or a team-synced note whose source didn't validate as strictly)
+      // can put "## " at the start of a line here just as easily as in the title/body.
+      const ticketList = note.tickets?.length > 0 ? ` (${escapeLeadingHeading(note.tickets.join(', '))})` : '';
       const badge = note.status === 'unverified' ? ' _(unverified)_' : '';
-      const tagsLine = note.tags?.length > 0 ? `\n  Tags: ${note.tags.join(', ')}` : '';
+      const tagsLine = note.tags?.length > 0 ? `\n  Tags: ${escapeLeadingHeading(note.tags.join(', '))}` : '';
       return `- **${escapeLeadingHeading(note.title)}**${ticketList}${badge}${tagsLine}\n  ${escapeLeadingHeading(note.body)}`;
     });
     const more = recallMoreCount > 0

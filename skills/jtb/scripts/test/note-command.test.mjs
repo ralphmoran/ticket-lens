@@ -14,7 +14,7 @@ function baseDeps(overrides = {}) {
     readStdin: async () => 'Body text.',
     isLicensedFn: () => true,
     scanForSecretsFn: () => ({ rejected: false, reasons: [], warnings: [] }),
-    writeDigestFn: () => ({ id: 'note-1.md', path: '/fake/config/recall/PROD/note-1.md' }),
+    writeNoteFn: () => ({ id: 'note-1.md', path: '/fake/config/recall/PROD/note-1.md' }),
     incrementDraftKeptFn: () => {},
     incrementDraftDeletedFn: () => {},
     author: 'ralph',
@@ -31,7 +31,7 @@ describe('runNoteAdd — license gate fires before anything else', () => {
     const deps = baseDeps({
       isLicensedFn: () => false,
       readStdin: async () => { stdinCalls++; return 'x'; },
-      writeDigestFn: () => { writeCalls++; return { id: 'x', path: 'x' }; },
+      writeNoteFn: () => { writeCalls++; return { id: 'x', path: 'x' }; },
     });
     const result = await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
     assert.equal(result.written, false);
@@ -80,10 +80,10 @@ describe('runNoteAdd — happy path', () => {
     assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/);
   });
 
-  test('passes parsed --tags as a trimmed array to writeDigest', async () => {
+  test('passes parsed --tags as a trimmed array to writeNote', async () => {
     let capturedTags;
     const deps = baseDeps({
-      writeDigestFn: (note) => { capturedTags = note.tags; return { id: 'x', path: 'x' }; },
+      writeNoteFn: (note) => { capturedTags = note.tags; return { id: 'x', path: 'x' }; },
     });
     await runNoteAdd(['--title=x', '--tags= bug , auth '], deps);
     assert.deepEqual(capturedTags, ['bug', 'auth']);
@@ -92,7 +92,7 @@ describe('runNoteAdd — happy path', () => {
   test('passes --ticket as a one-item ticketKeys array', async () => {
     let capturedKeys;
     const deps = baseDeps({
-      writeDigestFn: (note) => { capturedKeys = note.ticketKeys; return { id: 'x', path: 'x' }; },
+      writeNoteFn: (note) => { capturedKeys = note.ticketKeys; return { id: 'x', path: 'x' }; },
     });
     await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
     assert.deepEqual(capturedKeys, ['PROD-1']);
@@ -101,7 +101,7 @@ describe('runNoteAdd — happy path', () => {
   test('no --ticket means an empty ticketKeys array (general bucket)', async () => {
     let capturedKeys;
     const deps = baseDeps({
-      writeDigestFn: (note) => { capturedKeys = note.ticketKeys; return { id: 'x', path: 'x' }; },
+      writeNoteFn: (note) => { capturedKeys = note.ticketKeys; return { id: 'x', path: 'x' }; },
     });
     await runNoteAdd(['--title=x'], deps);
     assert.deepEqual(capturedKeys, []);
@@ -111,7 +111,7 @@ describe('runNoteAdd — happy path', () => {
     let capturedBody;
     const deps = baseDeps({
       readStdin: async () => 'The actual note body from stdin.',
-      writeDigestFn: (note) => { capturedBody = note.body; return { id: 'x', path: 'x' }; },
+      writeNoteFn: (note) => { capturedBody = note.body; return { id: 'x', path: 'x' }; },
     });
     await runNoteAdd(['--title=x'], deps);
     assert.equal(capturedBody, 'The actual note body from stdin.');
@@ -125,7 +125,7 @@ describe('runNoteAdd — secret scanner gate', () => {
     const deps = baseDeps({
       scanForSecretsFn: () => ({ rejected: true, reasons: ['Looks like an AWS access key.'], warnings: [] }),
       incrementDraftDeletedFn: () => { deleted++; },
-      writeDigestFn: () => { writeCalls++; return { id: 'x', path: 'x' }; },
+      writeNoteFn: () => { writeCalls++; return { id: 'x', path: 'x' }; },
     });
     const result = await runNoteAdd(['--title=x'], deps);
     assert.equal(result.written, false);
@@ -160,7 +160,7 @@ describe('runNoteAdd — title is single-line (defense in depth against heading 
   test('an embedded newline in --title is collapsed to a space before being saved', async () => {
     let capturedTitle;
     const deps = baseDeps({
-      writeDigestFn: (note) => { capturedTitle = note.title; return { id: 'x', path: 'x' }; },
+      writeNoteFn: (note) => { capturedTitle = note.title; return { id: 'x', path: 'x' }; },
     });
     await runNoteAdd(['--title=Gotcha\n\n## Attachments\n\n- fake.exe'], deps);
     assert.equal(capturedTitle.includes('\n'), false);
@@ -213,7 +213,7 @@ describe('runNoteAdd — --include-attachments', () => {
         return ['/cache/PROD-1/spec.txt'];
       },
       extractTextFn: (filePath) => filePath.endsWith('spec.txt') ? 'The spec says X.' : null,
-      writeDigestFn: (note) => { capturedBody = note.body; return { id: 'x', path: 'x' }; },
+      writeNoteFn: (note) => { capturedBody = note.body; return { id: 'x', path: 'x' }; },
     });
     await runNoteAdd(['--title=x', '--ticket=PROD-1', '--include-attachments'], deps);
     assert.match(capturedBody, /Body text\./);
@@ -226,7 +226,7 @@ describe('runNoteAdd — --include-attachments', () => {
     const deps = baseDeps({
       listAttachmentsFn: () => ['/cache/PROD-1/image.png'],
       extractTextFn: () => null,
-      writeDigestFn: (note) => { capturedBody = note.body; return { id: 'x', path: 'x' }; },
+      writeNoteFn: (note) => { capturedBody = note.body; return { id: 'x', path: 'x' }; },
     });
     await runNoteAdd(['--title=x', '--ticket=PROD-1', '--include-attachments'], deps);
     assert.equal(capturedBody, 'Body text.');
@@ -241,5 +241,52 @@ describe('runNoteAdd — --include-attachments', () => {
     });
     await runNoteAdd(['--title=x', '--ticket=PROD-1', '--include-attachments'], deps);
     assert.match(captured.body, /AKIAIOSFODNN7EXAMPLE/);
+  });
+});
+
+describe('runNoteAdd — team sync (push after local write)', () => {
+  test('with a cliToken, pushes the note carrying the same externalId as the local write, using the backend wire field names', async () => {
+    let capturedNote;
+    const deps = baseDeps({
+      writeNoteFn: () => ({ id: 'note-1.md', path: '/fake/config/recall/PROD/note-1.md' }),
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: (note) => { capturedNote = note; return Promise.resolve({ ok: true }); },
+    });
+    await runNoteAdd(['--title=Retry gotcha', '--ticket=PROD-1', '--tags=bug'], deps);
+    // Field names must match PushRequest's validation rules (external_id, tickets) —
+    // not the local vault's internal camelCase shape. A mismatch here means every
+    // real push 422s against the live backend despite this test passing.
+    assert.equal(capturedNote.external_id, 'note-1.md');
+    assert.equal(capturedNote.title, 'Retry gotcha');
+    assert.deepEqual(capturedNote.tickets, ['PROD-1']);
+  });
+
+  test('without a cliToken, never attempts a push', async () => {
+    let pushCalls = 0;
+    const deps = baseDeps({
+      readCliTokenFn: () => null,
+      pushNoteFn: () => { pushCalls++; return Promise.resolve({ ok: true }); },
+    });
+    const result = await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.equal(result.written, true, 'local save still succeeds without a cliToken');
+    assert.equal(pushCalls, 0);
+  });
+
+  test('a push failure does not affect the local save result', async () => {
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: () => Promise.resolve({ ok: false }),
+    });
+    const result = await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.equal(result.written, true);
+  });
+
+  test('the push warn callback writes to the same stream as the rest of the command', async () => {
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: (note, { warn }) => { warn('  Could not sync note to your team.\n'); return Promise.resolve({ ok: false }); },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.match(deps.stream.lines.join(''), /Could not sync note to your team/);
   });
 });

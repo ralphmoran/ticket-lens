@@ -394,7 +394,9 @@ Save short notes to yourself — gotchas, context, decisions — and they're aut
 
 The note body is read from stdin, not a flag — this avoids shell-quoting issues with multi-line text. A note can be tied to one ticket (`--ticket=KEY`), or left general (omit `--ticket`) for onboarding-style knowledge that isn't about a specific ticket. Add `--include-attachments` to seed the note with text from that ticket's already-cached attachments (`.txt`/`.md`/`.csv`/`.json` only).
 
-Every note is scanned before saving — anything shaped like a real secret (API key, private key, token) is rejected outright, never silently redacted. Requires a Pro license. No network call — everything stays on your machine.
+Every note is scanned before saving — anything shaped like a real secret (API key, private key, token) is rejected outright, never silently redacted. Requires a Pro license.
+
+**Team sync:** on a Team plan with Recall enabled for your account (owner-managed, per-tier or per-client), notes also sync to your team's shared pool — `note add` pushes in the background, `recall` pulls the team's notes (cached 4h) before searching. A team manager reviews and verifies incoming notes at `console/admin/recall` before they're marked trusted. Without Team Recall entitlement, everything stays on your machine — no network call.
 
 `note add`'s save confirmation and `recall`'s search results are styled by default in a terminal; add `--plain` to either for bare, pipe-safe output. `recall` always shows each note's file ID (e.g. `[1784135399545-fe01c4.md]`) so you can open it directly (`cat ~/.ticketlens/recall/<PREFIX>/<id>`), or pass `--full` to print the full body content inline instead.
 
