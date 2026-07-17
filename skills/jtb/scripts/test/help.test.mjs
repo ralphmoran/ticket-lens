@@ -351,6 +351,12 @@ describe('printNoteHelp', () => {
     const out = captureHelp(printNoteHelp);
     assert.match(out, /Pro/);
   });
+
+  it('documents the patch subcommand and its --id flag', () => {
+    const out = captureHelp(printNoteHelp);
+    assert.match(out, /note patch/);
+    assert.match(out, /--id/);
+  });
 });
 
 describe('printRecallHelp', () => {

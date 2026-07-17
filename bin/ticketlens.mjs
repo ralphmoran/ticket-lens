@@ -610,18 +610,28 @@ switch (command) {
 
   case 'note': {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printNoteHelp(); break; }
-    if (cmdArgs[0] !== 'add') {
-      process.stderr.write('Usage: ticketlens note add --title="..." [--ticket=KEY] [--tags=a,b]\n');
-      process.exitCode = 1;
+    if (cmdArgs[0] === 'add') {
+      const { runNoteAdd } = await import('../skills/jtb/scripts/lib/note-command.mjs');
+      runNoteAdd(cmdArgs.slice(1)).then(({ written }) => {
+        if (!written) process.exitCode = 1;
+      }).catch(err => {
+        process.stderr.write(`Error: ${err.message}\n`);
+        process.exitCode = 1;
+      });
       break;
     }
-    const { runNoteAdd } = await import('../skills/jtb/scripts/lib/note-command.mjs');
-    runNoteAdd(cmdArgs.slice(1)).then(({ written }) => {
-      if (!written) process.exitCode = 1;
-    }).catch(err => {
-      process.stderr.write(`Error: ${err.message}\n`);
-      process.exitCode = 1;
-    });
+    if (cmdArgs[0] === 'patch') {
+      const { runNotePatch } = await import('../skills/jtb/scripts/lib/note-command.mjs');
+      runNotePatch(cmdArgs.slice(1)).then(({ patched }) => {
+        if (!patched) process.exitCode = 1;
+      }).catch(err => {
+        process.stderr.write(`Error: ${err.message}\n`);
+        process.exitCode = 1;
+      });
+      break;
+    }
+    process.stderr.write('Usage: ticketlens note add --title="..." [--ticket=KEY] [--tags=a,b]\n');
+    process.exitCode = 1;
     break;
   }
 

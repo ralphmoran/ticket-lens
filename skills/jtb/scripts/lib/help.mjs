@@ -511,6 +511,13 @@ export function printNoteHelp({ stream = process.stdout } = {}) {
     '',
     `    ${s.dim('$')} echo "Retry needs exponential backoff" | ticketlens note add --title="Retry gotcha" --ticket=PROD-123 --tags=bug`,
     '',
+    `  ${s.bold('ticketlens note patch')} ${s.dim('--id="..." [--ticket=KEY]')}  ${s.dim('[Pro]')}`,
+    '',
+    `  Overwrites an existing note's body with a better draft, read from stdin.`,
+    `  Internal mechanism used by the jtb skill's note quality loop inside a Claude`,
+    `  Code session — not typically invoked by hand. Every note it writes gets the`,
+    `  same structural and secret-scan checks ${s.brand('note add')} applies to user input.`,
+    '',
   ];
   stream.write(lines.join('\n') + '\n');
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { writeNote, listNotes, rebuildIndex, resolvePrefix, upsertPulledNote, deleteNote } from '../lib/recall-vault.mjs';
+import { writeNote, listNotes, rebuildIndex, resolvePrefix, upsertPulledNote, deleteNote, patchNoteBody } from '../lib/recall-vault.mjs';
 
 let configDir;
 
@@ -357,5 +357,117 @@ describe('deleteNote — removes a tombstoned note without scanning the whole va
 
   test('an invalid ticket key throws rather than resolving to an unintended path', () => {
     assert.throws(() => deleteNote({ external_id: '1700000000000-abcdef.md', tickets: ['../../etc'] }, { configDir }));
+  });
+});
+
+describe('patchNoteBody — overwrites an existing local note\'s body in place', () => {
+  test('patches the body while preserving every other frontmatter field', () => {
+    const { id, path: notePath } = writeNote(
+      { title: 'Retry gotcha', ticketKeys: ['PROD-1'], tags: ['bug'], author: 'ralph', body: 'Original draft body.' },
+      { configDir },
+    );
+
+    const result = patchNoteBody({ id, ticketKeys: ['PROD-1'], body: 'Improved, actionable draft body.' }, { configDir });
+
+    assert.equal(result.patched, true);
+    assert.equal(result.path, notePath);
+
+    const [note] = listNotes({ ticketKey: 'PROD-1' }, { configDir });
+    assert.equal(note.body, 'Improved, actionable draft body.');
+    assert.equal(note.title, 'Retry gotcha');
+    assert.deepEqual(note.tags, ['bug']);
+    assert.equal(note.author, 'ralph');
+    assert.deepEqual(note.tickets, ['PROD-1']);
+    assert.equal(note.externalId, id);
+  });
+
+  test('a note with no tickets resolves to the general bucket, same as writeNote', () => {
+    const { id } = writeNote({ title: 'General note', ticketKeys: [], author: 'ralph', body: 'Original body here.' }, { configDir });
+
+    const result = patchNoteBody({ id, ticketKeys: [], body: 'Patched general note body.' }, { configDir });
+
+    assert.equal(result.patched, true);
+    const [note] = listNotes({}, { configDir });
+    assert.equal(note.body, 'Patched general note body.');
+  });
+
+  test('rejects an id that does not match the generated-note-id shape, same guard as deleteNote', () => {
+    assert.throws(() => patchNoteBody({ id: '../../../etc/passwd', ticketKeys: [], body: 'x' }, { configDir }));
+  });
+
+  test('an invalid ticket key throws rather than resolving to an unintended path', () => {
+    assert.throws(() => patchNoteBody({ id: '1700000000000-abcdef.md', ticketKeys: ['../../etc'], body: 'x' }, { configDir }));
+  });
+
+  test('patching a note that does not exist on disk is a silent no-op, never creates one', () => {
+    const result = patchNoteBody({ id: '1999999999999-abcdef.md', ticketKeys: ['PROD-1'], body: 'x' }, { configDir });
+    assert.equal(result.patched, false);
+    assert.equal(result.path, null);
+    assert.equal(fs.existsSync(path.join(configDir, 'recall', 'PROD', '1999999999999-abcdef.md')), false);
+  });
+
+  test('refuses to patch when the on-disk externalId does not match the requested id (defense against divergent/corrupted frontmatter)', () => {
+    const { id, path: notePath } = writeNote({ title: 'x', ticketKeys: ['PROD-1'], author: 'ralph', body: 'Original body here.' }, { configDir });
+    const raw = fs.readFileSync(notePath, 'utf8').replace(`externalId: ${id}`, 'externalId: 9999999999999-000000.md');
+    fs.writeFileSync(notePath, raw);
+
+    const result = patchNoteBody({ id, ticketKeys: ['PROD-1'], body: 'Attempted overwrite.' }, { configDir });
+
+    assert.equal(result.patched, false);
+    assert.equal(fs.readFileSync(notePath, 'utf8').includes('Attempted overwrite.'), false);
+  });
+
+  test('refuses to patch when the file changed since expectedMtimeMs was captured (hand-edit race guard)', () => {
+    const { id, path: notePath } = writeNote({ title: 'x', ticketKeys: ['PROD-1'], author: 'ralph', body: 'Original body here.' }, { configDir });
+    const staleMtime = fs.statSync(notePath).mtimeMs;
+
+    // Simulate a hand-edit landing after the loop captured its expected mtime.
+    fs.utimesSync(notePath, new Date(), new Date(Date.now() + 5000));
+
+    const result = patchNoteBody({ id, ticketKeys: ['PROD-1'], body: 'Loop draft, now stale.', expectedMtimeMs: staleMtime }, { configDir });
+
+    assert.equal(result.patched, false);
+    assert.equal(fs.readFileSync(notePath, 'utf8').includes('Loop draft, now stale.'), false);
+  });
+
+  test('patches successfully when expectedMtimeMs matches the file untouched since capture', () => {
+    const { id, path: notePath } = writeNote({ title: 'x', ticketKeys: ['PROD-1'], author: 'ralph', body: 'Original body here.' }, { configDir });
+    const currentMtime = fs.statSync(notePath).mtimeMs;
+
+    const result = patchNoteBody({ id, ticketKeys: ['PROD-1'], body: 'Fresh draft, no race.', expectedMtimeMs: currentMtime }, { configDir });
+
+    assert.equal(result.patched, true);
+    assert.equal(fs.readFileSync(notePath, 'utf8').includes('Fresh draft, no race.'), true);
+  });
+
+  test('expectedMtimeMs is optional — omitting it patches unconditionally', () => {
+    const { id } = writeNote({ title: 'x', ticketKeys: ['PROD-1'], author: 'ralph', body: 'Original body here.' }, { configDir });
+
+    const result = patchNoteBody({ id, ticketKeys: ['PROD-1'], body: 'No mtime check requested.' }, { configDir });
+
+    assert.equal(result.patched, true);
+  });
+
+  test('a note that exists but cannot be read (permission race) is a silent no-op, never throws', () => {
+    const { id, path: notePath } = writeNote({ title: 'x', ticketKeys: ['PROD-1'], author: 'ralph', body: 'Original body here.' }, { configDir });
+    fs.chmodSync(notePath, 0o000);
+
+    try {
+      const result = patchNoteBody({ id, ticketKeys: ['PROD-1'], body: 'Attempted overwrite.' }, { configDir });
+      assert.equal(result.patched, false);
+    } finally {
+      fs.chmodSync(notePath, 0o644); // restore so afterEach's rmSync can clean up
+    }
+  });
+
+  test('the write is atomic — the note file is never left with a corrupt or partial body', () => {
+    const { id, path: notePath } = writeNote({ title: 'x', ticketKeys: ['PROD-1'], author: 'ralph', body: 'Original body here.' }, { configDir });
+
+    patchNoteBody({ id, ticketKeys: ['PROD-1'], body: 'Complete replacement body, all at once.' }, { configDir });
+
+    assert.equal(fs.readFileSync(notePath, 'utf8').includes('Complete replacement body, all at once.'), true);
+    // No leftover .tmp file from the atomic write.
+    const dirEntries = fs.readdirSync(path.dirname(notePath));
+    assert.equal(dirEntries.some(name => name.includes('.tmp')), false);
   });
 });

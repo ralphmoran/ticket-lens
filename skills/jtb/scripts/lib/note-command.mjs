@@ -10,7 +10,8 @@ import path from 'node:path';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { isLicensed, showUpgradePrompt } from './license.mjs';
 import { scanForSecrets } from './secret-scanner.mjs';
-import { writeNote } from './recall-vault.mjs';
+import { checkNoteStructure } from './note-structural-check.mjs';
+import { writeNote, patchNoteBody } from './recall-vault.mjs';
 import { readCliToken } from './cli-auth.mjs';
 import { pushNote } from './recall-sync.mjs';
 import { incrementDraftKept, incrementDraftDeleted } from './activity-counter.mjs';
@@ -66,6 +67,7 @@ export async function runNoteAdd(cmdArgs, {
   stream = process.stderr,
   readStdin = defaultReadStdin,
   isLicensedFn = isLicensed,
+  checkNoteStructureFn = checkNoteStructure,
   scanForSecretsFn = scanForSecrets,
   writeNoteFn = writeNote,
   readCliTokenFn = readCliToken,
@@ -103,6 +105,13 @@ export async function runNoteAdd(cmdArgs, {
     body += gatherAttachmentExcerpts(configDir, ticketKey, listAttachmentsFn, extractTextFn);
   }
 
+  const structural = checkNoteStructureFn({ body });
+  if (structural.rejected) {
+    stream.write(`  Note not saved — ${structural.reason}\n`);
+    incrementDraftDeletedFn(configDir);
+    return { written: false };
+  }
+
   const scan = scanForSecretsFn({ title, tags, body });
   if (scan.rejected) {
     stream.write(`  Note not saved — ${scan.reasons.join(' ')}\n`);
@@ -131,4 +140,66 @@ export async function runNoteAdd(cmdArgs, {
   }
 
   return { written: true };
+}
+
+/**
+ * Implements `tl note patch` — overwrites an existing note's body with a
+ * better draft. Internal plumbing for the jtb skill's quality loop (never
+ * meant to be typed by hand): the loop's generator subagent produces a body,
+ * SKILL.md's orchestration pipes it through this command, and the new body
+ * gets exactly the same structural and secret gates a user-typed body gets —
+ * there is no weaker path here for AI-authored content.
+ *
+ * @param {string[]} cmdArgs
+ * @returns {Promise<{ patched: boolean }>}
+ */
+export async function runNotePatch(cmdArgs, {
+  configDir = DEFAULT_CONFIG_DIR,
+  stream = process.stderr,
+  readStdin = defaultReadStdin,
+  isLicensedFn = isLicensed,
+  checkNoteStructureFn = checkNoteStructure,
+  scanForSecretsFn = scanForSecrets,
+  patchNoteBodyFn = patchNoteBody,
+} = {}) {
+  if (!isLicensedFn('pro', configDir)) {
+    showUpgradePrompt('pro', 'ticketlens note', { stream });
+    return { patched: false };
+  }
+
+  const id = parseFlag(cmdArgs, 'id');
+  if (!id) {
+    stream.write('Usage: ticketlens note patch --id="..." [--ticket=KEY]\n');
+    return { patched: false };
+  }
+
+  const ticketKey = parseFlag(cmdArgs, 'ticket');
+  if (ticketKey && !TICKET_KEY_PATTERN.test(ticketKey)) {
+    stream.write(`  Invalid --ticket value "${ticketKey}" — expected a ticket key like PROJ-123.\n`);
+    return { patched: false };
+  }
+
+  const body = await readStdin();
+
+  const structural = checkNoteStructureFn({ body });
+  if (structural.rejected) {
+    stream.write(`  Note not updated — ${structural.reason}\n`);
+    return { patched: false };
+  }
+
+  const scan = scanForSecretsFn({ title: '', tags: [], body });
+  if (scan.rejected) {
+    stream.write(`  Note not updated — ${scan.reasons.join(' ')}\n`);
+    return { patched: false };
+  }
+  for (const warning of scan.warnings) {
+    stream.write(`  Warning: ${warning}\n`);
+  }
+
+  const ticketKeys = ticketKey ? [ticketKey] : [];
+  const expectMtimeArg = parseFlag(cmdArgs, 'expect-mtime');
+  const expectedMtimeMs = expectMtimeArg !== undefined ? Number(expectMtimeArg) : undefined;
+  const { patched } = patchNoteBodyFn({ id, ticketKeys, body, expectedMtimeMs }, { configDir });
+  stream.write(patched ? `  Updated note (${id})\n` : `  Note not updated — (${id}) not found or already changed.\n`);
+  return { patched };
 }

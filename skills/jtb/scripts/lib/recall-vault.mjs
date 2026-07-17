@@ -165,6 +165,59 @@ export function deleteNote({ external_id: externalId, tickets = [] }, { configDi
 }
 
 /**
+ * Overwrites an existing local note's body in place — used by the jtb skill's
+ * generator/validator quality loop to swap in a better draft after `note add`
+ * already saved the original. Patch-only: never creates a note, and every
+ * frontmatter field except body is carried over unchanged, so this can never
+ * become a covert way to retitle/retag/re-tie a note to a different ticket.
+ *
+ * Guards, same failure-mode split as deleteNote: a malformed id or ticket key
+ * is a caller bug (throw); a missing file, an externalId that doesn't match
+ * what's on disk, or a body that changed since the caller last observed it
+ * (expectedMtimeMs) are all best-effort no-ops, not errors — the original
+ * note is always left exactly as-is on any of these.
+ *
+ * @param {{ id: string, ticketKeys?: string[], body: string, expectedMtimeMs?: number }} params
+ * @param {{ configDir?: string }} [opts]
+ * @returns {{ patched: boolean, path: string|null }}
+ */
+export function patchNoteBody({ id, ticketKeys = [], body, expectedMtimeMs }, { configDir = DEFAULT_CONFIG_DIR } = {}) {
+  if (!EXTERNAL_ID_PATTERN.test(id)) {
+    throw new Error(`Invalid note id: "${id}"`);
+  }
+
+  const prefix = resolvePrefix(ticketKeys[0]);
+  const notePath = path.join(prefixDir(configDir, prefix), id);
+
+  if (!fs.existsSync(notePath)) {
+    return { patched: false, path: null };
+  }
+  if (expectedMtimeMs !== undefined && fs.statSync(notePath).mtimeMs !== expectedMtimeMs) {
+    return { patched: false, path: notePath };
+  }
+
+  const existing = readNote(notePath);
+  if (!existing || existing.externalId !== id) {
+    return { patched: false, path: notePath };
+  }
+
+  const data = {
+    title: existing.title,
+    aliases: existing.aliases,
+    tickets: existing.tickets,
+    tags: existing.tags,
+    author: existing.author,
+    created: existing.created,
+    status: existing.status,
+    sources: existing.sources,
+    externalId: existing.externalId,
+  };
+
+  writeFileAtomically(notePath, serializeFrontmatter(data, body));
+  return { patched: true, path: notePath };
+}
+
+/**
  * Reads one note file. Never trusts the file completely — a note can be
  * hand-edited (README documents them as plain markdown, readable in any
  * editor), so malformed or missing fields fall back to safe defaults instead

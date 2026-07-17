@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.16.1 -->
+<!-- jtb-skill-version: 0.17.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -218,6 +218,27 @@ echo "The body text of the note, one or more paragraphs." | \
 ```
 
 To search saved notes directly (outside of automatic brief injection): `ticketlens recall "<query>"`.
+
+### Quality loop (Pro, in-session only)
+
+Only when `note add` above was dispatched *by you, inside this skill*, and it printed a saved note id (e.g. `Saved note "Retry gotcha" (1784135399545-fe01c4.md)`) — never for a note a user typed directly into a bare shell, which has no Task/Agent tool available. If there's no such tool in your environment, skip this whole section silently: no warning, no degraded fallback, the note is already saved and that's a complete, correct outcome on its own.
+
+When it does apply, run up to 3 rounds:
+
+1. **Capture the current state** before dispatching anything: get the note file's (`~/.ticketlens/recall/<PREFIX-or-_general>/<id>`) current mtime in epoch **milliseconds** — the shell `stat` command reports seconds on both macOS and Linux, which is the wrong unit and will make every patch silently no-op. Use `node -e "console.log(require('fs').statSync('PATH').mtimeMs)"` instead (Node is already required to run `ticketlens`). Also read the note's current body.
+2. **Generator** — a subagent drafts an improved body: concrete file/line references over vague prose, no invented facts not already established this session.
+3. **Validator** — a separate subagent scores the draft against two criteria: **actionability** (does it read like something a future session could act on directly?) and **non-duplication** (run `ticketlens recall "<query>" --ticket=TICKET-KEY` against the ticket this note is about — reject/rescore a draft that's a near-duplicate of an existing note).
+4. If the draft scores as a genuine improvement, write it back:
+   ```bash
+   echo "The improved body text." | \
+     ticketlens note patch --id="THE-ID-PRINTED-ABOVE" --ticket=TICKET-KEY --expect-mtime="THE-MTIME-FROM-STEP-1"
+   ```
+   `--expect-mtime` is what keeps this safe: if the file changed since step 1 (the user hand-edited it while you were drafting), the patch silently no-ops and prints "not found or already changed" — the user's own edit always wins, never gets clobbered by a stale background draft.
+5. Repeat from step 1 (re-capture mtime/body fresh each round) up to 3 total rounds. If no round ever produces a fully-passing draft, patch in whichever round scored highest across all attempts, and let the "not found or already changed" message stand if that patch itself loses a late race — don't retry past round 3.
+
+This never calls any external API or bills any tokens beyond the session you already have open — the generator and validator are subagents inside your own Claude Code session, not a TicketLens server call.
+
+**Known limitation:** `note patch` only updates the local vault copy. If `note add` already pushed the original draft to a team (Team Recall enabled), a later refinement from this loop is *not* re-pushed — teammates who already pulled the note keep the original draft until this is addressed in a future iteration.
 
 ### Privacy
 Recall notes are stored locally at `~/.ticketlens/recall/`. On a Free/Pro account with no Team Recall entitlement, they never leave the machine — no network calls. On a Team account with Recall enabled (owner-managed, may vary per user), notes also sync to the team's shared pool in the background so teammates can benefit from them too; a team manager reviews and verifies each incoming note before it's marked trusted.

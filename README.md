@@ -394,7 +394,9 @@ Save short notes to yourself — gotchas, context, decisions — and they're aut
 
 The note body is read from stdin, not a flag — this avoids shell-quoting issues with multi-line text. A note can be tied to one ticket (`--ticket=KEY`), or left general (omit `--ticket`) for onboarding-style knowledge that isn't about a specific ticket. Add `--include-attachments` to seed the note with text from that ticket's already-cached attachments (`.txt`/`.md`/`.csv`/`.json` only).
 
-Every note is scanned before saving — anything shaped like a real secret (API key, private key, token) is rejected outright, never silently redacted. Requires a Pro license.
+Every note is scanned before saving — anything shaped like a real secret (API key, private key, token) is rejected outright, never silently redacted. An empty, placeholder (`TODO`, `WIP`, …), or too-short body is rejected the same way. Requires a Pro license.
+
+**Quality loop:** inside a Claude Code session using the jtb skill, a saved note can be silently refined afterward — a generator subagent drafts a more actionable version, a validator subagent checks it against other notes on the same ticket for duplication, up to 3 rounds — and the improved draft overwrites the original via the internal `note patch` command (not typically invoked by hand). This makes zero API calls and costs zero extra tokens beyond your already-running session; it never runs for a bare shell invocation of `note add`, which is skipped silently. Known limitation: a refined draft is not re-synced to your team even if the original was — teammates who already pulled the note keep the earlier draft.
 
 **Team sync:** on a Team plan with Recall enabled for your account (owner-managed, per-tier or per-client), notes also sync to your team's shared pool — `note add` pushes in the background, `recall` pulls the team's notes (cached 4h) before searching. A team manager reviews and verifies incoming notes at `console/admin/recall` before they're marked trusted. Without Team Recall entitlement, everything stays on your machine — no network call.
 

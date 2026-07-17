@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { runNoteAdd } from '../lib/note-command.mjs';
+import { runNoteAdd, runNotePatch } from '../lib/note-command.mjs';
 
 function makeStream({ isTTY = false } = {}) {
   const lines = [];
@@ -13,6 +13,7 @@ function baseDeps(overrides = {}) {
     stream: makeStream(),
     readStdin: async () => 'Body text.',
     isLicensedFn: () => true,
+    checkNoteStructureFn: () => ({ rejected: false, reason: null }),
     scanForSecretsFn: () => ({ rejected: false, reasons: [], warnings: [] }),
     writeNoteFn: () => ({ id: 'note-1.md', path: '/fake/config/recall/PROD/note-1.md' }),
     incrementDraftKeptFn: () => {},
@@ -156,6 +157,50 @@ describe('runNoteAdd — secret scanner gate', () => {
   });
 });
 
+describe('runNoteAdd — structural check gate', () => {
+  test('a rejected structural check is never written, is not scanned for secrets, reason is shown', async () => {
+    let scanCalls = 0;
+    let writeCalls = 0;
+    const deps = baseDeps({
+      checkNoteStructureFn: () => ({ rejected: true, reason: 'Note body is empty.' }),
+      scanForSecretsFn: () => { scanCalls++; return { rejected: false, reasons: [], warnings: [] }; },
+      writeNoteFn: () => { writeCalls++; return { id: 'x', path: 'x' }; },
+    });
+    const result = await runNoteAdd(['--title=x'], deps);
+    assert.equal(result.written, false);
+    assert.equal(scanCalls, 0);
+    assert.equal(writeCalls, 0);
+    assert.match(deps.stream.lines.join(''), /Note body is empty/);
+  });
+
+  test('the structural rejection message is distinct from the secret-scanner rejection message', async () => {
+    const deps = baseDeps({
+      checkNoteStructureFn: () => ({ rejected: true, reason: 'Note body is empty.' }),
+    });
+    await runNoteAdd(['--title=x'], deps);
+    assert.doesNotMatch(deps.stream.lines.join(''), /AWS access key|secret/i);
+  });
+
+  test('the structural check runs on the combined body (stdin + attachment excerpts), not stdin alone', async () => {
+    let captured;
+    const deps = baseDeps({
+      readStdin: async () => '', // empty alone would fail structurally
+      listAttachmentsFn: () => ['/cache/PROD-1/spec.txt'],
+      extractTextFn: () => 'The spec says X in real detail.',
+      checkNoteStructureFn: (input) => { captured = input; return { rejected: false, reason: null }; },
+    });
+    const result = await runNoteAdd(['--title=x', '--ticket=PROD-1', '--include-attachments'], deps);
+    assert.equal(result.written, true);
+    assert.match(captured.body, /The spec says X in real detail\./);
+  });
+
+  test('a passing structural check does not block the write', async () => {
+    const deps = baseDeps();
+    const result = await runNoteAdd(['--title=x'], deps);
+    assert.equal(result.written, true);
+  });
+});
+
 describe('runNoteAdd — title is single-line (defense in depth against heading injection)', () => {
   test('an embedded newline in --title is collapsed to a space before being saved', async () => {
     let capturedTitle;
@@ -241,6 +286,134 @@ describe('runNoteAdd — --include-attachments', () => {
     });
     await runNoteAdd(['--title=x', '--ticket=PROD-1', '--include-attachments'], deps);
     assert.match(captured.body, /AKIAIOSFODNN7EXAMPLE/);
+  });
+});
+
+function basePatchDeps(overrides = {}) {
+  return {
+    configDir: '/fake/config',
+    stream: makeStream(),
+    readStdin: async () => 'Improved, actionable draft body.',
+    isLicensedFn: () => true,
+    checkNoteStructureFn: () => ({ rejected: false, reason: null }),
+    scanForSecretsFn: () => ({ rejected: false, reasons: [], warnings: [] }),
+    patchNoteBodyFn: () => ({ patched: true, path: '/fake/config/recall/PROD/note-1.md' }),
+    ...overrides,
+  };
+}
+
+describe('runNotePatch — license gate fires before anything else', () => {
+  test('unlicensed: never reads stdin, never patches, shows upgrade prompt', async () => {
+    let stdinCalls = 0;
+    let patchCalls = 0;
+    const deps = basePatchDeps({
+      isLicensedFn: () => false,
+      readStdin: async () => { stdinCalls++; return 'x'; },
+      patchNoteBodyFn: () => { patchCalls++; return { patched: true, path: 'x' }; },
+    });
+    const result = await runNotePatch(['--id=note-1.md'], deps);
+    assert.equal(result.patched, false);
+    assert.equal(stdinCalls, 0);
+    assert.equal(patchCalls, 0);
+  });
+});
+
+describe('runNotePatch — usage validation', () => {
+  test('missing --id shows usage and does not patch', async () => {
+    const deps = basePatchDeps();
+    const result = await runNotePatch([], deps);
+    assert.equal(result.patched, false);
+    assert.match(deps.stream.lines.join(''), /Usage/i);
+  });
+
+  test('an invalid --ticket value is rejected before stdin is read', async () => {
+    let stdinCalls = 0;
+    const deps = basePatchDeps({ readStdin: async () => { stdinCalls++; return 'x'; } });
+    const result = await runNotePatch(['--id=note-1.md', '--ticket=../../../../etc'], deps);
+    assert.equal(result.patched, false);
+    assert.equal(stdinCalls, 0);
+    assert.match(deps.stream.lines.join(''), /Invalid --ticket/);
+  });
+});
+
+describe('runNotePatch — new body gets the same gates as note add', () => {
+  test('a rejected structural check blocks the patch and is never passed to patchNoteBodyFn', async () => {
+    let patchCalls = 0;
+    const deps = basePatchDeps({
+      checkNoteStructureFn: () => ({ rejected: true, reason: 'Note body is empty.' }),
+      patchNoteBodyFn: () => { patchCalls++; return { patched: true, path: 'x' }; },
+    });
+    const result = await runNotePatch(['--id=note-1.md'], deps);
+    assert.equal(result.patched, false);
+    assert.equal(patchCalls, 0);
+    assert.match(deps.stream.lines.join(''), /Note body is empty/);
+  });
+
+  test('a rejected secret scan blocks the patch', async () => {
+    let patchCalls = 0;
+    const deps = basePatchDeps({
+      scanForSecretsFn: () => ({ rejected: true, reasons: ['Looks like an AWS access key.'], warnings: [] }),
+      patchNoteBodyFn: () => { patchCalls++; return { patched: true, path: 'x' }; },
+    });
+    const result = await runNotePatch(['--id=note-1.md'], deps);
+    assert.equal(result.patched, false);
+    assert.equal(patchCalls, 0);
+    assert.match(deps.stream.lines.join(''), /AWS access key/);
+  });
+});
+
+describe('runNotePatch — delegates to patchNoteBodyFn with the right shape', () => {
+  test('passes id, ticketKeys, and the new stdin body through', async () => {
+    let captured;
+    const deps = basePatchDeps({
+      readStdin: async () => 'A genuinely improved note body.',
+      patchNoteBodyFn: (note) => { captured = note; return { patched: true, path: 'x' }; },
+    });
+    await runNotePatch(['--id=note-1.md', '--ticket=PROD-1'], deps);
+    assert.equal(captured.id, 'note-1.md');
+    assert.deepEqual(captured.ticketKeys, ['PROD-1']);
+    assert.equal(captured.body, 'A genuinely improved note body.');
+  });
+
+  test('no --ticket means an empty ticketKeys array', async () => {
+    let captured;
+    const deps = basePatchDeps({
+      patchNoteBodyFn: (note) => { captured = note; return { patched: true, path: 'x' }; },
+    });
+    await runNotePatch(['--id=note-1.md'], deps);
+    assert.deepEqual(captured.ticketKeys, []);
+  });
+
+  test('a successful patch is reported distinctly from a no-op', async () => {
+    const deps = basePatchDeps({ patchNoteBodyFn: () => ({ patched: true, path: 'x' }) });
+    const result = await runNotePatch(['--id=note-1.md'], deps);
+    assert.equal(result.patched, true);
+    assert.match(deps.stream.lines.join(''), /Updated/);
+  });
+
+  test('a no-op (note gone or changed since capture) is reported distinctly from success', async () => {
+    const deps = basePatchDeps({ patchNoteBodyFn: () => ({ patched: false, path: null }) });
+    const result = await runNotePatch(['--id=note-1.md'], deps);
+    assert.equal(result.patched, false);
+    assert.match(deps.stream.lines.join(''), /not updated/i);
+  });
+
+  test('--expect-mtime is parsed and passed through as a number', async () => {
+    let captured;
+    const deps = basePatchDeps({
+      patchNoteBodyFn: (note) => { captured = note; return { patched: true, path: 'x' }; },
+    });
+    await runNotePatch(['--id=note-1.md', '--expect-mtime=1700000000000'], deps);
+    assert.equal(captured.expectedMtimeMs, 1700000000000);
+  });
+
+  test('omitting --expect-mtime leaves it undefined — patch is unconditional', async () => {
+    let captured;
+    const deps = basePatchDeps({
+      patchNoteBodyFn: (note) => { captured = note; return { patched: true, path: 'x' }; },
+    });
+    await runNotePatch(['--id=note-1.md'], deps);
+    assert.equal(captured.expectedMtimeMs, undefined);
   });
 });
 
