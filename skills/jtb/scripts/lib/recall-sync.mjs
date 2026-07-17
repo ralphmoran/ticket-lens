@@ -15,6 +15,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { apiBase, warnIfInsecure } from './api-utils.mjs';
 import { upsertPulledNote, rebuildIndex, deleteNote } from './recall-vault.mjs';
@@ -51,17 +52,27 @@ function entitlementCachePath(configDir) {
   return path.join(configDir, ENTITLEMENT_STATE_FILE);
 }
 
-function readEntitlementCheckedAt(configDir) {
+// Never store the raw token — only a hash, used solely to detect an account
+// switch (e.g. login as someone else) so a stale cache never suppresses a
+// different account's push. Found via Local Live Test: configDir alone is
+// not a valid cache key — cli-token.json can change without configDir changing.
+function hashToken(cliToken) {
+  return createHash('sha256').update(cliToken).digest('hex');
+}
+
+function readEntitlementCheckedAt(configDir, cliToken) {
   try {
-    return JSON.parse(fs.readFileSync(entitlementCachePath(configDir), 'utf8')).checkedAt ?? null;
+    const cached = JSON.parse(fs.readFileSync(entitlementCachePath(configDir), 'utf8'));
+    if (cached.tokenHash !== hashToken(cliToken)) return null;
+    return cached.checkedAt ?? null;
   } catch {
     return null;
   }
 }
 
-function writeEntitlementCheckedAt(configDir, isoTimestamp) {
+function writeEntitlementCheckedAt(configDir, isoTimestamp, cliToken) {
   try {
-    fs.writeFileSync(entitlementCachePath(configDir), JSON.stringify({ checkedAt: isoTimestamp }), 'utf8');
+    fs.writeFileSync(entitlementCachePath(configDir), JSON.stringify({ checkedAt: isoTimestamp, tokenHash: hashToken(cliToken) }), 'utf8');
   } catch {
     // Non-fatal — worst case the next save warns again instead of staying silent.
   }
@@ -94,7 +105,7 @@ export async function pushNote(note, {
 
   // A non-entitled account gets this same 403 on every save until the owner
   // flips the Recall grant — without this, the warning below repeats forever.
-  const checkedAt = readEntitlementCheckedAt(configDir);
+  const checkedAt = readEntitlementCheckedAt(configDir, cliToken);
   if (checkedAt && now() - new Date(checkedAt).getTime() < ttlMs) {
     return { ok: false, skipped: true };
   }
@@ -146,7 +157,7 @@ export async function pushNote(note, {
       warn(`  ${yellow('⚠')} You're not on a team yet, so there's nowhere to sync this note — saved locally only.\n`);
     } else {
       warn(`  ${yellow('⚠')} Your plan doesn't include team Recall sync — saved locally only.\n`);
-      writeEntitlementCheckedAt(configDir, new Date(now()).toISOString());
+      writeEntitlementCheckedAt(configDir, new Date(now()).toISOString(), cliToken);
     }
     return { ok: false, status: res.status };
   }

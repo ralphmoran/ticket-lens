@@ -200,6 +200,20 @@ describe('pushNote — entitlement cache', () => {
     assert.equal(fetchCalls, 1, 'a corrupt cache must be treated as absent, triggering a real network attempt');
     assert.equal(result.ok, false);
   });
+
+  it('a cache written by one account (cliToken) must never suppress a push from a different account sharing the same configDir — found via Local Live Test: swapping cli-token.json between accounts on one machine (real login/logout flow) silently dropped an entitled account\'s push with zero warning', async () => {
+    const configDir = freshConfigDir();
+    let fetchCalls = 0;
+    const fetcher403 = async () => { fetchCalls++; return { ok: false, status: 403, json: async () => ({ error: 'Recall is not enabled for your account' }) }; };
+    await pushNote(sampleNote, { cliToken: 'tl_not_entitled_account', configDir, fetcher: fetcher403, warn: () => {} });
+    assert.equal(fetchCalls, 1);
+
+    let entitledFetchCalled = false;
+    const fetcher200 = async () => { entitledFetchCalled = true; return { ok: true, status: 200, json: async () => ({}) }; };
+    const result = await pushNote(sampleNote, { cliToken: 'tl_a_different_entitled_account', configDir, fetcher: fetcher200, warn: () => {} });
+    assert.equal(entitledFetchCalled, true, 'a different account\'s push must never be silently skipped by another account\'s stale cache');
+    assert.equal(result.ok, true);
+  });
 });
 
 // ---------------------------------------------------------------------------
