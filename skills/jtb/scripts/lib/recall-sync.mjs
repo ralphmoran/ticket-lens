@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { apiBase, warnIfInsecure } from './api-utils.mjs';
-import { upsertPulledNote, rebuildIndex } from './recall-vault.mjs';
+import { upsertPulledNote, rebuildIndex, deleteNote } from './recall-vault.mjs';
 import { red, yellow, dim, cyan } from './ansi.mjs';
 
 const PUSH_PATH = '/v1/recall/push';
@@ -148,6 +148,7 @@ export async function pullNotes({
   fetcher = globalThis.fetch,
   upsertPulledNoteFn = upsertPulledNote,
   rebuildIndexFn = rebuildIndex,
+  deleteNoteFn = deleteNote,
   now = () => Date.now(),
 } = {}) {
   if (!cliToken) {
@@ -184,7 +185,8 @@ export async function pullNotes({
     return { ok: false, count: 0 };
   }
 
-  const notes = payload.notes ?? [];
+  const notes   = payload.notes ?? [];
+  const deleted = payload.deleted ?? [];
   const touchedPrefixes = new Set();
   for (const remoteNote of notes) {
     try {
@@ -192,6 +194,15 @@ export async function pullNotes({
       touchedPrefixes.add(path.basename(path.dirname(notePath)));
     } catch {
       // One malformed remote note must never abort the rest of the pull.
+    }
+  }
+  for (const tombstone of deleted) {
+    try {
+      const { deleted: wasDeleted, prefix } = deleteNoteFn(tombstone, { configDir });
+      if (wasDeleted) touchedPrefixes.add(prefix);
+    } catch {
+      // Same policy as the upsert loop above: one malformed tombstone must
+      // never abort the rest of the pull.
     }
   }
   for (const prefix of touchedPrefixes) rebuildIndexFn(prefix, { configDir });

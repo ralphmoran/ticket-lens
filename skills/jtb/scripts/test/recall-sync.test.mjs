@@ -223,6 +223,83 @@ describe('pullNotes — writes results into the local vault', () => {
 });
 
 // ---------------------------------------------------------------------------
+// pullNotes — tombstone propagation (server-side deletions)
+// ---------------------------------------------------------------------------
+
+describe('pullNotes — propagates deletions from the response', () => {
+  it('calls deleteNote for each entry in the deleted array and rebuilds its prefix', async () => {
+    configDir = freshConfigDir();
+    const deletedCalls = [];
+    const rebuilt = [];
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        notes: [],
+        deleted: [{ external_id: '1700000000004-dddddd.md', tickets: ['PROD-3'] }],
+      }),
+    });
+    const result = await pullNotes({
+      cliToken: 'tl_key',
+      configDir,
+      fetcher,
+      rebuildIndexFn: (prefix) => { rebuilt.push(prefix); },
+      deleteNoteFn: (tombstone) => { deletedCalls.push(tombstone.external_id); return { deleted: true, prefix: 'PROD' }; },
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(deletedCalls, ['1700000000004-dddddd.md']);
+    assert.deepEqual(rebuilt, ['PROD']);
+  });
+
+  it('an upsert and a deletion sharing the same prefix rebuild that prefix once, not twice', async () => {
+    configDir = freshConfigDir();
+    const rebuilt = [];
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        notes: [{ ...sampleNote, external_id: '1700000000005-eeeeee.md', tickets: ['PROD-1'] }],
+        deleted: [{ external_id: '1700000000006-ffffff.md', tickets: ['PROD-1'] }],
+      }),
+    });
+    await pullNotes({
+      cliToken: 'tl_key',
+      configDir,
+      fetcher,
+      upsertPulledNoteFn: (note) => ({ id: note.external_id, path: `/fake/PROD/${note.external_id}` }),
+      deleteNoteFn: () => ({ deleted: true, prefix: 'PROD' }),
+      rebuildIndexFn: (prefix) => { rebuilt.push(prefix); },
+    });
+    assert.equal(rebuilt.length, 1);
+  });
+
+  it('an already-absent tombstone (deleted:false) does not trigger an index rebuild', async () => {
+    configDir = freshConfigDir();
+    const rebuilt = [];
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ notes: [], deleted: [{ external_id: '1700000000007-999999.md', tickets: ['PROD-1'] }] }),
+    });
+    await pullNotes({
+      cliToken: 'tl_key',
+      configDir,
+      fetcher,
+      deleteNoteFn: () => ({ deleted: false }),
+      rebuildIndexFn: (prefix) => { rebuilt.push(prefix); },
+    });
+    assert.equal(rebuilt.length, 0);
+  });
+
+  it('a missing deleted array in the response (older server) is treated as no deletions', async () => {
+    configDir = freshConfigDir();
+    const fetcher = async () => ({ ok: true, status: 200, json: async () => ({ notes: [] }) });
+    const result = await pullNotes({ cliToken: 'tl_key', configDir, fetcher });
+    assert.equal(result.ok, true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // pullNotes — HTTP errors and timeout
 // ---------------------------------------------------------------------------
 

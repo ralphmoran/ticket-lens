@@ -134,6 +134,37 @@ export function upsertPulledNote(remoteNote, { configDir = DEFAULT_CONFIG_DIR } 
 }
 
 /**
+ * Removes a locally-mirrored note that the team backend reports as deleted
+ * (a pull tombstone). Resolves the same deterministic path upsertPulledNote
+ * would write to — a prefix from tickets[0] plus externalId as the filename
+ * — so this never scans the vault directory tree; the same guards apply for
+ * the same reason (a tombstone's external_id/tickets come from the pull
+ * response, not local input, but are still never trusted for a path build).
+ * A note that was never pulled locally (already absent) is a silent no-op,
+ * not an error — deletion propagation is best-effort, one malformed or
+ * already-gone tombstone must never abort the rest of a pull batch.
+ *
+ * @param {{ external_id: string, tickets?: string[] }} tombstone
+ * @param {{ configDir?: string }} [opts]
+ * @returns {{ deleted: boolean, prefix: string|null }}
+ */
+export function deleteNote({ external_id: externalId, tickets = [] }, { configDir = DEFAULT_CONFIG_DIR } = {}) {
+  if (!EXTERNAL_ID_PATTERN.test(externalId)) {
+    throw new Error(`Invalid externalId: "${externalId}"`);
+  }
+
+  const prefix = resolvePrefix(tickets[0]);
+  const notePath = path.join(prefixDir(configDir, prefix), externalId);
+
+  if (!fs.existsSync(notePath)) {
+    return { deleted: false, prefix: null };
+  }
+
+  fs.unlinkSync(notePath);
+  return { deleted: true, prefix };
+}
+
+/**
  * Reads one note file. Never trusts the file completely — a note can be
  * hand-edited (README documents them as plain markdown, readable in any
  * editor), so malformed or missing fields fall back to safe defaults instead

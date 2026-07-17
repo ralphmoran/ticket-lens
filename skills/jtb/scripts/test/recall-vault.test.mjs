@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { writeNote, listNotes, rebuildIndex, resolvePrefix, upsertPulledNote } from '../lib/recall-vault.mjs';
+import { writeNote, listNotes, rebuildIndex, resolvePrefix, upsertPulledNote, deleteNote } from '../lib/recall-vault.mjs';
 
 let configDir;
 
@@ -307,5 +307,55 @@ describe('upsertPulledNote — mirrors a team-synced note locally', () => {
   test('a note with no tickets is filed under the general bucket, same as writeNote', () => {
     const { path: notePath } = upsertPulledNote(validRemoteNote({ tickets: [] }), { configDir });
     assert.equal(path.dirname(notePath), path.join(configDir, 'recall', '_general'));
+  });
+});
+
+describe('deleteNote — removes a tombstoned note without scanning the whole vault', () => {
+  const validRemoteNote = (overrides = {}) => ({
+    external_id: '1700000000000-abcdef.md',
+    title: 'Team note',
+    tickets: ['PROD-1'],
+    tags: [],
+    author: 'teammate',
+    sources: [],
+    body: 'x',
+    status: 'unverified',
+    created: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  });
+
+  test('removes the file at the path derived from tickets and externalId, same resolution as upsertPulledNote', () => {
+    const { path: notePath } = upsertPulledNote(validRemoteNote(), { configDir });
+    assert.equal(fs.existsSync(notePath), true);
+
+    const result = deleteNote({ external_id: '1700000000000-abcdef.md', tickets: ['PROD-1'] }, { configDir });
+
+    assert.equal(result.deleted, true);
+    assert.equal(result.prefix, 'PROD');
+    assert.equal(fs.existsSync(notePath), false);
+  });
+
+  test('a note with no tickets resolves to the general bucket, same as upsertPulledNote', () => {
+    const { path: notePath } = upsertPulledNote(validRemoteNote({ tickets: [] }), { configDir });
+
+    const result = deleteNote({ external_id: '1700000000000-abcdef.md', tickets: [] }, { configDir });
+
+    assert.equal(result.deleted, true);
+    assert.equal(result.prefix, '_general');
+    assert.equal(fs.existsSync(notePath), false);
+  });
+
+  test('a tombstone for a note that was never pulled locally is a silent no-op, not an error', () => {
+    const result = deleteNote({ external_id: '1999999999999-abcdef.md', tickets: ['PROD-1'] }, { configDir });
+    assert.equal(result.deleted, false);
+    assert.equal(result.prefix, null);
+  });
+
+  test('rejects an externalId that does not match the generated-note-id shape, same guard as upsertPulledNote', () => {
+    assert.throws(() => deleteNote({ external_id: '../../../etc/passwd', tickets: [] }, { configDir }));
+  });
+
+  test('an invalid ticket key throws rather than resolving to an unintended path', () => {
+    assert.throws(() => deleteNote({ external_id: '1700000000000-abcdef.md', tickets: ['../../etc'] }, { configDir }));
   });
 });
