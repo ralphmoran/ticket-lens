@@ -23,7 +23,9 @@ import { red, yellow, dim, cyan } from './ansi.mjs';
 const PUSH_PATH = '/v1/recall/push';
 const PULL_PATH = '/v1/recall/pull';
 export const RECALL_PULL_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours, matches BRIEF_TTL_MS
+export const RECALL_ENTITLEMENT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours — entitlement changes are owner-driven and rare
 const PULL_STATE_FILE = 'recall-pull-state.json';
+const ENTITLEMENT_STATE_FILE = 'recall-entitlement-state.json';
 
 function pullStatePath(configDir) {
   return path.join(configDir, PULL_STATE_FILE);
@@ -45,6 +47,26 @@ function writeLastPulledAt(configDir, isoTimestamp) {
   }
 }
 
+function entitlementCachePath(configDir) {
+  return path.join(configDir, ENTITLEMENT_STATE_FILE);
+}
+
+function readEntitlementCheckedAt(configDir) {
+  try {
+    return JSON.parse(fs.readFileSync(entitlementCachePath(configDir), 'utf8')).checkedAt ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function writeEntitlementCheckedAt(configDir, isoTimestamp) {
+  try {
+    fs.writeFileSync(entitlementCachePath(configDir), JSON.stringify({ checkedAt: isoTimestamp }), 'utf8');
+  } catch {
+    // Non-fatal — worst case the next save warns again instead of staying silent.
+  }
+}
+
 /**
  * POSTs one locally-authored note to the team backend.
  *
@@ -61,11 +83,20 @@ export async function pushNote(note, {
   cliToken,
   configDir = DEFAULT_CONFIG_DIR,
   timeoutMs = 15_000,
+  ttlMs = RECALL_ENTITLEMENT_TTL_MS,
   fetcher = globalThis.fetch,
   warn = (s) => process.stderr.write(s),
+  now = () => Date.now(),
 } = {}) {
   if (!cliToken) {
     return { ok: false };
+  }
+
+  // A non-entitled account gets this same 403 on every save until the owner
+  // flips the Recall grant — without this, the warning below repeats forever.
+  const checkedAt = readEntitlementCheckedAt(configDir);
+  if (checkedAt && now() - new Date(checkedAt).getTime() < ttlMs) {
+    return { ok: false, skipped: true };
   }
 
   warnIfInsecure(apiBase(), warn);
@@ -110,9 +141,12 @@ export async function pushNote(note, {
     let reason;
     try { reason = (await res.json())?.error; } catch { /* fall through to the generic message below */ }
     if (reason === 'No team found') {
+      // Deliberately never cached: joining a team is a fast, self-directed fix,
+      // unlike entitlement (which waits on the owner) — the nudge stays useful.
       warn(`  ${yellow('⚠')} You're not on a team yet, so there's nowhere to sync this note — saved locally only.\n`);
     } else {
       warn(`  ${yellow('⚠')} Your plan doesn't include team Recall sync — saved locally only.\n`);
+      writeEntitlementCheckedAt(configDir, new Date(now()).toISOString());
     }
     return { ok: false, status: res.status };
   }

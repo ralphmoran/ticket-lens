@@ -118,6 +118,91 @@ describe('pushNote — HTTP outcomes', () => {
 });
 
 // ---------------------------------------------------------------------------
+// pushNote — entitlement cache
+// ---------------------------------------------------------------------------
+
+describe('pushNote — entitlement cache', () => {
+  it('warns and writes the cache on a first not-entitled 403', async () => {
+    const warnings = [];
+    const configDir = freshConfigDir();
+    let fetchCalls = 0;
+    const fetcher = async () => { fetchCalls++; return { ok: false, status: 403, json: async () => ({ error: 'Recall is not enabled for your account' }) }; };
+    const result = await pushNote(sampleNote, { cliToken: 'tl_key', configDir, fetcher, warn: (s) => warnings.push(s) });
+    assert.equal(result.ok, false);
+    assert.equal(fetchCalls, 1);
+    assert.ok(warnings.some(w => /plan doesn't include/i.test(w)));
+    assert.ok(fs.existsSync(path.join(configDir, 'recall-entitlement-state.json')), 'must persist a cache marker after a not-entitled 403');
+  });
+
+  it('skips the network call and stays silent on a second call within the TTL', async () => {
+    const configDir = freshConfigDir();
+    let fetchCalls = 0;
+    const fetcher = async () => { fetchCalls++; return { ok: false, status: 403, json: async () => ({ error: 'Recall is not enabled for your account' }) }; };
+    await pushNote(sampleNote, { cliToken: 'tl_key', configDir, fetcher, warn: () => {} });
+
+    const warnings = [];
+    const result = await pushNote(sampleNote, { cliToken: 'tl_key', configDir, fetcher, warn: (s) => warnings.push(s) });
+    assert.equal(result.ok, false);
+    assert.equal(result.skipped, true);
+    assert.equal(fetchCalls, 1, 'the second call must never touch the network');
+    assert.equal(warnings.length, 0, 'the second call must stay silent');
+  });
+
+  it('retries and warns again once the TTL has elapsed', async () => {
+    const configDir = freshConfigDir();
+    let fetchCalls = 0;
+    const fetcher = async () => { fetchCalls++; return { ok: false, status: 403, json: async () => ({ error: 'Recall is not enabled for your account' }) }; };
+    let clock = 1_000_000;
+    const now = () => clock;
+    await pushNote(sampleNote, { cliToken: 'tl_key', configDir, fetcher, warn: () => {}, ttlMs: 1000, now });
+
+    clock += 1001;
+    const warnings = [];
+    const result = await pushNote(sampleNote, { cliToken: 'tl_key', configDir, fetcher, warn: (s) => warnings.push(s), ttlMs: 1000, now });
+    assert.equal(fetchCalls, 2, 'a call past the TTL must retry the network');
+    assert.ok(warnings.some(w => /plan doesn't include/i.test(w)));
+  });
+
+  it('never caches or suppresses the "No team found" reason — warns every call', async () => {
+    const configDir = freshConfigDir();
+    let fetchCalls = 0;
+    const fetcher = async () => { fetchCalls++; return { ok: false, status: 403, json: async () => ({ error: 'No team found' }) }; };
+    for (let i = 0; i < 3; i++) {
+      const warnings = [];
+      await pushNote(sampleNote, { cliToken: 'tl_key', configDir, fetcher, warn: (s) => warnings.push(s) });
+      assert.ok(warnings.some(w => /team/i.test(w)), `call ${i + 1} must still warn`);
+    }
+    assert.equal(fetchCalls, 3, 'the no-team reason must never be cached — every call hits the network');
+    assert.equal(fs.existsSync(path.join(configDir, 'recall-entitlement-state.json')), false, 'no-team must never write the entitlement cache');
+  });
+
+  it('does not touch the entitlement cache on a 2xx response', async () => {
+    const configDir = freshConfigDir();
+    const fetcher = async () => ({ ok: true, status: 200, json: async () => ({}) });
+    await pushNote(sampleNote, { cliToken: 'tl_key', configDir, fetcher, warn: () => {} });
+    assert.equal(fs.existsSync(path.join(configDir, 'recall-entitlement-state.json')), false);
+  });
+
+  it('does not read or write the entitlement cache when there is no cliToken', async () => {
+    const configDir = freshConfigDir();
+    let fetchCalled = false;
+    await pushNote(sampleNote, { cliToken: null, configDir, fetcher: () => { fetchCalled = true; }, warn: () => {} });
+    assert.equal(fetchCalled, false);
+    assert.equal(fs.existsSync(path.join(configDir, 'recall-entitlement-state.json')), false);
+  });
+
+  it('treats a corrupt cache file as no cache, not a crash', async () => {
+    const configDir = freshConfigDir();
+    fs.writeFileSync(path.join(configDir, 'recall-entitlement-state.json'), '{not valid json', 'utf8');
+    let fetchCalls = 0;
+    const fetcher = async () => { fetchCalls++; return { ok: false, status: 403, json: async () => ({ error: 'Recall is not enabled for your account' }) }; };
+    const result = await pushNote(sampleNote, { cliToken: 'tl_key', configDir, fetcher, warn: () => {} });
+    assert.equal(fetchCalls, 1, 'a corrupt cache must be treated as absent, triggering a real network attempt');
+    assert.equal(result.ok, false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // pullNotes — no cliToken
 // ---------------------------------------------------------------------------
 
