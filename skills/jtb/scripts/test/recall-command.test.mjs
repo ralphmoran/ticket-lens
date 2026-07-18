@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { runRecall } from '../lib/recall-command.mjs';
+import { runRecall, runRecallSync } from '../lib/recall-command.mjs';
 
 function makeStream({ isTTY = false } = {}) {
   const lines = [];
@@ -14,6 +14,19 @@ function baseDeps(overrides = {}) {
     errorStream: makeStream(),
     isLicensedFn: () => true,
     listNotesFn: () => [],
+    maybeAutoFlushFn: () => {},
+    ...overrides,
+  };
+}
+
+function baseSyncDeps(overrides = {}) {
+  return {
+    configDir: '/fake/config',
+    stream: makeStream(),
+    isLicensedFn: () => true,
+    readCliTokenFn: () => 'tl_key',
+    readQueueFn: () => [],
+    flushQueueFn: () => Promise.resolve({ flushed: 0, remaining: 0 }),
     ...overrides,
   };
 }
@@ -189,5 +202,81 @@ describe('runRecall — team sync (pull before search)', () => {
     });
     await runRecall(['retry'], deps);
     assert.equal('ttlMs' in capturedOpts, false);
+  });
+
+  test('with a cliToken, also attempts an auto-flush of the retry queue alongside the pull', async () => {
+    let autoFlushCalled = false;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pullNotesFn: () => Promise.resolve({ ok: true, count: 0 }),
+      maybeAutoFlushFn: () => { autoFlushCalled = true; },
+    });
+    await runRecall(['retry'], deps);
+    assert.equal(autoFlushCalled, true);
+  });
+
+  test('without a cliToken, never attempts an auto-flush', async () => {
+    let autoFlushCalls = 0;
+    const deps = baseDeps({
+      readCliTokenFn: () => null,
+      maybeAutoFlushFn: () => { autoFlushCalls++; },
+    });
+    await runRecall(['retry'], deps);
+    assert.equal(autoFlushCalls, 0);
+  });
+});
+
+describe('runRecallSync — license gate', () => {
+  test('unlicensed: never reads the queue, shows upgrade prompt, reports failure', async () => {
+    let calls = 0;
+    const deps = baseSyncDeps({ isLicensedFn: () => false, readQueueFn: () => { calls++; return []; } });
+    const result = await runRecallSync([], deps);
+    assert.equal(calls, 0);
+    assert.equal(result.ok, false);
+  });
+});
+
+describe('runRecallSync — not logged in', () => {
+  test('no cliToken: never touches the queue, prints a clear message, reports failure', async () => {
+    let flushCalls = 0;
+    const deps = baseSyncDeps({ readCliTokenFn: () => null, flushQueueFn: () => { flushCalls++; return Promise.resolve({ flushed: 0, remaining: 0 }); } });
+    const result = await runRecallSync([], deps);
+    assert.equal(flushCalls, 0);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /not logged in/i);
+  });
+});
+
+describe('runRecallSync — flushing', () => {
+  test('an empty queue prints "Nothing to sync" without calling flushQueueFn', async () => {
+    let flushCalls = 0;
+    const deps = baseSyncDeps({ readQueueFn: () => [], flushQueueFn: () => { flushCalls++; return Promise.resolve({ flushed: 0, remaining: 0 }); } });
+    const result = await runRecallSync([], deps);
+    assert.equal(flushCalls, 0);
+    assert.equal(result.ok, true);
+    assert.match(deps.stream.lines.join(''), /nothing to sync/i);
+  });
+
+  test('a non-empty queue is flushed and the summary reports synced + still-pending counts', async () => {
+    const deps = baseSyncDeps({
+      readQueueFn: () => [{ id: 'a.md' }, { id: 'b.md' }],
+      flushQueueFn: () => Promise.resolve({ flushed: 1, remaining: 1 }),
+    });
+    const result = await runRecallSync([], deps);
+    assert.equal(result.ok, true);
+    assert.match(deps.stream.lines.join(''), /1.*synced|synced.*1/i);
+    assert.match(deps.stream.lines.join(''), /1.*pending/i);
+  });
+
+  test('flushQueueFn receives a real (non-silent) warn — unlike auto-flush, a manual sync must be visible', async () => {
+    let capturedWarn;
+    const deps = baseSyncDeps({
+      readQueueFn: () => [{ id: 'a.md' }],
+      flushQueueFn: (opts) => { capturedWarn = opts.warn; return Promise.resolve({ flushed: 0, remaining: 1 }); },
+    });
+    await runRecallSync([], deps);
+    assert.equal(typeof capturedWarn, 'function');
+    capturedWarn('  test warning\n');
+    assert.match(deps.stream.lines.join(''), /test warning/);
   });
 });

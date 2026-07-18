@@ -56,7 +56,7 @@ function entitlementCachePath(configDir) {
 // switch (e.g. login as someone else) so a stale cache never suppresses a
 // different account's push. Found via Local Live Test: configDir alone is
 // not a valid cache key — cli-token.json can change without configDir changing.
-function hashToken(cliToken) {
+export function hashToken(cliToken) {
   return createHash('sha256').update(cliToken).digest('hex');
 }
 
@@ -107,7 +107,11 @@ export async function pushNote(note, {
   // flips the Recall grant — without this, the warning below repeats forever.
   const checkedAt = readEntitlementCheckedAt(configDir, cliToken);
   if (checkedAt && now() - new Date(checkedAt).getTime() < ttlMs) {
-    return { ok: false, skipped: true };
+    // status: 403 — this is a cached replay of the entitlement 403 below, not a
+    // fresh network outcome. Without it, isRetryableFailure's "no status means
+    // network error" rule misclassifies this as transient and queues a note
+    // that can never succeed until the owner grants entitlement.
+    return { ok: false, status: 403, skipped: true };
   }
 
   warnIfInsecure(apiBase(), warn);

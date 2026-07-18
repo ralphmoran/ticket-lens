@@ -376,4 +376,9 @@ describe('printRecallHelp', () => {
     assert.match(out, /--plain/);
     assert.match(out, /--full/);
   });
+
+  it('documents the sync subcommand for flushing the local retry queue', () => {
+    const out = captureHelp(printRecallHelp);
+    assert.match(out, /recall sync/);
+  });
 });

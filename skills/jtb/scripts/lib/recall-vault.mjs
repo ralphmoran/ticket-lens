@@ -49,7 +49,7 @@ function generateNoteId() {
   return `${Date.now()}-${randomBytes(3).toString('hex')}.md`;
 }
 
-function writeFileAtomically(filePath, contents) {
+export function writeFileAtomically(filePath, contents) {
   const tmpPath = `${filePath}.${process.pid}.tmp`;
   fs.writeFileSync(tmpPath, contents, 'utf8');
   fs.renameSync(tmpPath, filePath);

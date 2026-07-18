@@ -14,6 +14,7 @@ import { checkNoteStructure } from './note-structural-check.mjs';
 import { writeNote, patchNoteBody } from './recall-vault.mjs';
 import { readCliToken } from './cli-auth.mjs';
 import { pushNote } from './recall-sync.mjs';
+import { enqueueNote, isRetryableFailure, maybeAutoFlush } from './recall-queue.mjs';
 import { incrementDraftKept, incrementDraftDeleted } from './activity-counter.mjs';
 import { extractText } from './attachment-text.mjs';
 import { TICKET_KEY_PATTERN } from './cli.mjs';
@@ -72,6 +73,9 @@ export async function runNoteAdd(cmdArgs, {
   writeNoteFn = writeNote,
   readCliTokenFn = readCliToken,
   pushNoteFn = pushNote,
+  enqueueNoteFn = enqueueNote,
+  isRetryableFailureFn = isRetryableFailure,
+  maybeAutoFlushFn = maybeAutoFlush,
   incrementDraftKeptFn = incrementDraftKept,
   incrementDraftDeletedFn = incrementDraftDeleted,
   listAttachmentsFn = defaultListAttachments,
@@ -131,12 +135,15 @@ export async function runNoteAdd(cmdArgs, {
 
   const cliToken = readCliTokenFn(configDir);
   if (cliToken) {
+    const warn = (s) => stream.write(s);
     // Field names match PushRequest's validation rules (external_id, tickets) —
     // the backend wire contract, not the local vault's internal camelCase shape.
-    await pushNoteFn(
-      { external_id: id, title, tickets: ticketKeys, tags, author, sources: [], body },
-      { cliToken, configDir, warn: (s) => stream.write(s) },
-    );
+    const payload = { external_id: id, title, tickets: ticketKeys, tags, author, sources: [], body };
+    const result = await pushNoteFn(payload, { cliToken, configDir, warn });
+    if (isRetryableFailureFn(result)) {
+      enqueueNoteFn(payload, { cliToken, configDir, warn });
+    }
+    await maybeAutoFlushFn({ cliToken, configDir });
   }
 
   return { written: true };

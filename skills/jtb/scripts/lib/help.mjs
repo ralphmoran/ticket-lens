@@ -536,12 +536,17 @@ export function printRecallHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--full')}        Print each matching note's full body content`,
     `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
     '',
+    `  ${s.bold('COMMANDS')}`,
+    '',
+    `    ${s.brand('sync')}          Manually retry any team-synced notes stuck in the local retry queue ${s.dim('[Pro, requires login]')}`,
+    '',
     `  ${s.bold('EXAMPLES')}`,
     '',
     `    ${s.dim('$')} ticketlens recall PROD-123`,
     `    ${s.dim('$')} ticketlens recall "retry backoff"`,
     `    ${s.dim('$')} ticketlens recall PROD-123 --plain`,
     `    ${s.dim('$')} ticketlens recall PROD-123 --full`,
+    `    ${s.dim('$')} ticketlens recall sync`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

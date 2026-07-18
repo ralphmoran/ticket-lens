@@ -637,6 +637,16 @@ switch (command) {
 
   case 'recall': {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printRecallHelp(); break; }
+    if (cmdArgs[0] === 'sync') {
+      const { runRecallSync } = await import('../skills/jtb/scripts/lib/recall-command.mjs');
+      runRecallSync(cmdArgs.slice(1)).then(({ ok }) => {
+        if (!ok) process.exitCode = 1;
+      }).catch(err => {
+        process.stderr.write(`Error: ${err.message}\n`);
+        process.exitCode = 1;
+      });
+      break;
+    }
     const { runRecall } = await import('../skills/jtb/scripts/lib/recall-command.mjs');
     runRecall(cmdArgs).then(({ ok }) => {
       if (!ok) process.exitCode = 1;

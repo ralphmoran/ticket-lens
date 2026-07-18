@@ -12,6 +12,7 @@ import { isLicensed, showUpgradePrompt } from './license.mjs';
 import { listNotes } from './recall-vault.mjs';
 import { readCliToken } from './cli-auth.mjs';
 import { pullNotes } from './recall-sync.mjs';
+import { maybeAutoFlush, flushQueue, readQueue } from './recall-queue.mjs';
 import { styleRecallResults } from './styled-assembler.mjs';
 
 /**
@@ -26,6 +27,7 @@ export async function runRecall(cmdArgs, {
   listNotesFn = listNotes,
   readCliTokenFn = readCliToken,
   pullNotesFn = pullNotes,
+  maybeAutoFlushFn = maybeAutoFlush,
 } = {}) {
   if (!isLicensedFn('pro', configDir)) {
     showUpgradePrompt('pro', 'ticketlens recall', { stream: errorStream });
@@ -45,6 +47,7 @@ export async function runRecall(cmdArgs, {
       configDir,
       ...(cmdArgs.includes('--no-cache') && { ttlMs: 0 }),
     });
+    await maybeAutoFlushFn({ cliToken, configDir });
   }
 
   const filter = TICKET_KEY_PATTERN.test(arg) ? { ticketKey: arg } : { query: arg };
@@ -53,5 +56,43 @@ export async function runRecall(cmdArgs, {
   const styled = !cmdArgs.includes('--plain') && stream.isTTY;
   const full = cmdArgs.includes('--full');
   stream.write(styleRecallResults(results, { styled, full }) + '\n');
+  return { ok: true };
+}
+
+/**
+ * Implements `tl recall sync` — manually flushes the local retry queue
+ * (notes whose team push previously failed for a transient reason). Unlike
+ * the auto-flush attempted from `runRecall`/`note add`, this is an explicit
+ * user action, so failures are reported visibly rather than staying silent.
+ *
+ * @param {string[]} cmdArgs
+ * @returns {Promise<{ ok: boolean }>}
+ */
+export async function runRecallSync(cmdArgs, {
+  configDir = DEFAULT_CONFIG_DIR,
+  stream = process.stdout,
+  isLicensedFn = isLicensed,
+  readCliTokenFn = readCliToken,
+  readQueueFn = readQueue,
+  flushQueueFn = flushQueue,
+} = {}) {
+  if (!isLicensedFn('pro', configDir)) {
+    showUpgradePrompt('pro', 'ticketlens recall', { stream });
+    return { ok: false };
+  }
+
+  const cliToken = readCliTokenFn(configDir);
+  if (!cliToken) {
+    stream.write('Not logged in — run `ticketlens login` first.\n');
+    return { ok: false };
+  }
+
+  if (readQueueFn(configDir).length === 0) {
+    stream.write('Nothing to sync.\n');
+    return { ok: true };
+  }
+
+  const { flushed, remaining } = await flushQueueFn({ cliToken, configDir, warn: (s) => stream.write(s) });
+  stream.write(`Synced ${flushed} note(s). ${remaining} still pending.\n`);
   return { ok: true };
 }

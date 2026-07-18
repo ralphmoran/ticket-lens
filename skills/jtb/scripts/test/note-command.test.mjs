@@ -16,6 +16,8 @@ function baseDeps(overrides = {}) {
     checkNoteStructureFn: () => ({ rejected: false, reason: null }),
     scanForSecretsFn: () => ({ rejected: false, reasons: [], warnings: [] }),
     writeNoteFn: () => ({ id: 'note-1.md', path: '/fake/config/recall/PROD/note-1.md' }),
+    enqueueNoteFn: () => {},
+    maybeAutoFlushFn: () => {},
     incrementDraftKeptFn: () => {},
     incrementDraftDeletedFn: () => {},
     author: 'ralph',
@@ -461,5 +463,107 @@ describe('runNoteAdd — team sync (push after local write)', () => {
     });
     await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
     assert.match(deps.stream.lines.join(''), /Could not sync note to your team/);
+  });
+});
+
+describe('runNoteAdd — queues the note for retry after a transient push failure', () => {
+  test('a network-error push failure (no status) enqueues the note for later retry', async () => {
+    let enqueued;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: () => Promise.resolve({ ok: false }),
+      enqueueNoteFn: (payload) => { enqueued = payload; },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.ok(enqueued, 'expected the note to be queued for retry');
+    assert.equal(enqueued.external_id, 'note-1.md');
+  });
+
+  test('a 503 push failure enqueues the note for later retry', async () => {
+    let enqueueCalls = 0;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: () => Promise.resolve({ ok: false, status: 503 }),
+      enqueueNoteFn: () => { enqueueCalls++; },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.equal(enqueueCalls, 1);
+  });
+
+  test('a 401 (session expired) push failure does NOT enqueue — retrying a stale token cannot succeed', async () => {
+    let enqueueCalls = 0;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: () => Promise.resolve({ ok: false, status: 401 }),
+      enqueueNoteFn: () => { enqueueCalls++; },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.equal(enqueueCalls, 0);
+  });
+
+  test('a 403 (not entitled / no team) push failure does NOT enqueue', async () => {
+    let enqueueCalls = 0;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: () => Promise.resolve({ ok: false, status: 403 }),
+      enqueueNoteFn: () => { enqueueCalls++; },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.equal(enqueueCalls, 0);
+  });
+
+  test('a successful push does NOT enqueue', async () => {
+    let enqueueCalls = 0;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: () => Promise.resolve({ ok: true }),
+      enqueueNoteFn: () => { enqueueCalls++; },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.equal(enqueueCalls, 0);
+  });
+
+  test('a cached-entitlement skip (status: 403, skipped: true, no earlier fetch attempt) does NOT enqueue — regression guard for the shape pushNote actually returns on its TTL-cached skip path', async () => {
+    let enqueueCalls = 0;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: () => Promise.resolve({ ok: false, status: 403, skipped: true }),
+      enqueueNoteFn: () => { enqueueCalls++; },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.equal(enqueueCalls, 0);
+  });
+
+  test('without a cliToken, never enqueues (no push was even attempted)', async () => {
+    let enqueueCalls = 0;
+    const deps = baseDeps({
+      readCliTokenFn: () => null,
+      enqueueNoteFn: () => { enqueueCalls++; },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.equal(enqueueCalls, 0);
+  });
+});
+
+describe('runNoteAdd — also attempts an auto-flush of the retry queue', () => {
+  test('with a cliToken, calls maybeAutoFlushFn after its own push attempt', async () => {
+    let autoFlushCalled = false;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: () => Promise.resolve({ ok: true }),
+      maybeAutoFlushFn: () => { autoFlushCalled = true; },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.equal(autoFlushCalled, true);
+  });
+
+  test('without a cliToken, never attempts an auto-flush', async () => {
+    let autoFlushCalls = 0;
+    const deps = baseDeps({
+      readCliTokenFn: () => null,
+      maybeAutoFlushFn: () => { autoFlushCalls++; },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.equal(autoFlushCalls, 0);
   });
 });

@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.17.0 -->
+<!-- jtb-skill-version: 0.18.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -53,6 +53,7 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb cloud-keys timeout anthropic 15   # set per-request timeout in seconds
 /jtb note "gotcha text" --ticket=PROD-1234    # save a Recall note (Pro)
 /jtb recall PROD-1234                  # search saved Recall notes (Pro)
+/jtb recall sync                       # retry any notes stuck in the local queue (Pro)
 ```
 
 ## Prerequisites
@@ -241,7 +242,7 @@ This never calls any external API or bills any tokens beyond the session you alr
 **Known limitation:** `note patch` only updates the local vault copy. If `note add` already pushed the original draft to a team (Team Recall enabled), a later refinement from this loop is *not* re-pushed — teammates who already pulled the note keep the original draft until this is addressed in a future iteration.
 
 ### Privacy
-Recall notes are stored locally at `~/.ticketlens/recall/`. On a Free/Pro account with no Team Recall entitlement, they never leave the machine — no network calls. On a Team account with Recall enabled (owner-managed, may vary per user), notes also sync to the team's shared pool in the background so teammates can benefit from them too; a team manager reviews and verifies each incoming note before it's marked trusted.
+Recall notes are stored locally at `~/.ticketlens/recall/`. On a Free/Pro account with no Team Recall entitlement, they never leave the machine — no network calls. On a Team account with Recall enabled (owner-managed, may vary per user), notes also sync to the team's shared pool in the background so teammates can benefit from them too; a team manager reviews and verifies each incoming note before it's marked trusted. If a team push fails for a transient reason (network error, timeout, 5xx), the note is queued locally and retried automatically in the background, or on demand with `ticketlens recall sync` — a session-expired or not-entitled push is never queued, since retrying those can't succeed without the user acting first.
 
 ---
 
