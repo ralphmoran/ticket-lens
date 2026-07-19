@@ -34,6 +34,7 @@ export function serverToCliProfile(serverProfile) {
     ...(p.project_paths?.length    ? { projectPaths: p.project_paths }        : {}),
     ...(p.triage_statuses?.length  ? { triageStatuses: p.triage_statuses }    : {}),
     ...(p.stale_rule               ? { staleRule: p.stale_rule }              : {}),
+    ...(p.attention_rules?.length   ? { attentionRules: p.attention_rules }    : {}),
     ...(p.known_statuses?.length   ? { knownStatuses: p.known_statuses, statusesCachedAt: p.statuses_cached_at ?? null } : {}),
   };
   return { name: p.name, profileData };

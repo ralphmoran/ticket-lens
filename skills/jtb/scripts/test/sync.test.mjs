@@ -100,6 +100,27 @@ describe('serverToCliProfile', () => {
     assert.equal('projectPaths' in profileData, false);
     assert.equal('triageStatuses' in profileData, false);
   });
+
+  it('maps attention_rules to attentionRules when present', () => {
+    const { profileData } = serverToCliProfile({
+      ...JIRA_PROFILE,
+      attention_rules: [{ match: { priority: 'Highest' }, action: 'force-urgent', reason: 'P1' }],
+    });
+    assert.deepEqual(profileData.attentionRules, [
+      { match: { priority: 'Highest' }, action: 'force-urgent', reason: 'P1' },
+    ]);
+  });
+
+  it('omits attentionRules when attention_rules is absent or empty', () => {
+    const { profileData: withoutField } = serverToCliProfile(JIRA_PROFILE);
+    assert.equal('attentionRules' in withoutField, false);
+
+    const { profileData: withEmpty } = serverToCliProfile({ ...JIRA_PROFILE, attention_rules: [] });
+    assert.equal('attentionRules' in withEmpty, false);
+
+    const { profileData: withNull } = serverToCliProfile({ ...JIRA_PROFILE, attention_rules: null });
+    assert.equal('attentionRules' in withNull, false);
+  });
 });
 
 // ── Unit: profileNeedsCredentials ────────────────────────────────────────────
