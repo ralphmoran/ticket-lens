@@ -37,6 +37,8 @@ function makeRaw(key, overrides = {}) {
     status: 'Code Review',
     assignee: overrides.assignee ?? 'John Dev',
     updated: overrides.updated ?? '2026-05-10T09:00:00Z',
+    priority: overrides.priority ?? null,
+    labels: overrides.labels ?? [],
   };
 }
 
@@ -362,6 +364,41 @@ describe('pushTriageSnapshot — payload shape', () => {
     assert.equal(t.assignee, null);
     assert.equal(t.last_updated, null);
     assert.equal(t.url, 'https://jira.example.com/browse/PROJ-99');
+  });
+
+  it('includes priority and labels from the raw ticket', async () => {
+    let capturedBody;
+    const rawTicketMap = new Map([['PROJ-1', makeRaw('PROJ-1', { priority: 'Highest', labels: ['critical', 'backend'] })]]);
+    await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-1')],
+      rawTicketMap,
+      cliToken: 'tl_k',
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 201 };
+      },
+      print: () => {},
+    });
+    const t = capturedBody.tickets[0];
+    assert.equal(t.priority, 'Highest');
+    assert.deepEqual(t.labels, ['critical', 'backend']);
+  });
+
+  it('defaults priority to null and labels to [] when raw ticket has neither', async () => {
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-99')],
+      rawTicketMap: new Map(),
+      cliToken: 'tl_k',
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 201 };
+      },
+      print: () => {},
+    });
+    const t = capturedBody.tickets[0];
+    assert.equal(t.priority, null);
+    assert.deepEqual(t.labels, []);
   });
 
   it('constructs URL from baseUrl and ticket key', async () => {

@@ -76,6 +76,23 @@ export function findLastEffectiveComment(comments, currentUser) {
 }
 
 /**
+ * Test whether a ticket satisfies a rule's match conditions.
+ * Ported 1:1 to PHP as CustomRuleMatcher::matches() — keep both in sync,
+ * parity enforced by fixtures/custom-rule-match-cases.json.
+ */
+export function matchesRuleConditions(ticket, match) {
+  const { priority, label, status, keyPrefix } = match;
+  if (priority !== undefined && ticket.priority !== priority) return false;
+  if (status !== undefined && ticket.status !== status) return false;
+  if (label !== undefined) {
+    const labels = Array.isArray(ticket.labels) ? ticket.labels : [];
+    if (!labels.includes(label)) return false;
+  }
+  if (keyPrefix !== undefined && !String(ticket.key).startsWith(keyPrefix)) return false;
+  return true;
+}
+
+/**
  * Apply a single custom rule against a ticket.
  * Returns 'force-urgent' | 'ignore' | null.
  * A rule must have a valid `match` object and a known `action` to fire.
@@ -83,17 +100,7 @@ export function findLastEffectiveComment(comments, currentUser) {
 function applyCustomRule(ticket, rule) {
   if (!rule || typeof rule.match !== 'object' || !rule.match) return null;
   if (rule.action !== 'force-urgent' && rule.action !== 'ignore') return null;
-
-  const { priority, label, status, keyPrefix } = rule.match;
-  if (priority !== undefined && ticket.priority !== priority) return null;
-  if (status !== undefined && ticket.status !== status) return null;
-  if (label !== undefined) {
-    const labels = Array.isArray(ticket.labels) ? ticket.labels : [];
-    if (!labels.includes(label)) return null;
-  }
-  if (keyPrefix !== undefined && !String(ticket.key).startsWith(keyPrefix)) return null;
-
-  return rule.action;
+  return matchesRuleConditions(ticket, rule.match) ? rule.action : null;
 }
 
 export function scoreAttention(ticket, currentUser, opts = {}) {

@@ -4,7 +4,9 @@
  */
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreAttention } from '../lib/attention-scorer.mjs';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { scoreAttention, matchesRuleConditions } from '../lib/attention-scorer.mjs';
 
 const NOW = new Date('2026-03-06T12:00:00Z');
 const USER = { accountId: 'u1', name: 'dev', displayName: 'Dev' };
@@ -101,6 +103,17 @@ describe('scoreAttention — malformed rules are skipped gracefully', () => {
     const customRules = [{ match: { priority: 'Highest' }, action: 'explode' }];
     assert.doesNotThrow(() => scoreAttention(ticket, USER, { now: NOW, customRules }));
   });
+});
+
+describe('matchesRuleConditions — fixture parity with PHP CustomRuleMatcher', () => {
+  const fixturePath = fileURLToPath(new URL('./fixtures/custom-rule-match-cases.json', import.meta.url));
+  const cases = JSON.parse(readFileSync(fixturePath, 'utf8'));
+
+  for (const { description, ticket, match, expected } of cases) {
+    it(description, () => {
+      assert.equal(matchesRuleConditions(ticket, match), expected);
+    });
+  }
 });
 
 // ── Integration test: attentionRules propagated from profile config through resolveConnection ──

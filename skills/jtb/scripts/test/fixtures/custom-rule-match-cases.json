@@ -1,0 +1,14 @@
+[
+  { "description": "priority match", "ticket": { "key": "PROJ-1", "priority": "Highest", "status": "In Progress", "labels": [] }, "match": { "priority": "Highest" }, "expected": true },
+  { "description": "priority mismatch", "ticket": { "key": "PROJ-1", "priority": "Low", "status": "In Progress", "labels": [] }, "match": { "priority": "Highest" }, "expected": false },
+  { "description": "status match", "ticket": { "key": "PROJ-1", "priority": "Medium", "status": "Blocked", "labels": [] }, "match": { "status": "Blocked" }, "expected": true },
+  { "description": "status mismatch", "ticket": { "key": "PROJ-1", "priority": "Medium", "status": "Open", "labels": [] }, "match": { "status": "Blocked" }, "expected": false },
+  { "description": "label match — one of several labels", "ticket": { "key": "PROJ-1", "priority": "Medium", "status": "Open", "labels": ["backlog", "critical"] }, "match": { "label": "critical" }, "expected": true },
+  { "description": "label mismatch — not in labels array", "ticket": { "key": "PROJ-1", "priority": "Medium", "status": "Open", "labels": ["backlog"] }, "match": { "label": "critical" }, "expected": false },
+  { "description": "label mismatch — no labels array", "ticket": { "key": "PROJ-1", "priority": "Medium", "status": "Open" }, "match": { "label": "critical" }, "expected": false },
+  { "description": "keyPrefix match", "ticket": { "key": "ENG-42", "priority": "Medium", "status": "Open", "labels": [] }, "match": { "keyPrefix": "ENG-" }, "expected": true },
+  { "description": "keyPrefix mismatch", "ticket": { "key": "PROJ-1", "priority": "Medium", "status": "Open", "labels": [] }, "match": { "keyPrefix": "ENG-" }, "expected": false },
+  { "description": "multi-field match — all conditions satisfied", "ticket": { "key": "ENG-42", "priority": "Highest", "status": "Blocked", "labels": ["critical"] }, "match": { "priority": "Highest", "status": "Blocked", "label": "critical", "keyPrefix": "ENG-" }, "expected": true },
+  { "description": "multi-field mismatch — one condition fails", "ticket": { "key": "ENG-42", "priority": "Highest", "status": "Open", "labels": ["critical"] }, "match": { "priority": "Highest", "status": "Blocked", "label": "critical", "keyPrefix": "ENG-" }, "expected": false },
+  { "description": "empty match object — vacuously true", "ticket": { "key": "PROJ-1", "priority": "Medium", "status": "Open", "labels": [] }, "match": {}, "expected": true }
+]

@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.19.0 -->
+<!-- jtb-skill-version: 0.20.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -344,6 +344,10 @@ Output is a concise markdown document, not a full TicketBrief. No plan mode — 
 When `--push` is run by a Pro-licensed user, the local compliance ledger (written by `--compliance` runs) is read and merged into the snapshot before sending. Each ticket's `compliance_status` (`pass`/`gap`) and `compliance_coverage` (%) are included in the push payload. This feeds the **Compliance Analytics** dashboard in the Console (`/console/admin/compliance-analytics`), which shows gap-rate trends by project, ticket status, and week.
 
 Non-Pro users push with `compliance_status: unknown` — no data is lost, and the analytics page simply shows no compliance data for those snapshots.
+
+### triage --push priority/label fields (Team)
+
+`--push` now includes each ticket's `priority` and `labels` in the payload (previously omitted). This feeds two Console features under `/console/admin/rules`: real-value suggestions for the Priority/Label fields when building custom attention rules (previously only Status/Key prefix had them), and the `notify`/`schedule` custom-rule actions, which match on priority/label server-side. No new flag — this is automatic on every `--push`.
 
 ### --plain / --styled
 

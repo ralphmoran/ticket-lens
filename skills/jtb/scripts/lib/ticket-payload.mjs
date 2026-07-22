@@ -9,6 +9,8 @@ export function buildTicketPayload(scored, rawMap, baseUrl) {
     summary: scored.summary ?? null,
     status: scored.status ?? null,
     assignee: raw?.assignee ?? null,
+    priority: raw?.priority ?? null,
+    labels: Array.isArray(raw?.labels) ? raw.labels : [],
     attention_score: null,
     flags: scored.urgency === 'clear' ? [] : [scored.urgency],
     // last_comment_at feeds server-side response-time metrics (F19c).
