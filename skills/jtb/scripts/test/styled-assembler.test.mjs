@@ -98,6 +98,23 @@ describe('styleTriageSummary', () => {
     assert.ok(result.includes('1 aging'));
     assert.ok(!result.includes('Comment'), 'Should not have needs-response table columns');
   });
+
+  it('renders Priority column in needs-response and aging tables', () => {
+    const tickets = [
+      makeTicket({ ticketKey: 'PROJ-1', urgency: 'needs-response', priority: 'Highest' }),
+      makeTicket({ ticketKey: 'PROJ-2', urgency: 'aging', daysSinceUpdate: 6, priority: 'Low' }),
+    ];
+    const result = styleTriageSummary(tickets, { styled: false });
+    assert.ok(result.includes('Priority'), 'header must include Priority column');
+    assert.ok(result.includes('Highest'));
+    assert.ok(result.includes('Low'));
+  });
+
+  it('renders em-dash for missing priority in triage table', () => {
+    const tickets = [makeTicket({ urgency: 'needs-response', priority: null })];
+    const result = styleTriageSummary(tickets, { styled: false });
+    assert.ok(result.includes('—'), 'missing priority renders em-dash');
+  });
 });
 
 function makeBriefTicket(overrides = {}) {
@@ -134,6 +151,21 @@ describe('styleBrief', () => {
     assert.ok(result.includes('In Progress'), 'Should show status');
     assert.ok(result.includes('High'), 'Should show priority');
     assert.ok(result.includes('John Dev'), 'Should show assignee');
+  });
+
+  it('colors the priority value, consistent with status coloring', () => {
+    const ticket = makeBriefTicket({ priority: 'Highest' });
+    const result = styleBrief(ticket, null, { styled: true });
+    const metaLine = result.split('\n').find(l => l.includes('Priority:'));
+    assert.match(metaLine, /\x1b\[[\d;]+m[^\x1b]*Highest[^\x1b]*\x1b\[\d+m/, 'priority value should be ANSI-colored, matching status');
+  });
+
+  it('renders em-dash for missing priority instead of the literal string "undefined"', () => {
+    const ticket = makeBriefTicket({ priority: null });
+    const result = styleBrief(ticket, null, { styled: false });
+    const metaLine = result.split('\n').find(l => l.includes('Priority:'));
+    assert.ok(metaLine.includes('—'), `expected em-dash for missing priority, got: ${metaLine}`);
+    assert.ok(!metaLine.includes('null') && !metaLine.includes('undefined'), `must not render literal null/undefined, got: ${metaLine}`);
   });
 
   it('shows code references when provided', () => {

@@ -15,6 +15,12 @@ function statusColor(s, status) {
   if (/progress|review|testing|qa/.test(st)) return s.yellow(status);
   return status;
 }
+function priorityColor(s, priority) {
+  const p = (priority || '').toLowerCase();
+  if (/highest|urgent|blocker/.test(p)) return s.red(priority);
+  if (/high/.test(p)) return s.yellow(priority);
+  return priority;
+}
 
 export function styleTriageSummary(scoredTickets, opts = {}) {
   const { staleDays = 5, baseUrl, styled = true } = opts;
@@ -51,17 +57,19 @@ export function styleTriageSummary(scoredTickets, opts = {}) {
     return colorFn('●') + ' ' + key;
   };
 
+  const priorityCell = (t) => t.priority ? priorityColor(s, t.priority) : '—';
+
   if (needsResponse.length > 0) {
     const tableRows = needsResponse.map((t, i) => {
       const ago = t.lastComment ? timeAgo(t.lastComment.created) : '';
       const commenter = t.lastComment?.author ?? 'Unknown';
       const snippet = t.lastComment?.body ? truncate(t.lastComment.body, 40) : '';
-      return [String(i + 1), ticketCell(t.ticketKey, s.red), truncate(t.summary, 45), t.status, commenter, ago, snippet];
+      return [String(i + 1), ticketCell(t.ticketKey, s.red), truncate(t.summary, 45), t.status, priorityCell(t), commenter, ago, snippet];
     });
     const table = formatTable(
-      ['#', 'Ticket', 'Title', 'Status', 'From', 'When', 'Comment'],
+      ['#', 'Ticket', 'Title', 'Status', 'Priority', 'From', 'When', 'Comment'],
       tableRows,
-      { maxWidths: { 2: 45, 6: 40 } },
+      { maxWidths: { 2: 45, 7: 40 } },
     );
     sections.push(table);
   }
@@ -70,10 +78,10 @@ export function styleTriageSummary(scoredTickets, opts = {}) {
     const agingOffset = needsResponse.length;
     const tableRows = aging.map((t, i) => {
       const days = t.daysSinceUpdate ?? '?';
-      return [String(agingOffset + i + 1), ticketCell(t.ticketKey, s.yellow), truncate(t.summary, 45), t.status, `${days}d`];
+      return [String(agingOffset + i + 1), ticketCell(t.ticketKey, s.yellow), truncate(t.summary, 45), t.status, priorityCell(t), `${days}d`];
     });
     const table = formatTable(
-      ['#', 'Ticket', 'Title', 'Status', 'Idle'],
+      ['#', 'Ticket', 'Title', 'Status', 'Priority', 'Idle'],
       tableRows,
       { maxWidths: { 2: 45 } },
     );
@@ -84,10 +92,10 @@ export function styleTriageSummary(scoredTickets, opts = {}) {
     const staleOffset = needsResponse.length + aging.length;
     const tableRows = stale.map((t, i) => {
       const days = t.daysInCurrentStatus ?? '?';
-      return [String(staleOffset + i + 1), ticketCell(t.ticketKey, s.cyan), truncate(t.summary, 45), t.status, `${days}d`];
+      return [String(staleOffset + i + 1), ticketCell(t.ticketKey, s.cyan), truncate(t.summary, 45), t.status, priorityCell(t), `${days}d`];
     });
     const table = formatTable(
-      ['#', 'Ticket', 'Title', 'Status', 'Stuck'],
+      ['#', 'Ticket', 'Title', 'Status', 'Priority', 'Stuck'],
       tableRows,
       { maxWidths: { 2: 45 } },
     );
@@ -138,7 +146,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
   const meta = [
     `${s.dim('Type:')} ${ticket.type}`,
     `${s.dim('Status:')} ${statusColor(s, ticket.status)}`,
-    `${s.dim('Priority:')} ${ticket.priority}`,
+    `${s.dim('Priority:')} ${ticket.priority ? priorityColor(s, ticket.priority) : '—'}`,
     `${s.dim('Assignee:')} ${ticket.assignee ?? 'Unassigned'}`,
   ];
   if (ticket.sprint)  meta.push(`${s.dim('Sprint:')} ${ticket.sprint}`);

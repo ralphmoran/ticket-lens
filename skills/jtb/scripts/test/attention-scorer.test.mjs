@@ -329,6 +329,34 @@ describe('scoreAttention — output shape lock (no customRules)', () => {
   it('calling with empty customRules array does not throw', () => {
     assert.doesNotThrow(() => scoreAttention(base, user, { now: new Date('2026-03-06T12:00:00Z'), customRules: [] }));
   });
+
+  it('includes priority field from the ticket when clear', () => {
+    const result = scoreAttention({ ...base, priority: 'High' }, user, { now: new Date('2026-03-06T12:00:00Z') });
+    assert.equal(result.priority, 'High');
+  });
+
+  it('priority is null when ticket has no priority field', () => {
+    const result = scoreAttention(base, user, { now: new Date('2026-03-06T12:00:00Z') });
+    assert.equal(result.priority, null);
+  });
+
+  it('includes priority field in needs-response result', () => {
+    const ticket = {
+      ...base,
+      priority: 'Highest',
+      comments: [{ author: 'Reviewer', authorAccountId: 'u-other', body: 'Please fix', created: '2026-03-06T10:00:00Z' }],
+    };
+    const result = scoreAttention(ticket, user, { now: new Date('2026-03-06T12:00:00Z') });
+    assert.equal(result.urgency, 'needs-response');
+    assert.equal(result.priority, 'Highest');
+  });
+
+  it('includes priority field in aging result', () => {
+    const ticket = { ...base, priority: 'Low', updated: '2026-02-01T12:00:00Z' };
+    const result = scoreAttention(ticket, user, { now: new Date('2026-03-06T12:00:00Z') });
+    assert.equal(result.urgency, 'aging');
+    assert.equal(result.priority, 'Low');
+  });
 });
 
 // ─── URGENCY_ORDER export ─────────────────────────────────────────────────
@@ -420,6 +448,12 @@ describe('scoreAttention — stale rule', () => {
     const ticket = makeStaleTicket({ comments: [otherUser] });
     const result = scoreAttention(ticket, user, { now: NOW, staleRule: activeRule });
     assert.strictEqual(result.urgency, 'needs-response');
+  });
+
+  it('includes priority field in stale result', () => {
+    const result = scoreAttention(makeStaleTicket({ priority: 'Highest' }), user, { now: NOW, staleRule: activeRule });
+    assert.strictEqual(result.urgency, 'stale');
+    assert.equal(result.priority, 'Highest');
   });
 });
 

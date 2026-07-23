@@ -287,6 +287,27 @@ describe('assembleTriageSummary', () => {
     // Should have box-drawing separator
     assert.ok(result.includes('─'), 'Should use box-drawing characters for separator');
   });
+
+  it('renders Priority column in needs-response, aging, and stale tables', () => {
+    const scored = [
+      { ticketKey: 'PROD-100', summary: 'Fix', status: 'CR', priority: 'High', urgency: 'needs-response', lastComment: { author: 'X', body: 'hi', created: '2026-03-05T10:00:00Z' } },
+      { ticketKey: 'PROD-200', summary: 'Stale', status: 'Dev', priority: 'Medium', urgency: 'aging', daysSinceUpdate: 7 },
+      { ticketKey: 'PROD-300', summary: 'Stuck', status: 'QA', priority: 'Low', urgency: 'stale', daysInCurrentStatus: 20 },
+    ];
+    const result = assembleTriageSummary(scored);
+    assert.ok(result.includes('Priority'), 'header must include Priority column');
+    assert.ok(result.includes('High'));
+    assert.ok(result.includes('Medium'));
+    assert.ok(result.includes('Low'));
+  });
+
+  it('renders em-dash for missing priority', () => {
+    const scored = [
+      { ticketKey: 'PROD-400', summary: 'No priority', status: 'CR', priority: null, urgency: 'needs-response', lastComment: { author: 'X', body: 'hi', created: '2026-03-05T10:00:00Z' } },
+    ];
+    const result = assembleTriageSummary(scored);
+    assert.ok(result.includes('—'), 'missing priority renders em-dash');
+  });
 });
 
 // ---------------------------------------------------------------------------

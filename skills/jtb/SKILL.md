@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.20.1 -->
+<!-- jtb-skill-version: 0.20.2 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -348,6 +348,12 @@ Non-Pro users push with `compliance_status: unknown` — no data is lost, and th
 ### triage --push priority/label fields (Team)
 
 `--push` now includes each ticket's `priority` and `labels` in the payload (previously omitted). This feeds two Console features under `/console/admin/rules`: real-value suggestions for the Priority/Label fields when building custom attention rules (previously only Status/Key prefix had them), and the `notify`/`schedule` custom-rule actions, which match on priority/label server-side. No new flag — this is automatic on every `--push`.
+
+### triage --push ticket set (Team)
+
+`--push` sends every assigned ticket except ones excluded by a local `ignore` custom rule — this includes tickets that are `clear` (recently updated, no unanswered comment) and therefore hidden from the terminal view. Terminal display, `--digest`, `--export`, and `--share` remain unchanged (they still show only needs-response/aging/stale tickets — what needs *your* attention right now). The wider push set exists so a manager's Console-configured priority-based `notify`/`schedule` rule can match a ticket you're actively working on correctly, not just one that's stale or awaiting a response.
+
+Terminal output (all formats) now also shows each ticket's Priority column alongside Status.
 
 ### --plain / --styled
 

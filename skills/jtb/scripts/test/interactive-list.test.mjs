@@ -22,6 +22,21 @@ describe('interactive-list responsive layout', () => {
       'COL.flag was a hardcoded column width — must be removed in favour of getColLayout()'
     );
   });
+
+  it('getColLayout() defines a non-zero priority column width for wide/medium breakpoints', () => {
+    const layoutFn = src.match(/function getColLayout\(\)[\s\S]*?^\s{2}\}/m)?.[0] ?? '';
+    assert.ok(/priority:\s*\d/.test(layoutFn), 'getColLayout must define a non-zero priority column width for at least one breakpoint');
+  });
+
+  it('buildRow renders the priority column when COL.priority > 0', () => {
+    const buildRowFn = src.match(/function buildRow\(ticket, index\)[\s\S]*?^\s{2}\}/m)?.[0] ?? '';
+    assert.ok(buildRowFn.includes('COL.priority'), 'buildRow must reference COL.priority');
+  });
+
+  it('writeHeader includes a Priority column header when COL.priority > 0', () => {
+    const headerFn = src.match(/function writeHeader\(\)[\s\S]*?^\s{2}\}/m)?.[0] ?? '';
+    assert.ok(headerFn.includes('COL.priority') && headerFn.includes("'Priority'"), 'writeHeader must render a Priority column header');
+  });
 });
 
 describe('interactive-list security', () => {

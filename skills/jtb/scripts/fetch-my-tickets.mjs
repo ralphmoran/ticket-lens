@@ -497,8 +497,11 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const printFn = opts.print ?? ((s) => process.stdout.write(s));
     let cliActivity = null;
     try { cliActivity = readAndResetActivity(configDir ?? DEFAULT_CONFIG_DIR); } catch { /* non-fatal */ }
+    // Server-side notify/schedule rules must see actively-worked ('clear') tickets too —
+    // only a ticket the user explicitly told the CLI to ignore is excluded from push.
+    const pushable = sortByUrgency(scored.filter(s => s.urgency !== 'ignore'));
     await pushFn({
-      sorted,
+      sorted: pushable,
       rawTicketMap,
       profile: profileName ?? 'default',
       baseUrl: conn.baseUrl,

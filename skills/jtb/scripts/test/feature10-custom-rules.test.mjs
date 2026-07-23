@@ -53,6 +53,13 @@ describe('scoreAttention — force-urgent custom rule', () => {
     const result = scoreAttention(ticket, USER, { now: NOW, customRules });
     assert.equal(result.urgency, 'clear');
   });
+
+  it('includes priority field when force-urgent rule fires', () => {
+    const ticket = makeTicket({ priority: 'Highest', updated: new Date('2026-03-05T00:00:00Z').toISOString() });
+    const customRules = [{ match: { priority: 'Highest' }, action: 'force-urgent', reason: 'P1 always urgent' }];
+    const result = scoreAttention(ticket, USER, { now: NOW, customRules });
+    assert.equal(result.priority, 'Highest');
+  });
 });
 
 describe('scoreAttention — ignore custom rule', () => {
@@ -75,6 +82,13 @@ describe('scoreAttention — ignore custom rule', () => {
     const customRules = [{ match: { label: 'backlog' }, action: 'ignore', reason: 'skip backlog' }];
     const result = scoreAttention(ticket, USER, { now: NOW, customRules });
     assert.notEqual(result.urgency, 'ignore');
+  });
+
+  it('includes priority field when ignore rule fires', () => {
+    const ticket = makeTicket({ priority: 'Low', labels: ['backlog'] });
+    const customRules = [{ match: { label: 'backlog' }, action: 'ignore', reason: 'skip backlog' }];
+    const result = scoreAttention(ticket, USER, { now: NOW, customRules });
+    assert.equal(result.priority, 'Low');
   });
 });
 

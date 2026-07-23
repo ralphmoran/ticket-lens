@@ -54,9 +54,9 @@ export function runInteractiveList(tickets, opts = {}) {
   // Wide (≥150): all columns. Medium (≥100): no detail. Narrow (<100): key+title+status only.
   function getColLayout() {
     const w = process.stdout.columns || 120;
-    if (w >= 150) return { key: 12, title: 45, status: 14, from: 14, when: 8, detail: 35 };
-    if (w >= 100) return { key: 12, title: 35, status: 14, from: 14, when: 8, detail: 0  };
-    return            { key: 10, title: Math.max(20, w - 36), status: 12, from: 0, when: 0, detail: 0 };
+    if (w >= 150) return { key: 12, title: 45, status: 14, priority: 10, from: 14, when: 8, detail: 35 };
+    if (w >= 100) return { key: 12, title: 35, status: 14, priority: 10, from: 14, when: 8, detail: 0  };
+    return            { key: 10, title: Math.max(20, w - 36), status: 12, priority: 0, from: 0, when: 0, detail: 0 };
   }
 
   function buildRow(ticket, index) {
@@ -70,6 +70,10 @@ export function runInteractiveList(tickets, opts = {}) {
     const status = padRight(ticket.status, COL.status);
 
     const parts = [`  ${dot}`, key, title, status];
+
+    if (COL.priority > 0) {
+      parts.push(padRight(ticket.priority || '—', COL.priority));
+    }
 
     if (COL.from > 0) {
       const from = padRight(isNR ? (ticket.lastComment?.author ?? 'Unknown') : '', COL.from);
@@ -110,6 +114,11 @@ export function runInteractiveList(tickets, opts = {}) {
     // Column headers + separator — mirrors buildRow column visibility
     const hdrParts = [`  ${padRight('', 1)}`, padRight('Ticket', COL.key), padRight('Title', COL.title), padRight('Status', COL.status)];
     const sepParts = [`  ${'\u2500'.repeat(1)}`, '\u2500'.repeat(COL.key), '\u2500'.repeat(COL.title), '\u2500'.repeat(COL.status)];
+
+    if (COL.priority > 0) {
+      hdrParts.push(padRight('Priority', COL.priority));
+      sepParts.push('\u2500'.repeat(COL.priority));
+    }
 
     if (COL.from > 0) {
       hdrParts.push(padRight('From', COL.from), padRight('When', COL.when));

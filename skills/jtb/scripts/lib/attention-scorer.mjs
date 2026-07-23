@@ -111,10 +111,10 @@ export function scoreAttention(ticket, currentUser, opts = {}) {
     for (const rule of customRules) {
       const action = applyCustomRule(ticket, rule);
       if (action === 'ignore') {
-        return { ticketKey: ticket.key, summary: ticket.summary, status: ticket.status, urgency: 'ignore', reason: rule.reason ?? 'Ignored by custom rule', lastComment: null };
+        return { ticketKey: ticket.key, summary: ticket.summary, status: ticket.status, priority: ticket.priority ?? null, urgency: 'ignore', reason: rule.reason ?? 'Ignored by custom rule', lastComment: null };
       }
       if (action === 'force-urgent') {
-        return { ticketKey: ticket.key, summary: ticket.summary, status: ticket.status, urgency: 'needs-response', reason: rule.reason ?? 'Flagged by custom rule', lastComment: null };
+        return { ticketKey: ticket.key, summary: ticket.summary, status: ticket.status, priority: ticket.priority ?? null, urgency: 'needs-response', reason: rule.reason ?? 'Flagged by custom rule', lastComment: null };
       }
     }
   }
@@ -135,6 +135,7 @@ export function scoreAttention(ticket, currentUser, opts = {}) {
         ticketKey: ticket.key,
         summary: ticket.summary,
         status: ticket.status,
+        priority: ticket.priority ?? null,
         urgency: 'aging',
         reason: `${lastComment.author} commented ${Math.floor(daysSinceComment)}d ago`,
         lastComment,
@@ -146,6 +147,7 @@ export function scoreAttention(ticket, currentUser, opts = {}) {
       ticketKey: ticket.key,
       summary: ticket.summary,
       status: ticket.status,
+      priority: ticket.priority ?? null,
       urgency: 'needs-response',
       reason: `${lastComment.author} commented`,
       lastComment,
@@ -161,6 +163,7 @@ export function scoreAttention(ticket, currentUser, opts = {}) {
         ticketKey: ticket.key,
         summary: ticket.summary,
         status: ticket.status,
+        priority: ticket.priority ?? null,
         urgency: 'aging',
         reason: `No activity for ${Math.floor(daysSinceUpdate)} days`,
         lastComment,
@@ -182,6 +185,7 @@ export function scoreAttention(ticket, currentUser, opts = {}) {
         ticketKey: ticket.key,
         summary: ticket.summary,
         status: ticket.status,
+        priority: ticket.priority ?? null,
         urgency: 'stale',
         reason: `Stuck in '${ticket.status}' for ${Math.floor(daysInCurrentStatus)}d`,
         lastComment,
@@ -194,6 +198,7 @@ export function scoreAttention(ticket, currentUser, opts = {}) {
     ticketKey: ticket.key,
     summary: ticket.summary,
     status: ticket.status,
+    priority: ticket.priority ?? null,
     urgency: 'clear',
     reason: 'Up to date',
     lastComment,

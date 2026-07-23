@@ -839,7 +839,7 @@ ticketlens triage --push                       # Push snapshot to the Console qu
 ticketlens triage --share                      # Generate a 24h share URL — paste into Slack, no login needed for recipients
 ```
 
-`--push` syncs the scored snapshot to the TicketLens Console after each triage run. The queue page at `/console/queue` shows the latest snapshot for every team profile — no manual refresh needed.
+`--push` syncs the scored snapshot to the TicketLens Console after each triage run. The queue page at `/console/queue` shows the latest snapshot for every team profile — no manual refresh needed. Unlike the terminal view, the pushed snapshot includes every assigned ticket except ones excluded by a local `ignore` custom rule — so a manager's Console-configured priority-based notify/schedule rule can match a ticket you're actively working on, not just stale or awaiting-response ones.
 
 `--share` generates a signed URL valid for 24 hours. Recipients open it in any browser — no account, no install. The asymmetry is the product: you run one command, everyone sees the same snapshot.
 

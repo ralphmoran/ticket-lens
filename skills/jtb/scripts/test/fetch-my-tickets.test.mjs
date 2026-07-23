@@ -855,6 +855,152 @@ describe('triage --push', () => {
 
 });
 
+describe('triage --push — pushable set (includes clear, excludes ignore)', () => {
+  const recentDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  function makeUrgencyMixSearchResult() {
+    return makeSearchResult([
+      makeRawTicket('MIX-1', { updated: recentDate }), // no comments, recently updated -> clear
+      makeRawTicket('MIX-2', {
+        comments: [{
+          author: { displayName: 'Sarah QA', accountId: 'user-456', name: 'sqauser' },
+          body: 'Please review',
+          created: recentDate,
+        }],
+      }), // unanswered comment -> needs-response
+      makeRawTicket('MIX-3', { fields: { labels: ['noisy'] } }), // matched by local ignore rule
+    ]);
+  }
+
+  function setupConfigWithIgnoreRule() {
+    const configDir = mkdtempSync(join(tmpdir(), 'ticketlens-'));
+    writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({
+      profiles: {
+        testprofile: {
+          baseUrl: 'https://test.atlassian.net',
+          auth: 'cloud',
+          email: 'john@example.com',
+          ticketPrefixes: ['MIX'],
+          projectPaths: ['/tmp/my-project'],
+          attentionRules: [{ match: { label: 'noisy' }, action: 'ignore', reason: 'test ignore rule' }],
+        },
+      },
+      default: 'testprofile',
+    }));
+    writeFileSync(join(configDir, 'credentials.json'), JSON.stringify({
+      testprofile: { apiToken: 'test-token' },
+    }));
+    return configDir;
+  }
+
+  const mixFetcher = async (url) => {
+    if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+    if (url.includes('/search')) return { ok: true, json: async () => makeUrgencyMixSearchResult() };
+    return { ok: false, status: 404, statusText: 'Not Found' };
+  };
+
+  it('LOCK: --digest still excludes clear-urgency tickets', async () => {
+    const configDir = setupConfigWithIgnoreRule();
+    const delivered = [];
+    try {
+      await run(['triage', '--digest'], {
+        env: {},
+        fetcher: mixFetcher,
+        configDir,
+        digestDeliverer: async (payload) => { delivered.push(payload); return true; },
+        isLicensed: () => true,
+      });
+      const keys = delivered[0].tickets.map(t => t.ticketKey);
+      assert.ok(!keys.includes('MIX-1'), 'digest must not include clear-urgency ticket');
+      assert.ok(!keys.includes('MIX-3'), 'digest must not include ignore-urgency ticket');
+      assert.ok(keys.includes('MIX-2'), 'digest must include needs-response ticket');
+    } finally {
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('LOCK: --share still excludes clear-urgency tickets', async () => {
+    const configDir = setupConfigWithIgnoreRule();
+    const calls = [];
+    try {
+      await run(['triage', '--share'], {
+        env: {},
+        fetcher: mixFetcher,
+        configDir,
+        shareFn: async (opts) => { calls.push(opts); return { ok: true }; },
+        isLicensed: () => true,
+      });
+      const keys = calls[0].sorted.map(t => t.ticketKey);
+      assert.ok(!keys.includes('MIX-1'), 'share must not include clear-urgency ticket');
+      assert.ok(!keys.includes('MIX-3'), 'share must not include ignore-urgency ticket');
+      assert.ok(keys.includes('MIX-2'), 'share must include needs-response ticket');
+    } finally {
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('LOCK: --export still excludes clear-urgency tickets', async () => {
+    const configDir = setupConfigWithIgnoreRule();
+    let exportedTickets = null;
+    try {
+      await run(['triage', '--export=json'], {
+        env: {},
+        fetcher: mixFetcher,
+        configDir,
+        exporter: ({ tickets }) => { exportedTickets = tickets; return '/tmp/mix.json'; },
+        isLicensed: () => true,
+      });
+      const keys = exportedTickets.map(t => t.ticketKey);
+      assert.ok(!keys.includes('MIX-1'), 'export must not include clear-urgency ticket');
+      assert.ok(!keys.includes('MIX-3'), 'export must not include ignore-urgency ticket');
+      assert.ok(keys.includes('MIX-2'), 'export must include needs-response ticket');
+    } finally {
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('LOCK: ignore-urgency tickets are never pushed', async () => {
+    const configDir = setupConfigWithIgnoreRule();
+    const calls = [];
+    try {
+      await run(['triage', '--push'], {
+        env: {},
+        fetcher: mixFetcher,
+        configDir,
+        cliToken: 'tl_test_mix',
+        pushFn: async (opts) => { calls.push(opts); return { ok: true }; },
+        scanFn: () => null,
+        isLicensed: () => true,
+      });
+      const keys = calls[0].sorted.map(t => t.ticketKey);
+      assert.ok(!keys.includes('MIX-3'), 'ignore-urgency ticket must never be pushed');
+    } finally {
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('RED: --push includes clear-urgency tickets so server-side rules can match them', async () => {
+    const configDir = setupConfigWithIgnoreRule();
+    const calls = [];
+    try {
+      await run(['triage', '--push'], {
+        env: {},
+        fetcher: mixFetcher,
+        configDir,
+        cliToken: 'tl_test_mix',
+        pushFn: async (opts) => { calls.push(opts); return { ok: true }; },
+        scanFn: () => null,
+        isLicensed: () => true,
+      });
+      const keys = calls[0].sorted.map(t => t.ticketKey);
+      assert.ok(keys.includes('MIX-1'), 'push must include clear-urgency ticket so notify/schedule rules can match it');
+      assert.ok(keys.includes('MIX-2'), 'push must still include needs-response ticket');
+    } finally {
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Lock: early-exit paths do not emit a stats footer
 // ---------------------------------------------------------------------------

@@ -151,12 +151,12 @@ export function assembleTriageSummary(scoredTickets, opts = {}) {
       const ago = t.lastComment ? timeAgo(t.lastComment.created) : '';
       const commenter = t.lastComment?.author ?? 'Unknown';
       const snippet = t.lastComment?.body ? truncate(t.lastComment.body, 60) : '';
-      return [String(i + 1), t.ticketKey, truncate(t.summary, 50), t.status, commenter, ago, snippet];
+      return [String(i + 1), t.ticketKey, truncate(t.summary, 50), t.status, t.priority || '—', commenter, ago, snippet];
     });
     const table = formatTable(
-      ['#', 'Ticket', 'Summary', 'Status', 'From', 'When', 'Comment'],
+      ['#', 'Ticket', 'Summary', 'Status', 'Priority', 'From', 'When', 'Comment'],
       tableRows,
-      { maxWidths: { 2: 50, 6: 60 } },
+      { maxWidths: { 2: 50, 7: 60 } },
     );
     sections.push(`Needs Response (${needsResponse.length})\n\n${table}`);
   }
@@ -166,10 +166,10 @@ export function assembleTriageSummary(scoredTickets, opts = {}) {
     const tableRows = aging.map((t, i) => {
       allKeys.push(t.ticketKey);
       const days = t.daysSinceUpdate ?? '?';
-      return [String(agingOffset + i + 1), t.ticketKey, truncate(t.summary, 50), t.status, `${days}d`];
+      return [String(agingOffset + i + 1), t.ticketKey, truncate(t.summary, 50), t.status, t.priority || '—', `${days}d`];
     });
     const table = formatTable(
-      ['#', 'Ticket', 'Summary', 'Status', 'Idle'],
+      ['#', 'Ticket', 'Summary', 'Status', 'Priority', 'Idle'],
       tableRows,
       { maxWidths: { 2: 50 } },
     );
@@ -181,10 +181,10 @@ export function assembleTriageSummary(scoredTickets, opts = {}) {
     const tableRows = stale.map((t, i) => {
       allKeys.push(t.ticketKey);
       const days = t.daysInCurrentStatus ?? '?';
-      return [String(staleOffset + i + 1), t.ticketKey, truncate(t.summary, 50), t.status, `${days}d`];
+      return [String(staleOffset + i + 1), t.ticketKey, truncate(t.summary, 50), t.status, t.priority || '—', `${days}d`];
     });
     const table = formatTable(
-      ['#', 'Ticket', 'Summary', 'Status', 'Stuck'],
+      ['#', 'Ticket', 'Summary', 'Status', 'Priority', 'Stuck'],
       tableRows,
       { maxWidths: { 2: 50 } },
     );
