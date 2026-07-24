@@ -83,7 +83,12 @@ export async function runLogin({
     return;
   }
 
-  saveCliTokenFn(token);
+  let tier;
+  try {
+    tier = (await res.json())?.tier;
+  } catch { /* tier is best-effort — token is still valid */ }
+
+  saveCliTokenFn(token, undefined, tier);
   stream.write(`\x1b[A\r\x1b[2K  ${s.green('✔')} Logged in.\n`);
 
   // Flow 1: pull team Jira config for Pro/Team members (silently skipped for Free)

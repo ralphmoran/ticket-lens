@@ -5,7 +5,7 @@
  * Server wins on all non-credential fields (shape, prefixes, URLs, etc.).
  */
 
-import { readCliToken } from './cli-auth.mjs';
+import { readCliToken, saveCliTokenTier } from './cli-auth.mjs';
 import {
   loadProfiles,
   loadCredentials,
@@ -87,6 +87,8 @@ export async function syncProfiles({
 
   let json;
   try { json = await res.json(); } catch { return { error: 'invalid-json' }; }
+
+  if (typeof json?.tier === 'string') saveCliTokenTier(json.tier, configDir);
 
   const remoteProfiles = Array.isArray(json?.profiles) ? json.profiles : [];
   const localConfig  = loadProfiles(configDir) || { profiles: {} };

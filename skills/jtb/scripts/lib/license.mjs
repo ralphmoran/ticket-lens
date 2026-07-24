@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { createStyler } from './ansi.mjs';
 import { siteBase } from './api-utils.mjs';
+import { readCliTokenTier } from './cli-auth.mjs';
 
 // Mixed into the HMAC key so that knowing the license key alone is not sufficient
 // to forge a valid signature — an attacker also needs this constant from the source.
@@ -100,6 +101,15 @@ export function isLicensed(tier, configDir = DEFAULT_CONFIG_DIR) {
   if (required === 0) return true;
   if (process.env.TICKETLENS_SKIP_LICENSE === 'true') return true;
 
+  if (checkOwnLicense(required, configDir)) return true;
+
+  // Team-seat entitlement, server-asserted and synced via login/`tl sync` —
+  // covers invited team members who never activated a personal TL- key.
+  const syncedTier = LICENSE_TIERS[readCliTokenTier(configDir)] ?? 0;
+  return syncedTier >= required;
+}
+
+function checkOwnLicense(required, configDir) {
   const license = readLicense(configDir);
   if (!license) return false;
 
