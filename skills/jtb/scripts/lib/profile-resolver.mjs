@@ -233,6 +233,7 @@ export function resolveConnection(ticketKey, opts = {}) {
       ticketPrefixes: profile.ticketPrefixes || null,
       attentionRules: profile.attentionRules ?? null,
       staleRule: profile.staleRule ?? null,
+      sortBy: profile.sortBy ?? null,
       allowPrivateIp: profile.allowPrivateIp || false,
       source: 'profile',
       profileName: profile.name,

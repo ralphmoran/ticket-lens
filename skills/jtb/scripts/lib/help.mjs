@@ -84,6 +84,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     // "--assignee=NAME"=15, "--sprint=NAME"=13, "--static"=8, "--plain"=7  →  target=19
     `    ${s.brand('--profile')}=${s.dim('NAME')}     Use a specific Jira profile`,
     `    ${s.brand('--stale')}=${s.dim('N')}          Aging threshold in days ${s.dim('(default: 5)')}`,
+    `    ${s.brand('--sort')}=${s.dim('ORDER')}       Sort order ${s.dim('(priority|urgency, default: urgency)')}`,
     `    ${s.brand('--status')}=${s.dim('X,Y')}       Override statuses to scan`,
     `    ${s.brand('--assignee')}=${s.dim('NAME')}    Triage another dev's tickets  ${s.dim('[Team]')}`,
     `    ${s.brand('--sprint')}=${s.dim('NAME')}      Filter by sprint name  ${s.dim('[Team]')}`,
@@ -107,6 +108,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('$')} ticketlens get PROJ-123 --depth=0 --profile=myteam`,
     `    ${s.dim('$')} ticketlens triage`,
     `    ${s.dim('$')} ticketlens triage --profile=acme --stale=3`,
+    `    ${s.dim('$')} ticketlens triage --sort=priority`,
     `    ${s.dim('$')} ticketlens triage --static`,
     '',
     `  ${s.bold('CONFIGURATION')}`,
@@ -625,6 +627,7 @@ export function printTriageHelp({ stream = process.stdout } = {}) {
     // "--assignee=NAME"=15, "--sprint=NAME"=13, "--static"=8, "--plain"=7, "-h, --help"=10  →  target=19
     `    ${s.brand('--profile')}=${s.dim('NAME')}     Use a specific Jira profile`,
     `    ${s.brand('--stale')}=${s.dim('N')}          Aging threshold in days ${s.dim('(default: 5)')}`,
+    `    ${s.brand('--sort')}=${s.dim('ORDER')}       Sort order ${s.dim('(priority|urgency, default: urgency)')}`,
     `    ${s.brand('--status')}=${s.dim('X,Y')}       Override statuses to scan`,
     `    ${s.brand('--assignee')}=${s.dim('NAME')}    Triage another dev's tickets  ${s.dim('[Team]')}`,
     `    ${s.brand('--sprint')}=${s.dim('NAME')}      Filter by sprint name  ${s.dim('[Team]')}`,
@@ -645,6 +648,7 @@ export function printTriageHelp({ stream = process.stdout } = {}) {
     '',
     `    ${s.dim('$')} ticketlens triage`,
     `    ${s.dim('$')} ticketlens triage --profile=acme`,
+    `    ${s.dim('$')} ticketlens triage --sort=priority`,
     `    ${s.dim('$')} ticketlens triage --stale=3 --status="Code Review,QA Testing"`,
     `    ${s.dim('$')} ticketlens triage --assignee="Jane Dev" --sprint="Sprint 12"`,
     `    ${s.dim('$')} ticketlens triage --project=MYPROJ --priority=High`,

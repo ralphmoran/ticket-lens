@@ -74,7 +74,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     args,
     ['--help', '-h', '--static', '--plain', '--styled', '--profile=', '--stale=', '--status=',
      '--assignee=', '--sprint=', '--export=', '--digest', '--push', '--share', '--all', '--save=',
-     '--project=', '--label=', '--priority='],
+     '--project=', '--label=', '--priority=', '--sort='],
     { hints: ['--depth=', '--no-attachments', '--no-cache'] }
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
@@ -85,6 +85,8 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const staleArg = args.find(a => a.startsWith('--stale='));
   const staleDays = staleArg ? parseInt(staleArg.split('=')[1], 10) : 5;
+
+  const sortArg = args.find(a => a.startsWith('--sort='));
 
   const statusArg   = args.find(a => a.startsWith('--status='));
   const assigneeArg = args.find(a => a.startsWith('--assignee='));
@@ -426,7 +428,8 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const scored = tickets.map(t => scoreAttention(t, effectiveUser, { staleDays, customRules: conn.attentionRules, staleRule: conn.staleRule ?? null }));
   const actionable = scored.filter(s => s.urgency !== 'clear' && s.urgency !== 'ignore');
-  const sorted = sortByUrgency(actionable);
+  const sortBy = sortArg ? sortArg.split('=')[1] : conn.sortBy;
+  const sorted = sortByUrgency(actionable, { sortBy });
   const rawTicketMap = new Map(tickets.map(t => [t.key, t]));
 
   // Always save a daily snapshot for history tracking (non-fatal)

@@ -156,6 +156,7 @@ Three system templates ship out of the box:
 ticketlens triage                               # Scan assigned tickets — interactive
 ticketlens triage --profile=acme               # Explicit profile
 ticketlens triage --stale=3                    # Aging threshold: 3 days (default: 5)
+ticketlens triage --sort=priority              # Sort by priority first, then urgency (default: urgency)
 ticketlens triage --status="Code Review,QA"    # Override statuses to scan
 ticketlens triage --assignee="Jane Dev"        # Another dev's tickets [Team]
 ticketlens triage --sprint="Sprint 12"         # Filter by sprint [Team]
@@ -179,6 +180,8 @@ ticketlens triage --static                     # Static table, no interactive mo
 | `●` yellow | Aging | Last comment or update is N+ days old |
 
 `--stale=N` controls both categories. Unanswered comments older than N days downgrade from "needs response" to "aging" automatically.
+
+`--sort=priority|urgency` controls display order for this run only. `priority` groups tickets by Jira priority (Highest → Lowest, unknown last) with urgency as the tiebreaker; `urgency` is today's default ordering. Set a permanent default by adding `"sortBy": "priority"` to a profile in `~/.ticketlens/profiles.json` — the flag overrides it for a single run, same relationship `--stale=N` has to `staleDays`. This is a personal, per-profile preference — it does not sync with the Console's own sort-order setting on the Account page, which only affects the Console queue view.
 
 Interactive mode: `↑/↓` navigate, `Enter` open in browser, `p` switch profile, `q/Esc` exit. Columns adapt to terminal width.
 
@@ -600,6 +603,7 @@ ticketlens triage                             # Scan assigned tickets — intera
 ticketlens triage --profile=acme             # Explicit profile
 ticketlens triage --stale=3                  # Needs-response window: 3 days (default: 5)
 ticketlens triage --stale=10                 # More lenient — only flag very stale tickets
+ticketlens triage --sort=priority            # Sort by priority first, then urgency (default: urgency)
 ticketlens triage --status="Code Review,QA Testing"  # Scan these statuses only
 ticketlens triage --static                   # Static table output (no interactive mode)
 ticketlens triage --plain                    # Plain markdown — pipe to LLM or file

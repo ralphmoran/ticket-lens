@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreAttention, isFromCurrentUser, isBot, isBotCommitByUser, findLastEffectiveComment, sortByUrgency, URGENCY_ORDER } from '../lib/attention-scorer.mjs';
+import { scoreAttention, isFromCurrentUser, isBot, isBotCommitByUser, findLastEffectiveComment, sortByUrgency, URGENCY_ORDER, PRIORITY_ORDER } from '../lib/attention-scorer.mjs';
 
 const NOW = new Date('2026-03-06T12:00:00Z');
 const currentUser = { accountId: 'user-123', name: 'jdev', displayName: 'John Dev' };
@@ -298,6 +298,62 @@ describe('sortByUrgency', () => {
     const sorted = sortByUrgency(scores);
     assert.equal(sorted[0].lastComment.created, '2026-03-05T10:00:00Z');
     assert.equal(sorted[1].lastComment.created, '2026-03-01T10:00:00Z');
+  });
+
+  it('LOCK: no opts, empty opts, and sortBy=urgency all produce identical output to today', () => {
+    const scores = [
+      { urgency: 'clear', priority: 'Highest', lastComment: { created: '2026-03-06T10:00:00Z' } },
+      { urgency: 'aging', priority: 'Low', lastComment: { created: '2026-02-28T10:00:00Z' } },
+      { urgency: 'needs-response', priority: 'Medium', lastComment: { created: '2026-03-05T10:00:00Z' } },
+    ];
+    const noOpts = sortByUrgency(scores);
+    const emptyOpts = sortByUrgency(scores, {});
+    const explicitUrgency = sortByUrgency(scores, { sortBy: 'urgency' });
+    assert.deepEqual(noOpts.map(s => s.urgency), ['needs-response', 'aging', 'clear']);
+    assert.deepEqual(emptyOpts.map(s => s.urgency), noOpts.map(s => s.urgency));
+    assert.deepEqual(explicitUrgency.map(s => s.urgency), noOpts.map(s => s.urgency));
+  });
+
+  it('sortBy priority ranks Highest before High before Medium regardless of urgency', () => {
+    const scores = [
+      { urgency: 'clear', priority: 'Medium', lastComment: null },
+      { urgency: 'clear', priority: 'Highest', lastComment: null },
+      { urgency: 'clear', priority: 'High', lastComment: null },
+    ];
+    const sorted = sortByUrgency(scores, { sortBy: 'priority' });
+    assert.deepEqual(sorted.map(s => s.priority), ['Highest', 'High', 'Medium']);
+  });
+
+  it('sortBy priority uses urgency as tiebreaker within the same priority', () => {
+    const scores = [
+      { urgency: 'clear', priority: 'High', lastComment: null },
+      { urgency: 'needs-response', priority: 'High', lastComment: { created: '2026-03-05T10:00:00Z' } },
+    ];
+    const sorted = sortByUrgency(scores, { sortBy: 'priority' });
+    assert.equal(sorted[0].urgency, 'needs-response');
+    assert.equal(sorted[1].urgency, 'clear');
+  });
+
+  it('sortBy priority sorts missing/unknown priority last, never throws', () => {
+    const scores = [
+      { urgency: 'clear', priority: null, lastComment: null },
+      { urgency: 'clear', priority: 'Low', lastComment: null },
+      { urgency: 'clear', priority: 'Some Custom Priority', lastComment: null },
+    ];
+    let sorted;
+    assert.doesNotThrow(() => { sorted = sortByUrgency(scores, { sortBy: 'priority' }); });
+    assert.equal(sorted[0].priority, 'Low');
+  });
+});
+
+describe('PRIORITY_ORDER', () => {
+  it('exports PRIORITY_ORDER as a plain object', () => {
+    assert.strictEqual(typeof PRIORITY_ORDER, 'object');
+  });
+
+  it('classifies Highest/Urgent/Blocker before High before everything else', () => {
+    assert.ok(PRIORITY_ORDER.highest < PRIORITY_ORDER.high);
+    assert.ok(PRIORITY_ORDER.high < PRIORITY_ORDER.medium);
   });
 });
 

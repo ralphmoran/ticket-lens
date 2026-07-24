@@ -1001,6 +1001,102 @@ describe('triage --push — pushable set (includes clear, excludes ignore)', () 
   });
 });
 
+describe('triage --sort= / profile sortBy — personal display order', () => {
+  const oldDate = new Date('2026-01-01T00:00:00Z').toISOString();
+
+  function makeAgingSearchResult() {
+    // Both aging (no comments, both old), no lastComment date to tiebreak on —
+    // insertion order is preserved by default (Medium first, as listed).
+    return makeSearchResult([
+      makeRawTicket('SORT-MED', { updated: oldDate, fields: { priority: { name: 'Medium' } } }),
+      makeRawTicket('SORT-HIGH', { updated: oldDate, fields: { priority: { name: 'Highest' } } }),
+    ]);
+  }
+
+  function setupConfig(overrides = {}) {
+    const configDir = mkdtempSync(join(tmpdir(), 'ticketlens-'));
+    writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({
+      profiles: {
+        testprofile: {
+          baseUrl: 'https://test.atlassian.net',
+          auth: 'cloud',
+          email: 'john@example.com',
+          ticketPrefixes: ['SORT'],
+          projectPaths: ['/tmp/my-project'],
+          ...overrides,
+        },
+      },
+      default: 'testprofile',
+    }));
+    writeFileSync(join(configDir, 'credentials.json'), JSON.stringify({
+      testprofile: { apiToken: 'test-token' },
+    }));
+    return configDir;
+  }
+
+  const sortFetcher = async (url) => {
+    if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
+    if (url.includes('/search')) return { ok: true, json: async () => makeAgingSearchResult() };
+    return { ok: false, status: 404, statusText: 'Not Found' };
+  };
+
+  it('default (no sortBy, no --sort=) preserves current urgency-only order', async () => {
+    const configDir = setupConfig();
+    const out = captureOutput();
+    try {
+      await run(['triage', '--plain', '--static'], { env: {}, fetcher: sortFetcher, configDir });
+      const medPos = out.stdout.indexOf('SORT-MED');
+      const highPos = out.stdout.indexOf('SORT-HIGH');
+      assert.ok(medPos !== -1 && highPos !== -1 && medPos < highPos, 'insertion order preserved when sortBy unset');
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('RED: profile sortBy=priority reorders terminal output by priority', async () => {
+    const configDir = setupConfig({ sortBy: 'priority' });
+    const out = captureOutput();
+    try {
+      await run(['triage', '--plain', '--static'], { env: {}, fetcher: sortFetcher, configDir });
+      const medPos = out.stdout.indexOf('SORT-MED');
+      const highPos = out.stdout.indexOf('SORT-HIGH');
+      assert.ok(highPos !== -1 && medPos !== -1 && highPos < medPos, 'Highest-priority ticket must appear before Medium when sortBy=priority');
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('RED: --sort=priority flag overrides profile default', async () => {
+    const configDir = setupConfig(); // no sortBy in profile
+    const out = captureOutput();
+    try {
+      await run(['triage', '--plain', '--static', '--sort=priority'], { env: {}, fetcher: sortFetcher, configDir });
+      const medPos = out.stdout.indexOf('SORT-MED');
+      const highPos = out.stdout.indexOf('SORT-HIGH');
+      assert.ok(highPos !== -1 && medPos !== -1 && highPos < medPos, '--sort=priority must override the (absent) profile default');
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('--sort=urgency flag overrides a profile default of sortBy=priority', async () => {
+    const configDir = setupConfig({ sortBy: 'priority' });
+    const out = captureOutput();
+    try {
+      await run(['triage', '--plain', '--static', '--sort=urgency'], { env: {}, fetcher: sortFetcher, configDir });
+      const medPos = out.stdout.indexOf('SORT-MED');
+      const highPos = out.stdout.indexOf('SORT-HIGH');
+      assert.ok(medPos !== -1 && highPos !== -1 && medPos < highPos, '--sort=urgency must override a profile default of sortBy=priority');
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Lock: early-exit paths do not emit a stats footer
 // ---------------------------------------------------------------------------

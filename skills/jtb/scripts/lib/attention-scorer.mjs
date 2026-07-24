@@ -207,8 +207,24 @@ export function scoreAttention(ticket, currentUser, opts = {}) {
 
 export const URGENCY_ORDER = { 'needs-response': 0, 'aging': 1, 'stale': 2, 'clear': 3 };
 
-export function sortByUrgency(scores) {
+// Standard Jira priority names, case-insensitive. Synonyms for the top tier (some
+// instances/plugins use "Urgent" or "Blocker" instead of "Highest") share rank 0.
+// Anything not in this map (custom priority scheme, or missing) sorts last.
+export const PRIORITY_ORDER = { highest: 0, urgent: 0, blocker: 0, high: 1, medium: 2, low: 3, lowest: 4 };
+
+function priorityRank(priority) {
+  if (!priority) return Infinity;
+  const rank = PRIORITY_ORDER[priority.toLowerCase()];
+  return rank === undefined ? Infinity : rank;
+}
+
+export function sortByUrgency(scores, opts = {}) {
+  const { sortBy } = opts;
   return [...scores].sort((a, b) => {
+    if (sortBy === 'priority') {
+      const priorityDiff = priorityRank(a.priority) - priorityRank(b.priority);
+      if (priorityDiff !== 0) return priorityDiff;
+    }
     const orderDiff = URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency];
     if (orderDiff !== 0) return orderDiff;
     // Within same urgency, sort by most recent activity (lastComment date or ticket updated)
