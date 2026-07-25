@@ -210,6 +210,8 @@ Do not capture: routine/obvious information, anything already fully covered by t
 
 Capture **at the moment you confirm the insight**, not deferred to the end of the session — don't ask the user first, just do it. It requires a Pro license; on a Free account it will no-op with an upgrade hint on stderr, which is fine to ignore. It never blocks or fails the session.
 
+Immediately before dispatching the call, say one line in your response: `🔖 Recall-flag: <one-line reason>`. This is a fixed marker some harness setups scan for to confirm captures are actually happening — always emit it right when you decide to capture, even if you go on to call `note add` in the same breath.
+
 ### How to dispatch the call
 
 If your environment lets you dispatch a tool call without waiting for its result — a background task, an async subagent, a fire-and-forget job — use that mechanism for this call, so it doesn't block your primary work while the note syncs to the team. If you have no such mechanism, call it synchronously; it's fast, and it never blocks or fails your session either way, so there's no harm in the fallback.
