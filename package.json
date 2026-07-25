@@ -11,6 +11,7 @@
     "bin/",
     "scripts/",
     "skills/jtb/SKILL.md",
+    "skills/jtb/hooks/",
     "skills/jtb/scripts/lib/",
     "skills/jtb/scripts/fetch-ticket.mjs",
     "skills/jtb/scripts/fetch-my-tickets.mjs"

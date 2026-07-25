@@ -62,6 +62,18 @@ if (updated === 0 && skipped === TARGETS.length) {
   console.log('    To install: ticketlens update-skill');
 }
 
+// Recall nudge hooks — best-effort, never breaks the install.
+try {
+  const { setupRecallHooks } = await import('../skills/jtb/scripts/lib/hooks-setup.mjs');
+  for (const r of setupRecallHooks()) {
+    if (r.status === 'installed') console.log(`  ✔ Recall nudge hooks installed in ${r.label}`);
+    else if (r.status === 'error') console.warn(`  ⚠ Recall nudge hooks: ${r.label} — ${r.reason}`);
+    // 'unchanged' and 'skipped' are silent — nothing changed, nothing to report.
+  }
+} catch {
+  // Silent on failure — never breaks the install.
+}
+
 // First-run banner + tl-alias status. Best-effort: npm >=7 hides this output
 // unless the user passes --foreground-scripts, so the guaranteed channel is
 // the first bare `tl`/`ticketlens` run added in a later phase. Never throws —
