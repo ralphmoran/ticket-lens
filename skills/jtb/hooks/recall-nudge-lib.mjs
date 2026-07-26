@@ -44,6 +44,17 @@ export function writeState(sessionId, state) {
  * Reads the transcript (JSONL) and returns simple booleans about what
  * happened this session. Best-effort: any read/parse failure returns all
  * false rather than throwing — a broken transcript must never block Claude.
+ *
+ * Deliberately narrow about WHERE each pattern is allowed to match — jtb's
+ * own SKILL.md instructions contain the literal strings "🔖 Recall-flag:"
+ * and "ticketlens note add" as examples. Matching against the whole raw
+ * entry (as an earlier version of this function did) means loading the
+ * skill at all permanently false-positives both checks: sawRecallFlag gets
+ * stuck true (silently disabling the mid-session nudge, since it thinks
+ * Claude just flagged something every time) and sawNoteAdd gets stuck true
+ * (silently disabling the Stop-hook check, since it thinks a note was
+ * already added). Only count a real assistant-authored text block for the
+ * flag, and only a real executed Bash command for note-add.
  */
 export function scanTranscript(transcriptPath) {
   const result = { sawTicketKey: false, sawRecallFlag: false, sawNoteAdd: false };
@@ -55,17 +66,30 @@ export function scanTranscript(transcriptPath) {
   }
 
   for (const line of lines) {
-    let text;
+    let entry;
     try {
-      const entry = JSON.parse(line);
-      // Transcript entries vary by role/type; flatten whatever text exists.
-      text = JSON.stringify(entry);
+      entry = JSON.parse(line);
     } catch {
       continue;
     }
-    if (TICKET_KEY_RE.test(text)) result.sawTicketKey = true;
-    if (RECALL_FLAG_RE.test(text)) result.sawRecallFlag = true;
-    if (NOTE_ADD_RE.test(text)) result.sawNoteAdd = true;
+
+    // Ticket-key detection stays broad (whole entry, any role) — it's only
+    // the weaker "did ticket work happen at all" signal, and a rare false
+    // positive here just means an extra harmless once-per-session check.
+    if (TICKET_KEY_RE.test(JSON.stringify(entry))) result.sawTicketKey = true;
+
+    if (entry.type !== 'assistant') continue;
+    const blocks = entry.message?.content;
+    if (!Array.isArray(blocks)) continue;
+
+    for (const block of blocks) {
+      if (block.type === 'text' && RECALL_FLAG_RE.test(block.text ?? '')) {
+        result.sawRecallFlag = true;
+      }
+      if (block.type === 'tool_use' && block.name === 'Bash' && NOTE_ADD_RE.test(block.input?.command ?? '')) {
+        result.sawNoteAdd = true;
+      }
+    }
   }
 
   return result;
