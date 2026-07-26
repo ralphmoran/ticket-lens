@@ -214,7 +214,7 @@ Immediately before dispatching the call, say one line in your response: `🔖 Re
 
 ### How to dispatch the call
 
-If your environment lets you dispatch a tool call without waiting for its result — a background task, an async subagent, a fire-and-forget job — use that mechanism for this call, so it doesn't block your primary work while the note syncs to the team. If you have no such mechanism, call it synchronously; it's fast, and it never blocks or fails your session either way, so there's no harm in the fallback.
+If your environment lets you dispatch a tool call without waiting for its result — a background task, an async subagent, a fire-and-forget job — try it **once**. If it errors for any reason, don't retry the background path — fall back to calling it synchronously immediately. It's fast and never blocks or fails your session either way, so the synchronous fallback costs nothing; repeatedly retrying a broken background mechanism only adds visible noise for no benefit.
 
 ```bash
 echo "The body text of the note, one or more paragraphs." | \
