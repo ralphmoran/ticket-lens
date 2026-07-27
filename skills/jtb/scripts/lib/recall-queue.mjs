@@ -141,6 +141,7 @@ export async function flushQueue({
   isRetryableFailureFn = isRetryableFailure,
   warn = () => {},
   now = () => Date.now(),
+  timeoutMs,
 } = {}) {
   const nowMs = now();
   const currentHash = hashToken(cliToken);
@@ -154,7 +155,9 @@ export async function flushQueue({
       continue;
     }
 
-    const result = await pushNoteFn(entry.notePayload, { cliToken, configDir, warn });
+    const result = await pushNoteFn(entry.notePayload, {
+      cliToken, configDir, warn, ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    });
     if (result.ok) {
       flushed++;
       continue;
@@ -191,36 +194,52 @@ function writeLastFlushAttemptAt(configDir, isoTimestamp) {
 }
 
 /**
- * Time-gated background flush, attempted from the CLI's existing
- * Recall-touching entry points (note add's push, recall's pull) rather than
- * on every invocation — a no-op unless the queue is non-empty AND at least
- * AUTO_FLUSH_INTERVAL_MS has passed since the last attempt. The attempt
- * timestamp is recorded even on failure, so a down backend can't be hammered
- * once per command within the window.
+ * Time-gated background flush. Called from every command's entry point
+ * (bin/ticketlens.mjs), not just Recall-specific ones — a note added during
+ * a burst of failures (e.g. a debugging session) would otherwise sit queued
+ * until the user happens to run `note add`/`recall` again, or runs
+ * `recall sync` by hand. A no-op unless the queue is non-empty AND at least
+ * AUTO_FLUSH_INTERVAL_MS has passed since the last attempt — the interval is
+ * a single global cooldown, not per-entry, so a burst of failures in one
+ * short window still only gets one automatic retry pass, by design: this
+ * runs on every command now, so the next opportunity is never far away, and
+ * the cooldown exists specifically to stop a down backend from being hit by
+ * every single command in the meantime. The attempt timestamp is recorded
+ * even on failure, so a down backend can't be hammered once per command
+ * within the window.
  *
  * @param {object}   opts
  * @param {string}   opts.cliToken
  * @param {string}   [opts.configDir]
  * @param {() => number} [opts.now]
  * @param {Function} [opts.flushQueueFn]
+ * @param {number}   [opts.timeoutMs] - per-request timeout, passed through to
+ *   pushNote. Callers running this unconditionally on every command (as
+ *   opposed to an explicit `recall sync`) should pass something short — this
+ *   must feel instant, not stall an unrelated command behind a slow network.
+ * @returns {Promise<{flushed: number, remaining: number}|null>} null if skipped
+ *   (empty queue or still cooling down) — distinguishes "nothing to report"
+ *   from "attempted, flushed 0" for a caller that wants to print a summary.
  */
 export async function maybeAutoFlush({
   cliToken,
   configDir = DEFAULT_CONFIG_DIR,
   now = () => Date.now(),
   flushQueueFn = flushQueue,
+  timeoutMs,
 } = {}) {
-  if (readQueue(configDir).length === 0) return;
+  if (readQueue(configDir).length === 0) return null;
 
   const lastAttemptAt = readLastFlushAttemptAt(configDir);
   const nowMs = now();
-  if (lastAttemptAt && nowMs - new Date(lastAttemptAt).getTime() < AUTO_FLUSH_INTERVAL_MS) return;
+  if (lastAttemptAt && nowMs - new Date(lastAttemptAt).getTime() < AUTO_FLUSH_INTERVAL_MS) return null;
 
   try {
-    await flushQueueFn({ cliToken, configDir, now });
+    return await flushQueueFn({ cliToken, configDir, now, ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
   } catch {
     // A down backend or a thrown network error must never crash the command
     // that opportunistically triggered this background attempt.
+    return null;
   } finally {
     writeLastFlushAttemptAt(configDir, new Date(nowMs).toISOString());
   }

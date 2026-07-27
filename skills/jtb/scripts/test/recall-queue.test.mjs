@@ -192,6 +192,28 @@ describe('flushQueue', () => {
     assert.notEqual(updated.failedAt, original.failedAt);
   });
 
+  it('passes a caller-supplied timeoutMs through to pushNoteFn', async () => {
+    const configDir = freshConfigDir();
+    enqueueNote(samplePayload, { configDir, cliToken: 'tl_key' });
+    let captured;
+    await flushQueue({
+      configDir, cliToken: 'tl_key', timeoutMs: 4000,
+      pushNoteFn: async (payload, opts) => { captured = opts.timeoutMs; return { ok: true, status: 200 }; },
+    });
+    assert.equal(captured, 4000);
+  });
+
+  it('omitting timeoutMs leaves it undefined on the pushNoteFn call — pushNote falls back to its own default', async () => {
+    const configDir = freshConfigDir();
+    enqueueNote(samplePayload, { configDir, cliToken: 'tl_key' });
+    let captured = 'unset';
+    await flushQueue({
+      configDir, cliToken: 'tl_key',
+      pushNoteFn: async (payload, opts) => { captured = opts.timeoutMs; return { ok: true, status: 200 }; },
+    });
+    assert.equal(captured, undefined);
+  });
+
   it('skips (leaves untouched, does not attempt or evict) an entry queued under a different account', async () => {
     const configDir = freshConfigDir();
     enqueueNote(samplePayload, { configDir, cliToken: 'old_account_token' });
@@ -305,5 +327,55 @@ describe('maybeAutoFlush', () => {
     await maybeAutoFlush({ configDir, cliToken: 'tl_key', flushQueueFn: async () => { throw new Error('network down'); } }).catch(() => {});
     const state = JSON.parse(fs.readFileSync(path.join(configDir, 'recall-flush-state.json'), 'utf8'));
     assert.ok(state.lastAttemptAt);
+  });
+
+  it('returns null (not the flush result) when skipped for an empty queue — lets a caller distinguish "nothing to report" from "attempted, flushed 0"', async () => {
+    const configDir = freshConfigDir();
+    const result = await maybeAutoFlush({ configDir, cliToken: 'tl_key', flushQueueFn: async () => ({ flushed: 0, remaining: 0 }) });
+    assert.equal(result, null);
+  });
+
+  it('returns null when skipped for the cooldown window', async () => {
+    const configDir = freshConfigDir();
+    enqueueNote(samplePayload, { configDir, cliToken: 'tl_key' });
+    fs.writeFileSync(path.join(configDir, 'recall-flush-state.json'), JSON.stringify({ lastAttemptAt: new Date().toISOString() }));
+    const result = await maybeAutoFlush({ configDir, cliToken: 'tl_key', flushQueueFn: async () => ({ flushed: 0, remaining: 1 }) });
+    assert.equal(result, null);
+  });
+
+  it('returns the real flush result when it actually attempts', async () => {
+    const configDir = freshConfigDir();
+    enqueueNote(samplePayload, { configDir, cliToken: 'tl_key' });
+    const result = await maybeAutoFlush({ configDir, cliToken: 'tl_key', flushQueueFn: async () => ({ flushed: 1, remaining: 0 }) });
+    assert.deepEqual(result, { flushed: 1, remaining: 0 });
+  });
+
+  it('returns null (not throws) when the flush attempt itself throws', async () => {
+    const configDir = freshConfigDir();
+    enqueueNote(samplePayload, { configDir, cliToken: 'tl_key' });
+    const result = await maybeAutoFlush({ configDir, cliToken: 'tl_key', flushQueueFn: async () => { throw new Error('network down'); } });
+    assert.equal(result, null);
+  });
+
+  it('passes a caller-supplied timeoutMs through to flushQueueFn', async () => {
+    const configDir = freshConfigDir();
+    enqueueNote(samplePayload, { configDir, cliToken: 'tl_key' });
+    let captured;
+    await maybeAutoFlush({
+      configDir, cliToken: 'tl_key', timeoutMs: 4000,
+      flushQueueFn: async (opts) => { captured = opts.timeoutMs; return { flushed: 1, remaining: 0 }; },
+    });
+    assert.equal(captured, 4000);
+  });
+
+  it('omitting timeoutMs leaves it undefined on the flushQueueFn call — flushQueue/pushNote fall back to their own default', async () => {
+    const configDir = freshConfigDir();
+    enqueueNote(samplePayload, { configDir, cliToken: 'tl_key' });
+    let captured = 'unset';
+    await maybeAutoFlush({
+      configDir, cliToken: 'tl_key',
+      flushQueueFn: async (opts) => { captured = opts.timeoutMs; return { flushed: 1, remaining: 0 }; },
+    });
+    assert.equal(captured, undefined);
   });
 });

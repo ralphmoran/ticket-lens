@@ -37,6 +37,7 @@ import { checkForUpdate, getUpdateHint } from '../skills/jtb/scripts/lib/update-
 import { incrementInvocation, incrementCommand } from '../skills/jtb/scripts/lib/activity-counter.mjs';
 import { DEFAULT_CONFIG_DIR } from '../skills/jtb/scripts/lib/config.mjs';
 import { checkTeamJiraConfigUpdate } from '../skills/jtb/scripts/lib/team-jira-sync.mjs';
+import { maybeAutoFlush } from '../skills/jtb/scripts/lib/recall-queue.mjs';
 
 const TRACKED_COMMANDS = new Set([
   'triage', 'fetch', 'get', 'compliance', 'review', 'standup',
@@ -59,6 +60,26 @@ if (TRACKED_COMMANDS.has(command)) {
 revalidateIfStale();
 // Fire-and-forget: refresh the cached latest npm version once per 24h
 checkForUpdate();
+
+// Best-effort: retry any Recall notes still queued from a prior failed push —
+// on every command now, not just note add/recall, so a backlog from a burst
+// of transient failures doesn't just sit until the user happens to run one
+// of those two again. Cheap no-op when the queue is empty (one local file
+// read); maybeAutoFlush's own cooldown still protects a down backend from
+// being hit by every single command.
+try {
+  const cliToken = readCliToken(DEFAULT_CONFIG_DIR);
+  if (cliToken) {
+    // Short timeout — this runs before every command, unrelated to Recall or
+    // not, so it must never be the reason an unrelated command feels slow.
+    const result = await maybeAutoFlush({ cliToken, configDir: DEFAULT_CONFIG_DIR, timeoutMs: 4000 });
+    if (result?.flushed) {
+      process.stderr.write(`  ✔ Synced ${result.flushed} pending Recall note${result.flushed === 1 ? '' : 's'}.\n`);
+    }
+  }
+} catch {
+  // Never let a background sync check break the actual command.
+}
 
 // Show a one-line update hint on stderr after the command exits (never blocks stdout)
 process.on('exit', () => {
