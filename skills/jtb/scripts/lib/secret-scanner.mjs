@@ -101,25 +101,41 @@ function hasInternalCaseSwitch(token) {
 /**
  * True for a token that stops a joined-chunk run: either a recognized git/
  * checksum label word ("commit", "sha256", "md5sum", ...), or an ordinary
- * English word (letters only, no base64-style case switching). Anything else —
- * a fragment containing a digit/symbol, or an all-letter chunk that still reads
- * as random content — stays eligible to join, so a secret split by whitespace
- * can still be reassembled for the entropy check.
+ * English word (letters only, optionally with an internal possessive/
+ * contraction apostrophe — "relay's", "doesn't" — but no base64-style case
+ * switching). Anything else — a fragment containing a digit or other symbol,
+ * a hyphenated compound, or an all-letter chunk that still reads as random
+ * content — stays eligible to join, so a secret split by whitespace can still
+ * be reassembled for the entropy check.
  *
- * Known accepted gap: this can't tell a genuine dictionary word from one an
+ * The apostrophe allowance matters because without it, an ordinary possessive
+ * next to another non-label token (e.g. a hyphenated compound: "relay's
+ * decision-lookup") never gets a chance to stop the run — both fail to
+ * qualify, so they concatenate into one artificial blob whose mixed
+ * punctuation trips the entropy threshold. A real false positive, not a
+ * hypothetical one (see the regression test below). Hyphenated tokens are
+ * deliberately NOT given the same allowance: a short prefix + hyphen + long
+ * letter-run is indistinguishable from a real compound word by shape alone
+ * (e.g. "sk-abcdefghijklmnop", the letters-only half of a whitespace-split
+ * API key) — see the adjacent regression test for exactly this shape. Once
+ * the apostrophe fix lets "relay's" stop the run on its own, an adjacent
+ * hyphenated compound is short enough on its own to fall under
+ * MIN_RANDOM_TOKEN_LENGTH anyway, so it never needed the same allowance.
+ *
+ * Known accepted gap: this can't tell a genuine possessive from one an
  * attacker deliberately chose as a separator to defeat the scanner (e.g.
- * splitting a secret around the word "wall"). Closing that would require
- * treating ordinary prose words as joinable too, which in turn re-joins real
- * sentence text into false-positive "random" strings (verified empirically —
- * see the regression test for "PROD-123456 for background"). Entropy-based
- * detection is a safety net, not a cryptographic guarantee; the well-known
- * secret shapes in HARD_REJECT_PATTERNS are the layer that's fully whitespace-
- * and word-insertion-proof, since they match a specific literal prefix.
+ * splitting a secret around "user's"). Closing that would require treating
+ * ordinary prose words as joinable too, which in turn re-joins real sentence
+ * text into false-positive "random" strings (verified empirically — see the
+ * regression test for "PROD-123456 for background"). Entropy-based detection
+ * is a safety net, not a cryptographic guarantee; the well-known secret
+ * shapes in HARD_REJECT_PATTERNS are the layer that's fully whitespace- and
+ * word-insertion-proof, since they match a specific literal prefix.
  */
 function isLabelWord(token) {
   const stripped = stripEdgePunctuation(token);
   if (GIT_REFERENCE_WORD_RE.test(stripped)) return true;
-  return /^[A-Za-z]+$/.test(stripped) && !hasInternalCaseSwitch(stripped);
+  return /^[A-Za-z]+(?:'[A-Za-z]+)*$/.test(stripped) && !hasInternalCaseSwitch(stripped);
 }
 
 /**

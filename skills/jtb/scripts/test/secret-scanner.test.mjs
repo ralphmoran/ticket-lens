@@ -102,6 +102,28 @@ describe('scanForSecrets — regression: unlabeled hex secret in backticks with 
   });
 });
 
+describe('scanForSecrets — regression: possessive next to a hyphenated compound is not a secret', () => {
+  test('exact live repro: "relay\'s decision-lookup" false-positived before the isLabelWord apostrophe fix', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: "the relay's decision-lookup query never returned them" });
+    assert.equal(result.rejected, false);
+  });
+
+  test('the same phrase without the possessive apostrophe was always fine (control case)', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'the relays decision-lookup query never returned them' });
+    assert.equal(result.rejected, false);
+  });
+
+  test('the possessive alone, unadjacent to any hyphenated token, was always fine (control case)', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: "test relay's decision" });
+    assert.equal(result.rejected, false);
+  });
+
+  test('a whitespace-split API key whose letters-only half looks hyphen-compound-shaped is still rejected — the apostrophe fix must not extend to hyphens', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'sk-abcdefghijklmnop\tqrstuvwxyz123456' });
+    assert.equal(result.rejected, true);
+  });
+});
+
 describe('scanForSecrets — checksum/digest label vocabulary (usability, not security)', () => {
   test('a sha256 Docker image digest (word:hex, no space) is allowed through', () => {
     const result = scanForSecrets({ title: 'x', tags: [], body: 'Image digest sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85' });
