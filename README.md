@@ -403,7 +403,9 @@ Every note is scanned before saving — anything shaped like a real secret (API 
 
 **Team sync:** on a Team plan with Recall enabled for your account (owner-managed, per-tier or per-client), notes also sync to your team's shared pool — `note add` pushes in the background, `recall` pulls the team's notes (cached 4h) before searching. A team manager reviews and verifies incoming notes at `console/admin/recall` before they're marked trusted. Without Team Recall entitlement, everything stays on your machine — no network call.
 
-**Offline resilience:** if a team push fails for a transient reason (network error, timeout, or a 5xx from the backend), the note stays safely in your local vault and is queued for retry — nothing is lost. The queue flushes automatically in the background (at most once every 15 minutes, whenever `recall` or `note add` next talks to the network), or on demand with `ticketlens recall sync`. A session-expired (401) or not-entitled (403) push is never queued — those need you to act (`ticketlens login`, or an owner grant), not a retry. Queued entries expire after 30 days and are capped at 200; switching accounts never flushes a note under the wrong login.
+**Offline resilience:** if a team push fails for a transient reason (network error, timeout, or a 5xx from the backend), the note stays safely in your local vault and is queued for retry — nothing is lost. The queue flushes automatically in the background (at most once every 15 minutes) before every command, not just `recall`/`note add` — a short 4s timeout on that check means it never stalls an unrelated command — or on demand with `ticketlens recall sync`. A session-expired (401) or not-entitled (403) push is never queued — those need you to act (`ticketlens login`, or an owner grant), not a retry. Queued entries expire after 30 days and are capped at 200; switching accounts never flushes a note under the wrong login.
+
+**Removing a note:** `ticketlens note delete --id="..." [--ticket=KEY]` removes a note from your local vault. Local only — if it was already pushed to a team, teammates who pulled it keep their copy; deleting it there too is a manager action from the Console (Admin > Recall).
 
 `note add`'s save confirmation and `recall`'s search results are styled by default in a terminal; add `--plain` to either for bare, pipe-safe output. `recall` always shows each note's file ID (e.g. `[1784135399545-fe01c4.md]`) so you can open it directly (`cat ~/.ticketlens/recall/<PREFIX>/<id>`), or pass `--full` to print the full body content inline instead.
 
@@ -678,6 +680,7 @@ ticketlens history <TICKET-KEY>               # Show urgency timeline for a tick
 
 # ── Recall ────────────────────────────────────────────────────────────────────
 echo "note body" | ticketlens note add --title="..." --ticket=CNV1-2 --tags=a,b  # Save a note [Pro]
+ticketlens note delete --id="..." --ticket=CNV1-2  # Remove a note from your local vault [Pro]
 ticketlens recall CNV1-2                      # Search saved notes by ticket key [Pro]
 ticketlens recall "retry backoff"             # Free-text search across all notes [Pro]
 ticketlens recall sync                        # Retry any notes stuck in the local queue [Pro]
@@ -758,6 +761,7 @@ ticketlens triage --stale=3              # Custom stale threshold (default is 5)
 ticketlens triage --digest               # POST scored triage results to digest endpoint
 ticketlens schedule                      # Set up a scheduled daily digest
 ticketlens note add --title="..."        # Save a Recall note (body from stdin)
+ticketlens note delete --id="..."        # Remove a note from your local vault
 ticketlens recall <query|TICKET-KEY>     # Search your saved Recall notes
 ticketlens recall sync                   # Retry any notes stuck in the local queue
 ticketlens activate YOUR-LICENSE-KEY     # Activate Pro license

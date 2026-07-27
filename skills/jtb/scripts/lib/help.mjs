@@ -46,6 +46,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} history ${s.dim('<TICKET-KEY>')}       Urgency timeline for a ticket  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} stats ${s.dim('[options]')}            Personal response-time metrics from local history`,
     `    ${s.brand('ticketlens')} note add ${s.dim('--title=... [--ticket=KEY]')}  Save a Recall note  ${s.dim('[Pro]')}`,
+    `    ${s.brand('ticketlens')} note delete ${s.dim('--id=... [--ticket=KEY]')}  Remove a note from your local vault  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} recall ${s.dim('<query|TICKET-KEY>')}   Search your saved Recall notes  ${s.dim('[Pro]')}`,
     '',
     `    ${s.brand('ticketlens')} delete ${s.dim('<PROFILE-NAME>')}       Remove a profile`,
