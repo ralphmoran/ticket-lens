@@ -630,6 +630,16 @@ switch (command) {
       });
       break;
     }
+    if (cmdArgs[0] === 'delete') {
+      const { runNoteDelete } = await import('../skills/jtb/scripts/lib/note-command.mjs');
+      runNoteDelete(cmdArgs.slice(1)).then(({ deleted }) => {
+        if (!deleted) process.exitCode = 1;
+      }).catch(err => {
+        process.stderr.write(`Error: ${err.message}\n`);
+        process.exitCode = 1;
+      });
+      break;
+    }
     process.stderr.write('Usage: ticketlens note add --title="..." [--ticket=KEY] [--tags=a,b]\n');
     process.exitCode = 1;
     break;

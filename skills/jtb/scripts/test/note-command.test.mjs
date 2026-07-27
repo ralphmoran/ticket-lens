@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { runNoteAdd, runNotePatch } from '../lib/note-command.mjs';
+import { runNoteAdd, runNotePatch, runNoteDelete } from '../lib/note-command.mjs';
 
 function makeStream({ isTTY = false } = {}) {
   const lines = [];
@@ -304,6 +304,16 @@ function basePatchDeps(overrides = {}) {
   };
 }
 
+function baseDeleteDeps(overrides = {}) {
+  return {
+    configDir: '/fake/config',
+    stream: makeStream(),
+    isLicensedFn: () => true,
+    deleteNoteFn: () => ({ deleted: true, prefix: 'PROD' }),
+    ...overrides,
+  };
+}
+
 describe('runNotePatch — license gate fires before anything else', () => {
   test('unlicensed: never reads stdin, never patches, shows upgrade prompt', async () => {
     let stdinCalls = 0;
@@ -565,5 +575,73 @@ describe('runNoteAdd — also attempts an auto-flush of the retry queue', () => 
     });
     await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
     assert.equal(autoFlushCalls, 0);
+  });
+});
+
+describe('runNoteDelete — license gate fires before anything else', () => {
+  test('unlicensed: never calls deleteNoteFn, shows upgrade prompt', async () => {
+    let deleteCalls = 0;
+    const deps = baseDeleteDeps({
+      isLicensedFn: () => false,
+      deleteNoteFn: () => { deleteCalls++; return { deleted: true, prefix: 'PROD' }; },
+    });
+    const result = await runNoteDelete(['--id=note-1.md'], deps);
+    assert.equal(result.deleted, false);
+    assert.equal(deleteCalls, 0);
+  });
+});
+
+describe('runNoteDelete — usage validation', () => {
+  test('missing --id shows usage and does not delete', async () => {
+    const deps = baseDeleteDeps();
+    const result = await runNoteDelete([], deps);
+    assert.equal(result.deleted, false);
+    assert.match(deps.stream.lines.join(''), /Usage/i);
+  });
+
+  test('an invalid --ticket value is rejected before deleteNoteFn is called', async () => {
+    let deleteCalls = 0;
+    const deps = baseDeleteDeps({
+      deleteNoteFn: () => { deleteCalls++; return { deleted: true, prefix: 'PROD' }; },
+    });
+    const result = await runNoteDelete(['--id=note-1.md', '--ticket=../../../../etc'], deps);
+    assert.equal(result.deleted, false);
+    assert.equal(deleteCalls, 0);
+    assert.match(deps.stream.lines.join(''), /Invalid --ticket/);
+  });
+});
+
+describe('runNoteDelete — delegates to deleteNoteFn with the right shape', () => {
+  test('passes external_id and tickets through', async () => {
+    let captured;
+    const deps = baseDeleteDeps({
+      deleteNoteFn: (note) => { captured = note; return { deleted: true, prefix: 'PROD' }; },
+    });
+    await runNoteDelete(['--id=note-1.md', '--ticket=PROD-1'], deps);
+    assert.equal(captured.external_id, 'note-1.md');
+    assert.deepEqual(captured.tickets, ['PROD-1']);
+  });
+
+  test('no --ticket means an empty tickets array', async () => {
+    let captured;
+    const deps = baseDeleteDeps({
+      deleteNoteFn: (note) => { captured = note; return { deleted: true, prefix: 'PROD' }; },
+    });
+    await runNoteDelete(['--id=note-1.md'], deps);
+    assert.deepEqual(captured.tickets, []);
+  });
+
+  test('a successful delete is reported distinctly from a no-op', async () => {
+    const deps = baseDeleteDeps({ deleteNoteFn: () => ({ deleted: true, prefix: 'PROD' }) });
+    const result = await runNoteDelete(['--id=note-1.md'], deps);
+    assert.equal(result.deleted, true);
+    assert.match(deps.stream.lines.join(''), /Deleted/);
+  });
+
+  test('a no-op (note not found) is reported distinctly from success', async () => {
+    const deps = baseDeleteDeps({ deleteNoteFn: () => ({ deleted: false, prefix: null }) });
+    const result = await runNoteDelete(['--id=note-1.md'], deps);
+    assert.equal(result.deleted, false);
+    assert.match(deps.stream.lines.join(''), /not deleted/i);
   });
 });

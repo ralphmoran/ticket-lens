@@ -11,7 +11,7 @@ import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { isLicensed, showUpgradePrompt } from './license.mjs';
 import { scanForSecrets } from './secret-scanner.mjs';
 import { checkNoteStructure } from './note-structural-check.mjs';
-import { writeNote, patchNoteBody } from './recall-vault.mjs';
+import { writeNote, patchNoteBody, deleteNote } from './recall-vault.mjs';
 import { readCliToken } from './cli-auth.mjs';
 import { pushNote } from './recall-sync.mjs';
 import { enqueueNote, isRetryableFailure, maybeAutoFlush } from './recall-queue.mjs';
@@ -209,4 +209,46 @@ export async function runNotePatch(cmdArgs, {
   const { patched } = patchNoteBodyFn({ id, ticketKeys, body, expectedMtimeMs }, { configDir });
   stream.write(patched ? `  Updated note (${id})\n` : `  Note not updated — (${id}) not found or already changed.\n`);
   return { patched };
+}
+
+/**
+ * Implements `tl note delete` — removes a note from the local vault only.
+ *
+ * Local-only, same limitation `note patch` already documents: if this note
+ * was already pushed to a team (Team Recall enabled), teammates who already
+ * pulled it keep their copy — this does not push a tombstone. Deleting a
+ * note everywhere it's synced is a manager action from the Console today
+ * (Admin > Recall), which does propagate a tombstone on next pull.
+ *
+ * @param {string[]} cmdArgs
+ * @returns {Promise<{ deleted: boolean }>}
+ */
+export async function runNoteDelete(cmdArgs, {
+  configDir = DEFAULT_CONFIG_DIR,
+  stream = process.stderr,
+  isLicensedFn = isLicensed,
+  deleteNoteFn = deleteNote,
+} = {}) {
+  if (!isLicensedFn('pro', configDir)) {
+    showUpgradePrompt('pro', 'ticketlens note', { stream });
+    return { deleted: false };
+  }
+
+  const id = parseFlag(cmdArgs, 'id');
+  if (!id) {
+    stream.write('Usage: ticketlens note delete --id="..." [--ticket=KEY]\n');
+    return { deleted: false };
+  }
+
+  const ticketKey = parseFlag(cmdArgs, 'ticket');
+  if (ticketKey && !TICKET_KEY_PATTERN.test(ticketKey)) {
+    stream.write(`  Invalid --ticket value "${ticketKey}" — expected a ticket key like PROJ-123.\n`);
+    return { deleted: false };
+  }
+
+  const { deleted } = deleteNoteFn({ external_id: id, tickets: ticketKey ? [ticketKey] : [] }, { configDir });
+  stream.write(deleted
+    ? `  Deleted note (${id}) — local vault only; see help for team-synced notes.\n`
+    : `  Note not deleted — (${id}) not found.\n`);
+  return { deleted };
 }

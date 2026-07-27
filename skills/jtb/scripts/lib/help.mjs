@@ -520,6 +520,12 @@ export function printNoteHelp({ stream = process.stdout } = {}) {
     `  Code session — not typically invoked by hand. Every note it writes gets the`,
     `  same structural and secret-scan checks ${s.brand('note add')} applies to user input.`,
     '',
+    `  ${s.bold('ticketlens note delete')} ${s.dim('--id="..." [--ticket=KEY]')}  ${s.dim('[Pro]')}`,
+    '',
+    `  Removes a note from your local vault. Local only — if this note was already`,
+    `  pushed to a team, teammates who pulled it keep their copy; deleting it there`,
+    `  too is a manager action from the Console (Admin > Recall).`,
+    '',
   ];
   stream.write(lines.join('\n') + '\n');
 }
