@@ -548,6 +548,7 @@ export function printRecallHelp({ stream = process.stdout } = {}) {
     `  ${s.bold('COMMANDS')}`,
     '',
     `    ${s.brand('sync')}          Manually retry any team-synced notes stuck in the local retry queue ${s.dim('[Pro, requires login]')}`,
+    `    ${s.brand('settings')}      Show effective retry-queue settings (cooldown, timeout, queue limits) ${s.dim('[Pro]')}`,
     '',
     `  ${s.bold('EXAMPLES')}`,
     '',
@@ -556,6 +557,7 @@ export function printRecallHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('$')} ticketlens recall PROD-123 --plain`,
     `    ${s.dim('$')} ticketlens recall PROD-123 --full`,
     `    ${s.dim('$')} ticketlens recall sync`,
+    `    ${s.dim('$')} ticketlens recall settings`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

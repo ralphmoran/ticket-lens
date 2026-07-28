@@ -29,13 +29,17 @@ import path from 'node:path';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { writeFileAtomically } from './recall-vault.mjs';
 import { pushNote, hashToken } from './recall-sync.mjs';
+import { getEffectiveRecallSettings, DEFAULT_RECALL_SETTINGS } from './recall-settings-sync.mjs';
 
 const QUEUE_FILE = 'recall-pending.json';
 const FLUSH_STATE_FILE = 'recall-flush-state.json';
 
-export const MAX_QUEUE_SIZE = 200;
-export const MAX_ENTRY_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-export const AUTO_FLUSH_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+// Platform defaults — actual effective values now come from
+// getEffectiveRecallSettings(), which is the manager's Console override for
+// their team if one exists (fetched live), else these same numbers.
+export const DEFAULT_MAX_QUEUE_SIZE = DEFAULT_RECALL_SETTINGS.max_queue_size;
+export const DEFAULT_MAX_ENTRY_AGE_MS = DEFAULT_RECALL_SETTINGS.max_entry_age_ms;
+export const DEFAULT_AUTO_FLUSH_INTERVAL_MS = DEFAULT_RECALL_SETTINGS.flush_cooldown_ms;
 
 function queuePath(configDir) {
   return path.join(configDir, QUEUE_FILE);
@@ -62,8 +66,8 @@ function writeQueue(configDir, entries) {
   writeFileAtomically(queuePath(configDir), JSON.stringify(entries));
 }
 
-function purgeExpired(entries, now) {
-  return entries.filter(entry => now - new Date(entry.firstQueuedAt).getTime() <= MAX_ENTRY_AGE_MS);
+function purgeExpired(entries, now, maxEntryAgeMs) {
+  return entries.filter(entry => now - new Date(entry.firstQueuedAt).getTime() <= maxEntryAgeMs);
 }
 
 /**
@@ -84,7 +88,10 @@ export function isRetryableFailure(result) {
 /**
  * Queues a note for later retry after a transient push failure. Purges
  * expired entries first, then evicts the oldest entry (with a single warn)
- * if appending would exceed MAX_QUEUE_SIZE.
+ * if appending would exceed the effective max queue size (Console-managed
+ * per team, fetched live — see recall-settings-sync.mjs). Async: a push just
+ * failed, so one more short network call to get the current cap/expiry
+ * doesn't change this path's performance characteristics.
  *
  * @param {object}   notePayload - exact wire payload passed to pushNote
  * @param {object}   opts
@@ -92,17 +99,20 @@ export function isRetryableFailure(result) {
  * @param {string}   [opts.configDir]
  * @param {() => number} [opts.now]
  * @param {Function} [opts.warn]
+ * @returns {Promise<void>}
  */
-export function enqueueNote(notePayload, {
+export async function enqueueNote(notePayload, {
   cliToken,
   configDir = DEFAULT_CONFIG_DIR,
   now = () => Date.now(),
   warn = (s) => process.stderr.write(s),
+  getEffectiveRecallSettingsFn = getEffectiveRecallSettings,
 } = {}) {
   const nowMs = now();
-  let entries = purgeExpired(readQueue(configDir), nowMs);
+  const settings = await getEffectiveRecallSettingsFn({ cliToken, configDir });
+  let entries = purgeExpired(readQueue(configDir), nowMs, settings.max_entry_age_ms);
 
-  if (entries.length >= MAX_QUEUE_SIZE) {
+  if (entries.length >= settings.max_queue_size) {
     entries = entries.slice(1);
     warn('  Recall queue full — dropped the oldest queued note to make room.\n');
   }
@@ -142,10 +152,22 @@ export async function flushQueue({
   warn = () => {},
   now = () => Date.now(),
   timeoutMs,
+  settings,
+  getEffectiveRecallSettingsFn = getEffectiveRecallSettings,
 } = {}) {
   const nowMs = now();
   const currentHash = hashToken(cliToken);
-  const entries = purgeExpired(readQueue(configDir), nowMs);
+  // Only the age bound comes from settings here — timeoutMs is caller-supplied
+  // or falls through to pushNote's own default. maybeAutoFlush (below) is the
+  // one call site that maps the Console-configured timeout_ms onto this param;
+  // runRecallSync's manual, user-initiated flush deliberately keeps a longer,
+  // uncapped-by-this-setting timeout since the user is actively waiting.
+  // `settings` is an optional already-fetched value — maybeAutoFlush passes
+  // its own fetch through here so a single auto-flush attempt never fetches
+  // settings twice; a direct/manual call (runRecallSync) has none yet, so
+  // this fetches its own.
+  const effectiveSettings = settings ?? await getEffectiveRecallSettingsFn({ cliToken, configDir });
+  const entries = purgeExpired(readQueue(configDir), nowMs, effectiveSettings.max_entry_age_ms);
 
   let flushed = 0;
   const remaining = [];
@@ -199,14 +221,15 @@ function writeLastFlushAttemptAt(configDir, isoTimestamp) {
  * a burst of failures (e.g. a debugging session) would otherwise sit queued
  * until the user happens to run `note add`/`recall` again, or runs
  * `recall sync` by hand. A no-op unless the queue is non-empty AND at least
- * AUTO_FLUSH_INTERVAL_MS has passed since the last attempt — the interval is
- * a single global cooldown, not per-entry, so a burst of failures in one
- * short window still only gets one automatic retry pass, by design: this
- * runs on every command now, so the next opportunity is never far away, and
- * the cooldown exists specifically to stop a down backend from being hit by
- * every single command in the meantime. The attempt timestamp is recorded
- * even on failure, so a down backend can't be hammered once per command
- * within the window.
+ * the effective flush cooldown (Console-managed per team, defaults to 15
+ * minutes — see recall-settings-sync.mjs) has passed since the last attempt.
+ * The interval is a single global cooldown, not per-entry, so a burst of
+ * failures in one short window still only gets one automatic retry pass, by
+ * design: this runs on every command now, so the next opportunity is never
+ * far away, and the cooldown exists specifically to stop a down backend from
+ * being hit by every single command in the meantime. The attempt timestamp is
+ * recorded even on failure, so a down backend can't be hammered once per
+ * command within the window.
  *
  * @param {object}   opts
  * @param {string}   opts.cliToken
@@ -214,9 +237,10 @@ function writeLastFlushAttemptAt(configDir, isoTimestamp) {
  * @param {() => number} [opts.now]
  * @param {Function} [opts.flushQueueFn]
  * @param {number}   [opts.timeoutMs] - per-request timeout, passed through to
- *   pushNote. Callers running this unconditionally on every command (as
- *   opposed to an explicit `recall sync`) should pass something short — this
- *   must feel instant, not stall an unrelated command behind a slow network.
+ *   pushNote. Defaults to the effective settings' timeout_ms (Console-managed,
+ *   defaults to 4s) — short, because this runs unconditionally on every
+ *   command and must feel instant, not stall an unrelated command behind a
+ *   slow network. Pass explicitly to override.
  * @returns {Promise<{flushed: number, remaining: number}|null>} null if skipped
  *   (empty queue or still cooling down) — distinguishes "nothing to report"
  *   from "attempted, flushed 0" for a caller that wants to print a summary.
@@ -227,15 +251,21 @@ export async function maybeAutoFlush({
   now = () => Date.now(),
   flushQueueFn = flushQueue,
   timeoutMs,
+  getEffectiveRecallSettingsFn = getEffectiveRecallSettings,
 } = {}) {
   if (readQueue(configDir).length === 0) return null;
 
+  // Fetched once here (live) and threaded through to flushQueueFn below —
+  // flushQueue also needs max_entry_age_ms but must not fetch a second time
+  // for what is, from the outside, a single "attempt a flush" decision.
+  const settings = await getEffectiveRecallSettingsFn({ cliToken, configDir });
   const lastAttemptAt = readLastFlushAttemptAt(configDir);
   const nowMs = now();
-  if (lastAttemptAt && nowMs - new Date(lastAttemptAt).getTime() < AUTO_FLUSH_INTERVAL_MS) return null;
+  if (lastAttemptAt && nowMs - new Date(lastAttemptAt).getTime() < settings.flush_cooldown_ms) return null;
 
+  const effectiveTimeoutMs = timeoutMs !== undefined ? timeoutMs : settings.timeout_ms;
   try {
-    return await flushQueueFn({ cliToken, configDir, now, ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
+    return await flushQueueFn({ cliToken, configDir, now, timeoutMs: effectiveTimeoutMs, settings });
   } catch {
     // A down backend or a thrown network error must never crash the command
     // that opportunistically triggered this background attempt.

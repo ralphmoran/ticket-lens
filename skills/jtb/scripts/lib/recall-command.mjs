@@ -13,6 +13,7 @@ import { listNotes } from './recall-vault.mjs';
 import { readCliToken } from './cli-auth.mjs';
 import { pullNotes } from './recall-sync.mjs';
 import { maybeAutoFlush, flushQueue, readQueue } from './recall-queue.mjs';
+import { getEffectiveRecallSettings } from './recall-settings-sync.mjs';
 import { styleRecallResults } from './styled-assembler.mjs';
 
 /**
@@ -94,5 +95,40 @@ export async function runRecallSync(cmdArgs, {
 
   const { flushed, remaining } = await flushQueueFn({ cliToken, configDir, warn: (s) => stream.write(s) });
   stream.write(`Synced ${flushed} note(s). ${remaining} still pending.\n`);
+  return { ok: true };
+}
+
+/**
+ * Implements `tl recall settings` — read-only display of the effective
+ * Recall queue settings (flush cooldown, per-request timeout, max queue
+ * size, max entry age). Management happens in Console (console/admin/recall,
+ * manager-only); this fetches live so it always reflects the manager's
+ * latest saved value, falling back to the last-known cache/platform default
+ * if offline.
+ *
+ * @param {string[]} cmdArgs
+ * @returns {Promise<{ ok: boolean }>}
+ */
+export async function runRecallSettings(cmdArgs, {
+  configDir = DEFAULT_CONFIG_DIR,
+  stream = process.stdout,
+  isLicensedFn = isLicensed,
+  readCliTokenFn = readCliToken,
+  getEffectiveRecallSettingsFn = getEffectiveRecallSettings,
+} = {}) {
+  if (!isLicensedFn('pro', configDir)) {
+    showUpgradePrompt('pro', 'ticketlens recall', { stream });
+    return { ok: false };
+  }
+
+  const cliToken = readCliTokenFn(configDir);
+  const settings = await getEffectiveRecallSettingsFn({ cliToken, configDir });
+  const source = cliToken ? 'your team manager (or platform default if unset)' : 'platform default — log in to pick up a team override';
+
+  stream.write(`  Retry cooldown:      ${settings.flush_cooldown_ms / 60_000} min\n`);
+  stream.write(`  Per-request timeout: ${settings.timeout_ms / 1_000} sec\n`);
+  stream.write(`  Max queued notes:    ${settings.max_queue_size}\n`);
+  stream.write(`  Queued note expiry:  ${settings.max_entry_age_ms / 86_400_000} days\n`);
+  stream.write(`  Source: ${source}\n`);
   return { ok: true };
 }

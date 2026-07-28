@@ -1,6 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { runRecall, runRecallSync } from '../lib/recall-command.mjs';
+import { runRecall, runRecallSync, runRecallSettings } from '../lib/recall-command.mjs';
+import { DEFAULT_RECALL_SETTINGS } from '../lib/recall-settings-sync.mjs';
 
 function makeStream({ isTTY = false } = {}) {
   const lines = [];
@@ -278,5 +279,65 @@ describe('runRecallSync — flushing', () => {
     assert.equal(typeof capturedWarn, 'function');
     capturedWarn('  test warning\n');
     assert.match(deps.stream.lines.join(''), /test warning/);
+  });
+});
+
+function baseSettingsDeps(overrides = {}) {
+  return {
+    configDir: '/fake/config',
+    stream: makeStream(),
+    isLicensedFn: () => true,
+    readCliTokenFn: () => null,
+    getEffectiveRecallSettingsFn: () => Promise.resolve(DEFAULT_RECALL_SETTINGS),
+    ...overrides,
+  };
+}
+
+describe('runRecallSettings — license gate', () => {
+  test('unlicensed: never fetches settings, shows upgrade prompt, reports failure', async () => {
+    let calls = 0;
+    const deps = baseSettingsDeps({ isLicensedFn: () => false, getEffectiveRecallSettingsFn: () => { calls++; return Promise.resolve(DEFAULT_RECALL_SETTINGS); } });
+    const result = await runRecallSettings([], deps);
+    assert.equal(calls, 0);
+    assert.equal(result.ok, false);
+  });
+});
+
+describe('runRecallSettings — output', () => {
+  test('prints all four effective settings converted to human units', async () => {
+    const deps = baseSettingsDeps({
+      getEffectiveRecallSettingsFn: () => Promise.resolve({ flush_cooldown_ms: 600_000, timeout_ms: 8_000, max_queue_size: 50, max_entry_age_ms: 604_800_000 }),
+    });
+    const result = await runRecallSettings([], deps);
+    assert.equal(result.ok, true);
+    const out = deps.stream.lines.join('');
+    assert.match(out, /10 min/);
+    assert.match(out, /8 sec/);
+    assert.match(out, /50/);
+    assert.match(out, /7 days/);
+  });
+
+  test('not logged in: still fetches (getEffectiveRecallSettingsFn handles the no-token case itself), notes the source is platform default', async () => {
+    let capturedCliToken = 'unset';
+    const deps = baseSettingsDeps({
+      readCliTokenFn: () => null,
+      getEffectiveRecallSettingsFn: (opts) => { capturedCliToken = opts.cliToken; return Promise.resolve(DEFAULT_RECALL_SETTINGS); },
+    });
+    const result = await runRecallSettings([], deps);
+    assert.equal(capturedCliToken, null);
+    assert.equal(result.ok, true);
+    assert.match(deps.stream.lines.join(''), /platform default/i);
+  });
+
+  test('logged in: passes the cliToken through to getEffectiveRecallSettingsFn, notes the source is team manager', async () => {
+    let capturedCliToken;
+    const deps = baseSettingsDeps({
+      readCliTokenFn: () => 'tl_key',
+      getEffectiveRecallSettingsFn: (opts) => { capturedCliToken = opts.cliToken; return Promise.resolve(DEFAULT_RECALL_SETTINGS); },
+    });
+    const result = await runRecallSettings([], deps);
+    assert.equal(capturedCliToken, 'tl_key');
+    assert.equal(result.ok, true);
+    assert.match(deps.stream.lines.join(''), /team manager/i);
   });
 });

@@ -141,7 +141,7 @@ export async function runNoteAdd(cmdArgs, {
     const payload = { external_id: id, title, tickets: ticketKeys, tags, author, sources: [], body };
     const result = await pushNoteFn(payload, { cliToken, configDir, warn });
     if (isRetryableFailureFn(result)) {
-      enqueueNoteFn(payload, { cliToken, configDir, warn });
+      await enqueueNoteFn(payload, { cliToken, configDir, warn });
     }
     await maybeAutoFlushFn({ cliToken, configDir });
   }

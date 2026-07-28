@@ -70,9 +70,10 @@ checkForUpdate();
 try {
   const cliToken = readCliToken(DEFAULT_CONFIG_DIR);
   if (cliToken) {
-    // Short timeout — this runs before every command, unrelated to Recall or
+    // Timeout defaults to the effective settings' timeout_ms (Console-managed,
+    // 4s by default) — this runs before every command, unrelated to Recall or
     // not, so it must never be the reason an unrelated command feels slow.
-    const result = await maybeAutoFlush({ cliToken, configDir: DEFAULT_CONFIG_DIR, timeoutMs: 4000 });
+    const result = await maybeAutoFlush({ cliToken, configDir: DEFAULT_CONFIG_DIR });
     if (result?.flushed) {
       process.stderr.write(`  ✔ Synced ${result.flushed} pending Recall note${result.flushed === 1 ? '' : 's'}.\n`);
     }
@@ -671,6 +672,16 @@ switch (command) {
     if (cmdArgs[0] === 'sync') {
       const { runRecallSync } = await import('../skills/jtb/scripts/lib/recall-command.mjs');
       runRecallSync(cmdArgs.slice(1)).then(({ ok }) => {
+        if (!ok) process.exitCode = 1;
+      }).catch(err => {
+        process.stderr.write(`Error: ${err.message}\n`);
+        process.exitCode = 1;
+      });
+      break;
+    }
+    if (cmdArgs[0] === 'settings') {
+      const { runRecallSettings } = await import('../skills/jtb/scripts/lib/recall-command.mjs');
+      runRecallSettings(cmdArgs.slice(1)).then(({ ok }) => {
         if (!ok) process.exitCode = 1;
       }).catch(err => {
         process.stderr.write(`Error: ${err.message}\n`);
