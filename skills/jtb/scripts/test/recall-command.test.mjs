@@ -185,24 +185,14 @@ describe('runRecall — team sync (pull before search)', () => {
     assert.match(deps.stream.lines.join(''), /Local note/);
   });
 
-  test('--no-cache forces a fresh pull (ttlMs: 0)', async () => {
+  test('always forces a fresh pull (ttlMs: 0) — a manager\'s Console verify/delete must be visible on this very invocation, not up to 4h later', async () => {
     let capturedTtl;
     const deps = baseDeps({
       readCliTokenFn: () => 'tl_key',
       pullNotesFn: (opts) => { capturedTtl = opts.ttlMs; return Promise.resolve({ ok: true, count: 0 }); },
     });
-    await runRecall(['retry', '--no-cache'], deps);
-    assert.equal(capturedTtl, 0);
-  });
-
-  test('without --no-cache, the default TTL is used (no override)', async () => {
-    let capturedOpts;
-    const deps = baseDeps({
-      readCliTokenFn: () => 'tl_key',
-      pullNotesFn: (opts) => { capturedOpts = opts; return Promise.resolve({ ok: true, count: 0 }); },
-    });
     await runRecall(['retry'], deps);
-    assert.equal('ttlMs' in capturedOpts, false);
+    assert.equal(capturedTtl, 0);
   });
 
   test('with a cliToken, also attempts an auto-flush of the retry queue alongside the pull', async () => {

@@ -55,6 +55,7 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb note "gotcha text" --ticket=PROD-1234    # save a Recall note (Pro)
 /jtb recall PROD-1234                  # search saved Recall notes (Pro)
 /jtb recall sync                       # retry any notes stuck in the local queue (Pro)
+/jtb recall settings                   # show effective retry-queue settings, fetched live (Pro)
 ```
 
 ## Prerequisites

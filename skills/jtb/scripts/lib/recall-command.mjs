@@ -1,8 +1,12 @@
 /**
  * Implements `tl recall <query|TICKET-KEY>` — a search over saved Recall
- * notes, local-first. When logged in, pulls the team vault down before
- * searching (the user is explicitly waiting on this command, so the full
- * request timeout applies here — unlike the passive brief-fetch pull path).
+ * notes, local-first. When logged in, always pulls the team vault fresh
+ * before searching (ttlMs: 0, bypassing the TTL cache entirely) — the user
+ * is explicitly waiting on this command, so a manager's Console verify/
+ * delete action is visible on this very invocation, not up to 4h later.
+ * The full request timeout applies here — unlike the passive brief-fetch
+ * pull path (fetch-ticket.mjs), which deliberately keeps its short timeout
+ * and TTL cache since it runs on nearly every command, not just this one.
  * A pull failure never blocks the local search from returning results.
  */
 
@@ -43,11 +47,7 @@ export async function runRecall(cmdArgs, {
 
   const cliToken = readCliTokenFn(configDir);
   if (cliToken) {
-    await pullNotesFn({
-      cliToken,
-      configDir,
-      ...(cmdArgs.includes('--no-cache') && { ttlMs: 0 }),
-    });
+    await pullNotesFn({ cliToken, configDir, ttlMs: 0 });
     await maybeAutoFlushFn({ cliToken, configDir });
   }
 
