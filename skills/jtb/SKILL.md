@@ -58,8 +58,8 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb cloud-keys timeout anthropic 15   # set per-request timeout in seconds
 /jtb note add --title="gotcha text" --ticket=PROD-1234    # save a Recall note (Pro, body from stdin)
 /jtb recall PROD-1234                  # search saved Recall notes (Pro)
-/jtb recall sync                       # retry any notes stuck in the local queue (Pro)
-/jtb recall settings                   # show effective retry-queue settings, fetched live (Pro)
+/jtb recall sync                       # retry any notes stuck in the local queue (Team+)
+/jtb recall settings                   # show effective retry-queue settings, fetched live (Team+)
 ```
 
 ## Prerequisites
@@ -250,7 +250,7 @@ This never calls any external API or bills any tokens beyond the session you alr
 **Known limitation:** `note patch` only updates the local vault copy. If `note add` already pushed the original draft to a team (Team Recall enabled), a later refinement from this loop is *not* re-pushed — teammates who already pulled the note keep the original draft until this is addressed in a future iteration.
 
 ### Privacy
-Recall notes are stored locally at `~/.ticketlens/recall/`. On a Free/Pro account with no Team Recall entitlement, they never leave the machine — no network calls. On a Team account with Recall enabled (owner-managed, may vary per user), notes also sync to the team's shared pool in the background so teammates can benefit from them too; a team manager reviews and verifies each incoming note before it's marked trusted. If a team push fails for a transient reason (network error, timeout, 5xx), the note is queued locally and retried automatically in the background, or on demand with `ticketlens recall sync` — a session-expired or not-entitled push is never queued, since retrying those can't succeed without the user acting first.
+Recall notes are stored locally at `~/.ticketlens/recall/`. On a Pro account with no Team Recall entitlement, they never leave the machine — no network calls (Free tier can't use Recall at all). On Team/Enterprise, Recall's team sync is included by default (Pro accounts can get it too, as a separate add-on); notes also sync to the team's shared pool in the background so teammates can benefit from them too, and a team manager reviews and verifies each incoming note before it's marked trusted. If a team push fails for a transient reason (network error, timeout, 5xx), the note is queued locally and retried automatically in the background, or on demand with `ticketlens recall sync` [Team+] — a session-expired or not-entitled push is never queued, since retrying those can't succeed without the user acting first.
 
 ---
 

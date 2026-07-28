@@ -403,7 +403,7 @@ Every note is scanned before saving — anything shaped like a real secret (API 
 
 **Quality loop:** inside a Claude Code session using the jtb skill, a saved note can be silently refined afterward — a generator subagent drafts a more actionable version, a validator subagent checks it against other notes on the same ticket for duplication, up to 3 rounds — and the improved draft overwrites the original via the internal `note patch` command (not typically invoked by hand). This makes zero API calls and costs zero extra tokens beyond your already-running session; it never runs for a bare shell invocation of `note add`, which is skipped silently. Known limitation: a refined draft is not re-synced to your team even if the original was — teammates who already pulled the note keep the earlier draft.
 
-**Team sync:** on a Team plan with Recall enabled for your account (owner-managed, per-tier or per-client), notes also sync to your team's shared pool — `note add` pushes in the background, `recall` always pulls the team's notes fresh before searching, so a manager's verify/delete in Console is visible on that very search. (Ticket-brief injection uses a separate, short-timeout 4h-cached pull so it never slows down your everyday `ticketlens PROJ-123` — it doesn't need to be instant the way an explicit search does.) A team manager reviews and verifies incoming notes at `console/admin/recall` before they're marked trusted. Without Team Recall entitlement, everything stays on your machine — no network call.
+**Team sync:** included by default on Team/Enterprise; available on Pro too, as a separate add-on (owner-managed per-client, in case the default ever needs to flex). With it enabled, notes also sync to your team's shared pool — `note add` pushes in the background, `recall` always pulls the team's notes fresh before searching, so a manager's verify/delete in Console is visible on that very search. (Ticket-brief injection uses a separate, short-timeout 4h-cached pull so it never slows down your everyday `ticketlens PROJ-123` — it doesn't need to be instant the way an explicit search does.) A team manager reviews and verifies incoming notes at `console/admin/recall` before they're marked trusted. Without Team Recall entitlement, everything stays on your machine — no network call.
 
 **Offline resilience:** if a team push fails for a transient reason (network error, timeout, or a 5xx from the backend), the note stays safely in your local vault and is queued for retry — nothing is lost. The queue flushes automatically in the background before every command, not just `recall`/`note add` — a short timeout on that check means it never stalls an unrelated command — or on demand with `ticketlens recall sync`. A session-expired (401) or not-entitled (403) push is never queued — those need you to act (`ticketlens login`, or an owner grant), not a retry. Switching accounts never flushes a note under the wrong login.
 
@@ -688,8 +688,8 @@ echo "note body" | ticketlens note add --title="..." --ticket=CNV1-2 --tags=a,b 
 ticketlens note delete --id="..." --ticket=CNV1-2  # Remove a note from your local vault [Pro]
 ticketlens recall CNV1-2                      # Search saved notes by ticket key [Pro]
 ticketlens recall "retry backoff"             # Free-text search across all notes [Pro]
-ticketlens recall sync                        # Retry any notes stuck in the local queue [Pro]
-ticketlens recall settings                    # Show effective retry-queue settings, fetched live [Pro]
+ticketlens recall sync                        # Retry any notes stuck in the local queue [Team+]
+ticketlens recall settings                    # Show effective retry-queue settings, fetched live [Team+]
 
 # ── Stats ──────────────────────────────────────────────────────────────────────
 ticketlens stats                              # Response-time metrics from local history
