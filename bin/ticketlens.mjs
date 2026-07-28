@@ -24,6 +24,7 @@ import {
   printProfilesHelp, printScheduleHelp,
   printInitHelp, printSwitchHelp, printConfigHelp,
   printReviewHelp, printStandupHelp, printUpdateSkillHelp,
+  printComplianceHelp, printLedgerHelp, printPrHelp, printInstallHooksHelp,
   printCollisionsHelp, printStatsHelp,
   printCloudKeysHelp,
   printNoteHelp, printRecallHelp,
@@ -394,10 +395,28 @@ switch (command) {
       break;
     }
 
-    const { runScheduleWizard } = await import('../skills/jtb/scripts/lib/schedule-wizard.mjs');
+    const cliTokenForSchedule = readCliToken();
+    const { shouldUseLocalSchedule, parseLocalScheduleFlags, runScheduleLocal, runScheduleWizard } = await import('../skills/jtb/scripts/lib/schedule-wizard.mjs');
+
+    if (shouldUseLocalSchedule({ cmdArgs, cliToken: cliTokenForSchedule })) {
+      const { time, outputFile } = parseLocalScheduleFlags(cmdArgs);
+      if (!time || !outputFile) {
+        process.stderr.write(`  Local scheduling requires --time and --save.\n`);
+        process.stderr.write(`  Usage: ticketlens schedule --local --time=HH:MM --save=FILE\n`);
+        if (!cliTokenForSchedule) {
+          process.stderr.write(`  Or run \`ticketlens login\` first to use the Console-backed wizard.\n`);
+        }
+        process.exitCode = 1;
+        break;
+      }
+      const localResult = await runScheduleLocal({ answers: { time, outputFile } });
+      if (!localResult.ok) { process.exitCode = 1; }
+      break;
+    }
+
     const { promptScheduleAnswers } = await import('../skills/jtb/scripts/lib/prompt-helpers.mjs');
     const answers = await promptScheduleAnswers(cmdArgs);
-    const result = await runScheduleWizard({ answers, cliToken: readCliToken() });
+    const result = await runScheduleWizard({ answers, cliToken: cliTokenForSchedule });
     if (!result.ok) { process.exitCode = 1; break; }
 
     const s = createStyler({ isTTY: process.stdout.isTTY });
@@ -410,6 +429,7 @@ switch (command) {
   }
 
   case 'install-hooks':
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printInstallHooksHelp(); break; }
     runFetch(['install-hooks', ...cmdArgs]).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
@@ -417,6 +437,7 @@ switch (command) {
     break;
 
   case 'pr':
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printPrHelp(); break; }
     runFetch(['pr', ...cmdArgs]).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
@@ -440,6 +461,7 @@ switch (command) {
     break;
 
   case 'ledger':
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printLedgerHelp(); break; }
     runFetch(['ledger', ...cmdArgs]).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
@@ -447,6 +469,7 @@ switch (command) {
     break;
 
   case 'compliance':
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printComplianceHelp(); break; }
     runFetch(['compliance', ...cmdArgs]).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;

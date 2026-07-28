@@ -44,6 +44,10 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb stats --format=json               # JSON output for scripting
 /jtb collisions                        # show branch collisions with teammates (Team)
 /jtb collisions --json                 # machine-readable output
+/jtb review                            # code-review context brief from current branch
+/jtb review --branch=main              # compare against a specific branch
+/jtb standup                           # standup summary from git log (last 24h)
+/jtb standup --format=pr               # PR body instead of standup bullets
 /jtb cloud-keys list                   # list configured AI provider keys (Pro)
 /jtb cloud-keys add groq gsk_xxxx      # add Groq key (free tier — console.groq.com)
 /jtb cloud-keys add anthropic sk-ant-x # add Anthropic key
@@ -52,7 +56,7 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb cloud-keys remove groq            # remove a provider
 /jtb cloud-keys priority groq 1        # set provider priority (lower = tried first)
 /jtb cloud-keys timeout anthropic 15   # set per-request timeout in seconds
-/jtb note "gotcha text" --ticket=PROD-1234    # save a Recall note (Pro)
+/jtb note add --title="gotcha text" --ticket=PROD-1234    # save a Recall note (Pro, body from stdin)
 /jtb recall PROD-1234                  # search saved Recall notes (Pro)
 /jtb recall sync                       # retry any notes stuck in the local queue (Pro)
 /jtb recall settings                   # show effective retry-queue settings, fetched live (Pro)

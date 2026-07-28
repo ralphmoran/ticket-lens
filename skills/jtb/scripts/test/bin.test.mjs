@@ -190,6 +190,14 @@ describe('bin/ticketlens.mjs', () => {
     ['note', '-h'],
     ['recall', '--help'],
     ['recall', '-h'],
+    ['compliance', '--help'],
+    ['compliance', '-h'],
+    ['ledger', '--help'],
+    ['ledger', '-h'],
+    ['pr', '--help'],
+    ['pr', '-h'],
+    ['install-hooks', '--help'],
+    ['install-hooks', '-h'],
   ]) {
     it(`"ticketlens ${cmd} ${flag}" exits 0 and prints help`, () => {
       const result = spawnSync('node', [binPath, cmd, flag], {

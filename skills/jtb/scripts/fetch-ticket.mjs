@@ -493,6 +493,22 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   // Early dispatch for non-ticket subcommands
   if (args[0] === 'install-hooks') {
+    if (args.includes('--uninstall')) {
+      const { uninstallHook } = await import('./lib/hook-installer.mjs');
+      try {
+        const result = await uninstallHook({ cwd: process.cwd() });
+        if (result.skipped) {
+          process.stderr.write(`  Hook uninstall skipped: ${result.reason}\n`);
+        } else {
+          process.stdout.write(`  Hook removed: ${result.path}\n`);
+        }
+      } catch (err) {
+        process.stderr.write(`  Error removing hook: ${err.message}\n`);
+        process.exitCode = 1;
+      }
+      return;
+    }
+
     const { installHook } = await import('./lib/hook-installer.mjs');
     try {
       const result = await installHook({ cwd: process.cwd() });

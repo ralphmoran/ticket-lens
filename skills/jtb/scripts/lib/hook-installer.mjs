@@ -79,3 +79,51 @@ export function installHook({ cwd = process.cwd(), threshold = 80, fsModule = fs
 
   return { installed: true, path: hookPath };
 }
+
+/**
+ * Removes a previously-installed compliance gate, leaving any pre-existing
+ * (non-ticketlens) pre-push hook content untouched. installHook() always
+ * appends its block last, prefixed with its own `#!/bin/sh` line — this
+ * strips from that shebang line (and one preceding blank line from the
+ * append's leading '\n', if present) through end of file. If nothing
+ * precedes that point, the file is deleted rather than left empty.
+ *
+ * @param {{ cwd?: string, fsModule?: typeof import('node:fs') }} [opts]
+ * @returns {{ uninstalled: true, path: string } | { skipped: true, reason: string }}
+ */
+export function uninstallHook({ cwd = process.cwd(), fsModule = fs } = {}) {
+  const hookPath = join(cwd, '.git', 'hooks', 'pre-push');
+
+  let existing;
+  try {
+    existing = fsModule.readFileSync(hookPath, 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT') return { skipped: true, reason: 'No pre-push hook installed.' };
+    throw err;
+  }
+
+  if (!existing.includes(GUARD)) {
+    return { skipped: true, reason: 'No ticketlens compliance gate found in the pre-push hook.' };
+  }
+
+  const guardIdx = existing.indexOf(GUARD);
+  const shebangIdx = existing.lastIndexOf('#!/bin/sh\n', guardIdx);
+  let cutStart = shebangIdx;
+  if (cutStart > 0 && existing[cutStart - 1] === '\n') cutStart -= 1;
+
+  const remaining = existing.slice(0, cutStart);
+  if (remaining.trim() === '') {
+    fsModule.unlinkSync(hookPath);
+  } else {
+    fsModule.writeFileSync(hookPath, remaining, 'utf8');
+  }
+
+  const configPath = join(cwd, '.ticketlens-hooks.json');
+  try {
+    fsModule.unlinkSync(configPath);
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+
+  return { uninstalled: true, path: hookPath };
+}

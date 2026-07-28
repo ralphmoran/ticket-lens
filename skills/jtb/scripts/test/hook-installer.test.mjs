@@ -1,10 +1,10 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { generateHookScript, installHook } from '../lib/hook-installer.mjs';
+import { generateHookScript, installHook, uninstallHook } from '../lib/hook-installer.mjs';
 
 // ── Tmp dir lifecycle ────────────────────────────────────────────────────────
 
@@ -129,5 +129,72 @@ describe('installHook — Windows skip', () => {
     const result = installHook({ cwd: repoDir, threshold: 80, platform: 'win32' });
     assert.equal(result.skipped, true, 'should return { skipped: true }');
     assert.ok(typeof result.reason === 'string' && result.reason.length > 0, 'should include a reason string');
+  });
+});
+
+// ── uninstallHook ─────────────────────────────────────────────────────────────
+
+describe('uninstallHook — nothing installed', () => {
+  it('returns { skipped: true, reason } when no pre-push hook file exists at all', () => {
+    const { repoDir } = makeFakeRepo('uninstall-no-file');
+    const result = uninstallHook({ cwd: repoDir });
+    assert.equal(result.skipped, true);
+    assert.ok(typeof result.reason === 'string' && result.reason.length > 0);
+  });
+
+  it('returns { skipped: true, reason } when a pre-push hook exists but has no ticketlens guard', () => {
+    const { repoDir } = makeFakeRepo('uninstall-no-guard');
+    const hookPath = join(repoDir, '.git', 'hooks', 'pre-push');
+    writeFileSync(hookPath, '#!/bin/sh\necho "unrelated hook"\n', 'utf8');
+    const result = uninstallHook({ cwd: repoDir });
+    assert.equal(result.skipped, true);
+    const content = readFileSync(hookPath, 'utf8');
+    assert.ok(content.includes('unrelated hook'), 'must not touch a hook it did not install');
+  });
+});
+
+describe('uninstallHook — clean install (no pre-existing hook)', () => {
+  it('deletes the pre-push file entirely, since ticketlens was the only content', () => {
+    const { repoDir } = makeFakeRepo('uninstall-clean');
+    installHook({ cwd: repoDir, threshold: 80, platform: 'linux' });
+    const result = uninstallHook({ cwd: repoDir });
+    assert.equal(result.uninstalled, true);
+    const hookPath = join(repoDir, '.git', 'hooks', 'pre-push');
+    assert.equal(existsSync(hookPath), false);
+  });
+
+  it('removes .ticketlens-hooks.json', () => {
+    const { repoDir } = makeFakeRepo('uninstall-config');
+    installHook({ cwd: repoDir, threshold: 80, platform: 'linux' });
+    uninstallHook({ cwd: repoDir });
+    const configPath = join(repoDir, '.ticketlens-hooks.json');
+    assert.equal(existsSync(configPath), false);
+  });
+});
+
+describe('uninstallHook — appended to a pre-existing hook', () => {
+  it('removes only the ticketlens block, preserving the original hook content', () => {
+    const { repoDir } = makeFakeRepo('uninstall-preserve');
+    const hookPath = join(repoDir, '.git', 'hooks', 'pre-push');
+    writeFileSync(hookPath, '#!/bin/sh\necho "existing hook"\n', 'utf8');
+    installHook({ cwd: repoDir, threshold: 80, platform: 'linux' });
+
+    const result = uninstallHook({ cwd: repoDir });
+    assert.equal(result.uninstalled, true);
+
+    const content = readFileSync(hookPath, 'utf8');
+    assert.ok(content.includes('existing hook'), 'original content must survive');
+    assert.ok(!content.includes('ticketlens-compliance-gate'), 'ticketlens block must be gone');
+    assert.ok(!content.includes('ticketlens compliance'), 'ticketlens command must be gone');
+  });
+});
+
+describe('uninstallHook — idempotency', () => {
+  it('a second uninstall call returns skipped rather than erroring', () => {
+    const { repoDir } = makeFakeRepo('uninstall-idempotent');
+    installHook({ cwd: repoDir, threshold: 80, platform: 'linux' });
+    uninstallHook({ cwd: repoDir });
+    const result = uninstallHook({ cwd: repoDir });
+    assert.equal(result.skipped, true);
   });
 });

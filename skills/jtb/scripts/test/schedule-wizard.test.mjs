@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { runScheduleWizard, runScheduleStop, runScheduleStatus, buildPlist, buildCronLine } from '../lib/schedule-wizard.mjs';
+import { runScheduleWizard, runScheduleStop, runScheduleStatus, buildPlist, buildCronLine, shouldUseLocalSchedule, parseLocalScheduleFlags } from '../lib/schedule-wizard.mjs';
 
 describe('buildPlist', () => {
   it('generates valid plist with correct hour and minute', () => {
@@ -217,5 +217,36 @@ describe('schedule-wizard — cloud flow lock', () => {
 
   it('runScheduleStatus is a named export', () => {
     assert.equal(typeof runScheduleStatus, 'function');
+  });
+});
+
+describe('shouldUseLocalSchedule', () => {
+  it('returns true when --local flag is present, even with a cliToken', () => {
+    assert.equal(shouldUseLocalSchedule({ cmdArgs: ['--local'], cliToken: 'tl_key' }), true);
+  });
+
+  it('returns true when there is no cliToken, even without --local', () => {
+    assert.equal(shouldUseLocalSchedule({ cmdArgs: [], cliToken: undefined }), true);
+  });
+
+  it('returns false when logged in and --local is not passed', () => {
+    assert.equal(shouldUseLocalSchedule({ cmdArgs: [], cliToken: 'tl_key' }), false);
+  });
+
+  it('returns true when both --local is passed and there is no cliToken', () => {
+    assert.equal(shouldUseLocalSchedule({ cmdArgs: ['--local'], cliToken: null }), true);
+  });
+});
+
+describe('parseLocalScheduleFlags', () => {
+  it('extracts time and outputFile from --time= and --save=', () => {
+    const result = parseLocalScheduleFlags(['--local', '--time=07:00', '--save=/tmp/out.txt']);
+    assert.deepEqual(result, { time: '07:00', outputFile: '/tmp/out.txt' });
+  });
+
+  it('returns undefined fields when the flags are missing', () => {
+    const result = parseLocalScheduleFlags(['--local']);
+    assert.equal(result.time, undefined);
+    assert.equal(result.outputFile, undefined);
   });
 });

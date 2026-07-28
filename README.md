@@ -260,8 +260,8 @@ Runs the same compliance check as `ticketlens CNV1-2 --compliance` but as a dedi
 ### Compliance Ledger
 
 ```bash
-ticketlens ledger                             # View the local compliance audit ledger [Pro]
-ticketlens ledger --plain                     # Plain markdown output
+ticketlens ledger                             # View the local compliance audit ledger, JSON + signature [Pro]
+ticketlens ledger --format=csv                # Flat CSV export, no signature [Pro]
 ```
 
 Displays the append-only local ledger of all compliance checks run on this machine. Useful for SOC 2 / HIPAA audit trails. Requires a Pro license.
@@ -365,8 +365,10 @@ Cache locations:
 ticketlens schedule               # Interactive wizard — set digest time, timezone, profile [Pro]
 ticketlens schedule --stop        # Cancel the scheduled digest
 ticketlens schedule --status      # Show current schedule
-ticketlens schedule --local       # Local-only cron (no Console auth) — saves triage to file [Pro]
+ticketlens schedule --local --time=07:00 --save=./triage.txt   # Local-only cron/LaunchAgent, no Console auth [Pro]
 ```
+
+Not logged in? `ticketlens schedule` falls back to local-only mode automatically — same as passing `--local` explicitly.
 
 Stores the schedule as a cron entry. Delivers your triage digest at the configured time without an open terminal. Requires a Pro license.
 
@@ -595,6 +597,7 @@ ticketlens CNV1-2 --template=quick              # Apply quick template (meta + 2
 ticketlens CNV1-2 --template=code-review        # Apply code-review template (meta + desc + linked + code refs)
 ticketlens CNV1-2 --template=full               # Apply full template (all sections, default)
 ticketlens CNV1-2 --template=my-team-template   # Apply a custom team template [Team]
+ticketlens CNV1-2 --budget=8000                 # Trim brief to fit a token budget [Pro]
 ticketlens CNV1-2 --depth=2 --profile=acme --plain   # Combine flags freely
 
 # Pipe plain output to clipboard, LLM, or file
@@ -675,7 +678,7 @@ ticketlens cache clear --older-than=30d --yes            # Skip confirmation (CI
 ticketlens schedule                           # Interactive wizard — set time, timezone, profile [Pro]
 ticketlens schedule --stop                    # Cancel the scheduled digest [Pro]
 ticketlens schedule --status                  # Show current schedule [Pro]
-ticketlens schedule --local                   # Local-only cron/LaunchAgent — no Console auth needed [Pro]
+ticketlens schedule --local --time=07:00 --save=./triage.txt  # Local-only cron/LaunchAgent, no Console auth [Pro]
 
 # ── History ───────────────────────────────────────────────────────────────────
 ticketlens history <TICKET-KEY>               # Show urgency timeline for a ticket [Pro]

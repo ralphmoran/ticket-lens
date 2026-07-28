@@ -43,23 +43,30 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} review ${s.dim('[--branch=BRANCH]')}   Code-review context brief from current branch`,
     `    ${s.brand('ticketlens')} standup ${s.dim('[--since=N]')}        Standup summary from git log  ${s.dim('(last 24h by default)')}`,
     `    ${s.brand('ticketlens')} compliance ${s.dim('<TICKET-KEY>')}    Check requirements coverage  ${s.dim('[Pro/Free 3/mo]')}`,
+    `    ${s.brand('ticketlens')} install-hooks ${s.dim('[--uninstall]')}  Git pre-push compliance gate`,
+    `    ${s.brand('ticketlens')} pr ${s.dim('<TICKET-KEY>')}             Assemble a PR description from ticket context`,
+    `    ${s.brand('ticketlens')} ledger ${s.dim('[--format=json|csv]')}  Export your signed usage ledger  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} history ${s.dim('<TICKET-KEY>')}       Urgency timeline for a ticket  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} stats ${s.dim('[options]')}            Personal response-time metrics from local history`,
     `    ${s.brand('ticketlens')} note add ${s.dim('--title=... [--ticket=KEY]')}  Save a Recall note  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} note delete ${s.dim('--id=... [--ticket=KEY]')}  Remove a note from your local vault  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} recall ${s.dim('<query|TICKET-KEY>')}   Search your saved Recall notes  ${s.dim('[Pro]')}`,
+    `    ${s.brand('ticketlens')} recall sync                 Retry any notes stuck in the local queue  ${s.dim('[Pro]')}`,
+    `    ${s.brand('ticketlens')} recall settings             Show effective retry-queue settings, fetched live  ${s.dim('[Pro]')}`,
     '',
     `    ${s.brand('ticketlens')} delete ${s.dim('<PROFILE-NAME>')}       Remove a profile`,
     `    ${s.brand('ticketlens')} activate ${s.dim('<KEY>')}              Activate a license key`,
     `    ${s.brand('ticketlens')} license                     Show license status`,
     `    ${s.brand('ticketlens')} cache ${s.dim('[size|clear]')}          Manage attachment cache  ${s.dim('(try cache --help)')}`,
-    `    ${s.brand('ticketlens')} schedule ${s.dim('[--stop|--status]')}  Manage digest schedule  ${s.dim('[Pro]')}`,
+    `    ${s.brand('ticketlens')} schedule ${s.dim('[--stop|--status|--local]')}  Manage digest schedule  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} cloud-keys ${s.dim('[add|remove|list|test]')}  Manage your encrypted AI provider keys  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} update-skill ${s.dim('[--dry-run]')}    Update /jtb skill in Claude Code and other AI assistants`,
     '',
     `  ${s.bold('GLOBAL OPTIONS')}`,
     '',
     `    ${s.brand('--no-input')}          Force non-interactive behavior even in a terminal`,
+    `    ${s.brand('-v')}, ${s.brand('--version')}       Show version and exit ${s.dim('(same as ticketlens version)')}`,
+    `    ${s.brand('clear')}               Alias for ${s.brand('cache clear')}`,
     '',
     `  ${s.bold('FETCH OPTIONS')}`,
     '',
@@ -78,6 +85,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--cloud')}            Route AI request through TicketLens API ${s.dim('[Pro]')}`,
     `    ${s.brand('--provider')}=${s.dim('NAME')}    Force AI provider ${s.dim('(anthropic|openai|groq)')}`,
     `    ${s.brand('--template')}=${s.dim('SLUG')}    Apply a brief template ${s.dim('(full|quick|code-review, or custom [Team])')}`,
+    `    ${s.brand('--budget')}=${s.dim('N')}         Trim brief to fit a token budget  ${s.dim('[Pro]')}`,
     '',
     `  ${s.bold('TRIAGE OPTIONS')}`,
     '',
@@ -100,6 +108,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--digest')}           POST scored results to digest endpoint  ${s.dim('[Pro]')}`,
     `    ${s.brand('--static')}           Static table output ${s.dim('(skip interactive mode)')}`,
     `    ${s.brand('--plain')}            Plain markdown output ${s.dim('(for piping / LLM)')}`,
+    `    ${s.brand('--styled')}           Force ANSI-styled table output`,
     '',
     `  ${s.bold('EXAMPLES')}`,
     '',
@@ -444,15 +453,23 @@ export function printScheduleHelp({ stream = process.stdout } = {}) {
   const s = createStyler({ isTTY: stream.isTTY });
   const lines = [
     '',
-    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('schedule')} ${s.dim('[--stop|--status]')}  ${s.dim('[Pro]')}`,
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('schedule')} ${s.dim('[--stop|--status|--local]')}  ${s.dim('[Pro]')}`,
     '',
     `  Set up a recurring digest email with your triage results. ${s.dim('[Pro]')}`,
     `  Runs an interactive wizard to configure day, time, and timezone.`,
+    `  Without Console login, falls back to local-only scheduling automatically —`,
+    `  no interactive wizard, no digest email, just a cron/LaunchAgent entry that`,
+    `  writes triage output to a file.`,
     '',
     `  ${s.bold('OPTIONS')}`,
     '',
     `    ${s.brand('--stop')}        Cancel the active digest schedule`,
     `    ${s.brand('--status')}      Show current schedule configuration`,
+    `    ${s.brand('--time')}=${s.dim('HH:MM')}  Pre-fill delivery/run time ${s.dim('(skips the interactive prompt)')}`,
+    `    ${s.brand('--email')}=${s.dim('ADDR')}  Pre-fill delivery email ${s.dim('(Console-backed wizard only)')}`,
+    `    ${s.brand('--timezone')}=${s.dim('TZ')}  Pre-fill timezone ${s.dim('(Console-backed wizard only)')}`,
+    `    ${s.brand('--local')}       Local-only cron/LaunchAgent, no Console auth ${s.dim('(auto-detected when logged out)')}`,
+    `    ${s.brand('--save')}=${s.dim('FILE')}   Output file for local mode ${s.dim('(required with --local)')}`,
     `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
     '',
     `  ${s.bold('EXAMPLES')}`,
@@ -460,6 +477,7 @@ export function printScheduleHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('$')} ticketlens schedule`,
     `    ${s.dim('$')} ticketlens schedule --status`,
     `    ${s.dim('$')} ticketlens schedule --stop`,
+    `    ${s.dim('$')} ticketlens schedule --local --time=07:00 --save=./triage.txt`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');
@@ -705,6 +723,108 @@ export function printReviewHelp({ stream = process.stdout } = {}) {
     '',
     `    Branch, Changed files, Ticket context`,
     `    Requirements coverage ${s.dim('[Pro]')}, Review focus ${s.dim('[Pro]')}`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printComplianceHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('compliance')} ${s.dim('<TICKET-KEY> [--profile=NAME]')}  ${s.dim('[Pro/Free 3/mo]')}`,
+    '',
+    `  Check your current branch's diff against the ticket's requirements.`,
+    `  Extracts candidate requirements from the ticket description and diffs`,
+    `  them against what the local git diff actually covers, reporting a`,
+    `  coverage percentage and a list of uncovered items.`,
+    '',
+    `  Used internally by the pre-push hook installed via ${s.brand('ticketlens install-hooks')}`,
+    `  (reads the threshold from ${s.dim('.ticketlens-hooks.json')}, default 80%).`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--profile')}=${s.dim('NAME')}  Use a specific Jira profile`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens compliance PROJ-123`,
+    `    ${s.dim('$')} ticketlens compliance PROJ-123 --profile=myteam`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printLedgerHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('ledger')} ${s.dim('[--format=json|csv]')}  ${s.dim('[Pro]')}`,
+    '',
+    `  Export your local usage ledger — a signed, tamper-evident record of`,
+    `  billable actions (AI calls, exports, etc). Verifiable offline via an`,
+    `  HMAC-SHA256 signature over {records, exportedAt}, keyed at ledger-key.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--format')}=${s.dim('json')}   Full record export with signature ${s.dim('(default)')}`,
+    `    ${s.brand('--format')}=${s.dim('csv')}    Flat CSV, no signature`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens ledger`,
+    `    ${s.dim('$')} ticketlens ledger --format=csv`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printPrHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('pr')} ${s.dim('<TICKET-KEY> [--profile=NAME]')}`,
+    '',
+    `  Assemble a pull-request description from a ticket's context —`,
+    `  summary, acceptance criteria, and linked issues, formatted as a`,
+    `  ready-to-paste PR body.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--profile')}=${s.dim('NAME')}  Use a specific Jira profile`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens pr PROJ-123`,
+    `    ${s.dim('$')} ticketlens pr PROJ-123 --profile=myteam`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printInstallHooksHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('install-hooks')} ${s.dim('[--uninstall]')}`,
+    '',
+    `  Installs a git pre-push hook that blocks a push when this branch's`,
+    `  compliance coverage (see ${s.brand('ticketlens compliance')}) is below 80%.`,
+    `  Appends to an existing pre-push hook rather than overwriting it;`,
+    `  calling it again is a no-op if already installed.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--uninstall')}   Remove the hook, restoring any pre-existing pre-push content`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}     Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens install-hooks`,
+    `    ${s.dim('$')} ticketlens install-hooks --uninstall`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

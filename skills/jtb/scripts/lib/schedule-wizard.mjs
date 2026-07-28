@@ -253,6 +253,33 @@ export function buildLocalCronLine({ hour, minute, ticketlensBin, outputFile }) 
 }
 
 /**
+ * Decides whether `ticketlens schedule` should use the local-only path
+ * (runScheduleLocal) instead of the Console-backed wizard (runScheduleWizard)
+ * — explicit `--local`, or auto-detected whenever there's no cliToken at all,
+ * so a logged-out user gets a working local schedule instead of a hard
+ * "log in first" error.
+ *
+ * @param {{ cmdArgs?: string[], cliToken?: string|null }} opts
+ * @returns {boolean}
+ */
+export function shouldUseLocalSchedule({ cmdArgs = [], cliToken } = {}) {
+  return cmdArgs.includes('--local') || !cliToken;
+}
+
+/**
+ * Extracts the --time= and --save= flags local scheduling needs. Both are
+ * required by runScheduleLocal itself; this just does the string parsing.
+ *
+ * @param {string[]} cmdArgs
+ * @returns {{ time?: string, outputFile?: string }}
+ */
+export function parseLocalScheduleFlags(cmdArgs = []) {
+  const time = cmdArgs.find(a => a.startsWith('--time='))?.split('=')[1];
+  const outputFile = cmdArgs.find(a => a.startsWith('--save='))?.split('=')[1];
+  return { time, outputFile };
+}
+
+/**
  * Set up a local-only scheduled triage (no Console auth, no cloud push).
  * Writes a cron/LaunchAgent entry that runs `ticketlens triage --save=FILE`.
  */
