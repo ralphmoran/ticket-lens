@@ -494,6 +494,36 @@ export async function postTransition(ticketKey, transitionId, opts = {}) {
   }
 }
 
+/**
+ * Sets the issue's assignee. `assignee` is sent verbatim — the caller
+ * (jira-adapter.mjs) resolves the right shape for the API version:
+ * `{ accountId }` for Cloud (v3), `{ name }` for Server/DC (v2), since
+ * Cloud has no username concept and Server/DC has no accountId.
+ */
+export async function assignIssue(ticketKey, assignee, opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const url = `${baseUrl}/rest/api/${apiVersion}/issue/${encodeURIComponent(ticketKey)}/assignee`;
+
+  const fetchOpts = {
+    method: 'PUT',
+    headers: { ...buildAuthHeader(env), 'Content-Type': 'application/json' },
+    body: JSON.stringify(assignee),
+  };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
+  if (!response.ok) {
+    let details;
+    try { details = await response.json(); } catch { /* body not JSON — fall through with no details */ }
+    const err = new Error(`Jira API error ${response.status} assigning ${ticketKey}`);
+    err.status = response.status;
+    err.details = details;
+    throw err;
+  }
+}
+
 export async function fetchTicket(ticketKey, opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), depth = 1, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false, allowPrivateIp = false, _visited = new Set(), _currentDepth = 0 } = opts;
   validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);

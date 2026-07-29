@@ -127,12 +127,12 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
     async fetchCurrentUser(opts = {}) {
       const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
       const data = await gql(
-        `{ viewer { name email } }`,
+        `{ viewer { id name email } }`,
         {},
         { token, fetcher, signal },
       );
       const v = data.viewer;
-      return { displayName: v.name, email: v.email ?? null };
+      return { displayName: v.name, email: v.email ?? null, id: v.id };
     },
 
     async searchTickets(_query, opts = {}) {
@@ -230,6 +230,32 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
         return { executed: false, reason: 'mutation-rejected', options };
       }
       return { executed: true, to: match.to };
+    },
+
+    /**
+     * Self-assign only — arbitrary-user assignment would need a
+     * user-search query this codebase doesn't have yet.
+     */
+    async assignToSelf(key, opts = {}) {
+      const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
+      const me = await this.fetchCurrentUser(opts);
+      if (!me.id) {
+        throw new Error(`Cannot determine current user's id — Linear did not return it for this connection.`);
+      }
+      const info = await fetchIssueStateInfo(key, { token, fetcher, signal });
+      const data = await gql(
+        `mutation ($id: String!, $assigneeId: String!) {
+          issueUpdate(id: $id, input: { assigneeId: $assigneeId }) {
+            success
+          }
+        }`,
+        { id: info.id, assigneeId: me.id },
+        { token, fetcher, signal },
+      );
+      if (!data.issueUpdate?.success) {
+        throw new Error(`Linear issueUpdate reported success:false assigning ${key}`);
+      }
+      return { assignee: me.displayName ?? me.id };
     },
   };
 }

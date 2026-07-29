@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue } from '../lib/jira-client.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -955,6 +955,42 @@ describe('postTransition', () => {
     await assert.rejects(
       () => postTransition('PROJ-1', '31', { env: ENV, fetcher }),
       (err) => err.status === 400 && err.details.errors.customfield_10010 === 'Required field',
+    );
+  });
+});
+
+describe('assignIssue', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+
+  it('PUTs the given assignee payload to the assignee endpoint', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = { url, method: opts.method, body: JSON.parse(opts.body) }; return { ok: true, status: 204 }; };
+    await assignIssue('PROJ-1', { accountId: 'acc-123' }, { env: ENV, fetcher, apiVersion: 3 });
+    assert.equal(captured.method, 'PUT');
+    assert.deepEqual(captured.body, { accountId: 'acc-123' });
+    assert.match(captured.url, /\/issue\/PROJ-1\/assignee$/);
+  });
+
+  it('sends whatever assignee shape it is given verbatim (Server/DC uses {name} instead)', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, status: 204 }; };
+    await assignIssue('PROJ-1', { name: 'jdoe' }, { env: ENV, fetcher, apiVersion: 2 });
+    assert.deepEqual(captured, { name: 'jdoe' });
+  });
+
+  it('throws with .status on a non-OK response', async () => {
+    const fetcher = async () => ({ ok: false, status: 404, json: async () => ({ errorMessages: ['User does not exist'] }) });
+    await assert.rejects(
+      () => assignIssue('PROJ-1', { accountId: 'acc-123' }, { env: ENV, fetcher }),
+      (err) => err.status === 404,
+    );
+  });
+
+  it('goes through validateBaseUrl/guardedFetch like every other write (SSRF guard not bypassed)', async () => {
+    const badEnv = { ...ENV, JIRA_BASE_URL: 'https://169.254.169.254' };
+    await assert.rejects(
+      () => assignIssue('PROJ-1', { accountId: 'x' }, { env: badEnv, fetcher: async () => ({ ok: true, status: 204 }) }),
+      /blocked/,
     );
   });
 });

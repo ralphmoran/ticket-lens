@@ -278,6 +278,16 @@ describe('fetchCurrentUser', () => {
     assert.equal(user.email, 'alice@example.com');
   });
 
+  it('also returns login — the real username needed for assignment, not just a display label', async () => {
+    const fetcher = async () => ({
+      ok: true,
+      json: async () => ({ login: 'alice', name: 'Alice Smith', email: 'alice@example.com' }),
+    });
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const user = await adapter.fetchCurrentUser();
+    assert.equal(user.login, 'alice');
+  });
+
   it('falls back to login when name is null', async () => {
     const fetcher = async () => ({
       ok: true,
@@ -474,5 +484,46 @@ describe('transition', () => {
     };
     const adapter = createGitHubAdapter(CONN, { fetcher });
     await assert.rejects(adapter.transition('WGT-42', 'closed'), (err) => err.status === 422);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// assignToSelf
+// ---------------------------------------------------------------------------
+describe('assignToSelf', () => {
+  it('PATCHes the issue with the current user login as sole assignee', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => {
+      calls.push({ url, opts });
+      if (url.endsWith('/user')) return { ok: true, json: async () => ({ login: 'alice', name: 'Alice Smith', email: 'alice@example.com' }) };
+      return { ok: true, status: 200, headers: noHeaders(), json: async () => ({}) };
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const result = await adapter.assignToSelf('WGT-42');
+    const patch = calls.find(c => c.opts?.method === 'PATCH');
+    assert.equal(patch.url, 'https://api.github.com/repos/acme/widgets/issues/42');
+    assert.deepEqual(JSON.parse(patch.opts.body), { assignees: ['alice'] });
+    assert.equal(result.assignee, 'Alice Smith');
+  });
+
+  it('throws with .status on a failed PATCH', async () => {
+    const fetcher = async (url, opts) => {
+      if (url.endsWith('/user')) return { ok: true, json: async () => ({ login: 'alice' }) };
+      return { ok: false, status: 422, headers: noHeaders(), json: async () => ({ message: 'Unprocessable' }) };
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.assignToSelf('WGT-42'), (err) => err.status === 422);
+  });
+
+  it('refuses to assign when login is missing — never sends an incomplete assignees array', async () => {
+    let patchCalled = false;
+    const fetcher = async (url, opts) => {
+      if (opts?.method === 'PATCH') patchCalled = true;
+      if (url.endsWith('/user')) return { ok: true, json: async () => ({ login: null, name: 'Alice' }) };
+      return { ok: true, status: 200, headers: noHeaders(), json: async () => ({}) };
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    await assert.rejects(() => adapter.assignToSelf('WGT-42'), /login/);
+    assert.equal(patchCalled, false);
   });
 });

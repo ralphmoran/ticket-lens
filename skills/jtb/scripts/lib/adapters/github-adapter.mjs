@@ -123,7 +123,7 @@ export function createGitHubAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       });
       if (!res.ok) throw new Error(`GitHub API error ${res.status} fetching current user`);
       const raw = await res.json();
-      return { displayName: raw.name || raw.login, email: raw.email ?? null };
+      return { displayName: raw.name || raw.login, email: raw.email ?? null, login: raw.login };
     },
 
     async searchTickets(_query, opts = {}) {
@@ -186,6 +186,27 @@ export function createGitHubAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       });
       if (!res.ok) await throwGitHubWriteError(res, 'transitioning', key);
       return { executed: true, to: match.to };
+    },
+
+    /**
+     * Self-assign only — GitHub's assignees field is an array, but this
+     * always replaces it with exactly the caller, mirroring the other
+     * adapters' self-assign scope (arbitrary-user assignment deferred).
+     */
+    async assignToSelf(key, opts = {}) {
+      const me = await this.fetchCurrentUser(opts);
+      if (!me.login) {
+        throw new Error(`Cannot determine current user's login — GitHub did not return it for this connection.`);
+      }
+      const number = parseInt(key.split('-').pop(), 10);
+      const res = await fetcher(`${GITHUB_API}/repos/${owner}/${repo}/issues/${number}`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignees: [me.login] }),
+        signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
+      });
+      if (!res.ok) await throwGitHubWriteError(res, 'assigning', key);
+      return { assignee: me.displayName ?? me.login };
     },
   };
 }

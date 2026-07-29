@@ -1,4 +1,4 @@
-import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, postComment, getTransitions, postTransition } from '../jira-client.mjs';
+import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, postComment, getTransitions, postTransition, assignIssue } from '../jira-client.mjs';
 import { buildJiraEnv } from '../config.mjs';
 
 /**
@@ -42,6 +42,27 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       }
       await postTransition(key, match.id, { ...base, ...opts });
       return { executed: true, to: match.to ?? match.name };
+    },
+
+    /**
+     * Self-assign only — arbitrary-user assignment would need a
+     * user-search API this codebase doesn't have yet. Reuses
+     * fetchCurrentUser, which already returns both accountId (Cloud)
+     * and name (Server/DC).
+     */
+    async assignToSelf(key, opts = {}) {
+      const me = await fetchCurrentUser({ ...base, ...opts });
+      const field = apiVersion === 3 ? 'accountId' : 'name';
+      const value = me[field];
+      // Jira's PUT /issue/{key}/assignee treats a null identity field as
+      // "unassign", not an error — it returns 204 either way. Never send
+      // it: that would silently unassign the ticket while this command
+      // reports success.
+      if (!value) {
+        throw new Error(`Cannot determine current user's ${field} — Jira did not return it for this connection.`);
+      }
+      await assignIssue(key, { [field]: value }, { ...base, ...opts });
+      return { assignee: me.displayName ?? value };
     },
   };
 }

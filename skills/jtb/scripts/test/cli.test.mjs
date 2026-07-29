@@ -232,4 +232,15 @@ describe('parseCommand', () => {
     const stillFetch = parseCommand(['PROJ-999']);
     assert.equal(stillFetch.command, 'fetch');
   });
+
+  it('routes "assign" to assign command', () => {
+    const result = parseCommand(['assign', 'PROJ-1', '--to=me']);
+    assert.equal(result.command, 'assign');
+    assert.deepEqual(result.args, ['PROJ-1', '--to=me']);
+  });
+
+  it('lock — adding "assign" does not change the ticket-key fallback for anything else', () => {
+    const stillFetch = parseCommand(['PROJ-999']);
+    assert.equal(stillFetch.command, 'fetch');
+  });
 });

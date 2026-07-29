@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { runTicketComment, runTicketTransitionList, runTicketTransition, classifyWriteFailure } from '../lib/ticket-command.mjs';
+import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, classifyWriteFailure } from '../lib/ticket-command.mjs';
 
 function makeStream() {
   const lines = [];
@@ -13,6 +13,7 @@ function fakeAdapter(overrides = {}) {
     addComment: async () => ({ id: 'c1', url: 'https://example/c1' }),
     getTransitions: async () => [{ id: '1', name: 'Done', to: 'Done' }],
     transition: async () => ({ executed: true, to: 'Done' }),
+    assignToSelf: async () => ({ assignee: 'Ralph Moran' }),
     ...overrides,
   };
 }
@@ -274,5 +275,93 @@ describe('runTicketTransition — write failure', () => {
     const result = await runTicketTransition(['PROJ-1', '--target=Done', '--confirm'], deps);
     assert.equal(result.ok, false);
     assert.match(deps.stream.lines.join(''), /Network error or timeout/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runTicketAssign
+// ---------------------------------------------------------------------------
+describe('runTicketAssign — license gate', () => {
+  test('unlicensed: never resolves a connection, never assigns', async () => {
+    let resolveCalls = 0;
+    const deps = baseDeps({
+      isLicensedFn: () => false,
+      resolveConnectionFn: () => { resolveCalls++; return { baseUrl: 'x' }; },
+    });
+    const result = await runTicketAssign(['PROJ-1', '--to=me'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(resolveCalls, 0);
+  });
+});
+
+describe('runTicketAssign — usage validation', () => {
+  test('missing ticket key shows usage', async () => {
+    const deps = baseDeps();
+    const result = await runTicketAssign(['--to=me'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Usage/);
+  });
+
+  test('missing --to shows usage', async () => {
+    const deps = baseDeps();
+    const result = await runTicketAssign(['PROJ-1'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Usage/);
+  });
+
+  test('--to value other than "me" is rejected with an explicit not-yet-supported message, never reaches the adapter', async () => {
+    let assignCalled = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ assignToSelf: async () => { assignCalled = true; return { assignee: 'x' }; } }),
+    });
+    const result = await runTicketAssign(['PROJ-1', '--to=someone@else.com'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(assignCalled, false);
+    assert.match(deps.stream.lines.join(''), /not yet supported/);
+  });
+});
+
+describe('runTicketAssign — cooldown', () => {
+  test('active cooldown skips the write entirely', async () => {
+    let assignCalled = false;
+    const deps = baseDeps({
+      checkCooldownFn: () => ({ active: true, remainingMs: 3000 }),
+      resolveAdapterFn: () => fakeAdapter({ assignToSelf: async () => { assignCalled = true; return { assignee: 'x' }; } }),
+    });
+    const result = await runTicketAssign(['PROJ-1', '--to=me'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(assignCalled, false);
+    assert.match(deps.stream.lines.join(''), /Skipped/);
+  });
+});
+
+describe('runTicketAssign — happy path', () => {
+  test('assigns to self, records cooldown, and logs the action', async () => {
+    let recorded, logged;
+    const deps = baseDeps({
+      recordActionFn: (key, action) => { recorded = { key, action }; },
+      logActionFn: (entry) => { logged = entry; },
+    });
+    const result = await runTicketAssign(['PROJ-1', '--to=me'], deps);
+    assert.equal(result.ok, true);
+    assert.deepEqual(recorded, { key: 'PROJ-1', action: 'assign' });
+    assert.equal(logged.detail.assignee, 'Ralph Moran');
+    assert.match(deps.stream.lines.join(''), /assigned to Ralph Moran/);
+  });
+});
+
+describe('runTicketAssign — write failure', () => {
+  test('a thrown error is classified and reported, cooldown/log are never recorded', async () => {
+    let recorded = false, logged = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ assignToSelf: async () => { throw Object.assign(new Error('boom'), { status: 500 }); } }),
+      recordActionFn: () => { recorded = true; },
+      logActionFn: () => { logged = true; },
+    });
+    const result = await runTicketAssign(['PROJ-1', '--to=me'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(recorded, false);
+    assert.equal(logged, false);
+    assert.match(deps.stream.lines.join(''), /server error/);
   });
 });

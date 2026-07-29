@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.24.0 -->
+<!-- jtb-skill-version: 0.25.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -63,6 +63,7 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb comment PROD-1234 --body="..."    # post a comment to the tracker (Pro)
 /jtb transition PROD-1234              # list the tracker's current valid transitions (Pro)
 /jtb transition PROD-1234 --target="Done" --confirm  # execute the transition (Pro)
+/jtb assign PROD-1234 --to=me          # assign the ticket to yourself (Pro)
 ```
 
 ## Prerequisites
@@ -263,23 +264,26 @@ Recall notes are stored locally at `~/.ticketlens/recall/`. On a Pro account wit
 
 ---
 
-## Comment & Transition — write back to the tracker (Pro)
+## Comment, Transition & Assign — write back to the tracker (Pro)
 
-Unlike Recall (a local note about a ticket), these write directly to the ticket's real tracker — Jira, GitHub, or Linear. Only dispatch when the user has actually asked for the ticket to be commented on or moved — never as a routine end-of-session action the way Recall capture is.
+Unlike Recall (a local note about a ticket), these write directly to the ticket's real tracker — Jira, GitHub, or Linear. Only dispatch when the user has actually asked for the ticket to be commented on, moved, or assigned — never as a routine end-of-session action the way Recall capture is.
 
 ```bash
 ticketlens comment PROD-1234 --body="Fixed in a2f9c1, deployed to staging."
 ticketlens transition PROD-1234                              # list valid transitions — read-only
 ticketlens transition PROD-1234 --target="Done" --confirm    # execute
+ticketlens assign PROD-1234 --to=me                          # assign to yourself
 ```
 
 `transition` called with just a ticket key never mutates anything — it lists the tracker's current valid options (Jira: real workflow transitions for that issue; GitHub: open/closed; Linear: team-scoped workflow states). Only add `--target` **and** `--confirm` once the target has actually been confirmed with the user — `--confirm` is a deliberate two-step gate, not a formality to route around. Never guess a `--target` value; always list first, then use one of the names shown.
 
-Both actions have a short local debounce (10s) against an accidental double-fire, and every write is appended to a local audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — surface the failure to the user rather than silently re-attempting, since a ticket write isn't naturally idempotent the way a Recall note save is.
+`assign` is self-assign only — `--to` must be `me`. There is no way to assign to anyone else yet; don't attempt a workaround (e.g. via `comment`) if the user asks for that — tell them it isn't supported.
 
-**Pick exactly one path per action — never both.** If this harness has TicketLens's MCP server configured (`ticketlens mcp` — `ticket_comment`/`ticket_transition` as native tools, see `ticketlens mcp --help`), prefer calling those tools directly over the bash commands above — same license gate, same cooldown, same audit log. Fall back to the bash form only when the MCP tools aren't available.
+All three actions have a short local debounce (10s) against an accidental double-fire, and every write is appended to a local audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — surface the failure to the user rather than silently re-attempting, since a ticket write isn't naturally idempotent the way a Recall note save is.
 
-Requires a Pro license — on Free, both no-op with an upgrade hint on stderr.
+**Pick exactly one path per action — never both.** If this harness has TicketLens's MCP server configured (`ticketlens mcp` — `ticket_comment`/`ticket_transition`/`ticket_assign` as native tools, see `ticketlens mcp --help`), prefer calling those tools directly over the bash commands above — same license gate, same cooldown, same audit log. Fall back to the bash form only when the MCP tools aren't available.
+
+Requires a Pro license — on Free, all three no-op with an upgrade hint on stderr.
 
 ---
 

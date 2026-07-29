@@ -28,7 +28,7 @@ import {
   printCollisionsHelp, printStatsHelp,
   printCloudKeysHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
-  printCommentHelp, printTransitionHelp,
+  printCommentHelp, printTransitionHelp, printAssignHelp,
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { runStats } from '../skills/jtb/scripts/lib/run-stats.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
@@ -758,6 +758,18 @@ switch (command) {
     const hasTarget = cmdArgs.some(a => a.startsWith('--target='));
     const runFn = hasTarget ? runTicketTransition : runTicketTransitionList;
     runFn(cmdArgs).then(({ ok }) => {
+      if (!ok) process.exitCode = 1;
+    }).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+  }
+
+  case 'assign': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printAssignHelp(); break; }
+    const { runTicketAssign } = await import('../skills/jtb/scripts/lib/ticket-command.mjs');
+    runTicketAssign(cmdArgs).then(({ ok }) => {
       if (!ok) process.exitCode = 1;
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);

@@ -118,3 +118,64 @@ describe('createJiraAdapter — transition', () => {
     assert.equal(postCalled, false);
   });
 });
+
+describe('createJiraAdapter — assignToSelf', () => {
+  it('uses accountId for Cloud (apiVersion 3)', async () => {
+    let captured;
+    const fetcher = async (url, opts) => {
+      captured = { url, method: opts.method, body: opts.body ? JSON.parse(opts.body) : undefined };
+      if (!opts.method) return { ok: true, status: 200, json: async () => ({ accountId: 'acc-1', name: null, displayName: 'Alice', emailAddress: 'a@x.com' }) };
+      return { ok: true, status: 204 };
+    };
+    const adapter = createJiraAdapter({ ...CONN, auth: 'cloud' }, { fetcher });
+    const result = await adapter.assignToSelf('TEST-1');
+    assert.deepEqual(captured.body, { accountId: 'acc-1' });
+    assert.match(captured.url, /\/assignee$/);
+    assert.equal(result.assignee, 'Alice');
+  });
+
+  it('uses name for Server/DC (apiVersion 2)', async () => {
+    let captured;
+    const fetcher = async (url, opts) => {
+      captured = { body: opts.body ? JSON.parse(opts.body) : undefined };
+      if (!opts.method) return { ok: true, status: 200, json: async () => ({ accountId: null, name: 'jdoe', displayName: 'John Doe', emailAddress: null }) };
+      return { ok: true, status: 204 };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    await adapter.assignToSelf('TEST-1');
+    assert.deepEqual(captured.body, { name: 'jdoe' });
+  });
+
+  it('refuses to assign when accountId is null on Cloud (apiVersion 3) — never sends a null identity that Jira would treat as unassign', async () => {
+    let putCalled = false;
+    const fetcher = async (_url, opts) => {
+      if (opts.method === 'PUT') putCalled = true;
+      if (!opts.method) return { ok: true, status: 200, json: async () => ({ accountId: null, name: null, displayName: 'Alice', emailAddress: null }) };
+      return { ok: true, status: 204 };
+    };
+    const adapter = createJiraAdapter({ ...CONN, auth: 'cloud' }, { fetcher });
+    await assert.rejects(() => adapter.assignToSelf('TEST-1'), /accountId/);
+    assert.equal(putCalled, false);
+  });
+
+  it('refuses to assign when name is null on Server/DC (apiVersion 2) — never sends a null identity that Jira would treat as unassign', async () => {
+    let putCalled = false;
+    const fetcher = async (_url, opts) => {
+      if (opts.method === 'PUT') putCalled = true;
+      if (!opts.method) return { ok: true, status: 200, json: async () => ({ accountId: null, name: null, displayName: 'Alice', emailAddress: null }) };
+      return { ok: true, status: 204 };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    await assert.rejects(() => adapter.assignToSelf('TEST-1'), /name/);
+    assert.equal(putCalled, false);
+  });
+
+  it('threads conn.allowPrivateIp into assignToSelf', async () => {
+    const fetcher = async (_url, opts) => {
+      if (!opts.method) return { ok: true, status: 200, json: async () => ({ accountId: null, name: 'jdoe' }) };
+      return { ok: true, status: 204 };
+    };
+    const adapter = createJiraAdapter({ ...CONN, allowPrivateIp: true }, { fetcher });
+    await assert.doesNotReject(() => adapter.assignToSelf('TEST-1', { lookup: privateLookup }));
+  });
+});

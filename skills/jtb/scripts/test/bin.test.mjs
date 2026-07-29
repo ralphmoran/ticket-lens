@@ -204,6 +204,8 @@ describe('bin/ticketlens.mjs', () => {
     ['comment', '-h'],
     ['transition', '--help'],
     ['transition', '-h'],
+    ['assign', '--help'],
+    ['assign', '-h'],
   ]) {
     it(`"ticketlens ${cmd} ${flag}" exits 0 and prints help`, () => {
       const result = spawnSync('node', [binPath, cmd, flag], {
@@ -301,6 +303,21 @@ describe('bin/ticketlens.mjs', () => {
     const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-transition-confirm-gate-'));
     try {
       const result = spawnSync('node', [binPath, 'transition', 'PROD-1', '--target=Done'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        env: { ...process.env, HOME: freshHome, CI: 'true' },
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /pro/i);
+    } finally {
+      rmSync(freshHome, { recursive: true, force: true });
+    }
+  });
+
+  it('"ticketlens assign" with no Pro license shows an upgrade prompt and exits non-zero', () => {
+    const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-assign-gate-'));
+    try {
+      const result = spawnSync('node', [binPath, 'assign', 'PROD-1', '--to=me'], {
         encoding: 'utf8',
         timeout: 5000,
         env: { ...process.env, HOME: freshHome, CI: 'true' },

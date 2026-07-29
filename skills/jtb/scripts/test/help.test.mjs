@@ -7,7 +7,7 @@ import {
   printProfilesHelp, printScheduleHelp,
   printInitHelp, printSwitchHelp, printConfigHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
-  printCommentHelp, printTransitionHelp,
+  printCommentHelp, printTransitionHelp, printAssignHelp,
 } from '../lib/help.mjs';
 
 function captureHelp(fn) {
@@ -351,20 +351,37 @@ describe('printHelp — Recall commands', () => {
     const idx = out.indexOf('ticketlens transition');
     assert.ok(idx !== -1 && idx > usageIdx, '"ticketlens transition" must appear in USAGE');
   });
+
+  it('USAGE section documents ticketlens assign command', () => {
+    const out = captureHelp(printHelp);
+    const usageIdx = out.indexOf('USAGE');
+    const idx = out.indexOf('ticketlens assign');
+    assert.ok(idx !== -1 && idx > usageIdx, '"ticketlens assign" must appear in USAGE');
+  });
 });
 
 describe('printMcpHelp — ticket tools', () => {
-  it('documents ticket_comment and ticket_transition alongside recall_add/recall_search', () => {
+  it('documents ticket_comment, ticket_transition, and ticket_assign alongside recall_add/recall_search', () => {
     const out = captureHelp(printMcpHelp);
     assert.match(out, /recall_add/);
     assert.match(out, /recall_search/);
     assert.match(out, /ticket_comment/);
     assert.match(out, /ticket_transition/);
+    assert.match(out, /ticket_assign/);
   });
 
   it('flags ticket_transition as destructive when target+confirm are given', () => {
     const out = captureHelp(printMcpHelp);
     assert.match(out, /destructive/i);
+  });
+});
+
+describe('printAssignHelp', () => {
+  it('documents the required --to=me flag and the Pro tier gate', () => {
+    const out = captureHelp(printAssignHelp);
+    assert.match(out, /assign/);
+    assert.match(out, /--to/);
+    assert.match(out, /\[Pro\]/);
   });
 });
 

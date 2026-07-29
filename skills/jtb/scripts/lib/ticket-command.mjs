@@ -234,3 +234,57 @@ export async function runTicketTransition(cmdArgs, {
     return { ok: false };
   }
 }
+
+/**
+ * Self-assign only — `--to` currently only accepts the literal "me".
+ * Arbitrary-user assignment needs a per-tracker user-search step this
+ * codebase doesn't have yet; kept as an explicit, rejected value now so
+ * a future `--to=someone@else.com` doesn't silently redefine what a
+ * bare/missing --to means today.
+ *
+ * @param {string[]} cmdArgs - [ticketKey, '--to=me']
+ * @returns {Promise<{ ok: boolean }>}
+ */
+export async function runTicketAssign(cmdArgs, {
+  configDir = DEFAULT_CONFIG_DIR,
+  stream = process.stderr,
+  isLicensedFn = isLicensed,
+  resolveConnectionFn = resolveConnection,
+  resolveAdapterFn = resolveAdapter,
+  checkCooldownFn = checkCooldown,
+  recordActionFn = recordAction,
+  logActionFn = logAction,
+  actor = os.userInfo().username,
+} = {}) {
+  const usage = 'Usage: ticketlens assign TICKET-KEY --to=me\n';
+  if (!requireLicense(isLicensedFn, configDir, 'ticketlens assign', stream)) return { ok: false };
+
+  const ticketKey = requireTicketKey(cmdArgs, usage, stream);
+  if (!ticketKey) return { ok: false };
+
+  const to = parseFlag(cmdArgs, 'to');
+  if (to !== 'me') {
+    stream.write(to ? `  --to="${to}" is not yet supported — only --to=me (self-assign) is available.\n` : usage);
+    return { ok: false };
+  }
+
+  const cooldown = checkCooldownFn(ticketKey, 'assign', { configDir });
+  if (cooldown.active) {
+    stream.write(`  Skipped — ${ticketKey} was already assigned ${Math.ceil(cooldown.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
+    return { ok: false };
+  }
+
+  const adapter = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!adapter) return { ok: false };
+
+  try {
+    const result = await adapter.assignToSelf(ticketKey);
+    recordActionFn(ticketKey, 'assign', { configDir });
+    logActionFn({ ticketKey, action: 'assign', actor, tracker: adapter.type, detail: { assignee: result.assignee } }, { configDir });
+    stream.write(`  ${ticketKey} assigned to ${result.assignee}.\n`);
+    return { ok: true };
+  } catch (err) {
+    stream.write(formatWriteFailure(ticketKey, err));
+    return { ok: false };
+  }
+}

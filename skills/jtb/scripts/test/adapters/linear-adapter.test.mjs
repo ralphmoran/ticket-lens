@@ -254,12 +254,21 @@ describe('fetchTicket', () => {
 describe('fetchCurrentUser', () => {
   it('returns displayName (from name) and email', async () => {
     const fetcher = async () => makeResponse({
-      viewer: { name: 'Alice Jones', email: 'alice@example.com' },
+      viewer: { id: 'user-uuid-1', name: 'Alice Jones', email: 'alice@example.com' },
     });
     const adapter = createLinearAdapter(CONN, { fetcher });
     const user = await adapter.fetchCurrentUser();
     assert.equal(user.displayName, 'Alice Jones');
     assert.equal(user.email, 'alice@example.com');
+  });
+
+  it('also returns id — the internal UUID needed for assignment mutations, not just a display label', async () => {
+    const fetcher = async () => makeResponse({
+      viewer: { id: 'user-uuid-1', name: 'Alice Jones', email: 'alice@example.com' },
+    });
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const user = await adapter.fetchCurrentUser();
+    assert.equal(user.id, 'user-uuid-1');
   });
 
   it('throws on non-OK response', async () => {
@@ -463,5 +472,49 @@ describe('transition', () => {
     const result = await adapter.transition('ENG-42', 'done');
     assert.equal(result.executed, false);
     assert.equal(result.reason, 'mutation-rejected');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// assignToSelf
+// ---------------------------------------------------------------------------
+describe('assignToSelf', () => {
+  it('resolves the issue internal id and the viewer id, then mutates using both', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ viewer: { id: 'user-uuid-1', name: 'Alice Jones', email: 'a@x.com' } });
+      if (calls.length === 2) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      return makeResponse({ issueUpdate: { success: true } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.assignToSelf('ENG-42');
+    assert.equal(calls.length, 3);
+    assert.equal(calls[2].variables.id, 'issue-uuid-1');
+    assert.equal(calls[2].variables.assigneeId, 'user-uuid-1');
+    assert.equal(result.assignee, 'Alice Jones');
+  });
+
+  it('throws when issueUpdate reports success:false', async () => {
+    const fetcher = sequencedFetcher([
+      () => makeResponse({ viewer: { id: 'user-uuid-1', name: 'Alice Jones', email: 'a@x.com' } }),
+      () => makeResponse({ issues: { nodes: [ISSUE_INFO] } }),
+      () => makeResponse({ issueUpdate: { success: false } }),
+    ]);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.assignToSelf('ENG-42'), /success:false/);
+  });
+
+  it('refuses to assign when id is missing — never sends an incomplete assigneeId mutation', async () => {
+    let mutationCalled = false;
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      if (body.query.includes('issueUpdate')) mutationCalled = true;
+      return makeResponse({ viewer: { id: null, name: 'Alice Jones', email: 'a@x.com' } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await assert.rejects(() => adapter.assignToSelf('ENG-42'), /id/);
+    assert.equal(mutationCalled, false);
   });
 });

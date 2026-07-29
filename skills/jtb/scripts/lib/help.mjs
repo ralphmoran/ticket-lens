@@ -56,6 +56,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} mcp                         Start the MCP stdio server for Recall  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} comment ${s.dim('<TICKET-KEY> --body=...')}  Post a comment to the tracker  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} transition ${s.dim('<TICKET-KEY> [--target=... --confirm]')}  Move ticket status  ${s.dim('[Pro]')}`,
+    `    ${s.brand('ticketlens')} assign ${s.dim('<TICKET-KEY> --to=me')}      Assign a ticket to yourself  ${s.dim('[Pro]')}`,
     '',
     `    ${s.brand('ticketlens')} delete ${s.dim('<PROFILE-NAME>')}       Remove a profile`,
     `    ${s.brand('ticketlens')} activate ${s.dim('<KEY>')}              Activate a license key`,
@@ -596,10 +597,11 @@ export function printMcpHelp({ stream = process.stdout } = {}) {
     '',
     `  Start an MCP (Model Context Protocol) stdio server exposing Recall and`,
     `  ticket writes as native tools — ${s.cyan('recall_add')}, ${s.cyan('recall_search')}, ${s.cyan('ticket_comment')},`,
-    `  ${s.cyan('ticket_transition')} — for any MCP-compatible AI harness, not just Claude Code.`,
-    `  Thin adapter over the same code as ${s.cyan('note add')}/${s.cyan('recall')}/${s.cyan('comment')}/${s.cyan('transition')}`,
-    `  above: same Pro gate, same local vault/tracker writes, same team sync.`,
-    `  ${s.cyan('ticket_transition')} is destructive when called with \`target\`+\`confirm: true\`.`,
+    `  ${s.cyan('ticket_transition')}, ${s.cyan('ticket_assign')} — for any MCP-compatible AI harness, not just`,
+    `  Claude Code. Thin adapter over the same code as ${s.cyan('note add')}/${s.cyan('recall')}/${s.cyan('comment')}/`,
+    `  ${s.cyan('transition')}/${s.cyan('assign')} above: same Pro gate, same local vault/tracker writes, same`,
+    `  team sync. ${s.cyan('ticket_transition')} is destructive when called with \`target\`+\`confirm: true\`;`,
+    `  ${s.cyan('ticket_assign')} is currently self-assign only.`,
     `  Long-running — exits when the client closes stdin.`,
     '',
     `  ${s.bold('OPTIONS')}`,
@@ -671,6 +673,30 @@ export function printTransitionHelp({ stream = process.stdout } = {}) {
     '',
     `    ${s.dim('$')} ticketlens transition PROD-123`,
     `    ${s.dim('$')} ticketlens transition PROD-123 --target="Done" --confirm`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printAssignHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('assign')} ${s.dim('TICKET-KEY --to=me')}  ${s.dim('[Pro]')}`,
+    '',
+    `  Assign a ticket to yourself directly in its tracker (Jira/GitHub/Linear). ${s.dim('[Pro]')}`,
+    `  Self-assign only for now — ${s.brand('--to')} must be ${s.brand('me')}. Assigning to someone else`,
+    `  isn't supported yet.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--to')}=${s.dim('me')}       Required — only "me" is currently supported`,
+    `    ${s.brand('--profile')}=${s.dim('NAME')} Connection profile to use ${s.dim('(optional)')}`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens assign PROD-123 --to=me`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');
