@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.22.0 -->
+<!-- jtb-skill-version: 0.22.1 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -232,7 +232,7 @@ echo "The body text of the note, one or more paragraphs." | \
 
 To search saved notes directly (outside of automatic brief injection): `ticketlens recall "<query>"`.
 
-If this harness has TicketLens's MCP server configured (`ticketlens mcp` — `recall_add`/`recall_search` as native tools, see `ticketlens mcp --help`), calling those tools directly is equivalent to the bash commands above — same license gate, same secret scan, same vault, same team sync, just no shell command to construct. Which path a given harness prefers by default is not decided here yet; both are correct.
+**Pick exactly one path per capture — never both.** If this harness has TicketLens's MCP server configured (`ticketlens mcp` — `recall_add`/`recall_search` as native tools, see `ticketlens mcp --help`), prefer calling those tools directly over the bash commands above — same license gate, same secret scan, same vault, same team sync, just no shell command to construct. Fall back to the bash form only when the MCP tools aren't available. Calling both for the same insight creates two near-duplicate notes (no dedup exists between the two paths) and, with team sync on, two separate pushes for a manager to review.
 
 ### Quality loop (Pro, in-session only)
 
