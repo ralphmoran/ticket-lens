@@ -7,7 +7,7 @@ import {
   printProfilesHelp, printScheduleHelp,
   printInitHelp, printSwitchHelp, printConfigHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
-  printCommentHelp, printTransitionHelp, printAssignHelp,
+  printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp,
 } from '../lib/help.mjs';
 
 function captureHelp(fn) {
@@ -358,21 +358,34 @@ describe('printHelp — Recall commands', () => {
     const idx = out.indexOf('ticketlens assign');
     assert.ok(idx !== -1 && idx > usageIdx, '"ticketlens assign" must appear in USAGE');
   });
+
+  it('USAGE section documents ticketlens duplicates command', () => {
+    const out = captureHelp(printHelp);
+    const usageIdx = out.indexOf('USAGE');
+    const idx = out.indexOf('ticketlens duplicates');
+    assert.ok(idx !== -1 && idx > usageIdx, '"ticketlens duplicates" must appear in USAGE');
+  });
 });
 
 describe('printMcpHelp — ticket tools', () => {
-  it('documents ticket_comment, ticket_transition, and ticket_assign alongside recall_add/recall_search', () => {
+  it('documents ticket_comment, ticket_transition, ticket_assign, and ticket_duplicates alongside recall_add/recall_search', () => {
     const out = captureHelp(printMcpHelp);
     assert.match(out, /recall_add/);
     assert.match(out, /recall_search/);
     assert.match(out, /ticket_comment/);
     assert.match(out, /ticket_transition/);
     assert.match(out, /ticket_assign/);
+    assert.match(out, /ticket_duplicates/);
   });
 
   it('flags ticket_transition as destructive when target+confirm are given', () => {
     const out = captureHelp(printMcpHelp);
     assert.match(out, /destructive/i);
+  });
+
+  it('flags ticket_duplicates as read-only', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /ticket_duplicates.*read-only/s);
   });
 });
 
@@ -381,6 +394,15 @@ describe('printAssignHelp', () => {
     const out = captureHelp(printAssignHelp);
     assert.match(out, /assign/);
     assert.match(out, /--to/);
+    assert.match(out, /\[Pro\]/);
+  });
+});
+
+describe('printDuplicatesHelp', () => {
+  it('documents the --threshold flag and the Pro tier gate', () => {
+    const out = captureHelp(printDuplicatesHelp);
+    assert.match(out, /duplicates/);
+    assert.match(out, /--threshold/);
     assert.match(out, /\[Pro\]/);
   });
 });

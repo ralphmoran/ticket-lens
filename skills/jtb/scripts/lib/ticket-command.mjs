@@ -17,6 +17,7 @@ import { resolveAdapter } from './resolve-adapter.mjs';
 import { checkCooldown, recordAction } from './ticket-action-cooldown.mjs';
 import { logAction } from './ticket-action-log.mjs';
 import { TICKET_KEY_PATTERN } from './cli.mjs';
+import { scoreCandidates } from './duplicate-scorer.mjs';
 
 function parseFlag(cmdArgs, name) {
   return cmdArgs.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -60,6 +61,30 @@ function formatWriteFailure(ticketKey, err) {
       return `  Tracker returned a server error (${classification.status}) for ${ticketKey}. Try again later.\n`;
     default:
       return `  Failed to write to ${ticketKey}: ${err.message}\n`;
+  }
+}
+
+/**
+ * Read-path counterpart to formatWriteFailure — reuses the same
+ * classification (rate-limit/timeout/server-error metadata is real and
+ * worth keeping, not specific to writes) but with read-appropriate wording,
+ * since "duplicates" never writes anything.
+ */
+function formatDuplicatesFailure(ticketKey, err) {
+  const classification = classifyWriteFailure(err);
+  switch (classification.kind) {
+    case 'rate-limited': {
+      const wait = classification.detail.retryAfterSeconds ?? null;
+      return wait
+        ? `  Rate limited by the tracker — retry checking ${ticketKey} after ~${wait}s.\n`
+        : `  Rate limited by the tracker — try checking ${ticketKey} again later.\n`;
+    }
+    case 'network-or-timeout':
+      return `  Network error or timeout checking ${ticketKey} for duplicates. Try again.\n`;
+    case 'server-error':
+      return `  Tracker returned a server error (${classification.status}) checking ${ticketKey} for duplicates. Try again later.\n`;
+    default:
+      return `  Error checking ${ticketKey} for duplicates: ${err.message}\n`;
   }
 }
 
@@ -285,6 +310,61 @@ export async function runTicketAssign(cmdArgs, {
     return { ok: true };
   } catch (err) {
     stream.write(formatWriteFailure(ticketKey, err));
+    return { ok: false };
+  }
+}
+
+/**
+ * Read-only — no cooldown, no action-log entry. Nothing is mutated, so
+ * there's nothing to debounce or audit, unlike comment/transition/assign.
+ *
+ * @param {string[]} cmdArgs - [ticketKey, ...flags], e.g. ["PROJ-1", '--threshold=0.4']
+ * @returns {Promise<{ ok: boolean, results?: Array<{key: string, summary: string, score: number}> }>}
+ */
+export async function runTicketDuplicates(cmdArgs, {
+  configDir = DEFAULT_CONFIG_DIR,
+  stream = process.stderr,
+  isLicensedFn = isLicensed,
+  resolveConnectionFn = resolveConnection,
+  resolveAdapterFn = resolveAdapter,
+} = {}) {
+  const usage = 'Usage: ticketlens duplicates TICKET-KEY [--threshold=0.35]\n';
+  if (!requireLicense(isLicensedFn, configDir, 'ticketlens duplicates', stream)) return { ok: false };
+
+  const ticketKey = requireTicketKey(cmdArgs, usage, stream);
+  if (!ticketKey) return { ok: false };
+
+  const thresholdArg = parseFlag(cmdArgs, 'threshold');
+  let threshold;
+  if (thresholdArg !== undefined) {
+    threshold = Number(thresholdArg);
+    if (Number.isNaN(threshold) || threshold < 0 || threshold > 1) {
+      stream.write(`  --threshold must be a number between 0 and 1 (got "${thresholdArg}").\n`);
+      return { ok: false };
+    }
+  }
+
+  const adapter = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!adapter) return { ok: false };
+
+  try {
+    const source = await adapter.fetchTicket(ticketKey);
+    const searchText = [source.summary, source.description].filter(Boolean).join(' ');
+    const candidates = await adapter.findCandidates(searchText, ticketKey);
+    const scoreOpts = threshold !== undefined ? { threshold } : {};
+    const results = scoreCandidates({ key: ticketKey, summary: source.summary, description: source.description }, candidates, scoreOpts);
+
+    if (results.length === 0) {
+      stream.write(`  No likely duplicates found for ${ticketKey}.\n`);
+      return { ok: true, results: [] };
+    }
+    stream.write(`  Possible duplicates of ${ticketKey}:\n`);
+    for (const r of results) {
+      stream.write(`    ${r.key} (${Math.round(r.score * 100)}% match) — ${r.summary}\n`);
+    }
+    return { ok: true, results };
+  } catch (err) {
+    stream.write(formatDuplicatesFailure(ticketKey, err));
     return { ok: false };
   }
 }

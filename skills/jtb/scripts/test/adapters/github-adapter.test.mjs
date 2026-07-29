@@ -527,3 +527,75 @@ describe('assignToSelf', () => {
     assert.equal(patchCalled, false);
   });
 });
+
+describe('findCandidates — duplicate-detection candidate search', () => {
+  it('queries the GitHub search endpoint scoped to the repo, URL-encoding the search text', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, json: async () => ({ items: [] }) };
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    await adapter.findCandidates('login button broken', 'WGT-42');
+    const url = new URL(capturedUrl);
+    assert.equal(url.pathname, '/search/issues');
+    const q = decodeURIComponent(url.searchParams.get('q'));
+    assert.match(q, /repo:acme\/widgets/);
+    assert.match(q, /is:issue/);
+    assert.match(q, /login button broken/);
+  });
+
+  it('neutralizes GitHub search qualifiers embedded in ticket text — a crafted title cannot inject a second repo:/org: scope (CWE-943 confused-deputy regression)', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, json: async () => ({ items: [] }) };
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    await adapter.findCandidates('Login broken repo:evilorg/secret-repo is:pr type:pull', 'WGT-42');
+    const q = decodeURIComponent(new URL(capturedUrl).searchParams.get('q'));
+    // Only the adapter's own repo:/is:issue qualifiers may survive — ticket
+    // text can contribute plain search words, but never colon-qualifier
+    // syntax (repo:/org:/is:/type:/etc), since that's the injection vector.
+    assert.equal((q.match(/repo:/g) ?? []).length, 1);
+    assert.equal((q.match(/is:/g) ?? []).length, 1);
+    assert.equal((q.match(/type:/g) ?? []).length, 0);
+    assert.ok(!q.includes('secret-repo'), 'no qualifier value with a slash should survive as one token');
+  });
+
+  it('caps the search text so long ticket descriptions cannot exceed GitHub search query limits', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, json: async () => ({ items: [] }) };
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const longText = Array.from({ length: 200 }, (_, i) => `word${i}`).join(' ');
+    await adapter.findCandidates(longText, 'WGT-42');
+    const q = decodeURIComponent(new URL(capturedUrl).searchParams.get('q'));
+    assert.ok(q.length < 300, `query should be capped, got ${q.length} chars`);
+  });
+
+  it('normalizes returned items to the standard ticket shape, excluding the source issue', async () => {
+    const fetcher = async () => ({
+      ok: true,
+      json: async () => ({
+        items: [
+          { number: 42, title: 'Source issue itself', body: '' },
+          { number: 7, title: 'Login broken on mobile', body: 'details' },
+        ],
+      }),
+    });
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const results = await adapter.findCandidates('login', 'WGT-42');
+    assert.equal(results.length, 1);
+    assert.equal(results[0].key, 'WGT-7');
+    assert.equal(results[0].summary, 'Login broken on mobile');
+  });
+
+  it('throws with .status on a failed search request', async () => {
+    const fetcher = async () => ({ ok: false, status: 422, headers: noHeaders(), json: async () => ({ message: 'bad query' }) });
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.findCandidates('login', 'WGT-1'), (err) => err.status === 422);
+  });
+});

@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, classifyWriteFailure } from '../lib/ticket-command.mjs';
+import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, classifyWriteFailure } from '../lib/ticket-command.mjs';
 
 function makeStream() {
   const lines = [];
@@ -14,6 +14,8 @@ function fakeAdapter(overrides = {}) {
     getTransitions: async () => [{ id: '1', name: 'Done', to: 'Done' }],
     transition: async () => ({ executed: true, to: 'Done' }),
     assignToSelf: async () => ({ assignee: 'Ralph Moran' }),
+    fetchTicket: async () => ({ key: 'PROJ-1', summary: 'Login button broken on mobile', description: 'Tapping login does nothing on iOS Safari' }),
+    findCandidates: async () => ([{ key: 'PROJ-9', summary: 'Login button broken on mobile Safari', description: 'unrelated body' }]),
     ...overrides,
   };
 }
@@ -363,5 +365,113 @@ describe('runTicketAssign — write failure', () => {
     assert.equal(recorded, false);
     assert.equal(logged, false);
     assert.match(deps.stream.lines.join(''), /server error/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runTicketDuplicates
+// ---------------------------------------------------------------------------
+describe('runTicketDuplicates — license gate', () => {
+  test('unlicensed: never resolves a connection, never searches', async () => {
+    let resolveCalls = 0;
+    const deps = baseDeps({
+      isLicensedFn: () => false,
+      resolveConnectionFn: () => { resolveCalls++; return { baseUrl: 'x' }; },
+    });
+    const result = await runTicketDuplicates(['PROJ-1'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(resolveCalls, 0);
+  });
+});
+
+describe('runTicketDuplicates — usage validation', () => {
+  test('missing ticket key shows usage', async () => {
+    const deps = baseDeps();
+    const result = await runTicketDuplicates([], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Usage/);
+  });
+
+  test('invalid --threshold is rejected before any network call', async () => {
+    let fetchCalled = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ fetchTicket: async () => { fetchCalled = true; return {}; } }),
+    });
+    const result = await runTicketDuplicates(['PROJ-1', '--threshold=notanumber'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(fetchCalled, false);
+    assert.match(deps.stream.lines.join(''), /--threshold/);
+  });
+});
+
+describe('runTicketDuplicates — happy path', () => {
+  test('reports ranked matches above threshold', async () => {
+    const deps = baseDeps();
+    const result = await runTicketDuplicates(['PROJ-1'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(result.results.length, 1);
+    assert.equal(result.results[0].key, 'PROJ-9');
+    assert.match(deps.stream.lines.join(''), /PROJ-9/);
+  });
+
+  test('a custom --threshold is honored and forwarded to scoring', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ findCandidates: async () => ([{ key: 'PROJ-9', summary: 'barely related mention of login', description: '' }]) }),
+    });
+    const result = await runTicketDuplicates(['PROJ-1', '--threshold=0.95'], deps);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.results, []);
+    assert.match(deps.stream.lines.join(''), /No likely duplicates/);
+  });
+
+  test('reports no likely duplicates when nothing scores above threshold', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ findCandidates: async () => ([]) }),
+    });
+    const result = await runTicketDuplicates(['PROJ-1'], deps);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.results, []);
+    assert.match(deps.stream.lines.join(''), /No likely duplicates/);
+  });
+});
+
+describe('runTicketDuplicates — read failure', () => {
+  test('a thrown error from fetchTicket (e.g. a 404) is reported with its message, no crash', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ fetchTicket: async () => { throw Object.assign(new Error('not found'), { status: 404 }); } }),
+    });
+    const result = await runTicketDuplicates(['PROJ-1'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /not found/);
+  });
+
+  test('a thrown error from findCandidates (e.g. a 404) is reported with its message, no crash', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ findCandidates: async () => { throw Object.assign(new Error('search failed'), { status: 404 }); } }),
+    });
+    const result = await runTicketDuplicates(['PROJ-1'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /search failed/);
+  });
+
+  test('a rate-limited error is reported with rate-limit-aware wording, not swallowed generically', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        findCandidates: async () => { throw Object.assign(new Error('rate limited'), { rateLimit: { kind: 'secondary-rate-limit', retryAfterSeconds: 30 } }); },
+      }),
+    });
+    const result = await runTicketDuplicates(['PROJ-1'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /rate limited/i);
+    assert.match(deps.stream.lines.join(''), /30s/);
+  });
+
+  test('a statusless network/timeout error gets network-aware wording, not a raw stack-trace-style message', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ findCandidates: async () => { throw new Error('fetch failed'); } }),
+    });
+    const result = await runTicketDuplicates(['PROJ-1'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /network error or timeout/i);
   });
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, escapeJql } from '../lib/jira-client.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -1586,5 +1586,19 @@ describe('defaultLookupFor — shared lookup-default helper', () => {
   it('returns null when the fetcher is a mock', async () => {
     const mockFetch = async () => ({});
     assert.equal(defaultLookupFor(mockFetch), null);
+  });
+});
+
+describe('escapeJql — single source of truth for JQL string-literal escaping', () => {
+  it('escapes double quotes', () => {
+    assert.equal(escapeJql('say "hi"'), 'say \\"hi\\"');
+  });
+
+  it('escapes backslashes before quotes so escaping cannot be undone by ordering', () => {
+    assert.equal(escapeJql('a\\b'), 'a\\\\b');
+  });
+
+  it('leaves plain text untouched', () => {
+    assert.equal(escapeJql('login button broken'), 'login button broken');
   });
 });

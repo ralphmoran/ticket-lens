@@ -1,3 +1,5 @@
+import { tokenize } from '../duplicate-scorer.mjs';
+
 const LINEAR_API = 'https://api.linear.app/graphql';
 
 const PRIORITY_LABELS = { 1: 'Urgent', 2: 'High', 3: 'Medium', 4: 'Low' };
@@ -256,6 +258,42 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
         throw new Error(`Linear issueUpdate reported success:false assigning ${key}`);
       }
       return { assignee: me.displayName ?? me.id };
+    },
+
+    /**
+     * Candidate search for duplicate-ticket detection. Linear's `contains`/
+     * `containsIgnoreCase` filters are literal substring matches, not
+     * full-text search (confirmed — Linear has no built-in similarity
+     * matching) — passing the whole source text as one substring filter
+     * would almost never match anything. Instead ORs across the
+     * significant tokens, ANDed with a team scope derived from the source
+     * key's prefix. Ranking happens in duplicate-scorer.mjs.
+     */
+    async findCandidates(text, sourceKey, opts = {}) {
+      const terms = tokenize(text).slice(0, 5);
+      if (terms.length === 0) return [];
+      const hyphenIndex = sourceKey.lastIndexOf('-');
+      if (hyphenIndex < 1) {
+        throw new Error(`Cannot derive a team key from "${sourceKey}" — expected TEAM-123.`);
+      }
+      const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
+      const prefix = sourceKey.slice(0, hyphenIndex);
+      const filter = {
+        team: { key: { eq: prefix } },
+        or: terms.map(term => ({ title: { containsIgnoreCase: term } })),
+      };
+      const data = await gql(
+        `query ($filter: IssueFilter) {
+          issues(filter: $filter, first: 50) {
+            nodes { ${ISSUE_FIELDS} }
+          }
+        }`,
+        { filter },
+        { token, fetcher, signal },
+      );
+      return (data.issues?.nodes ?? [])
+        .filter(node => node.identifier !== sourceKey)
+        .map(normalizeLinearIssue);
     },
   };
 }

@@ -243,4 +243,15 @@ describe('parseCommand', () => {
     const stillFetch = parseCommand(['PROJ-999']);
     assert.equal(stillFetch.command, 'fetch');
   });
+
+  it('routes "duplicates" to duplicates command', () => {
+    const result = parseCommand(['duplicates', 'PROJ-1', '--threshold=0.5']);
+    assert.equal(result.command, 'duplicates');
+    assert.deepEqual(result.args, ['PROJ-1', '--threshold=0.5']);
+  });
+
+  it('lock — adding "duplicates" does not change the ticket-key fallback for anything else', () => {
+    const stillFetch = parseCommand(['PROJ-999']);
+    assert.equal(stillFetch.command, 'fetch');
+  });
 });

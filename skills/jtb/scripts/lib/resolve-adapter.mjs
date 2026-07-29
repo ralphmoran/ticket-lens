@@ -19,7 +19,7 @@ export function detectTrackerType(baseUrl) {
  * Instantiates the correct tracker adapter for a resolved connection.
  * @param {{ baseUrl: string, auth?: string, email?: string, apiToken?: string, pat?: string }} conn
  * @param {{ fetcher?: Function }} [opts]
- * @returns {{ type: string, fetchTicket: Function, fetchCurrentUser: Function, searchTickets: Function, fetchStatuses: Function, addComment: Function, getTransitions: Function, transition: Function, assignToSelf: Function }}
+ * @returns {{ type: string, fetchTicket: Function, fetchCurrentUser: Function, searchTickets: Function, fetchStatuses: Function, addComment: Function, getTransitions: Function, transition: Function, assignToSelf: Function, findCandidates: Function }}
  */
 export function resolveAdapter(conn, opts = {}) {
   const type = detectTrackerType(conn?.baseUrl);

@@ -57,6 +57,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} comment ${s.dim('<TICKET-KEY> --body=...')}  Post a comment to the tracker  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} transition ${s.dim('<TICKET-KEY> [--target=... --confirm]')}  Move ticket status  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} assign ${s.dim('<TICKET-KEY> --to=me')}      Assign a ticket to yourself  ${s.dim('[Pro]')}`,
+    `    ${s.brand('ticketlens')} duplicates ${s.dim('<TICKET-KEY> [--threshold=N]')}  Find likely duplicate tickets  ${s.dim('[Pro]')}`,
     '',
     `    ${s.brand('ticketlens')} delete ${s.dim('<PROFILE-NAME>')}       Remove a profile`,
     `    ${s.brand('ticketlens')} activate ${s.dim('<KEY>')}              Activate a license key`,
@@ -597,11 +598,12 @@ export function printMcpHelp({ stream = process.stdout } = {}) {
     '',
     `  Start an MCP (Model Context Protocol) stdio server exposing Recall and`,
     `  ticket writes as native tools — ${s.cyan('recall_add')}, ${s.cyan('recall_search')}, ${s.cyan('ticket_comment')},`,
-    `  ${s.cyan('ticket_transition')}, ${s.cyan('ticket_assign')} — for any MCP-compatible AI harness, not just`,
-    `  Claude Code. Thin adapter over the same code as ${s.cyan('note add')}/${s.cyan('recall')}/${s.cyan('comment')}/`,
-    `  ${s.cyan('transition')}/${s.cyan('assign')} above: same Pro gate, same local vault/tracker writes, same`,
-    `  team sync. ${s.cyan('ticket_transition')} is destructive when called with \`target\`+\`confirm: true\`;`,
-    `  ${s.cyan('ticket_assign')} is currently self-assign only.`,
+    `  ${s.cyan('ticket_transition')}, ${s.cyan('ticket_assign')}, ${s.cyan('ticket_duplicates')} — for any MCP-compatible AI`,
+    `  harness, not just Claude Code. Thin adapter over the same code as`,
+    `  ${s.cyan('note add')}/${s.cyan('recall')}/${s.cyan('comment')}/${s.cyan('transition')}/${s.cyan('assign')}/${s.cyan('duplicates')} above: same Pro gate, same`,
+    `  local vault/tracker writes, same team sync. ${s.cyan('ticket_transition')} is destructive when`,
+    `  called with \`target\`+\`confirm: true\`; ${s.cyan('ticket_assign')} is currently self-assign only;`,
+    `  ${s.cyan('ticket_duplicates')} is read-only.`,
     `  Long-running — exits when the client closes stdin.`,
     '',
     `  ${s.bold('OPTIONS')}`,
@@ -697,6 +699,32 @@ export function printAssignHelp({ stream = process.stdout } = {}) {
     `  ${s.bold('EXAMPLES')}`,
     '',
     `    ${s.dim('$')} ticketlens assign PROD-123 --to=me`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printDuplicatesHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('duplicates')} ${s.dim('TICKET-KEY [--threshold=0.35]')}  ${s.dim('[Pro]')}`,
+    '',
+    `  Find likely duplicate tickets in the same project (Jira/GitHub/Linear). ${s.dim('[Pro]')}`,
+    `  Read-only — lists possible matches, never links or changes anything.`,
+    `  No tracker scores similarity server-side, so ranking happens locally`,
+    `  from title/description overlap. Not exact — treat it as a nudge to check.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--threshold')}=${s.dim('N')}   Minimum match score 0–1 to report ${s.dim('(default 0.35)')}`,
+    `    ${s.brand('--profile')}=${s.dim('NAME')} Connection profile to use ${s.dim('(optional)')}`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens duplicates PROD-123`,
+    `    ${s.dim('$')} ticketlens duplicates PROD-123 --threshold=0.5`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

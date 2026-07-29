@@ -14,6 +14,14 @@ function toText(value) {
 }
 
 /**
+ * Escapes a value for safe interpolation into a double-quoted JQL string
+ * literal. Single source of truth — do not duplicate in callers.
+ */
+export function escapeJql(s) {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+/**
  * Extracts the active sprint name from customfield_10020.
  * Cloud v3: array of sprint objects — prefers active, falls back to last.
  * Server v2: serialized Java string — extracts via name= regex.

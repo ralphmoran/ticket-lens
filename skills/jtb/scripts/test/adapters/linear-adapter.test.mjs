@@ -518,3 +518,56 @@ describe('assignToSelf', () => {
     assert.equal(mutationCalled, false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// findCandidates
+// ---------------------------------------------------------------------------
+describe('findCandidates', () => {
+  it('scopes the filter to the team derived from the source key prefix and ORs across tokenized terms', async () => {
+    let capturedVariables;
+    const fetcher = async (_url, opts) => {
+      capturedVariables = JSON.parse(opts.body).variables;
+      return makeResponse({ issues: { nodes: [] } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await adapter.findCandidates('Login button broken', 'ENG-42');
+    assert.equal(capturedVariables.filter.team.key.eq, 'ENG');
+    const orTerms = capturedVariables.filter.or.map(f => f.title.containsIgnoreCase);
+    assert.ok(orTerms.includes('login'));
+    assert.ok(orTerms.includes('button'));
+    assert.ok(orTerms.includes('broken'));
+  });
+
+  it('normalizes returned nodes and excludes the source issue by identifier', async () => {
+    const fetcher = async () => makeResponse({
+      issues: { nodes: [RAW_NODE, { ...RAW_NODE, identifier: 'ENG-43', title: 'Another bug' }] },
+    });
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const results = await adapter.findCandidates('bug', 'ENG-42');
+    assert.equal(results.length, 1);
+    assert.equal(results[0].key, 'ENG-43');
+  });
+
+  it('returns an empty array without a network call when the text has no meaningful tokens', async () => {
+    let called = false;
+    const fetcher = async () => { called = true; return makeResponse({ issues: { nodes: [] } }); };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const results = await adapter.findCandidates('a an the', 'ENG-42');
+    assert.deepEqual(results, []);
+    assert.equal(called, false);
+  });
+
+  it('throws on a non-ok response', async () => {
+    const fetcher = async () => makeErrorResponse(401);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.findCandidates('login', 'ENG-42'));
+  });
+
+  it('rejects a sourceKey with no hyphen instead of silently deriving a wrong/empty team scope', async () => {
+    let called = false;
+    const fetcher = async () => { called = true; return makeResponse({ issues: { nodes: [] } }); };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await assert.rejects(() => adapter.findCandidates('login', 'NOHYPHEN'), /team/);
+    assert.equal(called, false);
+  });
+});

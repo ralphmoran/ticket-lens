@@ -10,6 +10,7 @@ import { assembleTriageSummary } from './lib/brief-assembler.mjs';
 import { styleTriageSummary } from './lib/styled-assembler.mjs';
 import { resolveConnection, loadProfiles, saveProfile } from './lib/profile-resolver.mjs';
 import { resolveAdapter } from './lib/resolve-adapter.mjs';
+import { escapeJql } from './lib/jira-client.mjs';
 import { incrementTriageRun, readAndResetActivity } from './lib/activity-counter.mjs';
 import { DEFAULT_CONFIG_DIR } from './lib/config.mjs';
 import { writeFileSync, mkdirSync, statSync } from 'node:fs';
@@ -40,10 +41,6 @@ async function defaultDigestDeliverer(payload, { cliToken } = {}) {
   });
   if (!res.ok) throw new Error(`Digest delivery failed: ${res.status}`);
   return true;
-}
-
-function escapeJql(s) {
-  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 export async function run(args, envOrOpts = process.env, fetcher = globalThis.fetch, configDir = undefined) {

@@ -179,3 +179,68 @@ describe('createJiraAdapter — assignToSelf', () => {
     await assert.doesNotReject(() => adapter.assignToSelf('TEST-1', { lookup: privateLookup }));
   });
 });
+
+describe('findCandidates — duplicate-detection candidate search', () => {
+  it('scopes the JQL to the ticket key\'s project and excludes the source key itself', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, status: 200, json: async () => ({ issues: [] }) };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    await adapter.findCandidates('login button broken', 'TEST-42');
+    const jql = decodeURIComponent(new URL(capturedUrl).searchParams.get('jql'));
+    assert.match(jql, /project = "TEST"/);
+    assert.match(jql, /key != "TEST-42"/);
+    assert.match(jql, /text ~ "login button broken"/);
+  });
+
+  it('caps the search text before building the JQL so a long description cannot blow past URL/proxy length limits', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, status: 200, json: async () => ({ issues: [] }) };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const longText = 'x'.repeat(2000);
+    await adapter.findCandidates(longText, 'TEST-1');
+    const jql = decodeURIComponent(new URL(capturedUrl).searchParams.get('jql'));
+    const match = jql.match(/text ~ "(x+)"/);
+    assert.ok(match, 'expected a text ~ "..." clause');
+    assert.ok(match[1].length <= 300, `search text should be capped, got ${match[1].length} chars`);
+  });
+
+  it('escapes double quotes in the search text so a crafted title cannot break out of the JQL string literal', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, status: 200, json: async () => ({ issues: [] }) };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    await adapter.findCandidates('a" OR project = "OTHER', 'TEST-1');
+    const jql = decodeURIComponent(new URL(capturedUrl).searchParams.get('jql'));
+    assert.match(jql, /text ~ "a\\" OR project = \\"OTHER"/);
+  });
+
+  it('normalizes returned issues to the standard ticket shape', async () => {
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ issues: [{ key: 'TEST-7', fields: { summary: 'Login broken', status: { name: 'Open' }, issuetype: { name: 'Bug' } } }] }),
+    });
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const results = await adapter.findCandidates('login', 'TEST-1');
+    assert.equal(results[0].key, 'TEST-7');
+    assert.equal(results[0].summary, 'Login broken');
+  });
+
+  it('threads conn.allowPrivateIp into findCandidates', async () => {
+    const adapter = createJiraAdapter({ ...CONN, allowPrivateIp: true }, { fetcher: jsonFetcher({ issues: [] }) });
+    await assert.doesNotReject(() => adapter.findCandidates('login', 'TEST-1', { lookup: privateLookup }));
+  });
+
+  it('rejects a sourceKey with no hyphen instead of silently deriving a wrong/empty project scope', async () => {
+    const adapter = createJiraAdapter(CONN, { fetcher: jsonFetcher({ issues: [] }) });
+    await assert.rejects(() => adapter.findCandidates('login', 'NOHYPHEN'), /project/);
+  });
+});

@@ -1,4 +1,4 @@
-import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, postComment, getTransitions, postTransition, assignIssue } from '../jira-client.mjs';
+import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, postComment, getTransitions, postTransition, assignIssue, escapeJql } from '../jira-client.mjs';
 import { buildJiraEnv } from '../config.mjs';
 
 /**
@@ -7,6 +7,8 @@ import { buildJiraEnv } from '../config.mjs';
  * trusts a caller-supplied id without confirming it's still a real,
  * currently-valid option for this exact issue right now.
  */
+const SEARCH_TEXT_CHAR_LIMIT = 300;
+
 function resolveTransitionTarget(options, target) {
   const t = String(target).toLowerCase();
   return options.find(o => o.id === String(target) || o.name.toLowerCase() === t || (o.to ?? '').toLowerCase() === t);
@@ -63,6 +65,23 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       }
       await assignIssue(key, { [field]: value }, { ...base, ...opts });
       return { assignee: me.displayName ?? value };
+    },
+
+    /**
+     * Candidate search for duplicate-ticket detection. Scoped to the same
+     * project as `sourceKey` (derived from its own prefix) and excludes it
+     * from results. Jira has no server-side similarity scoring — this only
+     * narrows the candidate pool; ranking happens in duplicate-scorer.mjs.
+     */
+    async findCandidates(text, sourceKey, opts = {}) {
+      const hyphenIndex = sourceKey.lastIndexOf('-');
+      if (hyphenIndex < 1) {
+        throw new Error(`Cannot derive a project key from "${sourceKey}" — expected PROJECT-123.`);
+      }
+      const project = sourceKey.slice(0, hyphenIndex);
+      const searchText = text.slice(0, SEARCH_TEXT_CHAR_LIMIT);
+      const jql = `project = "${escapeJql(project)}" AND key != "${escapeJql(sourceKey)}" AND text ~ "${escapeJql(searchText)}" ORDER BY updated DESC`;
+      return searchTickets(jql, { ...base, ...opts });
     },
   };
 }

@@ -23,7 +23,7 @@ import readline from 'node:readline';
 import { DEFAULT_CONFIG_DIR, getVersion } from './config.mjs';
 import { runNoteAdd } from './note-command.mjs';
 import { runRecall } from './recall-command.mjs';
-import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign } from './ticket-command.mjs';
+import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates } from './ticket-command.mjs';
 
 const PROTOCOL_VERSION = '2025-11-25';
 
@@ -88,6 +88,18 @@ const TOOLS = [
         to: { type: 'string', description: 'Who to assign to — currently only "me" is accepted.' },
       },
       required: ['ticket', 'to'],
+    },
+  },
+  {
+    name: 'ticket_duplicates',
+    description: 'Find likely duplicate tickets in the same project (Jira/GitHub/Linear). Read-only — never links or changes anything; no tracker scores similarity server-side, so ranking is local and approximate. Requires a TicketLens Pro license.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ticket: { type: 'string', description: 'Ticket key, e.g. PROJ-123.' },
+        threshold: { type: 'number', description: 'Minimum match score 0-1 to report. Defaults to 0.35.' },
+      },
+      required: ['ticket'],
     },
   },
 ];
@@ -209,6 +221,18 @@ async function callTicketAssign(args, { configDir, runTicketAssignFn }) {
   return ok ? { content } : { isError: true, content };
 }
 
+async function callTicketDuplicates(args, { configDir, runTicketDuplicatesFn }) {
+  if (!args.ticket) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: ticket' }] };
+  }
+  const cmdArgs = [args.ticket];
+  if (args.threshold !== undefined) cmdArgs.push(`--threshold=${args.threshold}`);
+  const capture = capturingStream();
+  const { ok } = await runTicketDuplicatesFn(cmdArgs, { configDir, stream: capture });
+  const content = [{ type: 'text', text: capture.text }];
+  return ok ? { content } : { isError: true, content };
+}
+
 async function handleToolsCall(params, deps) {
   const { name, arguments: args = {} } = params ?? {};
   if (name === 'recall_add') return callRecallAdd(args, deps);
@@ -216,10 +240,11 @@ async function handleToolsCall(params, deps) {
   if (name === 'ticket_comment') return callTicketComment(args, deps);
   if (name === 'ticket_transition') return callTicketTransition(args, deps);
   if (name === 'ticket_assign') return callTicketAssign(args, deps);
+  if (name === 'ticket_duplicates') return callTicketDuplicates(args, deps);
   return { isError: true, content: [{ type: 'text', text: `Unknown tool: ${name}` }] };
 }
 
-async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn }) {
+async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn }) {
   let msg;
   try {
     msg = JSON.parse(raw);
@@ -249,7 +274,7 @@ async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTic
 
   if (method === 'tools/call') {
     try {
-      const result = await handleToolsCall(params, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn });
+      const result = await handleToolsCall(params, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn });
       return jsonRpcResult(id, result);
     } catch (err) {
       return jsonRpcError(id ?? null, -32603, `Internal error: ${err.message}`);
@@ -276,6 +301,7 @@ export function runMcpServer({
   runTicketTransitionListFn = runTicketTransitionList,
   runTicketTransitionFn = runTicketTransition,
   runTicketAssignFn = runTicketAssign,
+  runTicketDuplicatesFn = runTicketDuplicates,
 } = {}) {
   // A client can disconnect mid-write (EPIPE) at any time on a long-lived
   // process — an unhandled 'error' event on either stream would otherwise
@@ -295,7 +321,7 @@ export function runMcpServer({
     // never resolving (a dropped rejection isn't a resolution) — the
     // server would hang on shutdown instead of exiting.
     queue = queue.then(async () => {
-      const response = await handleMessage(line, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn });
+      const response = await handleMessage(line, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn });
       if (response) stdout.write(response);
     }).catch(() => {});
   });

@@ -1,3 +1,5 @@
+import { tokenize } from '../duplicate-scorer.mjs';
+
 /**
  * Parses owner and repo from a GitHub profile baseUrl.
  * Expected format: https://github.com/OWNER/REPO
@@ -207,6 +209,36 @@ export function createGitHubAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       });
       if (!res.ok) await throwGitHubWriteError(res, 'assigning', key);
       return { assignee: me.displayName ?? me.login };
+    },
+
+    /**
+     * Candidate search for duplicate-ticket detection via GitHub's search
+     * endpoint (distinct from the issues-list endpoint `searchTickets` uses,
+     * which hardcodes "assigned to me" and ignores its query argument).
+     * Excludes the source issue and returns unranked candidates —
+     * duplicate-scorer.mjs does the actual similarity ranking.
+     *
+     * Never interpolates raw ticket text into `q` — GitHub parses the
+     * decoded query with its own qualifier grammar (`repo:`, `org:`, `is:`,
+     * etc, space-delimited), and multiple `repo:`/`org:` qualifiers are
+     * OR'd together. A crafted title/description containing e.g.
+     * `repo:otherorg/private-repo` would widen the search to a repo outside
+     * this profile's scope — a confused-deputy query-injection, not just a
+     * cosmetic bug. tokenize() strips all non-letter/digit characters
+     * (including `:`), so no qualifier syntax survives into `q`, and its
+     * cap keeps the query well under GitHub's search length limit.
+     */
+    async findCandidates(text, sourceKey, opts = {}) {
+      const sourceNumber = parseInt(sourceKey.split('-').pop(), 10);
+      const terms = tokenize(text).slice(0, 8).join(' ');
+      const q = `repo:${owner}/${repo} is:issue ${terms}`;
+      const url = `${GITHUB_API}/search/issues?q=${encodeURIComponent(q)}`;
+      const res = await fetcher(url, { headers, signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000) });
+      if (!res.ok) await throwGitHubWriteError(res, 'searching', sourceKey);
+      const raw = await res.json();
+      return raw.items
+        .filter(item => item.number !== sourceNumber)
+        .map(item => normalizeGitHubIssue(item, [], keyPrefix));
     },
   };
 }
