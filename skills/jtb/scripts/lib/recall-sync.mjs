@@ -134,7 +134,7 @@ export async function pushNote(note, {
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
-    warn(`  ${yellow('⚠')} Could not sync note to your team (network error) — saved locally only.\n`);
+    warn(`  ${yellow('⚠')} Could not sync note to your team (network error) — saved locally and queued to retry automatically.\n`);
     return { ok: false };
   }
 
