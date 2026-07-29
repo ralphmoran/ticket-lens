@@ -724,6 +724,12 @@ switch (command) {
 
   case 'mcp': {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printMcpHelp(); break; }
+    if (cmdArgs[0] === 'install') {
+      const { mcpInstall } = await import('../skills/jtb/scripts/lib/mcp-install.mjs');
+      const { written, dryRun, reason } = mcpInstall({ dryRun: cmdArgs.includes('--dry-run') });
+      if (!dryRun && !written && reason) process.exitCode = 1;
+      break;
+    }
     // Long-lived stdio server, not a one-shot command — no .then()-exit-code
     // pattern; it exits when the client closes stdin (spec's stdio lifecycle).
     const { runMcpServer } = await import('../skills/jtb/scripts/lib/mcp-server.mjs');

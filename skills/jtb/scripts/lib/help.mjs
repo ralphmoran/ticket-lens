@@ -602,6 +602,13 @@ export function printMcpHelp({ stream = process.stdout } = {}) {
     '',
     `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
     '',
+    `  ${s.bold('COMMANDS')}`,
+    '',
+    `    ${s.brand('install')}       Register "ticketlens mcp" into the current project's .mcp.json`,
+    '',
+    `  ${s.dim('install is ungated — writes the registration for anyone; the tools it')}`,
+    `  ${s.dim('points at still require Pro at call time, same as note add/recall.')}`,
+    '',
     `  ${s.bold('HARNESS CONFIG')}`,
     '',
     `    ${s.dim('{ "command": "ticketlens", "args": ["mcp"] }')}`,
@@ -609,6 +616,8 @@ export function printMcpHelp({ stream = process.stdout } = {}) {
     `  ${s.bold('EXAMPLES')}`,
     '',
     `    ${s.dim('$')} ticketlens mcp`,
+    `    ${s.dim('$')} ticketlens mcp install`,
+    `    ${s.dim('$')} ticketlens mcp install --dry-run`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

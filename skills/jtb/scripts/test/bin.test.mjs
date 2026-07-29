@@ -262,4 +262,21 @@ describe('bin/ticketlens.mjs', () => {
     assert.equal(response.id, 1);
     assert.equal(response.result.serverInfo.name, 'ticketlens');
   });
+
+  it('"ticketlens mcp install --dry-run" runs the install path, not the server, and touches no file', () => {
+    const freshCwd = mkdtempSync(join(tmpdir(), 'ticketlens-mcp-install-dispatch-'));
+    try {
+      const result = spawnSync('node', [binPath, 'mcp', 'install', '--dry-run'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        cwd: freshCwd,
+        env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
+      });
+      assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+      assert.match(result.stdout, /Would write/);
+      assert.equal(existsSync(join(freshCwd, '.mcp.json')), false);
+    } finally {
+      rmSync(freshCwd, { recursive: true, force: true });
+    }
+  });
 });

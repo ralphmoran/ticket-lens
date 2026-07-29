@@ -411,7 +411,7 @@ Every note is scanned before saving — anything shaped like a real secret (API 
 
 **Removing a note:** `ticketlens note delete --id="..." [--ticket=KEY]` removes a note from your local vault. Local only — if it was already pushed to a team, teammates who pulled it keep their copy; deleting it there too is a manager action from the Console (Admin > Recall).
 
-**Any MCP-capable AI harness:** `ticketlens mcp` starts a stdio [MCP](https://modelcontextprotocol.io) server exposing `recall_add` and `recall_search` as native tools — any MCP-compatible AI assistant, not just Claude Code, can call them directly instead of constructing a shell command. It's a thin adapter over the exact same code as the CLI commands above — same Pro gate, same secret scan, same local vault, same team sync — nothing is reimplemented. Point your harness's MCP config at it: `{ "command": "ticketlens", "args": ["mcp"] }`.
+**Any MCP-capable AI harness:** `ticketlens mcp` starts a stdio [MCP](https://modelcontextprotocol.io) server exposing `recall_add` and `recall_search` as native tools — any MCP-compatible AI assistant, not just Claude Code, can call them directly instead of constructing a shell command. It's a thin adapter over the exact same code as the CLI commands above — same Pro gate, same secret scan, same local vault, same team sync — nothing is reimplemented. Point your harness's MCP config at it: `{ "command": "ticketlens", "args": ["mcp"] }` — or run `ticketlens mcp install` in a project to write that entry into its `.mcp.json` for you (creates the file if it doesn't exist, merges in if it does — never touches any other entry already there; `--dry-run` to preview first).
 
 `note add`'s save confirmation and `recall`'s search results are styled by default in a terminal; add `--plain` to either for bare, pipe-safe output. `recall` always shows each note's file ID (e.g. `[1784135399545-fe01c4.md]`) so you can open it directly (`cat ~/.ticketlens/recall/<PREFIX>/<id>`), or pass `--full` to print the full body content inline instead.
 
@@ -693,6 +693,8 @@ ticketlens recall "retry backoff"             # Free-text search across all note
 ticketlens recall sync                        # Retry any notes stuck in the local queue [Team+]
 ticketlens recall settings                    # Show effective retry-queue settings, fetched live [Team+]
 ticketlens mcp                                # Start the MCP stdio server (recall_add/recall_search tools) [Pro]
+ticketlens mcp install                        # Register it into the current project's .mcp.json
+ticketlens mcp install --dry-run              # Preview the registration without writing
 
 # ── Stats ──────────────────────────────────────────────────────────────────────
 ticketlens stats                              # Response-time metrics from local history

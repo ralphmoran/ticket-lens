@@ -102,6 +102,7 @@ try {
   } else {
     console.log('  → New here? Run  tl  to launch the guided setup.');
   }
+  console.log('  → Using an MCP-capable AI harness? Run  tl mcp install  in a project to register Recall as native tools.');
   console.log('');
 } catch {
   // Silent on failure — never breaks the install.
