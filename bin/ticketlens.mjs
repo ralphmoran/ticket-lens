@@ -27,7 +27,7 @@ import {
   printComplianceHelp, printLedgerHelp, printPrHelp, printInstallHooksHelp,
   printCollisionsHelp, printStatsHelp,
   printCloudKeysHelp,
-  printNoteHelp, printRecallHelp,
+  printNoteHelp, printRecallHelp, printMcpHelp,
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { runStats } from '../skills/jtb/scripts/lib/run-stats.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
@@ -719,6 +719,15 @@ switch (command) {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
     });
+    break;
+  }
+
+  case 'mcp': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printMcpHelp(); break; }
+    // Long-lived stdio server, not a one-shot command — no .then()-exit-code
+    // pattern; it exits when the client closes stdin (spec's stdio lifecycle).
+    const { runMcpServer } = await import('../skills/jtb/scripts/lib/mcp-server.mjs');
+    await runMcpServer({});
     break;
   }
 

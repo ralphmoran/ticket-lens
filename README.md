@@ -411,6 +411,8 @@ Every note is scanned before saving — anything shaped like a real secret (API 
 
 **Removing a note:** `ticketlens note delete --id="..." [--ticket=KEY]` removes a note from your local vault. Local only — if it was already pushed to a team, teammates who pulled it keep their copy; deleting it there too is a manager action from the Console (Admin > Recall).
 
+**Any MCP-capable AI harness:** `ticketlens mcp` starts a stdio [MCP](https://modelcontextprotocol.io) server exposing `recall_add` and `recall_search` as native tools — any MCP-compatible AI assistant, not just Claude Code, can call them directly instead of constructing a shell command. It's a thin adapter over the exact same code as the CLI commands above — same Pro gate, same secret scan, same local vault, same team sync — nothing is reimplemented. Point your harness's MCP config at it: `{ "command": "ticketlens", "args": ["mcp"] }`.
+
 `note add`'s save confirmation and `recall`'s search results are styled by default in a terminal; add `--plain` to either for bare, pipe-safe output. `recall` always shows each note's file ID (e.g. `[1784135399545-fe01c4.md]`) so you can open it directly (`cat ~/.ticketlens/recall/<PREFIX>/<id>`), or pass `--full` to print the full body content inline instead.
 
 **Gaps** — every `ticketlens PROJ-123` brief also diffs the ticket's own description against its linked tickets (from the depth traversal you already requested) and its own downloaded attachments, looking for requirements mentioned there but missing here. Anything uncovered shows up under a `## Gaps` section, citing exactly where it came from — a linked ticket key or an attachment filename — as evidence, never an instruction to act on. Nothing is saved anywhere; it's recomputed fresh on every fetch. Requires a Pro license, same as Recall. No network call beyond what the brief already made.
@@ -690,6 +692,7 @@ ticketlens recall CNV1-2                      # Search saved notes by ticket key
 ticketlens recall "retry backoff"             # Free-text search across all notes [Pro]
 ticketlens recall sync                        # Retry any notes stuck in the local queue [Team+]
 ticketlens recall settings                    # Show effective retry-queue settings, fetched live [Team+]
+ticketlens mcp                                # Start the MCP stdio server (recall_add/recall_search tools) [Pro]
 
 # ── Stats ──────────────────────────────────────────────────────────────────────
 ticketlens stats                              # Response-time metrics from local history
@@ -771,6 +774,7 @@ ticketlens note delete --id="..."        # Remove a note from your local vault
 ticketlens recall <query|TICKET-KEY>     # Search your saved Recall notes
 ticketlens recall sync                   # Retry any notes stuck in the local queue
 ticketlens recall settings               # Show effective retry-queue settings, fetched live
+ticketlens mcp                           # Start the MCP stdio server (recall_add/recall_search)
 ticketlens activate YOUR-LICENSE-KEY     # Activate Pro license
 ```
 

@@ -197,7 +197,13 @@ describe('parseCommand', () => {
     assert.deepEqual(result.args, ['backoff']);
   });
 
-  it('lock — adding "note"/"recall" does not change the ticket-key fallback for anything else', () => {
+  it('routes "mcp" to the mcp command', () => {
+    const result = parseCommand(['mcp']);
+    assert.equal(result.command, 'mcp');
+    assert.deepEqual(result.args, []);
+  });
+
+  it('lock — adding "note"/"recall"/"mcp" does not change the ticket-key fallback for anything else', () => {
     const stillFetch = parseCommand(['PROJ-999']);
     assert.equal(stillFetch.command, 'fetch');
     const stillFetch2 = parseCommand(['notATicketButNotACommandEither']);

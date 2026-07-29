@@ -53,6 +53,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} recall ${s.dim('<query|TICKET-KEY>')}   Search your saved Recall notes  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} recall sync                 Retry any notes stuck in the local queue  ${s.dim('[Team+]')}`,
     `    ${s.brand('ticketlens')} recall settings             Show effective retry-queue settings, fetched live  ${s.dim('[Team+]')}`,
+    `    ${s.brand('ticketlens')} mcp                         Start the MCP stdio server for Recall  ${s.dim('[Pro]')}`,
     '',
     `    ${s.brand('ticketlens')} delete ${s.dim('<PROFILE-NAME>')}       Remove a profile`,
     `    ${s.brand('ticketlens')} activate ${s.dim('<KEY>')}              Activate a license key`,
@@ -580,6 +581,34 @@ export function printRecallHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('$')} ticketlens recall PROD-123 --full`,
     `    ${s.dim('$')} ticketlens recall sync`,
     `    ${s.dim('$')} ticketlens recall settings`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printMcpHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('mcp')}  ${s.dim('[Pro]')}`,
+    '',
+    `  Start an MCP (Model Context Protocol) stdio server exposing Recall as`,
+    `  native tools — ${s.cyan('recall_add')} and ${s.cyan('recall_search')} — for any MCP-compatible AI`,
+    `  harness, not just Claude Code. Thin adapter over the same code as`,
+    `  ${s.cyan('note add')}/${s.cyan('recall')} above: same Pro gate, same secret scan, same local`,
+    `  vault, same team sync. Long-running — exits when the client closes stdin.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('HARNESS CONFIG')}`,
+    '',
+    `    ${s.dim('{ "command": "ticketlens", "args": ["mcp"] }')}`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens mcp`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

@@ -198,6 +198,8 @@ describe('bin/ticketlens.mjs', () => {
     ['pr', '-h'],
     ['install-hooks', '--help'],
     ['install-hooks', '-h'],
+    ['mcp', '--help'],
+    ['mcp', '-h'],
   ]) {
     it(`"ticketlens ${cmd} ${flag}" exits 0 and prints help`, () => {
       const result = spawnSync('node', [binPath, cmd, flag], {
@@ -244,5 +246,20 @@ describe('bin/ticketlens.mjs', () => {
     } finally {
       rmSync(freshHome, { recursive: true, force: true });
     }
+  });
+
+  it('"ticketlens mcp" starts the stdio server and exits cleanly when stdin closes, with an initialize handshake answered on stdout', () => {
+    const result = spawnSync('node', [binPath, 'mcp'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) + '\n',
+      env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
+    });
+    assert.equal(result.status, 0, `Expected clean exit on stdin close, got ${result.status}\nstderr: ${result.stderr}`);
+    const lines = result.stdout.split('\n').filter(Boolean);
+    assert.equal(lines.length, 1, 'exactly one JSON-RPC response for the one request sent');
+    const response = JSON.parse(lines[0]);
+    assert.equal(response.id, 1);
+    assert.equal(response.result.serverInfo.name, 'ticketlens');
   });
 });
