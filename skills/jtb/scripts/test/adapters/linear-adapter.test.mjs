@@ -333,3 +333,135 @@ describe('fetchStatuses', () => {
     assert.deepEqual(statuses, []);
   });
 });
+
+// ---------------------------------------------------------------------------
+// addComment
+// ---------------------------------------------------------------------------
+const ISSUE_INFO = { id: 'issue-uuid-1', state: { id: 'state-in-progress', name: 'In Progress' }, team: { id: 'team-uuid-1' } };
+
+function sequencedFetcher(responses) {
+  let i = 0;
+  return async () => responses[Math.min(i++, responses.length - 1)]();
+}
+
+describe('addComment', () => {
+  it('resolves the identifier to an internal id, then mutates using that id (not the identifier string)', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      return makeResponse({ commentCreate: { success: true, comment: { id: 'comment-1', url: 'https://linear.app/x/issue/ENG-42#comment-1' } } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.addComment('ENG-42', 'looks good');
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].variables.issueId, 'issue-uuid-1');
+    assert.notEqual(calls[1].variables.issueId, 'ENG-42');
+    assert.equal(result.id, 'comment-1');
+  });
+
+  it('throws when commentCreate reports success:false despite HTTP 200 and no GraphQL errors', async () => {
+    const fetcher = sequencedFetcher([
+      () => makeResponse({ issues: { nodes: [ISSUE_INFO] } }),
+      () => makeResponse({ commentCreate: { success: false, comment: null } }),
+    ]);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.addComment('ENG-42', 'x'), /success:false/);
+  });
+
+  it('throws when the issue identifier cannot be resolved', async () => {
+    const fetcher = async () => makeResponse({ issues: { nodes: [] } });
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.addComment('ENG-99', 'x'), /not found: ENG-99/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getTransitions
+// ---------------------------------------------------------------------------
+describe('getTransitions', () => {
+  it('returns team-scoped states, excluding the current one', async () => {
+    const fetcher = sequencedFetcher([
+      () => makeResponse({ issues: { nodes: [ISSUE_INFO] } }),
+      () => makeResponse({ workflowStates: { nodes: [
+        { id: 'state-in-progress', name: 'In Progress' },
+        { id: 'state-todo', name: 'Todo' },
+        { id: 'state-done', name: 'Done' },
+      ] } }),
+    ]);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const options = await adapter.getTransitions('ENG-42');
+    assert.deepEqual(options, [
+      { id: 'state-todo', name: 'Todo', to: 'Todo' },
+      { id: 'state-done', name: 'Done', to: 'Done' },
+    ]);
+  });
+
+  it('scopes the workflowStates query to the issue team id', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      return makeResponse({ workflowStates: { nodes: [] } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await adapter.getTransitions('ENG-42');
+    assert.equal(calls[1].variables.teamId, 'team-uuid-1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// transition
+// ---------------------------------------------------------------------------
+describe('transition', () => {
+  const STATES = [
+    { id: 'state-in-progress', name: 'In Progress' },
+    { id: 'state-todo', name: 'Todo' },
+    { id: 'state-done', name: 'Done' },
+  ];
+
+  it('resolves target by name, mutates using the resolved stateId, and reports success', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      if (calls.length === 2) return makeResponse({ workflowStates: { nodes: STATES } });
+      return makeResponse({ issueUpdate: { success: true } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.transition('ENG-42', 'done');
+    assert.deepEqual(result, { executed: true, to: 'Done' });
+    assert.equal(calls[2].variables.stateId, 'state-done');
+    assert.equal(calls[2].variables.id, 'issue-uuid-1');
+  });
+
+  it('returns executed:false with options when target does not resolve, without ever calling issueUpdate', async () => {
+    let mutationCalled = false;
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      if (body.query.includes('issueUpdate')) mutationCalled = true;
+      if (body.query.includes('workflowStates')) return makeResponse({ workflowStates: { nodes: STATES } });
+      return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.transition('ENG-42', 'nonexistent-state');
+    assert.equal(result.executed, false);
+    assert.equal(result.reason, 'not-found');
+    assert.equal(mutationCalled, false);
+  });
+
+  it('returns executed:false reason mutation-rejected when issueUpdate reports success:false (permission denial, no top-level errors)', async () => {
+    const fetcher = sequencedFetcher([
+      () => makeResponse({ issues: { nodes: [ISSUE_INFO] } }),
+      () => makeResponse({ workflowStates: { nodes: STATES } }),
+      () => makeResponse({ issueUpdate: { success: false } }),
+    ]);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.transition('ENG-42', 'done');
+    assert.equal(result.executed, false);
+    assert.equal(result.reason, 'mutation-rejected');
+  });
+});

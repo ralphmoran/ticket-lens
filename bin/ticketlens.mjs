@@ -28,6 +28,7 @@ import {
   printCollisionsHelp, printStatsHelp,
   printCloudKeysHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
+  printCommentHelp, printTransitionHelp,
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { runStats } from '../skills/jtb/scripts/lib/run-stats.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
@@ -734,6 +735,34 @@ switch (command) {
     // pattern; it exits when the client closes stdin (spec's stdio lifecycle).
     const { runMcpServer } = await import('../skills/jtb/scripts/lib/mcp-server.mjs');
     await runMcpServer({});
+    break;
+  }
+
+  case 'comment': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printCommentHelp(); break; }
+    const { runTicketComment } = await import('../skills/jtb/scripts/lib/ticket-command.mjs');
+    runTicketComment(cmdArgs).then(({ ok }) => {
+      if (!ok) process.exitCode = 1;
+    }).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+  }
+
+  case 'transition': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printTransitionHelp(); break; }
+    const { runTicketTransitionList, runTicketTransition } = await import('../skills/jtb/scripts/lib/ticket-command.mjs');
+    // No --target → discovery only, never mutates. --target present → execute
+    // (runTicketTransition itself still refuses without --confirm).
+    const hasTarget = cmdArgs.some(a => a.startsWith('--target='));
+    const runFn = hasTarget ? runTicketTransition : runTicketTransitionList;
+    runFn(cmdArgs).then(({ ok }) => {
+      if (!ok) process.exitCode = 1;
+    }).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
     break;
   }
 

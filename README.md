@@ -14,7 +14,7 @@
 
 > Your AI assistant shouldn't need to read your tickets.
 
-> Works alongside Atlassian MCP — Atlassian MCP writes the tickets; TicketLens tells you which ones need you right now.
+> Reads your tickets, tells you which ones need you right now — and now writes back too: post comments and transition status directly from your terminal or AI session.
 
 <div align="center"><img src="docs/demos/fetch.gif" alt="ticketlens CNV1-2 demo" width="700" /></div>
 
@@ -411,11 +411,27 @@ Every note is scanned before saving — anything shaped like a real secret (API 
 
 **Removing a note:** `ticketlens note delete --id="..." [--ticket=KEY]` removes a note from your local vault. Local only — if it was already pushed to a team, teammates who pulled it keep their copy; deleting it there too is a manager action from the Console (Admin > Recall).
 
-**Any MCP-capable AI harness:** `ticketlens mcp` starts a stdio [MCP](https://modelcontextprotocol.io) server exposing `recall_add` and `recall_search` as native tools — any MCP-compatible AI assistant, not just Claude Code, can call them directly instead of constructing a shell command. It's a thin adapter over the exact same code as the CLI commands above — same Pro gate, same secret scan, same local vault, same team sync — nothing is reimplemented. Point your harness's MCP config at it: `{ "command": "ticketlens", "args": ["mcp"] }` — or run `ticketlens mcp install` in a project to write that entry into its `.mcp.json` for you (creates the file if it doesn't exist, merges in if it does — never touches any other entry already there; `--dry-run` to preview first).
+**Any MCP-capable AI harness:** `ticketlens mcp` starts a stdio [MCP](https://modelcontextprotocol.io) server exposing `recall_add`, `recall_search`, `ticket_comment`, and `ticket_transition` as native tools — any MCP-compatible AI assistant, not just Claude Code, can call them directly instead of constructing a shell command. It's a thin adapter over the exact same code as the CLI commands above — same Pro gate, same secret scan/local vault/tracker writes, same team sync — nothing is reimplemented. Point your harness's MCP config at it: `{ "command": "ticketlens", "args": ["mcp"] }` — or run `ticketlens mcp install` in a project to write that entry into its `.mcp.json` for you (creates the file if it doesn't exist, merges in if it does — never touches any other entry already there; `--dry-run` to preview first).
 
 `note add`'s save confirmation and `recall`'s search results are styled by default in a terminal; add `--plain` to either for bare, pipe-safe output. `recall` always shows each note's file ID (e.g. `[1784135399545-fe01c4.md]`) so you can open it directly (`cat ~/.ticketlens/recall/<PREFIX>/<id>`), or pass `--full` to print the full body content inline instead.
 
 **Gaps** — every `ticketlens PROJ-123` brief also diffs the ticket's own description against its linked tickets (from the depth traversal you already requested) and its own downloaded attachments, looking for requirements mentioned there but missing here. Anything uncovered shows up under a `## Gaps` section, citing exactly where it came from — a linked ticket key or an attachment filename — as evidence, never an instruction to act on. Nothing is saved anywhere; it's recomputed fresh on every fetch. Requires a Pro license, same as Recall. No network call beyond what the brief already made.
+
+---
+
+### Comment & Transition
+
+```bash
+ticketlens comment PROJ-123 --body="Looks good, merging."   # Post a comment to the tracker
+ticketlens transition PROJ-123                              # List valid transitions (read-only)
+ticketlens transition PROJ-123 --target="Done" --confirm    # Execute the transition
+```
+
+Write directly to the ticket in its real tracker — Jira, GitHub, or Linear — from your terminal or an AI session via `ticket_comment`/`ticket_transition` MCP tools. Requires a Pro license.
+
+`ticketlens transition` with just a ticket key lists the tracker's current valid options without changing anything (Jira: real workflow transitions for that issue; GitHub: open/closed; Linear: team-scoped workflow states). Add both `--target` and `--confirm` to execute — `--confirm` is a deliberate two-step gate: a behavioral nudge and forensic trail, not a hard security guarantee. Every write, once resolved, is re-validated against the tracker's current state immediately before executing — never a blind write against a stale option.
+
+Both actions have a short local debounce (10s) against an accidental double-fire (a flaky retry, hitting enter twice), and every successful write is appended to a local, append-only audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — unlike Recall notes, ticket comments/transitions aren't naturally idempotent, so a timed-out attempt is surfaced to you instead of silently repeated.
 
 ---
 
@@ -692,9 +708,14 @@ ticketlens recall CNV1-2                      # Search saved notes by ticket key
 ticketlens recall "retry backoff"             # Free-text search across all notes [Pro]
 ticketlens recall sync                        # Retry any notes stuck in the local queue [Team+]
 ticketlens recall settings                    # Show effective retry-queue settings, fetched live [Team+]
-ticketlens mcp                                # Start the MCP stdio server (recall_add/recall_search tools) [Pro]
+ticketlens mcp                                # Start the MCP stdio server (recall/ticket write tools) [Pro]
 ticketlens mcp install                        # Register it into the current project's .mcp.json
 ticketlens mcp install --dry-run              # Preview the registration without writing
+
+# ── Comment & Transition ─────────────────────────────────────────────────────
+ticketlens comment CNV1-2 --body="Looks good, merging."     # Post a comment to the tracker [Pro]
+ticketlens transition CNV1-2                                # List valid transitions (read-only) [Pro]
+ticketlens transition CNV1-2 --target="Done" --confirm      # Execute the transition [Pro]
 
 # ── Stats ──────────────────────────────────────────────────────────────────────
 ticketlens stats                              # Response-time metrics from local history
@@ -776,7 +797,9 @@ ticketlens note delete --id="..."        # Remove a note from your local vault
 ticketlens recall <query|TICKET-KEY>     # Search your saved Recall notes
 ticketlens recall sync                   # Retry any notes stuck in the local queue
 ticketlens recall settings               # Show effective retry-queue settings, fetched live
-ticketlens mcp                           # Start the MCP stdio server (recall_add/recall_search)
+ticketlens mcp                           # Start the MCP stdio server (recall/ticket write tools)
+ticketlens comment CNV1-2 --body="..."   # Post a comment to the tracker
+ticketlens transition CNV1-2 --target="Done" --confirm  # Transition ticket status
 ticketlens activate YOUR-LICENSE-KEY     # Activate Pro license
 ```
 

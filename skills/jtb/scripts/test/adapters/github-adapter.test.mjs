@@ -348,3 +348,131 @@ describe('fetchStatuses', () => {
     assert.deepEqual(statuses, ['open', 'closed']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// addComment
+// ---------------------------------------------------------------------------
+function noHeaders() { return { get: () => null }; }
+
+describe('addComment', () => {
+  it('posts to the issue comments endpoint and returns id/url', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => {
+      calls.push({ url, opts });
+      return { ok: true, status: 201, headers: noHeaders(), json: async () => ({ id: 555, html_url: 'https://github.com/acme/widgets/issues/42#issuecomment-555' }) };
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const result = await adapter.addComment('WGT-42', 'looks good');
+    assert.equal(calls[0].url, 'https://api.github.com/repos/acme/widgets/issues/42/comments');
+    assert.equal(calls[0].opts.method, 'POST');
+    assert.deepEqual(JSON.parse(calls[0].opts.body), { body: 'looks good' });
+    assert.equal(result.id, '555');
+  });
+
+  it('throws with .status on non-OK response', async () => {
+    const fetcher = async () => ({ ok: false, status: 404, headers: noHeaders(), json: async () => ({ message: 'Not Found' }) });
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.addComment('WGT-42', 'x'), (err) => err.status === 404);
+  });
+
+  it('classifies a primary rate limit (403, remaining=0, no retry-after)', async () => {
+    const headers = { get: (k) => (k === 'x-ratelimit-remaining' ? '0' : k === 'x-ratelimit-reset' ? '1700000000' : null) };
+    const fetcher = async () => ({ ok: false, status: 403, headers, json: async () => ({}) });
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.addComment('WGT-42', 'x'), (err) => err.rateLimit?.kind === 'primary-rate-limit' && err.rateLimit.resetAt === 1700000000);
+  });
+
+  it('classifies a secondary rate limit (403 with retry-after)', async () => {
+    const headers = { get: (k) => (k === 'retry-after' ? '30' : null) };
+    const fetcher = async () => ({ ok: false, status: 403, headers, json: async () => ({}) });
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.addComment('WGT-42', 'x'), (err) => err.rateLimit?.kind === 'secondary-rate-limit' && err.rateLimit.retryAfterSeconds === 30);
+  });
+
+  it('classifies a secondary rate limit with default backoff (403, no retry-after, remaining not 0)', async () => {
+    const headers = { get: () => null };
+    const fetcher = async () => ({ ok: false, status: 403, headers, json: async () => ({}) });
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.addComment('WGT-42', 'x'), (err) => err.rateLimit?.kind === 'secondary-rate-limit' && err.rateLimit.retryAfterSeconds === 60);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getTransitions / transition
+// ---------------------------------------------------------------------------
+describe('getTransitions', () => {
+  it('offers "closed" when issue is open', async () => {
+    const fetcher = async (url) => {
+      if (url.endsWith('/comments')) return makeCommentsResponse([]);
+      return makeIssueResponse({ ...RAW_ISSUE, state: 'open' });
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const options = await adapter.getTransitions('WGT-42');
+    assert.deepEqual(options, [{ id: 'closed', name: 'Close issue', to: 'closed' }]);
+  });
+
+  it('offers "open" when issue is closed', async () => {
+    const fetcher = async (url) => {
+      if (url.endsWith('/comments')) return makeCommentsResponse([]);
+      return makeIssueResponse({ ...RAW_ISSUE, state: 'closed' });
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const options = await adapter.getTransitions('WGT-42');
+    assert.deepEqual(options, [{ id: 'open', name: 'Reopen issue', to: 'open' }]);
+  });
+});
+
+describe('transition', () => {
+  it('PATCHes state and returns executed:true on a valid target', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => {
+      calls.push({ url, opts });
+      if (url.endsWith('/comments')) return makeCommentsResponse([]);
+      if (opts?.method === 'PATCH') return { ok: true, status: 200, headers: noHeaders(), json: async () => ({}) };
+      return makeIssueResponse({ ...RAW_ISSUE, state: 'open' });
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const result = await adapter.transition('WGT-42', 'closed');
+    assert.deepEqual(result, { executed: true, to: 'closed' });
+    const patch = calls.find(c => c.opts?.method === 'PATCH');
+    assert.deepEqual(JSON.parse(patch.opts.body), { state: 'closed' });
+  });
+
+  it('is idempotent — returns executed:false when already in target state, no PATCH sent', async () => {
+    let patchCalled = false;
+    const fetcher = async (url, opts) => {
+      if (opts?.method === 'PATCH') patchCalled = true;
+      if (url.endsWith('/comments')) return makeCommentsResponse([]);
+      return makeIssueResponse({ ...RAW_ISSUE, state: 'open' });
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const result = await adapter.transition('WGT-42', 'open');
+    assert.equal(result.executed, false);
+    assert.equal(result.reason, 'already-in-target-state');
+    assert.equal(patchCalled, false);
+  });
+
+  it('returns executed:false with reason not-found for an unresolvable target', async () => {
+    let patchCalled = false;
+    const fetcher = async (url, opts) => {
+      if (opts?.method === 'PATCH') patchCalled = true;
+      if (url.endsWith('/comments')) return makeCommentsResponse([]);
+      return makeIssueResponse({ ...RAW_ISSUE, state: 'open' });
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const result = await adapter.transition('WGT-42', 'in-review');
+    assert.equal(result.executed, false);
+    assert.equal(result.reason, 'not-found');
+    assert.equal(patchCalled, false);
+  });
+
+  it('throws with .status on a failed PATCH', async () => {
+    const fetcher = async (url, opts) => {
+      if (url.endsWith('/comments')) return makeCommentsResponse([]);
+      if (opts?.method === 'PATCH') return { ok: false, status: 422, headers: noHeaders(), json: async () => ({ message: 'Unprocessable' }) };
+      return makeIssueResponse({ ...RAW_ISSUE, state: 'open' });
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.transition('WGT-42', 'closed'), (err) => err.status === 422);
+  });
+});

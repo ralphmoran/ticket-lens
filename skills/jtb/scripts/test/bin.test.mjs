@@ -200,6 +200,10 @@ describe('bin/ticketlens.mjs', () => {
     ['install-hooks', '-h'],
     ['mcp', '--help'],
     ['mcp', '-h'],
+    ['comment', '--help'],
+    ['comment', '-h'],
+    ['transition', '--help'],
+    ['transition', '-h'],
   ]) {
     it(`"ticketlens ${cmd} ${flag}" exits 0 and prints help`, () => {
       const result = spawnSync('node', [binPath, cmd, flag], {
@@ -261,6 +265,51 @@ describe('bin/ticketlens.mjs', () => {
     const response = JSON.parse(lines[0]);
     assert.equal(response.id, 1);
     assert.equal(response.result.serverInfo.name, 'ticketlens');
+  });
+
+  it('"ticketlens comment" with no Pro license shows an upgrade prompt and exits non-zero, without reaching the network', () => {
+    const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-comment-gate-'));
+    try {
+      const result = spawnSync('node', [binPath, 'comment', 'PROD-1', '--body=hi'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        env: { ...process.env, HOME: freshHome, CI: 'true' },
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /pro/i);
+    } finally {
+      rmSync(freshHome, { recursive: true, force: true });
+    }
+  });
+
+  it('"ticketlens transition" with no Pro license shows an upgrade prompt and exits non-zero (list mode, no --target)', () => {
+    const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-transition-gate-'));
+    try {
+      const result = spawnSync('node', [binPath, 'transition', 'PROD-1'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        env: { ...process.env, HOME: freshHome, CI: 'true' },
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /pro/i);
+    } finally {
+      rmSync(freshHome, { recursive: true, force: true });
+    }
+  });
+
+  it('"ticketlens transition TICKET --target=X" without --confirm never reaches the network gate check first (license gate wins)', () => {
+    const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-transition-confirm-gate-'));
+    try {
+      const result = spawnSync('node', [binPath, 'transition', 'PROD-1', '--target=Done'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        env: { ...process.env, HOME: freshHome, CI: 'true' },
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /pro/i);
+    } finally {
+      rmSync(freshHome, { recursive: true, force: true });
+    }
   });
 
   it('"ticketlens mcp install --dry-run" runs the install path, not the server, and touches no file', () => {

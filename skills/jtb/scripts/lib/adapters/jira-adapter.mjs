@@ -1,5 +1,16 @@
-import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses } from '../jira-client.mjs';
+import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, postComment, getTransitions, postTransition } from '../jira-client.mjs';
 import { buildJiraEnv } from '../config.mjs';
+
+/**
+ * Finds the option in a fresh transitions list matching a caller-given
+ * target — by id (exact) or by name/to-name (case-insensitive). Never
+ * trusts a caller-supplied id without confirming it's still a real,
+ * currently-valid option for this exact issue right now.
+ */
+function resolveTransitionTarget(options, target) {
+  const t = String(target).toLowerCase();
+  return options.find(o => o.id === String(target) || o.name.toLowerCase() === t || (o.to ?? '').toLowerCase() === t);
+}
 
 /**
  * Returns a tracker adapter backed by the Jira REST API.
@@ -8,12 +19,29 @@ import { buildJiraEnv } from '../config.mjs';
 export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
   const env = buildJiraEnv(conn);
   const apiVersion = conn.auth === 'cloud' ? 3 : 2;
+  const base = { env, fetcher, apiVersion, allowPrivateIp: conn.allowPrivateIp };
 
   return {
     type: 'jira',
-    fetchTicket: (key, opts = {}) => fetchTicket(key, { env, fetcher, apiVersion, allowPrivateIp: conn.allowPrivateIp, ...opts }),
-    fetchCurrentUser: (opts = {}) => fetchCurrentUser({ env, fetcher, apiVersion, allowPrivateIp: conn.allowPrivateIp, ...opts }),
-    searchTickets: (query, opts = {}) => searchTickets(query, { env, fetcher, apiVersion, allowPrivateIp: conn.allowPrivateIp, ...opts }),
-    fetchStatuses: (opts = {}) => fetchStatuses({ env, fetcher, apiVersion, allowPrivateIp: conn.allowPrivateIp, ...opts }),
+    fetchTicket: (key, opts = {}) => fetchTicket(key, { ...base, ...opts }),
+    fetchCurrentUser: (opts = {}) => fetchCurrentUser({ ...base, ...opts }),
+    searchTickets: (query, opts = {}) => searchTickets(query, { ...base, ...opts }),
+    fetchStatuses: (opts = {}) => fetchStatuses({ ...base, ...opts }),
+    addComment: (key, body, opts = {}) => postComment(key, body, { ...base, ...opts }),
+    getTransitions: (key, opts = {}) => getTransitions(key, { ...base, ...opts }),
+    /**
+     * Always re-fetches transitions fresh and resolves `target` against
+     * them before executing — a caller can never blind-POST a stale or
+     * guessed transition id, even if they try.
+     */
+    async transition(key, target, opts = {}) {
+      const options = await getTransitions(key, { ...base, ...opts });
+      const match = resolveTransitionTarget(options, target);
+      if (!match) {
+        return { executed: false, reason: 'not-found', options };
+      }
+      await postTransition(key, match.id, { ...base, ...opts });
+      return { executed: true, to: match.to ?? match.name };
+    },
   };
 }

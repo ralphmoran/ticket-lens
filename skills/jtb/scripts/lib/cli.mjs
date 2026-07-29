@@ -130,6 +130,14 @@ export function parseCommand(args) {
     return { command: 'mcp', args: args.slice(1) };
   }
 
+  if (first === 'comment') {
+    return { command: 'comment', args: args.slice(1) };
+  }
+
+  if (first === 'transition') {
+    return { command: 'transition', args: args.slice(1) };
+  }
+
   // Anything that looks like a ticket key or any non-flag arg → fetch
   return { command: 'fetch', args };
 }

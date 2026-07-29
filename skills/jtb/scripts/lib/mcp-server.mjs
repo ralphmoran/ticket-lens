@@ -3,12 +3,15 @@
  *
  * A pure transport adapter: parses JSON-RPC 2.0 off stdin, translates
  * `tools/call` arguments into the exact args/dependency shape `runNoteAdd`/
- * `runRecall` already accept, and captures their human-readable `stream`
- * output into the JSON-RPC response instead of a real stream. Zero new
- * validation, licensing, or vault logic — both tools funnel through the
- * same functions the CLI's `note add`/`recall` commands already use, so
- * every existing gate (license, secret scan, structural check, retry
- * queue) applies identically here.
+ * `runRecall`/`runTicketComment`/`runTicketTransitionList`/
+ * `runTicketTransition` already accept, and captures their human-readable
+ * `stream` output into the JSON-RPC response instead of a real stream. Zero
+ * new validation, licensing, or vault logic — every tool funnels through
+ * the same functions the CLI's `note add`/`recall`/`comment`/`transition`
+ * commands already use, so every existing gate (license, secret scan,
+ * structural check, retry queue, cooldown, audit log) applies identically
+ * here. Ticket-writing tools must never import an adapter directly — doing
+ * so would fully bypass the Pro+ gate that lives in ticket-command.mjs.
  *
  * Per the MCP stdio transport spec, the server MUST NOT write anything to
  * stdout that isn't a valid MCP message — every wrapped function's output
@@ -20,6 +23,7 @@ import readline from 'node:readline';
 import { DEFAULT_CONFIG_DIR, getVersion } from './config.mjs';
 import { runNoteAdd } from './note-command.mjs';
 import { runRecall } from './recall-command.mjs';
+import { runTicketComment, runTicketTransitionList, runTicketTransition } from './ticket-command.mjs';
 
 const PROTOCOL_VERSION = '2025-11-25';
 
@@ -47,6 +51,31 @@ const TOOLS = [
         query: { type: 'string', description: 'Free-text query or a ticket key like PROJ-123.' },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'ticket_comment',
+    description: 'Post a comment to a ticket in its tracker (Jira/GitHub/Linear). Destructive — writes directly to the live tracker, not a local Recall note. Requires a TicketLens Pro license.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ticket: { type: 'string', description: 'Ticket key, e.g. PROJ-123.' },
+        body: { type: 'string', description: 'Comment body.' },
+      },
+      required: ['ticket', 'body'],
+    },
+  },
+  {
+    name: 'ticket_transition',
+    description: 'List or execute a ticket status transition in its tracker (Jira/GitHub/Linear). Called with only `ticket`, lists the tracker\'s current valid options without changing anything. Destructive when `target` and `confirm: true` are both given — requires confirmation and writes directly to the live tracker. Requires a TicketLens Pro license.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ticket: { type: 'string', description: 'Ticket key, e.g. PROJ-123.' },
+        target: { type: 'string', description: 'Target status/transition name. Omit to just list the tracker\'s current valid options.' },
+        confirm: { type: 'boolean', description: 'Must be true, alongside `target`, to actually execute the transition — a nudge and audit trail, not just a formality.' },
+      },
+      required: ['ticket'],
     },
   },
 ];
@@ -112,14 +141,59 @@ async function callRecallSearch(args, { configDir, runRecallFn }) {
   return ok ? { content } : { isError: true, content };
 }
 
+/**
+ * `ticket`/`body` become single opaque cmdArgs elements (`--body=${body}`),
+ * same reasoning as buildNoteAddArgs above — a body containing literal
+ * `--confirm` or `--target=` text stays inert since parseFlag only matches
+ * a whole array element via startsWith, never scans inside one.
+ */
+async function callTicketComment(args, { configDir, runTicketCommentFn }) {
+  if (!args.ticket) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: ticket' }] };
+  }
+  if (!args.body) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: body' }] };
+  }
+  const capture = capturingStream();
+  const { ok } = await runTicketCommentFn([args.ticket, `--body=${args.body}`], { configDir, stream: capture });
+  const content = [{ type: 'text', text: capture.text }];
+  return ok ? { content } : { isError: true, content };
+}
+
+/**
+ * No `target` → discovery only, dispatched to the read-only list function —
+ * never touches the mutating path. `target` present → dispatched to the
+ * executing function, which itself still refuses without `confirm: true`
+ * (the MCP layer doesn't pre-empt that check, so the same refusal message
+ * a CLI user sees is what a calling AI harness sees too).
+ */
+async function callTicketTransition(args, { configDir, runTicketTransitionListFn, runTicketTransitionFn }) {
+  if (!args.ticket) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: ticket' }] };
+  }
+  const capture = capturingStream();
+  if (!args.target) {
+    const { ok } = await runTicketTransitionListFn([args.ticket], { configDir, stream: capture });
+    const content = [{ type: 'text', text: capture.text }];
+    return ok ? { content } : { isError: true, content };
+  }
+  const cmdArgs = [args.ticket, `--target=${args.target}`];
+  if (args.confirm === true) cmdArgs.push('--confirm');
+  const { ok } = await runTicketTransitionFn(cmdArgs, { configDir, stream: capture });
+  const content = [{ type: 'text', text: capture.text }];
+  return ok ? { content } : { isError: true, content };
+}
+
 async function handleToolsCall(params, deps) {
   const { name, arguments: args = {} } = params ?? {};
   if (name === 'recall_add') return callRecallAdd(args, deps);
   if (name === 'recall_search') return callRecallSearch(args, deps);
+  if (name === 'ticket_comment') return callTicketComment(args, deps);
+  if (name === 'ticket_transition') return callTicketTransition(args, deps);
   return { isError: true, content: [{ type: 'text', text: `Unknown tool: ${name}` }] };
 }
 
-async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn }) {
+async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn }) {
   let msg;
   try {
     msg = JSON.parse(raw);
@@ -149,7 +223,7 @@ async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn }) {
 
   if (method === 'tools/call') {
     try {
-      const result = await handleToolsCall(params, { configDir, runNoteAddFn, runRecallFn });
+      const result = await handleToolsCall(params, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn });
       return jsonRpcResult(id, result);
     } catch (err) {
       return jsonRpcError(id ?? null, -32603, `Internal error: ${err.message}`);
@@ -172,6 +246,9 @@ export function runMcpServer({
   stdout = process.stdout,
   runNoteAddFn = runNoteAdd,
   runRecallFn = runRecall,
+  runTicketCommentFn = runTicketComment,
+  runTicketTransitionListFn = runTicketTransitionList,
+  runTicketTransitionFn = runTicketTransition,
 } = {}) {
   // A client can disconnect mid-write (EPIPE) at any time on a long-lived
   // process — an unhandled 'error' event on either stream would otherwise
@@ -191,7 +268,7 @@ export function runMcpServer({
     // never resolving (a dropped rejection isn't a resolution) — the
     // server would hang on shutdown instead of exiting.
     queue = queue.then(async () => {
-      const response = await handleMessage(line, { configDir, runNoteAddFn, runRecallFn });
+      const response = await handleMessage(line, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn });
       if (response) stdout.write(response);
     }).catch(() => {});
   });

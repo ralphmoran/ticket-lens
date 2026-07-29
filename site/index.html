@@ -354,7 +354,7 @@
             Atlassian MCP compatible
           </div>
           <h2 class="section-h2">Works alongside<br>Atlassian MCP</h2>
-          <p class="section-lead" style="margin-bottom: 0">Atlassian MCP gives Claude write access to Jira. TicketLens handles the read side — compressing ticket context to 60–80% fewer tokens so your AI spends less budget on research and more on building.</p>
+          <p class="section-lead" style="margin-bottom: 0">TicketLens compresses ticket context to 60–80% fewer tokens so your AI spends less budget on research and more on building — and now writes back too, posting comments and transitioning status directly. Atlassian MCP remains a solid option for broader Jira write coverage; run both side by side.</p>
         </div>
         <div class="mcp-diagram fade-in fd2">
           <div class="mcp-flow">
@@ -450,6 +450,7 @@
             <li>Everything in Free</li>
             <li>Recall — your own notes, auto-matched and injected into future briefs</li>
             <li>Gaps — requirements found in linked tickets or attachments, missing from this one</li>
+            <li>Write back to the tracker — post comments &amp; transition status (ticketlens comment/transition)</li>
             <li>--compliance unlimited</li>
             <li>--summarize &amp; --handoff (BYOK: Anthropic, OpenAI, or Groq)</li>
             <li>--summarize --cloud (no local key needed)</li>
@@ -728,7 +729,7 @@
               How does it compare to Atlassian MCP?
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
-            <div class="faq-a">They're complementary. Atlassian MCP gives Claude direct Jira write access. TicketLens handles the read side — compressing ticket context to 60–80% fewer tokens. You can run both simultaneously: Atlassian MCP for creating/updating tickets, TicketLens for efficient context delivery.</div>
+            <div class="faq-a">Complementary, not exclusive. TicketLens compresses ticket context to 60–80% fewer tokens, and now also writes back — post comments and transition status via <code>ticketlens comment</code>/<code>ticketlens transition</code> (CLI or MCP tools). Atlassian MCP remains a solid full-write alternative if you need broader Jira write coverage than that. You can run both simultaneously.</div>
           </div>
           <div class="faq-item">
             <button class="faq-q" aria-expanded="false">

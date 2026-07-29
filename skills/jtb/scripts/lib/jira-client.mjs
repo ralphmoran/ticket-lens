@@ -4,7 +4,7 @@
  * Supports v2 (Server/DC) and v3 (Cloud) API versions.
  */
 
-import { adfToText } from './adf-converter.mjs';
+import { adfToText, textToAdf } from './adf-converter.mjs';
 import { lookup as dnsLookup } from 'node:dns/promises';
 
 function toText(value) {
@@ -406,6 +406,92 @@ export async function fetchRemoteLinks(ticketKey, opts = {}) {
   return (raw ?? [])
     .filter(link => link.application?.type === 'com.atlassian.confluence')
     .map(link => ({ url: link.object.url, title: link.object.title ?? null }));
+}
+
+/**
+ * Adds a comment to an issue. Cloud (v3) rejects a plain string body
+ * outright and requires ADF; Server/DC (v2) accepts plain text directly —
+ * same apiVersion branch point every other write/read here already uses.
+ */
+export async function postComment(ticketKey, body, opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const url = `${baseUrl}/rest/api/${apiVersion}/issue/${encodeURIComponent(ticketKey)}/comment`;
+
+  const payload = { body: apiVersion === 3 ? textToAdf(body) : body };
+  const fetchOpts = {
+    method: 'POST',
+    headers: { ...buildAuthHeader(env), 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
+  if (!response.ok) {
+    const err = new Error(`Jira API error ${response.status} commenting on ${ticketKey}`);
+    err.status = response.status;
+    throw err;
+  }
+  const raw = await response.json();
+  return { id: raw.id, url: raw.self ?? null };
+}
+
+/**
+ * Discovers the transitions actually available for this specific issue
+ * right now (workflow-dependent, varies per project/status) — never
+ * hardcode transition names or ids, they aren't stable across projects.
+ */
+export async function getTransitions(ticketKey, opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const url = `${baseUrl}/rest/api/${apiVersion}/issue/${encodeURIComponent(ticketKey)}/transitions`;
+
+  const fetchOpts = { headers: { ...buildAuthHeader(env), 'Content-Type': 'application/json' } };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
+  if (!response.ok) {
+    const err = new Error(`Jira API error ${response.status} fetching transitions for ${ticketKey}`);
+    err.status = response.status;
+    throw err;
+  }
+  const raw = await response.json();
+  return (raw.transitions ?? []).map(t => ({ id: t.id, name: t.name, to: t.to?.name ?? null }));
+}
+
+/**
+ * Executes a transition by id. Callers must resolve the id via
+ * getTransitions() immediately before calling this — never pass a
+ * remembered/stale id, since transitions are workflow- and
+ * time-of-status-dependent (see ticket-command.mjs's re-validation).
+ * A transition requiring a mandatory screen field the caller didn't
+ * supply returns Jira's own 400 with the field list — surfaced as-is,
+ * never silently swallowed or auto-filled.
+ */
+export async function postTransition(ticketKey, transitionId, opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const url = `${baseUrl}/rest/api/${apiVersion}/issue/${encodeURIComponent(ticketKey)}/transitions`;
+
+  const fetchOpts = {
+    method: 'POST',
+    headers: { ...buildAuthHeader(env), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transition: { id: transitionId } }),
+  };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
+  if (!response.ok) {
+    let details;
+    try { details = await response.json(); } catch { /* body not JSON — fall through with no details */ }
+    const err = new Error(`Jira API error ${response.status} transitioning ${ticketKey}`);
+    err.status = response.status;
+    err.details = details;
+    throw err;
+  }
 }
 
 export async function fetchTicket(ticketKey, opts = {}) {

@@ -71,10 +71,10 @@ describe('mcp-server', () => {
   });
 
   describe('tools/list', () => {
-    it('returns exactly recall_add and recall_search with valid JSON Schema params', async () => {
+    it('returns exactly recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const names = messages[0].result.tools.map((t) => t.name).sort();
-      assert.deepEqual(names, ['recall_add', 'recall_search']);
+      assert.deepEqual(names, ['recall_add', 'recall_search', 'ticket_comment', 'ticket_transition']);
       for (const tool of messages[0].result.tools) {
         assert.equal(tool.inputSchema.type, 'object');
         assert.ok(tool.inputSchema.properties, `${tool.name} must declare input properties`);
@@ -182,6 +182,146 @@ describe('mcp-server', () => {
     });
   });
 
+  describe('tools/call ticket_comment', () => {
+    it('happy path: posts a comment and returns a non-error result without touching real stdout', async () => {
+      let seen;
+      const runTicketCommentFn = async (cmdArgs, opts) => {
+        seen = { cmdArgs, opts };
+        opts.stream.write('  Comment posted to PROJ-1\n');
+        return { ok: true };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_comment', arguments: { ticket: 'PROJ-1', body: 'Looks good' } } }],
+        { configDir, runTicketCommentFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('Comment posted'));
+      assert.deepEqual(seen.cmdArgs, ['PROJ-1', '--body=Looks good']);
+    });
+
+    it('missing ticket returns a JSON-RPC tool error without ever calling the real function', async () => {
+      let called = false;
+      const runTicketCommentFn = async () => { called = true; return { ok: true }; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_comment', arguments: { body: 'y' } } }],
+        { configDir, runTicketCommentFn },
+      );
+      assert.equal(called, false);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /ticket/i);
+    });
+
+    it('missing body returns a JSON-RPC tool error without ever calling the real function', async () => {
+      let called = false;
+      const runTicketCommentFn = async () => { called = true; return { ok: true }; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_comment', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runTicketCommentFn },
+      );
+      assert.equal(called, false);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /body/i);
+    });
+
+    it('a body containing flag-shaped text cannot forge a second cmdArgs element', async () => {
+      let seenArgs;
+      const runTicketCommentFn = async (cmdArgs) => { seenArgs = cmdArgs; return { ok: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_comment', arguments: { ticket: 'PROJ-1', body: '--confirm --target=Done' } } }],
+        { configDir, runTicketCommentFn },
+      );
+      assert.equal(seenArgs.length, 2);
+      assert.equal(seenArgs[1], '--body=--confirm --target=Done');
+    });
+
+    it('a failed write ({ok:false}) maps to a JSON-RPC tool error', async () => {
+      const runTicketCommentFn = async (cmdArgs, opts) => {
+        opts.stream.write('  Failed to write to PROJ-1: boom\n');
+        return { ok: false };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_comment', arguments: { ticket: 'PROJ-1', body: 'y' } } }],
+        { configDir, runTicketCommentFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+    });
+  });
+
+  describe('tools/call ticket_transition', () => {
+    it('no target dispatches to the read-only list function, never the executing one', async () => {
+      let listCalled = false, executeCalled = false;
+      const runTicketTransitionListFn = async (cmdArgs, opts) => {
+        listCalled = true;
+        opts.stream.write('  Valid transitions for PROJ-1:\n    - Done\n');
+        return { ok: true, options: [{ id: '1', name: 'Done', to: 'Done' }] };
+      };
+      const runTicketTransitionFn = async () => { executeCalled = true; return { ok: true }; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_transition', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runTicketTransitionListFn, runTicketTransitionFn },
+      );
+      assert.equal(listCalled, true);
+      assert.equal(executeCalled, false);
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('Done'));
+    });
+
+    it('target + confirm:true dispatches to the executing function with --confirm included', async () => {
+      let seenArgs;
+      const runTicketTransitionFn = async (cmdArgs, opts) => {
+        seenArgs = cmdArgs;
+        opts.stream.write('  PROJ-1 transitioned to "Done".\n');
+        return { ok: true };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_transition', arguments: { ticket: 'PROJ-1', target: 'Done', confirm: true } } }],
+        { configDir, runTicketTransitionFn },
+      );
+      assert.deepEqual(seenArgs, ['PROJ-1', '--target=Done', '--confirm']);
+      assert.equal(messages[0].result.isError, undefined);
+    });
+
+    it('target without confirm:true still dispatches to the executing function, which itself refuses (no pre-empting at the MCP layer)', async () => {
+      let seenArgs;
+      const runTicketTransitionFn = async (cmdArgs, opts) => {
+        seenArgs = cmdArgs;
+        opts.stream.write('  Refusing to transition PROJ-1 to "Done" without --confirm.\n');
+        return { ok: false };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_transition', arguments: { ticket: 'PROJ-1', target: 'Done' } } }],
+        { configDir, runTicketTransitionFn },
+      );
+      assert.deepEqual(seenArgs, ['PROJ-1', '--target=Done']);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /confirm/i);
+    });
+
+    it('missing ticket returns a JSON-RPC tool error without calling either function', async () => {
+      let listCalled = false, executeCalled = false;
+      const runTicketTransitionListFn = async () => { listCalled = true; return { ok: true }; };
+      const runTicketTransitionFn = async () => { executeCalled = true; return { ok: true }; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_transition', arguments: { target: 'Done', confirm: true } } }],
+        { configDir, runTicketTransitionListFn, runTicketTransitionFn },
+      );
+      assert.equal(listCalled, false);
+      assert.equal(executeCalled, false);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /ticket/i);
+    });
+
+    it('confirm:false (falsy, not strictly true) is not forwarded as --confirm', async () => {
+      let seenArgs;
+      const runTicketTransitionFn = async (cmdArgs) => { seenArgs = cmdArgs; return { ok: false }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_transition', arguments: { ticket: 'PROJ-1', target: 'Done', confirm: false } } }],
+        { configDir, runTicketTransitionFn },
+      );
+      assert.deepEqual(seenArgs, ['PROJ-1', '--target=Done']);
+    });
+  });
+
   describe('malformed input survival', () => {
     it('a bad JSON-RPC line produces an error response and a following valid message still gets served', async () => {
       const stdin = new PassThrough();
@@ -198,7 +338,7 @@ describe('mcp-server', () => {
       assert.equal(messages.length, 2, 'both the parse-error response and the valid tools/list response must appear');
       assert.ok(messages[0].error, 'first message must be a JSON-RPC error for the malformed line');
       assert.equal(messages[1].id, 2);
-      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['recall_add', 'recall_search']);
+      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['recall_add', 'recall_search', 'ticket_comment', 'ticket_transition']);
     });
 
     it('a syntactically-valid-but-non-object JSON line (e.g. bare "null") does not crash the server or drop later messages', async () => {
@@ -263,6 +403,24 @@ describe('mcp-server', () => {
     it('recall_search: unlicensed configDir is rejected by the real license gate', async () => {
       const { messages } = await drive(
         [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_search', arguments: { query: 'x' } } }],
+        { configDir },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /pro/i);
+    });
+
+    it('ticket_comment: unlicensed configDir is rejected by the real license gate, never reaching the network', async () => {
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_comment', arguments: { ticket: 'PROJ-1', body: 'y' } } }],
+        { configDir },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /pro/i);
+    });
+
+    it('ticket_transition: unlicensed configDir is rejected by the real license gate (list mode)', async () => {
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_transition', arguments: { ticket: 'PROJ-1' } } }],
         { configDir },
       );
       assert.equal(messages[0].result.isError, true);

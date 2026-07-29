@@ -66,6 +66,39 @@ async function gql(query, variables, { token, fetcher, signal }) {
 }
 
 /**
+ * Resolves a human identifier (e.g. "ENG-123") to the issue's internal id
+ * plus its current state and team — mutations require the UUID id, never
+ * the identifier string (confirmed against Linear's own SDK docs).
+ */
+async function fetchIssueStateInfo(key, { token, fetcher, signal }) {
+  const data = await gql(
+    `query ($id: String!) {
+      issues(filter: { identifier: { eq: $id } }, first: 1) {
+        nodes { id state { id name } team { id } }
+      }
+    }`,
+    { id: key },
+    { token, fetcher, signal },
+  );
+  const node = data.issues?.nodes?.[0];
+  if (!node) throw new Error(`Linear issue not found: ${key}`);
+  return node;
+}
+
+async function fetchTeamWorkflowStates(teamId, { token, fetcher, signal }) {
+  const data = await gql(
+    `query ($teamId: ID!) {
+      workflowStates(filter: { team: { id: { eq: $teamId } } }, first: 50) {
+        nodes { id name }
+      }
+    }`,
+    { teamId },
+    { token, fetcher, signal },
+  );
+  return data.workflowStates?.nodes ?? [];
+}
+
+/**
  * Returns a tracker adapter backed by the Linear GraphQL API.
  * Profile baseUrl must contain linear.app. Auth token stored as apiToken in credentials.json.
  */
@@ -129,6 +162,74 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
         { token, fetcher, signal },
       );
       return (data.workflowStates?.nodes ?? []).map(s => s.name);
+    },
+
+    async addComment(key, body, opts = {}) {
+      const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
+      const { id: issueId } = await fetchIssueStateInfo(key, { token, fetcher, signal });
+      const data = await gql(
+        `mutation ($issueId: String!, $body: String!) {
+          commentCreate(input: { issueId: $issueId, body: $body }) {
+            success
+            comment { id url }
+          }
+        }`,
+        { issueId, body },
+        { token, fetcher, signal },
+      );
+      if (!data.commentCreate?.success) {
+        throw new Error(`Linear commentCreate reported success:false for ${key}`);
+      }
+      return { id: data.commentCreate.comment.id, url: data.commentCreate.comment.url ?? null };
+    },
+
+    /**
+     * Scoped to the issue's own team — Linear's workflow states are
+     * per-team, so an unscoped list would offer states from teams this
+     * issue can never actually move into.
+     */
+    async getTransitions(key, opts = {}) {
+      const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
+      const info = await fetchIssueStateInfo(key, { token, fetcher, signal });
+      const states = await fetchTeamWorkflowStates(info.team.id, { token, fetcher, signal });
+      return states
+        .filter(s => s.id !== info.state?.id)
+        .map(s => ({ id: s.id, name: s.name, to: s.name }));
+    },
+
+    /**
+     * Always re-resolves the issue's current state and team-scoped
+     * options fresh before executing — a caller can never blind-mutate
+     * with a stale stateId. Explicitly checks `success` on the mutation
+     * payload: Linear can return HTTP 200 with no top-level GraphQL
+     * `errors` and still report success:false (e.g. permission denial),
+     * so absence of `errors` alone does not mean the mutation applied.
+     */
+    async transition(key, target, opts = {}) {
+      const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
+      const info = await fetchIssueStateInfo(key, { token, fetcher, signal });
+      const states = await fetchTeamWorkflowStates(info.team.id, { token, fetcher, signal });
+      const t = String(target).toLowerCase();
+      const options = states
+        .filter(s => s.id !== info.state?.id)
+        .map(s => ({ id: s.id, name: s.name, to: s.name }));
+      const match = options.find(o => o.id === String(target) || o.name.toLowerCase() === t);
+      if (!match) {
+        return { executed: false, reason: 'not-found', options };
+      }
+      const data = await gql(
+        `mutation ($id: String!, $stateId: String!) {
+          issueUpdate(id: $id, input: { stateId: $stateId }) {
+            success
+          }
+        }`,
+        { id: info.id, stateId: match.id },
+        { token, fetcher, signal },
+      );
+      if (!data.issueUpdate?.success) {
+        return { executed: false, reason: 'mutation-rejected', options };
+      }
+      return { executed: true, to: match.to };
     },
   };
 }

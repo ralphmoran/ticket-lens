@@ -209,4 +209,27 @@ describe('parseCommand', () => {
     const stillFetch2 = parseCommand(['notATicketButNotACommandEither']);
     assert.equal(stillFetch2.command, 'fetch');
   });
+
+  it('routes "comment" to comment command', () => {
+    const result = parseCommand(['comment', 'PROJ-1', '--body=Looks good']);
+    assert.equal(result.command, 'comment');
+    assert.deepEqual(result.args, ['PROJ-1', '--body=Looks good']);
+  });
+
+  it('routes "transition" to transition command', () => {
+    const result = parseCommand(['transition', 'PROJ-1', '--target=Done', '--confirm']);
+    assert.equal(result.command, 'transition');
+    assert.deepEqual(result.args, ['PROJ-1', '--target=Done', '--confirm']);
+  });
+
+  it('routes "transition" with no flags (list mode) to transition command', () => {
+    const result = parseCommand(['transition', 'PROJ-1']);
+    assert.equal(result.command, 'transition');
+    assert.deepEqual(result.args, ['PROJ-1']);
+  });
+
+  it('lock — adding "comment"/"transition" does not change the ticket-key fallback for anything else (regression: this exact class of bug shipped once for mcp install)', () => {
+    const stillFetch = parseCommand(['PROJ-999']);
+    assert.equal(stillFetch.command, 'fetch');
+  });
 });

@@ -53,6 +53,37 @@ export function normalizeGitHubIssue(raw, comments = [], keyPrefix = 'GH') {
 const GITHUB_API = 'https://api.github.com';
 
 /**
+ * Classifies a non-OK GitHub write response per GitHub's documented rules
+ * (docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api):
+ * secondary limits surface via `retry-after` when present; primary limits
+ * are exhaustion of `x-ratelimit-remaining` with no `retry-after`. The two
+ * need different backoff — conflating them under one "rate limited" error
+ * would tell a caller to wait 60s when the real reset might be much later.
+ */
+function classifyGitHubWriteFailure(response) {
+  if (response.status !== 403 && response.status !== 429) {
+    return { kind: 'error', status: response.status };
+  }
+  const retryAfter = response.headers.get('retry-after');
+  if (retryAfter) {
+    return { kind: 'secondary-rate-limit', retryAfterSeconds: Number(retryAfter) };
+  }
+  if (response.headers.get('x-ratelimit-remaining') === '0') {
+    return { kind: 'primary-rate-limit', resetAt: Number(response.headers.get('x-ratelimit-reset')) };
+  }
+  return { kind: 'secondary-rate-limit', retryAfterSeconds: 60 };
+}
+
+async function throwGitHubWriteError(response, action, key) {
+  const classification = classifyGitHubWriteFailure(response);
+  const err = new Error(`GitHub API error ${response.status} ${action} ${key}`);
+  err.status = response.status;
+  err.rateLimit = classification.kind !== 'error' ? classification : undefined;
+  try { err.details = await response.json(); } catch { /* body not JSON */ }
+  throw err;
+}
+
+/**
  * Returns a tracker adapter backed by the GitHub Issues REST API.
  * Profile baseUrl must be https://github.com/OWNER/REPO.
  * Auth token stored as apiToken (or pat) in credentials.json.
@@ -107,6 +138,54 @@ export function createGitHubAdapter(conn, { fetcher = globalThis.fetch } = {}) {
 
     async fetchStatuses() {
       return ['open', 'closed'];
+    },
+
+    async addComment(key, body, opts = {}) {
+      const number = parseInt(key.split('-').pop(), 10);
+      const res = await fetcher(`${GITHUB_API}/repos/${owner}/${repo}/issues/${number}/comments`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body }),
+        signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
+      });
+      if (!res.ok) await throwGitHubWriteError(res, 'commenting on', key);
+      const raw = await res.json();
+      return { id: String(raw.id), url: raw.html_url ?? null };
+    },
+
+    /**
+     * GitHub issues have exactly one valid opposite state — not a
+     * discoverable workflow like Jira. Reports it in the same
+     * {id, name, to} shape as Jira's getTransitions for a uniform
+     * cross-tracker adapter contract.
+     */
+    async getTransitions(key, opts = {}) {
+      const ticket = await this.fetchTicket(key, opts);
+      return ticket.status === 'open'
+        ? [{ id: 'closed', name: 'Close issue', to: 'closed' }]
+        : [{ id: 'open', name: 'Reopen issue', to: 'open' }];
+    },
+
+    async transition(key, target, opts = {}) {
+      const ticket = await this.fetchTicket(key, opts);
+      const t = String(target).toLowerCase();
+      if (t === ticket.status) {
+        return { executed: false, reason: 'already-in-target-state', options: await this.getTransitions(key, opts) };
+      }
+      const options = await this.getTransitions(key, opts);
+      const match = options.find(o => o.id === t || o.name.toLowerCase() === t || o.to === t);
+      if (!match) {
+        return { executed: false, reason: 'not-found', options };
+      }
+      const number = parseInt(key.split('-').pop(), 10);
+      const res = await fetcher(`${GITHUB_API}/repos/${owner}/${repo}/issues/${number}`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: match.to }),
+        signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
+      });
+      if (!res.ok) await throwGitHubWriteError(res, 'transitioning', key);
+      return { executed: true, to: match.to };
     },
   };
 }

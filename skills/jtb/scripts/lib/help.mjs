@@ -54,6 +54,8 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} recall sync                 Retry any notes stuck in the local queue  ${s.dim('[Team+]')}`,
     `    ${s.brand('ticketlens')} recall settings             Show effective retry-queue settings, fetched live  ${s.dim('[Team+]')}`,
     `    ${s.brand('ticketlens')} mcp                         Start the MCP stdio server for Recall  ${s.dim('[Pro]')}`,
+    `    ${s.brand('ticketlens')} comment ${s.dim('<TICKET-KEY> --body=...')}  Post a comment to the tracker  ${s.dim('[Pro]')}`,
+    `    ${s.brand('ticketlens')} transition ${s.dim('<TICKET-KEY> [--target=... --confirm]')}  Move ticket status  ${s.dim('[Pro]')}`,
     '',
     `    ${s.brand('ticketlens')} delete ${s.dim('<PROFILE-NAME>')}       Remove a profile`,
     `    ${s.brand('ticketlens')} activate ${s.dim('<KEY>')}              Activate a license key`,
@@ -592,11 +594,13 @@ export function printMcpHelp({ stream = process.stdout } = {}) {
     '',
     `  ${s.bold(s.brand('ticketlens'))} ${s.bold('mcp')}  ${s.dim('[Pro]')}`,
     '',
-    `  Start an MCP (Model Context Protocol) stdio server exposing Recall as`,
-    `  native tools — ${s.cyan('recall_add')} and ${s.cyan('recall_search')} — for any MCP-compatible AI`,
-    `  harness, not just Claude Code. Thin adapter over the same code as`,
-    `  ${s.cyan('note add')}/${s.cyan('recall')} above: same Pro gate, same secret scan, same local`,
-    `  vault, same team sync. Long-running — exits when the client closes stdin.`,
+    `  Start an MCP (Model Context Protocol) stdio server exposing Recall and`,
+    `  ticket writes as native tools — ${s.cyan('recall_add')}, ${s.cyan('recall_search')}, ${s.cyan('ticket_comment')},`,
+    `  ${s.cyan('ticket_transition')} — for any MCP-compatible AI harness, not just Claude Code.`,
+    `  Thin adapter over the same code as ${s.cyan('note add')}/${s.cyan('recall')}/${s.cyan('comment')}/${s.cyan('transition')}`,
+    `  above: same Pro gate, same local vault/tracker writes, same team sync.`,
+    `  ${s.cyan('ticket_transition')} is destructive when called with \`target\`+\`confirm: true\`.`,
+    `  Long-running — exits when the client closes stdin.`,
     '',
     `  ${s.bold('OPTIONS')}`,
     '',
@@ -618,6 +622,55 @@ export function printMcpHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('$')} ticketlens mcp`,
     `    ${s.dim('$')} ticketlens mcp install`,
     `    ${s.dim('$')} ticketlens mcp install --dry-run`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printCommentHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('comment')} ${s.dim('TICKET-KEY --body="..."')}  ${s.dim('[Pro]')}`,
+    '',
+    `  Post a comment directly to the ticket in its tracker (Jira/GitHub/Linear). ${s.dim('[Pro]')}`,
+    `  Writes to the real tracker — this is not a local Recall note.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--body')}=${s.dim('TEXT')}    Comment body ${s.dim('(required)')}`,
+    `    ${s.brand('--profile')}=${s.dim('NAME')} Connection profile to use ${s.dim('(optional)')}`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens comment PROD-123 --body="Looks good, merging."`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printTransitionHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('transition')} ${s.dim('TICKET-KEY [--target="..." --confirm]')}  ${s.dim('[Pro]')}`,
+    '',
+    `  Move a ticket to a new status in its tracker (Jira/GitHub/Linear). ${s.dim('[Pro]')}`,
+    `  Called with just a ticket key, lists the tracker's current valid options`,
+    `  without changing anything. Add ${s.brand('--target')} and ${s.brand('--confirm')} together to execute.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--target')}=${s.dim('NAME')}  Target status/transition name ${s.dim('(from the list, case-insensitive)')}`,
+    `    ${s.brand('--confirm')}     Required alongside --target to actually execute`,
+    `    ${s.brand('--profile')}=${s.dim('NAME')} Connection profile to use ${s.dim('(optional)')}`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens transition PROD-123`,
+    `    ${s.dim('$')} ticketlens transition PROD-123 --target="Done" --confirm`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

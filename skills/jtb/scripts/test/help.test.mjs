@@ -6,7 +6,8 @@ import {
   printActivateHelp, printLicenseHelp, printDeleteHelp,
   printProfilesHelp, printScheduleHelp,
   printInitHelp, printSwitchHelp, printConfigHelp,
-  printNoteHelp, printRecallHelp,
+  printNoteHelp, printRecallHelp, printMcpHelp,
+  printCommentHelp, printTransitionHelp,
 } from '../lib/help.mjs';
 
 function captureHelp(fn) {
@@ -335,6 +336,54 @@ describe('printHelp — Recall commands', () => {
     const usageIdx = out.indexOf('USAGE');
     const recallIdx = out.indexOf('ticketlens recall');
     assert.ok(recallIdx !== -1 && recallIdx > usageIdx, '"ticketlens recall" must appear in USAGE');
+  });
+
+  it('USAGE section documents ticketlens comment command', () => {
+    const out = captureHelp(printHelp);
+    const usageIdx = out.indexOf('USAGE');
+    const idx = out.indexOf('ticketlens comment');
+    assert.ok(idx !== -1 && idx > usageIdx, '"ticketlens comment" must appear in USAGE');
+  });
+
+  it('USAGE section documents ticketlens transition command', () => {
+    const out = captureHelp(printHelp);
+    const usageIdx = out.indexOf('USAGE');
+    const idx = out.indexOf('ticketlens transition');
+    assert.ok(idx !== -1 && idx > usageIdx, '"ticketlens transition" must appear in USAGE');
+  });
+});
+
+describe('printMcpHelp — ticket tools', () => {
+  it('documents ticket_comment and ticket_transition alongside recall_add/recall_search', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /recall_add/);
+    assert.match(out, /recall_search/);
+    assert.match(out, /ticket_comment/);
+    assert.match(out, /ticket_transition/);
+  });
+
+  it('flags ticket_transition as destructive when target+confirm are given', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /destructive/i);
+  });
+});
+
+describe('printCommentHelp', () => {
+  it('documents the required --body flag and the Pro tier gate', () => {
+    const out = captureHelp(printCommentHelp);
+    assert.match(out, /comment/);
+    assert.match(out, /--body/);
+    assert.match(out, /\[Pro\]/);
+  });
+});
+
+describe('printTransitionHelp', () => {
+  it('documents --target and --confirm and the Pro tier gate', () => {
+    const out = captureHelp(printTransitionHelp);
+    assert.match(out, /transition/);
+    assert.match(out, /--target/);
+    assert.match(out, /--confirm/);
+    assert.match(out, /\[Pro\]/);
   });
 });
 

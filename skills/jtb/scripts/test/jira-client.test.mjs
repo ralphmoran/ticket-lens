@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition } from '../lib/jira-client.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -892,6 +892,70 @@ describe('fetchRemoteLinks', () => {
     const fetcher = async () => ({ ok: false, status: 403, statusText: 'Forbidden' });
     const result = await fetchRemoteLinks('PROJ-1', { env: ENV, fetcher });
     assert.deepEqual(result, []);
+  });
+});
+
+describe('postComment', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+
+  it('sends a plain string body on v2 (Server/DC)', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = { url, body: JSON.parse(opts.body) }; return { ok: true, json: async () => ({ id: '10', self: 'https://x/comment/10' }) }; };
+    const result = await postComment('PROJ-1', 'A plain comment.', { env: ENV, apiVersion: 2, fetcher });
+    assert.equal(captured.body.body, 'A plain comment.');
+    assert.ok(captured.url.includes('/rest/api/2/issue/PROJ-1/comment'));
+    assert.equal(result.id, '10');
+  });
+
+  it('wraps the body in ADF on v3 (Cloud) — a plain string is rejected by the real API', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, json: async () => ({ id: '11' }) }; };
+    await postComment('PROJ-1', 'A cloud comment.', { env: ENV, apiVersion: 3, fetcher });
+    assert.equal(captured.body.type, 'doc');
+    assert.equal(captured.body.content[0].content[0].text, 'A cloud comment.');
+  });
+
+  it('throws with the response status on a non-OK response', async () => {
+    const fetcher = async () => ({ ok: false, status: 403 });
+    await assert.rejects(() => postComment('PROJ-1', 'x', { env: ENV, fetcher }), (err) => err.status === 403);
+  });
+});
+
+describe('getTransitions', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+
+  it('returns the normalized list of valid transitions for this issue', async () => {
+    const fetcher = async () => ({ ok: true, json: async () => ({ transitions: [{ id: '21', name: 'In Progress', to: { name: 'In Progress' } }, { id: '31', name: 'Done', to: { name: 'Done' } }] }) });
+    const transitions = await getTransitions('PROJ-1', { env: ENV, fetcher });
+    assert.deepEqual(transitions, [{ id: '21', name: 'In Progress', to: 'In Progress' }, { id: '31', name: 'Done', to: 'Done' }]);
+  });
+
+  it('makes no POST — discovery is read-only', async () => {
+    let method;
+    const fetcher = async (url, opts) => { method = opts?.method; return { ok: true, json: async () => ({ transitions: [] }) }; };
+    await getTransitions('PROJ-1', { env: ENV, fetcher });
+    assert.notEqual(method, 'POST');
+  });
+});
+
+describe('postTransition', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+
+  it('posts the resolved transition id', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = { url, method: opts.method, body: JSON.parse(opts.body) }; return { ok: true, status: 204 }; };
+    await postTransition('PROJ-1', '31', { env: ENV, fetcher });
+    assert.equal(captured.method, 'POST');
+    assert.deepEqual(captured.body, { transition: { id: '31' } });
+    assert.ok(captured.url.includes('/transitions'));
+  });
+
+  it('surfaces a 400 (e.g. missing required screen field) with details, never silently swallowed', async () => {
+    const fetcher = async () => ({ ok: false, status: 400, json: async () => ({ errors: { customfield_10010: 'Required field' } }) });
+    await assert.rejects(
+      () => postTransition('PROJ-1', '31', { env: ENV, fetcher }),
+      (err) => err.status === 400 && err.details.errors.customfield_10010 === 'Required field',
+    );
   });
 });
 
