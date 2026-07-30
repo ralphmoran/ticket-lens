@@ -503,6 +503,61 @@ export async function postTransition(ticketKey, transitionId, opts = {}) {
 }
 
 /**
+ * Lists this Jira instance's issue link types (id/name/inward/outward).
+ * Link type names are per-instance customizable — never hardcode or cache
+ * this list; callers must re-fetch fresh before every link, same principle
+ * as getTransitions().
+ */
+export async function getIssueLinkTypes(opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const url = `${baseUrl}/rest/api/${apiVersion}/issueLinkType`;
+
+  const fetchOpts = { headers: { ...buildAuthHeader(env), 'Content-Type': 'application/json' } };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
+  if (!response.ok) {
+    const err = new Error(`Jira API error ${response.status} fetching issue link types`);
+    err.status = response.status;
+    throw err;
+  }
+  const raw = await response.json();
+  return (raw.issueLinkTypes ?? []).map(t => ({ id: t.id, name: t.name, inward: t.inward, outward: t.outward }));
+}
+
+/**
+ * Creates a link between two issues. `sourceKey` is the outwardIssue (the
+ * subject of the type's outward verb, e.g. "Duplicates"), `targetKey` is
+ * the inwardIssue — direction matters and is the caller's responsibility
+ * to get right (ticket-command.mjs documents the convention).
+ */
+export async function postIssueLink(sourceKey, targetKey, typeName, opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const url = `${baseUrl}/rest/api/${apiVersion}/issueLink`;
+
+  const fetchOpts = {
+    method: 'POST',
+    headers: { ...buildAuthHeader(env), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: { name: typeName }, outwardIssue: { key: sourceKey }, inwardIssue: { key: targetKey } }),
+  };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
+  if (!response.ok) {
+    let details;
+    try { details = await response.json(); } catch { /* body not JSON — fall through with no details */ }
+    const err = new Error(`Jira API error ${response.status} linking ${sourceKey} to ${targetKey}`);
+    err.status = response.status;
+    err.details = details;
+    throw err;
+  }
+}
+
+/**
  * Sets the issue's assignee. `assignee` is sent verbatim — the caller
  * (jira-adapter.mjs) resolves the right shape for the API version:
  * `{ accountId }` for Cloud (v3), `{ name }` for Server/DC (v2), since

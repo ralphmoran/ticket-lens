@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, escapeJql } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink } from '../lib/jira-client.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -990,6 +990,73 @@ describe('assignIssue', () => {
     const badEnv = { ...ENV, JIRA_BASE_URL: 'https://169.254.169.254' };
     await assert.rejects(
       () => assignIssue('PROJ-1', { accountId: 'x' }, { env: badEnv, fetcher: async () => ({ ok: true, status: 204 }) }),
+      /blocked/,
+    );
+  });
+});
+
+describe('getIssueLinkTypes', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+
+  it('returns the normalized list of link types for this Jira instance', async () => {
+    const fetcher = async () => ({
+      ok: true,
+      json: async () => ({
+        issueLinkTypes: [
+          { id: '1000', name: 'Duplicate', inward: 'Duplicated by', outward: 'Duplicates' },
+          { id: '1010', name: 'Blocks', inward: 'Blocked by', outward: 'Blocks' },
+        ],
+      }),
+    });
+    const types = await getIssueLinkTypes({ env: ENV, fetcher });
+    assert.deepEqual(types, [
+      { id: '1000', name: 'Duplicate', inward: 'Duplicated by', outward: 'Duplicates' },
+      { id: '1010', name: 'Blocks', inward: 'Blocked by', outward: 'Blocks' },
+    ]);
+  });
+
+  it('makes no POST — discovery is read-only', async () => {
+    let method;
+    const fetcher = async (url, opts) => { method = opts?.method; return { ok: true, json: async () => ({ issueLinkTypes: [] }) }; };
+    await getIssueLinkTypes({ env: ENV, fetcher });
+    assert.notEqual(method, 'POST');
+  });
+
+  it('throws with .status on a non-OK response', async () => {
+    const fetcher = async () => ({ ok: false, status: 500, json: async () => ({}) });
+    await assert.rejects(() => getIssueLinkTypes({ env: ENV, fetcher }), (err) => err.status === 500);
+  });
+
+  it('goes through validateBaseUrl/guardedFetch (SSRF guard not bypassed)', async () => {
+    const badEnv = { ...ENV, JIRA_BASE_URL: 'https://169.254.169.254' };
+    await assert.rejects(() => getIssueLinkTypes({ env: badEnv, fetcher: async () => ({ ok: true, json: async () => ({}) }) }), /blocked/);
+  });
+});
+
+describe('postIssueLink', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+
+  it('POSTs the link with source as outwardIssue and target as inwardIssue', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = { url, method: opts.method, body: JSON.parse(opts.body) }; return { ok: true, status: 204 }; };
+    await postIssueLink('PROJ-1', 'PROJ-2', 'Duplicate', { env: ENV, fetcher });
+    assert.equal(captured.method, 'POST');
+    assert.deepEqual(captured.body, { type: { name: 'Duplicate' }, outwardIssue: { key: 'PROJ-1' }, inwardIssue: { key: 'PROJ-2' } });
+    assert.ok(captured.url.includes('/issueLink'));
+  });
+
+  it('surfaces a non-OK response with details, never silently swallowed', async () => {
+    const fetcher = async () => ({ ok: false, status: 400, json: async () => ({ errorMessages: ['bad link type'] }) });
+    await assert.rejects(
+      () => postIssueLink('PROJ-1', 'PROJ-2', 'Duplicate', { env: ENV, fetcher }),
+      (err) => err.status === 400 && err.details.errorMessages[0] === 'bad link type',
+    );
+  });
+
+  it('goes through validateBaseUrl/guardedFetch (SSRF guard not bypassed)', async () => {
+    const badEnv = { ...ENV, JIRA_BASE_URL: 'https://169.254.169.254' };
+    await assert.rejects(
+      () => postIssueLink('PROJ-1', 'PROJ-2', 'Duplicate', { env: badEnv, fetcher: async () => ({ ok: true, status: 204 }) }),
       /blocked/,
     );
   });

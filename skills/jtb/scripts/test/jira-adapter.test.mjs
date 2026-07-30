@@ -244,3 +244,63 @@ describe('findCandidates — duplicate-detection candidate search', () => {
     await assert.rejects(() => adapter.findCandidates('login', 'NOHYPHEN'), /project/);
   });
 });
+
+describe('createJiraAdapter — getLinkTypes', () => {
+  it('returns just the type names — matches GitHub/Linear\'s plain-string shape so runTicketLinkList can render any tracker uniformly', async () => {
+    const adapter = createJiraAdapter(CONN, {
+      fetcher: jsonFetcher({
+        issueLinkTypes: [
+          { id: '1000', name: 'Duplicate', inward: 'Duplicated by', outward: 'Duplicates' },
+          { id: '1010', name: 'Blocks', inward: 'Blocked by', outward: 'Blocks' },
+        ],
+      }),
+    });
+    const types = await adapter.getLinkTypes();
+    assert.deepEqual(types, ['Duplicate', 'Blocks']);
+  });
+
+  it('threads conn.allowPrivateIp into getLinkTypes', async () => {
+    const adapter = createJiraAdapter({ ...CONN, allowPrivateIp: true }, { fetcher: jsonFetcher({ issueLinkTypes: [] }) });
+    await assert.doesNotReject(() => adapter.getLinkTypes({ lookup: privateLookup }));
+  });
+});
+
+describe('createJiraAdapter — linkTo', () => {
+  it('resolves the type name against a fresh live list, then POSTs with source as outward, target as inward', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => {
+      calls.push({ url, method: opts.method, body: opts.body });
+      if (!opts.method) return { ok: true, status: 200, json: async () => ({ issueLinkTypes: [{ id: '1000', name: 'Duplicate', inward: 'Duplicated by', outward: 'Duplicates' }] }) };
+      return { ok: true, status: 204 };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.linkTo('TEST-1', 'TEST-2', 'duplicate');
+    assert.equal(calls.length, 2);
+    assert.deepEqual(JSON.parse(calls[1].body), { type: { name: 'Duplicate' }, outwardIssue: { key: 'TEST-1' }, inwardIssue: { key: 'TEST-2' } });
+    assert.match(calls[1].url, /\/issueLink$/);
+    assert.deepEqual(result, { executed: true });
+  });
+
+  it('never trusts a caller-supplied type without confirming it against the fresh list — returns executed:false with options, no POST sent', async () => {
+    let postCalled = false;
+    const fetcher = async (_url, opts) => {
+      if (opts.method === 'POST') postCalled = true;
+      return { ok: true, status: 200, json: async () => ({ issueLinkTypes: [{ id: '1000', name: 'Duplicate', inward: 'Duplicated by', outward: 'Duplicates' }] }) };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.linkTo('TEST-1', 'TEST-2', 'Bogus Type');
+    assert.equal(result.executed, false);
+    assert.equal(result.reason, 'not-found');
+    assert.deepEqual(result.options, ['Duplicate']);
+    assert.equal(postCalled, false);
+  });
+
+  it('threads conn.allowPrivateIp into linkTo', async () => {
+    const fetcher = async (_url, opts) => {
+      if (!opts.method) return { ok: true, status: 200, json: async () => ({ issueLinkTypes: [{ id: '1000', name: 'Duplicate' }] }) };
+      return { ok: true, status: 204 };
+    };
+    const adapter = createJiraAdapter({ ...CONN, allowPrivateIp: true }, { fetcher });
+    await assert.doesNotReject(() => adapter.linkTo('TEST-1', 'TEST-2', 'Duplicate', { lookup: privateLookup }));
+  });
+});

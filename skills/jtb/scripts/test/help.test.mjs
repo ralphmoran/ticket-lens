@@ -7,7 +7,7 @@ import {
   printProfilesHelp, printScheduleHelp,
   printInitHelp, printSwitchHelp, printConfigHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
-  printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp,
+  printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp, printLinkHelp,
 } from '../lib/help.mjs';
 
 function captureHelp(fn) {
@@ -365,10 +365,17 @@ describe('printHelp — Recall commands', () => {
     const idx = out.indexOf('ticketlens duplicates');
     assert.ok(idx !== -1 && idx > usageIdx, '"ticketlens duplicates" must appear in USAGE');
   });
+
+  it('USAGE section documents ticketlens link command', () => {
+    const out = captureHelp(printHelp);
+    const usageIdx = out.indexOf('USAGE');
+    const idx = out.indexOf('ticketlens link');
+    assert.ok(idx !== -1 && idx > usageIdx, '"ticketlens link" must appear in USAGE');
+  });
 });
 
 describe('printMcpHelp — ticket tools', () => {
-  it('documents ticket_comment, ticket_transition, ticket_assign, and ticket_duplicates alongside recall_add/recall_search', () => {
+  it('documents ticket_comment, ticket_transition, ticket_assign, ticket_duplicates, and ticket_link alongside recall_add/recall_search', () => {
     const out = captureHelp(printMcpHelp);
     assert.match(out, /recall_add/);
     assert.match(out, /recall_search/);
@@ -376,6 +383,7 @@ describe('printMcpHelp — ticket tools', () => {
     assert.match(out, /ticket_transition/);
     assert.match(out, /ticket_assign/);
     assert.match(out, /ticket_duplicates/);
+    assert.match(out, /ticket_link/);
   });
 
   it('flags ticket_transition as destructive when target+confirm are given', () => {
@@ -404,6 +412,22 @@ describe('printDuplicatesHelp', () => {
     assert.match(out, /duplicates/);
     assert.match(out, /--threshold/);
     assert.match(out, /\[Pro\]/);
+  });
+});
+
+describe('printLinkHelp', () => {
+  it('documents the SOURCE/TARGET direction convention, --type/--confirm flags, and the Pro tier gate', () => {
+    const out = captureHelp(printLinkHelp);
+    assert.match(out, /link/);
+    assert.match(out, /--type/);
+    assert.match(out, /--confirm/);
+    assert.match(out, /\[Pro\]/);
+  });
+
+  it('warns that GitHub\'s link action closes the source issue', () => {
+    const out = captureHelp(printLinkHelp);
+    assert.match(out, /GitHub/);
+    assert.match(out, /clos/i);
   });
 });
 

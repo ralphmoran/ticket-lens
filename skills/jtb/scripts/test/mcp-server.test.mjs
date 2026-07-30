@@ -74,7 +74,7 @@ describe('mcp-server', () => {
     it('returns exactly recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const names = messages[0].result.tools.map((t) => t.name).sort();
-      assert.deepEqual(names, ['recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_duplicates', 'ticket_transition']);
+      assert.deepEqual(names, ['recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_duplicates', 'ticket_link', 'ticket_transition']);
       for (const tool of messages[0].result.tools) {
         assert.equal(tool.inputSchema.type, 'object');
         assert.ok(tool.inputSchema.properties, `${tool.name} must declare input properties`);
@@ -432,6 +432,95 @@ describe('mcp-server', () => {
     });
   });
 
+  describe('tools/call ticket_link', () => {
+    it('no type dispatches to the read-only list function, never the executing one', async () => {
+      let listCalled = false, executeCalled = false;
+      const runTicketLinkListFn = async (cmdArgs, opts) => {
+        listCalled = true;
+        opts.stream.write('  Available link types for PROJ-1 → PROJ-2 (jira):\n    - Duplicate\n');
+        return { ok: true, types: ['Duplicate'] };
+      };
+      const runTicketLinkFn = async () => { executeCalled = true; return { ok: true }; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_link', arguments: { ticket: 'PROJ-1', target: 'PROJ-2' } } }],
+        { configDir, runTicketLinkListFn, runTicketLinkFn },
+      );
+      assert.equal(listCalled, true);
+      assert.equal(executeCalled, false);
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('Duplicate'));
+    });
+
+    it('type + confirm:true dispatches to the executing function with --type and --confirm included', async () => {
+      let seenArgs;
+      const runTicketLinkFn = async (cmdArgs, opts) => {
+        seenArgs = cmdArgs;
+        opts.stream.write('  PROJ-1 linked to PROJ-2 as "Duplicate".\n');
+        return { ok: true };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_link', arguments: { ticket: 'PROJ-1', target: 'PROJ-2', type: 'Duplicate', confirm: true } } }],
+        { configDir, runTicketLinkFn },
+      );
+      assert.deepEqual(seenArgs, ['PROJ-1', 'PROJ-2', '--type=Duplicate', '--confirm']);
+      assert.equal(messages[0].result.isError, undefined);
+    });
+
+    it('type without confirm:true still dispatches to the executing function, which itself refuses (no pre-empting at the MCP layer)', async () => {
+      let seenArgs;
+      const runTicketLinkFn = async (cmdArgs, opts) => {
+        seenArgs = cmdArgs;
+        opts.stream.write('  Refusing to link PROJ-1 to PROJ-2 as "Duplicate" without --confirm.\n');
+        return { ok: false };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_link', arguments: { ticket: 'PROJ-1', target: 'PROJ-2', type: 'Duplicate' } } }],
+        { configDir, runTicketLinkFn },
+      );
+      assert.deepEqual(seenArgs, ['PROJ-1', 'PROJ-2', '--type=Duplicate']);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /confirm/i);
+    });
+
+    it('missing ticket returns a JSON-RPC tool error without calling either function', async () => {
+      let listCalled = false, executeCalled = false;
+      const runTicketLinkListFn = async () => { listCalled = true; return { ok: true }; };
+      const runTicketLinkFn = async () => { executeCalled = true; return { ok: true }; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_link', arguments: { target: 'PROJ-2' } } }],
+        { configDir, runTicketLinkListFn, runTicketLinkFn },
+      );
+      assert.equal(listCalled, false);
+      assert.equal(executeCalled, false);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /ticket/i);
+    });
+
+    it('missing target returns a JSON-RPC tool error without calling either function', async () => {
+      let listCalled = false, executeCalled = false;
+      const runTicketLinkListFn = async () => { listCalled = true; return { ok: true }; };
+      const runTicketLinkFn = async () => { executeCalled = true; return { ok: true }; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_link', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runTicketLinkListFn, runTicketLinkFn },
+      );
+      assert.equal(listCalled, false);
+      assert.equal(executeCalled, false);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /target/i);
+    });
+
+    it('confirm:false (falsy, not strictly true) is not forwarded as --confirm', async () => {
+      let seenArgs;
+      const runTicketLinkFn = async (cmdArgs) => { seenArgs = cmdArgs; return { ok: false }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_link', arguments: { ticket: 'PROJ-1', target: 'PROJ-2', type: 'Duplicate', confirm: false } } }],
+        { configDir, runTicketLinkFn },
+      );
+      assert.deepEqual(seenArgs, ['PROJ-1', 'PROJ-2', '--type=Duplicate']);
+    });
+  });
+
   describe('malformed input survival', () => {
     it('a bad JSON-RPC line produces an error response and a following valid message still gets served', async () => {
       const stdin = new PassThrough();
@@ -448,7 +537,7 @@ describe('mcp-server', () => {
       assert.equal(messages.length, 2, 'both the parse-error response and the valid tools/list response must appear');
       assert.ok(messages[0].error, 'first message must be a JSON-RPC error for the malformed line');
       assert.equal(messages[1].id, 2);
-      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_duplicates', 'ticket_transition']);
+      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_duplicates', 'ticket_link', 'ticket_transition']);
     });
 
     it('a syntactically-valid-but-non-object JSON line (e.g. bare "null") does not crash the server or drop later messages', async () => {
@@ -549,6 +638,15 @@ describe('mcp-server', () => {
     it('ticket_duplicates: unlicensed configDir is rejected by the real license gate, never reaching the network', async () => {
       const { messages } = await drive(
         [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_duplicates', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /pro/i);
+    });
+
+    it('ticket_link: unlicensed configDir is rejected by the real license gate (list mode), never reaching the network', async () => {
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_link', arguments: { ticket: 'PROJ-1', target: 'PROJ-2' } } }],
         { configDir },
       );
       assert.equal(messages[0].result.isError, true);

@@ -1,4 +1,4 @@
-import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, postComment, getTransitions, postTransition, assignIssue, escapeJql } from '../jira-client.mjs';
+import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink } from '../jira-client.mjs';
 import { buildJiraEnv } from '../config.mjs';
 
 /**
@@ -82,6 +82,33 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       const searchText = text.slice(0, SEARCH_TEXT_CHAR_LIMIT);
       const jql = `project = "${escapeJql(project)}" AND key != "${escapeJql(sourceKey)}" AND text ~ "${escapeJql(searchText)}" ORDER BY updated DESC`;
       return searchTickets(jql, { ...base, ...opts });
+    },
+
+    /**
+     * Always fetched fresh — link type names are per-instance customizable
+     * in Jira, same "never trust a stale list" principle as getTransitions.
+     * Returns just names (matches GitHub/Linear's plain-string shape) so
+     * runTicketLinkList can render any tracker's list uniformly.
+     */
+    async getLinkTypes(opts = {}) {
+      const types = await getIssueLinkTypes({ ...base, ...opts });
+      return types.map(t => t.name);
+    },
+
+    /**
+     * Always re-fetches link types fresh and resolves `typeName` against
+     * them before executing — a caller can never blind-POST a stale or
+     * guessed type name, same principle as transition().
+     * sourceKey is the outwardIssue, targetKey is the inwardIssue — direction matters.
+     */
+    async linkTo(sourceKey, targetKey, typeName, opts = {}) {
+      const types = await getIssueLinkTypes({ ...base, ...opts });
+      const match = types.find(t => t.name.toLowerCase() === typeName.toLowerCase());
+      if (!match) {
+        return { executed: false, reason: 'not-found', options: types.map(t => t.name) };
+      }
+      await postIssueLink(sourceKey, targetKey, match.name, { ...base, ...opts });
+      return { executed: true };
     },
   };
 }

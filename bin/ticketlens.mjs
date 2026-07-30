@@ -28,7 +28,7 @@ import {
   printCollisionsHelp, printStatsHelp,
   printCloudKeysHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
-  printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp,
+  printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp, printLinkHelp,
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { runStats } from '../skills/jtb/scripts/lib/run-stats.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
@@ -782,6 +782,22 @@ switch (command) {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printDuplicatesHelp(); break; }
     const { runTicketDuplicates } = await import('../skills/jtb/scripts/lib/ticket-command.mjs');
     runTicketDuplicates(cmdArgs).then(({ ok }) => {
+      if (!ok) process.exitCode = 1;
+    }).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+  }
+
+  case 'link': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printLinkHelp(); break; }
+    const { runTicketLinkList, runTicketLink } = await import('../skills/jtb/scripts/lib/ticket-command.mjs');
+    // No --type → discovery only, never mutates. --type present → execute
+    // (runTicketLink itself still refuses without --confirm).
+    const hasType = cmdArgs.some(a => a.startsWith('--type='));
+    const runFn = hasType ? runTicketLink : runTicketLinkList;
+    runFn(cmdArgs).then(({ ok }) => {
       if (!ok) process.exitCode = 1;
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);

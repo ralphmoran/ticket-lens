@@ -254,4 +254,15 @@ describe('parseCommand', () => {
     const stillFetch = parseCommand(['PROJ-999']);
     assert.equal(stillFetch.command, 'fetch');
   });
+
+  it('routes "link" to link command', () => {
+    const result = parseCommand(['link', 'PROJ-1', 'PROJ-2', '--type=duplicate', '--confirm']);
+    assert.equal(result.command, 'link');
+    assert.deepEqual(result.args, ['PROJ-1', 'PROJ-2', '--type=duplicate', '--confirm']);
+  });
+
+  it('lock — adding "link" does not change the ticket-key fallback for anything else', () => {
+    const stillFetch = parseCommand(['PROJ-999']);
+    assert.equal(stillFetch.command, 'fetch');
+  });
 });

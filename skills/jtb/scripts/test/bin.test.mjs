@@ -208,6 +208,8 @@ describe('bin/ticketlens.mjs', () => {
     ['assign', '-h'],
     ['duplicates', '--help'],
     ['duplicates', '-h'],
+    ['link', '--help'],
+    ['link', '-h'],
   ]) {
     it(`"ticketlens ${cmd} ${flag}" exits 0 and prints help`, () => {
       const result = spawnSync('node', [binPath, cmd, flag], {
@@ -335,6 +337,36 @@ describe('bin/ticketlens.mjs', () => {
     const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-duplicates-gate-'));
     try {
       const result = spawnSync('node', [binPath, 'duplicates', 'PROD-1'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        env: { ...process.env, HOME: freshHome, CI: 'true' },
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /pro/i);
+    } finally {
+      rmSync(freshHome, { recursive: true, force: true });
+    }
+  });
+
+  it('"ticketlens link" with no Pro license shows an upgrade prompt and exits non-zero (list mode, no --type)', () => {
+    const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-link-gate-'));
+    try {
+      const result = spawnSync('node', [binPath, 'link', 'PROD-1', 'PROD-2'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        env: { ...process.env, HOME: freshHome, CI: 'true' },
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /pro/i);
+    } finally {
+      rmSync(freshHome, { recursive: true, force: true });
+    }
+  });
+
+  it('"ticketlens link SOURCE TARGET --type=X" without --confirm never reaches the network — license gate wins first', () => {
+    const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-link-confirm-gate-'));
+    try {
+      const result = spawnSync('node', [binPath, 'link', 'PROD-1', 'PROD-2', '--type=duplicate'], {
         encoding: 'utf8',
         timeout: 5000,
         env: { ...process.env, HOME: freshHome, CI: 'true' },

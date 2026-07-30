@@ -6,6 +6,7 @@ import { createGitHubAdapter, normalizeGitHubIssue, parseGitHubRepo } from '../.
 // Fixtures
 // ---------------------------------------------------------------------------
 const RAW_ISSUE = {
+  id: 123456789,
   number: 42,
   title: 'Fix the widget',
   state: 'open',
@@ -159,6 +160,11 @@ describe('normalizeGitHubIssue', () => {
   it('handles missing assignee gracefully', () => {
     const t = normalizeGitHubIssue({ ...RAW_ISSUE, assignee: null, assignees: [] }, []);
     assert.equal(t.assignee, null);
+  });
+
+  it('maps id from raw.id — the internal id ticket_link needs for duplicate_issue_id, distinct from the repo-local number', () => {
+    const t = normalizeGitHubIssue(RAW_ISSUE, []);
+    assert.equal(t.id, 123456789);
   });
 });
 
@@ -597,5 +603,49 @@ describe('findCandidates — duplicate-detection candidate search', () => {
     const fetcher = async () => ({ ok: false, status: 422, headers: noHeaders(), json: async () => ({ message: 'bad query' }) });
     const adapter = createGitHubAdapter(CONN, { fetcher });
     await assert.rejects(adapter.findCandidates('login', 'WGT-1'), (err) => err.status === 422);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getLinkTypes / linkTo
+// ---------------------------------------------------------------------------
+describe('getLinkTypes', () => {
+  it('returns the static duplicate-only list — GitHub has no generic link-type concept, unlike Jira/Linear', async () => {
+    const adapter = createGitHubAdapter(CONN, { fetcher: async () => {} });
+    const types = await adapter.getLinkTypes();
+    assert.deepEqual(types, ['duplicate']);
+  });
+});
+
+describe('linkTo', () => {
+  it('closes the source issue as a duplicate, resolving the target\'s internal id via fetchTicket', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => {
+      calls.push({ url, opts });
+      if (url.endsWith('/comments')) return makeCommentsResponse([]);
+      if (!opts?.method) return makeIssueResponse({ ...RAW_ISSUE, number: 2, id: 999 });
+      return { ok: true, status: 200, headers: noHeaders(), json: async () => ({}) };
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const result = await adapter.linkTo('WGT-42', 'WGT-2', 'duplicate');
+    const patch = calls.find(c => c.opts?.method === 'PATCH');
+    assert.equal(patch.url, 'https://api.github.com/repos/acme/widgets/issues/42');
+    assert.deepEqual(JSON.parse(patch.opts.body), { state: 'closed', state_reason: 'duplicate', duplicate_issue_id: 999 });
+    assert.deepEqual(result, { executed: true, closedAsDuplicateOf: 'WGT-2' });
+  });
+
+  it('rejects any type other than "duplicate" instead of sending a malformed request', async () => {
+    const adapter = createGitHubAdapter(CONN, { fetcher: async () => { throw new Error('should not fetch'); } });
+    await assert.rejects(() => adapter.linkTo('WGT-42', 'WGT-2', 'Blocks'), /duplicate/);
+  });
+
+  it('throws with .status on a failed PATCH', async () => {
+    const fetcher = async (url, opts) => {
+      if (url.endsWith('/comments')) return makeCommentsResponse([]);
+      if (!opts?.method) return makeIssueResponse({ ...RAW_ISSUE, number: 2, id: 999 });
+      return { ok: false, status: 422, headers: noHeaders(), json: async () => ({ message: 'Unprocessable' }) };
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.linkTo('WGT-42', 'WGT-2', 'duplicate'), (err) => err.status === 422);
   });
 });

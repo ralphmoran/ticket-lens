@@ -571,3 +571,69 @@ describe('findCandidates', () => {
     assert.equal(called, false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// getLinkTypes / linkTo
+// ---------------------------------------------------------------------------
+describe('getLinkTypes', () => {
+  it('returns Linear\'s fixed schema-level relation types', async () => {
+    const adapter = createLinearAdapter(CONN, { fetcher: async () => {} });
+    const types = await adapter.getLinkTypes();
+    assert.deepEqual(types, ['blocks', 'duplicate', 'related']);
+  });
+});
+
+describe('linkTo', () => {
+  it('resolves both issues\' internal ids then creates the relation, checking success', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      if (calls.length === 2) return makeResponse({ issues: { nodes: [{ ...ISSUE_INFO, id: 'issue-uuid-2' }] } });
+      return makeResponse({ issueRelationCreate: { success: true } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.linkTo('ENG-42', 'ENG-43', 'duplicate');
+    assert.equal(calls.length, 3);
+    assert.equal(calls[2].variables.issueId, 'issue-uuid-1');
+    assert.equal(calls[2].variables.relatedIssueId, 'issue-uuid-2');
+    assert.equal(calls[2].variables.type, 'duplicate');
+    assert.deepEqual(result, { executed: true });
+  });
+
+  it('lowercases the type before sending — matches Linear\'s lowercase enum literals, confirmed via schema introspection', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      if (calls.length === 2) return makeResponse({ issues: { nodes: [{ ...ISSUE_INFO, id: 'issue-uuid-2' }] } });
+      return makeResponse({ issueRelationCreate: { success: true } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await adapter.linkTo('ENG-42', 'ENG-43', 'Duplicate');
+    assert.equal(calls[2].variables.type, 'duplicate');
+  });
+
+  it('throws when issueRelationCreate reports success:false', async () => {
+    const fetcher = sequencedFetcher([
+      () => makeResponse({ issues: { nodes: [ISSUE_INFO] } }),
+      () => makeResponse({ issues: { nodes: [{ ...ISSUE_INFO, id: 'issue-uuid-2' }] } }),
+      () => makeResponse({ issueRelationCreate: { success: false } }),
+    ]);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.linkTo('ENG-42', 'ENG-43', 'duplicate'), /success:false/);
+  });
+
+  it('never trusts a caller-supplied type without validating it against the fixed enum first — returns executed:false with options, no network call at all', async () => {
+    let called = false;
+    const fetcher = async () => { called = true; return makeResponse({}); };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.linkTo('ENG-42', 'ENG-43', 'bogus');
+    assert.equal(result.executed, false);
+    assert.equal(result.reason, 'not-found');
+    assert.deepEqual(result.options, ['blocks', 'duplicate', 'related']);
+    assert.equal(called, false, 'an invalid type must never reach the network — this is what caused it to be misclassified as a network/timeout error before');
+  });
+});

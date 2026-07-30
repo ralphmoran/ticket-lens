@@ -4,6 +4,9 @@ const LINEAR_API = 'https://api.linear.app/graphql';
 
 const PRIORITY_LABELS = { 1: 'Urgent', 2: 'High', 3: 'Medium', 4: 'Low' };
 
+/** Linear's IssueRelationType enum — fixed schema-level values, confirmed via GraphQL introspection. */
+const LINK_TYPES = ['blocks', 'duplicate', 'related'];
+
 const ISSUE_FIELDS = `
   identifier
   title
@@ -294,6 +297,44 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       return (data.issues?.nodes ?? [])
         .filter(node => node.identifier !== sourceKey)
         .map(normalizeLinearIssue);
+    },
+
+    /** Fixed schema-level enum (confirmed via GraphQL introspection) — never per-instance configurable, unlike Jira's link types. */
+    async getLinkTypes() {
+      return LINK_TYPES;
+    },
+
+    /**
+     * Validates typeName against the fixed enum before ever touching the
+     * network — an invalid type must never reach gql(), which throws a
+     * plain Error with no .status, and would otherwise be misclassified
+     * as a network/timeout failure by classifyWriteFailure. Resolves both
+     * issues' internal UUIDs via fetchIssueStateInfo — issueRelationCreate
+     * needs the UUID, never the human identifier. Explicitly checks
+     * `success`: Linear can return HTTP 200 with no top-level GraphQL
+     * errors and still report success:false.
+     */
+    async linkTo(sourceKey, targetKey, typeName, opts = {}) {
+      const normalizedType = typeName.toLowerCase();
+      if (!LINK_TYPES.includes(normalizedType)) {
+        return { executed: false, reason: 'not-found', options: LINK_TYPES };
+      }
+      const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
+      const source = await fetchIssueStateInfo(sourceKey, { token, fetcher, signal });
+      const target = await fetchIssueStateInfo(targetKey, { token, fetcher, signal });
+      const data = await gql(
+        `mutation ($issueId: String!, $relatedIssueId: String!, $type: IssueRelationType!) {
+          issueRelationCreate(input: { issueId: $issueId, relatedIssueId: $relatedIssueId, type: $type }) {
+            success
+          }
+        }`,
+        { issueId: source.id, relatedIssueId: target.id, type: normalizedType },
+        { token, fetcher, signal },
+      );
+      if (!data.issueRelationCreate?.success) {
+        throw new Error(`Linear issueRelationCreate reported success:false linking ${sourceKey} to ${targetKey}`);
+      }
+      return { executed: true };
     },
   };
 }

@@ -68,24 +68,33 @@ function formatWriteFailure(ticketKey, err) {
  * Read-path counterpart to formatWriteFailure — reuses the same
  * classification (rate-limit/timeout/server-error metadata is real and
  * worth keeping, not specific to writes) but with read-appropriate wording,
- * since "duplicates" never writes anything.
+ * parameterized by what's being checked (e.g. "for duplicates", "for link
+ * options") since neither duplicates nor link-list ever writes anything.
  */
-function formatDuplicatesFailure(ticketKey, err) {
+function formatReadFailure(ticketKey, err, actionPhrase) {
   const classification = classifyWriteFailure(err);
   switch (classification.kind) {
     case 'rate-limited': {
       const wait = classification.detail.retryAfterSeconds ?? null;
       return wait
-        ? `  Rate limited by the tracker — retry checking ${ticketKey} after ~${wait}s.\n`
-        : `  Rate limited by the tracker — try checking ${ticketKey} again later.\n`;
+        ? `  Rate limited by the tracker — retry checking ${ticketKey} ${actionPhrase} after ~${wait}s.\n`
+        : `  Rate limited by the tracker — try checking ${ticketKey} ${actionPhrase} again later.\n`;
     }
     case 'network-or-timeout':
-      return `  Network error or timeout checking ${ticketKey} for duplicates. Try again.\n`;
+      return `  Network error or timeout checking ${ticketKey} ${actionPhrase}. Try again.\n`;
     case 'server-error':
-      return `  Tracker returned a server error (${classification.status}) checking ${ticketKey} for duplicates. Try again later.\n`;
+      return `  Tracker returned a server error (${classification.status}) checking ${ticketKey} ${actionPhrase}. Try again later.\n`;
     default:
-      return `  Error checking ${ticketKey} for duplicates: ${err.message}\n`;
+      return `  Error checking ${ticketKey} ${actionPhrase}: ${err.message}\n`;
   }
+}
+
+function formatDuplicatesFailure(ticketKey, err) {
+  return formatReadFailure(ticketKey, err, 'for duplicates');
+}
+
+function formatLinkListFailure(ticketKey, err) {
+  return formatReadFailure(ticketKey, err, 'for link options');
 }
 
 function requireLicense(isLicensedFn, configDir, commandName, stream) {
@@ -365,6 +374,134 @@ export async function runTicketDuplicates(cmdArgs, {
     return { ok: true, results };
   } catch (err) {
     stream.write(formatDuplicatesFailure(ticketKey, err));
+    return { ok: false };
+  }
+}
+
+/**
+ * Discovery only — never mutates. Lists the tracker's current available
+ * link types for sourceKey→targetKey. Jira's list is always fetched live
+ * (per-instance customizable — never cached, same principle as
+ * getTransitions). GitHub's "list" is really a single-item warning: its
+ * only link action closes sourceKey as a duplicate of targetKey, a
+ * materially louder operation than Jira/Linear's pure relationship-add,
+ * so that asymmetry is surfaced here before a caller ever reaches --confirm.
+ *
+ * @param {string[]} cmdArgs - [sourceKey, targetKey]
+ * @returns {Promise<{ ok: boolean, types?: string[] }>}
+ */
+export async function runTicketLinkList(cmdArgs, {
+  configDir = DEFAULT_CONFIG_DIR,
+  stream = process.stderr,
+  isLicensedFn = isLicensed,
+  resolveConnectionFn = resolveConnection,
+  resolveAdapterFn = resolveAdapter,
+} = {}) {
+  const usage = 'Usage: ticketlens link SOURCE-KEY TARGET-KEY [--type="..." --confirm]\n';
+  if (!requireLicense(isLicensedFn, configDir, 'ticketlens link', stream)) return { ok: false };
+
+  const sourceKey = requireTicketKey(cmdArgs, usage, stream);
+  if (!sourceKey) return { ok: false };
+  const targetKey = requireTicketKey(cmdArgs.slice(1), usage, stream);
+  if (!targetKey) return { ok: false };
+
+  const adapter = resolveTicketAdapter(sourceKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!adapter) return { ok: false };
+
+  try {
+    const types = await adapter.getLinkTypes();
+    if (types.length === 0) {
+      stream.write(`  No link types available for ${sourceKey} → ${targetKey} on ${adapter.type}.\n`);
+      return { ok: true, types: [] };
+    }
+    stream.write(`  Available link types for ${sourceKey} → ${targetKey} (${adapter.type}):\n`);
+    for (const t of types) stream.write(`    - ${t}\n`);
+    if (adapter.type === 'github') {
+      stream.write(`  Note: GitHub has no generic link relationship — linking will CLOSE ${sourceKey} as a duplicate of ${targetKey}.\n`);
+    }
+    stream.write(`  Run again with --type="<name>" --confirm to execute — ${sourceKey} will be recorded as the one that "types" ${targetKey}.\n`);
+    return { ok: true, types };
+  } catch (err) {
+    stream.write(formatLinkListFailure(sourceKey, err));
+    return { ok: false };
+  }
+}
+
+/**
+ * Executes a link. Requires both --type and --confirm — a type without
+ * confirm is incomplete input, never silently executed. Cooldown is keyed
+ * on the source:target pair (not sourceKey alone) so a second link to a
+ * different target isn't blocked by the debounce window; the audit log
+ * keeps ticketKey as the single valid sourceKey (logAction throws on
+ * anything else) with targetKey/type carried in detail instead.
+ *
+ * @param {string[]} cmdArgs - [sourceKey, targetKey, '--type=...', '--confirm']
+ * @returns {Promise<{ ok: boolean, reason?: string }>}
+ */
+export async function runTicketLink(cmdArgs, {
+  configDir = DEFAULT_CONFIG_DIR,
+  stream = process.stderr,
+  isLicensedFn = isLicensed,
+  resolveConnectionFn = resolveConnection,
+  resolveAdapterFn = resolveAdapter,
+  checkCooldownFn = checkCooldown,
+  recordActionFn = recordAction,
+  logActionFn = logAction,
+  actor = os.userInfo().username,
+} = {}) {
+  const usage = 'Usage: ticketlens link SOURCE-KEY TARGET-KEY --type="..." --confirm\n';
+  if (!requireLicense(isLicensedFn, configDir, 'ticketlens link', stream)) return { ok: false };
+
+  const sourceKey = requireTicketKey(cmdArgs, usage, stream);
+  if (!sourceKey) return { ok: false };
+  const targetKey = requireTicketKey(cmdArgs.slice(1), usage, stream);
+  if (!targetKey) return { ok: false };
+
+  const type = parseFlag(cmdArgs, 'type');
+  if (!type) {
+    stream.write(usage);
+    return { ok: false };
+  }
+  if (!cmdArgs.includes('--confirm')) {
+    stream.write(`  Refusing to link ${sourceKey} to ${targetKey} as "${type}" without --confirm. Re-run with --confirm once you've reviewed the target.\n`);
+    return { ok: false };
+  }
+
+  const cooldownKey = `${sourceKey}:${targetKey}`;
+  const cooldown = checkCooldownFn(cooldownKey, 'link', { configDir });
+  if (cooldown.active) {
+    stream.write(`  Skipped — ${sourceKey} was already linked to ${targetKey} ${Math.ceil(cooldown.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
+    return { ok: false };
+  }
+
+  const adapter = resolveTicketAdapter(sourceKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!adapter) return { ok: false };
+
+  if (adapter.type === 'github' && type.toLowerCase() !== 'duplicate') {
+    stream.write(`  GitHub only supports linking as a duplicate — no generic link types. Got type "${type}".\n`);
+    return { ok: false };
+  }
+  if (adapter.type === 'github') {
+    stream.write(`  Note: this will CLOSE ${sourceKey} as a duplicate of ${targetKey} on GitHub.\n`);
+  }
+
+  try {
+    const result = await adapter.linkTo(sourceKey, targetKey, type);
+    if (!result.executed) {
+      const optionsHint = result.options?.length ? ` Valid options: ${result.options.join(', ')}.` : '';
+      stream.write(`  Not linked — ${result.reason}.${optionsHint}\n`);
+      return { ok: false, reason: result.reason };
+    }
+    recordActionFn(cooldownKey, 'link', { configDir });
+    logActionFn({ ticketKey: sourceKey, action: 'link', actor, tracker: adapter.type, detail: { targetKey, type } }, { configDir });
+    stream.write(
+      adapter.type === 'github'
+        ? `  ${sourceKey} closed as a duplicate of ${targetKey}.\n`
+        : `  ${sourceKey} linked to ${targetKey} as "${type}".\n`,
+    );
+    return { ok: true };
+  } catch (err) {
+    stream.write(formatWriteFailure(sourceKey, err));
     return { ok: false };
   }
 }

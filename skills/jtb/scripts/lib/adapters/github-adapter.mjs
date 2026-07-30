@@ -29,6 +29,7 @@ export function parseGitHubRepo(baseUrl) {
 export function normalizeGitHubIssue(raw, comments = [], keyPrefix = 'GH') {
   return {
     key: `${keyPrefix}-${raw.number}`,
+    id: raw.id,
     summary: raw.title,
     type: 'Issue',
     status: raw.state,
@@ -239,6 +240,37 @@ export function createGitHubAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       return raw.items
         .filter(item => item.number !== sourceNumber)
         .map(item => normalizeGitHubIssue(item, [], keyPrefix));
+    },
+
+    /**
+     * GitHub has no generic link-type concept — "duplicate" (via closing
+     * the source issue) is the only relationship it supports natively.
+     */
+    async getLinkTypes() {
+      return ['duplicate'];
+    },
+
+    /**
+     * GitHub's only real "link" action closes sourceKey as a duplicate of
+     * targetKey — asymmetric and state-changing, unlike Jira/Linear's pure
+     * relationship-add. Resolves targetKey's internal id via fetchTicket
+     * (GitHub's duplicate_issue_id wants the internal id, not the
+     * repo-local number).
+     */
+    async linkTo(sourceKey, targetKey, typeName, opts = {}) {
+      if (typeName.toLowerCase() !== 'duplicate') {
+        throw new Error(`GitHub only supports linking as a duplicate — got type "${typeName}".`);
+      }
+      const target = await this.fetchTicket(targetKey, opts);
+      const sourceNumber = parseInt(sourceKey.split('-').pop(), 10);
+      const res = await fetcher(`${GITHUB_API}/repos/${owner}/${repo}/issues/${sourceNumber}`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: 'closed', state_reason: 'duplicate', duplicate_issue_id: target.id }),
+        signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
+      });
+      if (!res.ok) await throwGitHubWriteError(res, 'linking', sourceKey);
+      return { executed: true, closedAsDuplicateOf: targetKey };
     },
   };
 }

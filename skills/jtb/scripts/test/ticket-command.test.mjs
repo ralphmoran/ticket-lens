@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, classifyWriteFailure } from '../lib/ticket-command.mjs';
+import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, classifyWriteFailure } from '../lib/ticket-command.mjs';
 
 function makeStream() {
   const lines = [];
@@ -16,6 +16,8 @@ function fakeAdapter(overrides = {}) {
     assignToSelf: async () => ({ assignee: 'Ralph Moran' }),
     fetchTicket: async () => ({ key: 'PROJ-1', summary: 'Login button broken on mobile', description: 'Tapping login does nothing on iOS Safari' }),
     findCandidates: async () => ([{ key: 'PROJ-9', summary: 'Login button broken on mobile Safari', description: 'unrelated body' }]),
+    getLinkTypes: async () => ['blocks', 'duplicate', 'related'],
+    linkTo: async () => ({ executed: true }),
     ...overrides,
   };
 }
@@ -473,5 +475,206 @@ describe('runTicketDuplicates — read failure', () => {
     const result = await runTicketDuplicates(['PROJ-1'], deps);
     assert.equal(result.ok, false);
     assert.match(deps.stream.lines.join(''), /network error or timeout/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runTicketLinkList
+// ---------------------------------------------------------------------------
+describe('runTicketLinkList — license gate', () => {
+  test('unlicensed: never resolves a connection, never lists link types', async () => {
+    let resolveCalls = 0;
+    const deps = baseDeps({
+      isLicensedFn: () => false,
+      resolveConnectionFn: () => { resolveCalls++; return { baseUrl: 'x' }; },
+    });
+    const result = await runTicketLinkList(['PROJ-1', 'PROJ-2'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(resolveCalls, 0);
+  });
+});
+
+describe('runTicketLinkList — usage validation', () => {
+  test('missing target key shows usage', async () => {
+    const deps = baseDeps();
+    const result = await runTicketLinkList(['PROJ-1'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Usage/);
+  });
+
+  test('malformed source key shows usage', async () => {
+    const deps = baseDeps();
+    const result = await runTicketLinkList(['not-a-key', 'PROJ-2'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Usage/);
+  });
+
+  test('malformed target key shows usage', async () => {
+    const deps = baseDeps();
+    const result = await runTicketLinkList(['PROJ-1', 'not-a-key'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Usage/);
+  });
+});
+
+describe('runTicketLinkList — happy path', () => {
+  test('lists the tracker\'s available link types without mutating anything', async () => {
+    let linkCalled = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ linkTo: async () => { linkCalled = true; return { executed: true }; } }),
+    });
+    const result = await runTicketLinkList(['PROJ-1', 'PROJ-2'], deps);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.types, ['blocks', 'duplicate', 'related']);
+    assert.equal(linkCalled, false);
+    assert.match(deps.stream.lines.join(''), /duplicate/);
+  });
+
+  test('warns explicitly that GitHub\'s link action closes the source issue — louder than Jira/Linear\'s pure relationship-add', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ type: 'github', getLinkTypes: async () => ['duplicate'] }),
+    });
+    const result = await runTicketLinkList(['PROJ-1', 'PROJ-2'], deps);
+    assert.equal(result.ok, true);
+    assert.match(deps.stream.lines.join(''), /CLOSE/);
+  });
+
+  test('reports zero available link types distinctly from a failure, same as runTicketTransitionList', async () => {
+    const deps = baseDeps({ resolveAdapterFn: () => fakeAdapter({ getLinkTypes: async () => [] }) });
+    const result = await runTicketLinkList(['PROJ-1', 'PROJ-2'], deps);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.types, []);
+    assert.match(deps.stream.lines.join(''), /No link types available/);
+  });
+});
+
+describe('runTicketLinkList — read failure', () => {
+  test('a statusless network/timeout error gets read-oriented wording, not write-oriented ("checking", never "writing to")', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ getLinkTypes: async () => { throw new Error('fetch failed'); } }),
+    });
+    const result = await runTicketLinkList(['PROJ-1', 'PROJ-2'], deps);
+    assert.equal(result.ok, false);
+    const out = deps.stream.lines.join('');
+    assert.match(out, /network error or timeout checking/i);
+    assert.doesNotMatch(out, /writing to/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runTicketLink
+// ---------------------------------------------------------------------------
+describe('runTicketLink — usage validation', () => {
+  test('missing --type shows usage', async () => {
+    const deps = baseDeps();
+    const result = await runTicketLink(['PROJ-1', 'PROJ-2', '--confirm'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Usage/);
+  });
+
+  test('--type without --confirm refuses to execute', async () => {
+    let linkCalled = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ linkTo: async () => { linkCalled = true; return { executed: true }; } }),
+    });
+    const result = await runTicketLink(['PROJ-1', 'PROJ-2', '--type=duplicate'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(linkCalled, false);
+    assert.match(deps.stream.lines.join(''), /--confirm/);
+  });
+});
+
+describe('runTicketLink — cooldown', () => {
+  test('active cooldown skips execution, checked against the source:target pair key', async () => {
+    let linkCalled = false;
+    let checkedKey;
+    const deps = baseDeps({
+      checkCooldownFn: (key) => { checkedKey = key; return { active: true, remainingMs: 2000 }; },
+      resolveAdapterFn: () => fakeAdapter({ linkTo: async () => { linkCalled = true; return { executed: true }; } }),
+    });
+    const result = await runTicketLink(['PROJ-1', 'PROJ-2', '--type=duplicate', '--confirm'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(linkCalled, false);
+    assert.equal(checkedKey, 'PROJ-1:PROJ-2');
+  });
+});
+
+describe('runTicketLink — GitHub type restriction', () => {
+  test('rejects a non-duplicate type on a GitHub-tracked ticket without ever calling linkTo', async () => {
+    let linkCalled = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ type: 'github', linkTo: async () => { linkCalled = true; return { executed: true }; } }),
+    });
+    const result = await runTicketLink(['PROJ-1', 'PROJ-2', '--type=Blocks', '--confirm'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(linkCalled, false);
+    assert.match(deps.stream.lines.join(''), /GitHub only supports/);
+  });
+});
+
+describe('runTicketLink — unresolved type', () => {
+  test('executed:false is reported with valid options, cooldown/log never recorded — mirrors runTicketTransition\'s unresolved-target handling', async () => {
+    let recorded = false, logged = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        linkTo: async () => ({ executed: false, reason: 'not-found', options: ['duplicate', 'related'] }),
+      }),
+      recordActionFn: () => { recorded = true; },
+      logActionFn: () => { logged = true; },
+    });
+    const result = await runTicketLink(['PROJ-1', 'PROJ-2', '--type=Bogus', '--confirm'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'not-found');
+    assert.equal(recorded, false);
+    assert.equal(logged, false);
+    assert.match(deps.stream.lines.join(''), /duplicate/);
+  });
+});
+
+describe('runTicketLink — happy path', () => {
+  test('links, records cooldown on the pair key, and logs sourceKey with target/type in detail', async () => {
+    let recorded, logged;
+    const deps = baseDeps({
+      recordActionFn: (key, action) => { recorded = { key, action }; },
+      logActionFn: (entry) => { logged = entry; },
+    });
+    const result = await runTicketLink(['PROJ-1', 'PROJ-2', '--type=duplicate', '--confirm'], deps);
+    assert.equal(result.ok, true);
+    assert.deepEqual(recorded, { key: 'PROJ-1:PROJ-2', action: 'link' });
+    assert.deepEqual(logged, { ticketKey: 'PROJ-1', action: 'link', actor: 'ralph', tracker: 'jira', detail: { targetKey: 'PROJ-2', type: 'duplicate' } });
+    assert.match(deps.stream.lines.join(''), /linked to PROJ-2/);
+  });
+
+  test('reports GitHub\'s close-semantics distinctly in the success message', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ type: 'github' }),
+    });
+    const result = await runTicketLink(['PROJ-1', 'PROJ-2', '--type=duplicate', '--confirm'], deps);
+    assert.equal(result.ok, true);
+    assert.match(deps.stream.lines.join(''), /closed as a duplicate/);
+  });
+
+  test('warns that the source will be CLOSED right before executing on GitHub — visible even when --confirm is passed directly, not just in list mode', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ type: 'github' }),
+    });
+    await runTicketLink(['PROJ-1', 'PROJ-2', '--type=duplicate', '--confirm'], deps);
+    assert.match(deps.stream.lines.join(''), /CLOSE PROJ-1/);
+  });
+});
+
+describe('runTicketLink — write failure', () => {
+  test('a thrown error during execution is classified and reported, cooldown/log never recorded', async () => {
+    let recorded = false, logged = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ linkTo: async () => { throw new Error('network down'); } }),
+      recordActionFn: () => { recorded = true; },
+      logActionFn: () => { logged = true; },
+    });
+    const result = await runTicketLink(['PROJ-1', 'PROJ-2', '--type=duplicate', '--confirm'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(recorded, false);
+    assert.equal(logged, false);
+    assert.match(deps.stream.lines.join(''), /Network error or timeout/);
   });
 });

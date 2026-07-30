@@ -23,7 +23,7 @@ import readline from 'node:readline';
 import { DEFAULT_CONFIG_DIR, getVersion } from './config.mjs';
 import { runNoteAdd } from './note-command.mjs';
 import { runRecall } from './recall-command.mjs';
-import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates } from './ticket-command.mjs';
+import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink } from './ticket-command.mjs';
 
 const PROTOCOL_VERSION = '2025-11-25';
 
@@ -100,6 +100,20 @@ const TOOLS = [
         threshold: { type: 'number', description: 'Minimum match score 0-1 to report. Defaults to 0.35.' },
       },
       required: ['ticket'],
+    },
+  },
+  {
+    name: 'ticket_link',
+    description: 'List or execute a link between two tickets in their tracker (Jira/GitHub/Linear). Called with only `ticket`/`target`, lists the tracker\'s current valid link types without changing anything. Destructive when `type` and `confirm: true` are both given — writes directly to the live tracker. Direction matters: `ticket` "types" `target` (e.g. ticket duplicates target). On GitHub, executing CLOSES `ticket` as a duplicate of `target` — a state change, not just a relationship add like Jira/Linear. Requires a TicketLens Pro license.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ticket: { type: 'string', description: 'Source ticket key, e.g. PROJ-123 — the one that "types" target.' },
+        target: { type: 'string', description: 'Target ticket key, e.g. PROJ-456.' },
+        type: { type: 'string', description: 'Link type name (from the list). Omit to just list the tracker\'s current valid options. GitHub only supports "duplicate".' },
+        confirm: { type: 'boolean', description: 'Must be true, alongside `type`, to actually execute the link — a nudge and audit trail, not just a formality.' },
+      },
+      required: ['ticket', 'target'],
     },
   },
 ];
@@ -233,6 +247,32 @@ async function callTicketDuplicates(args, { configDir, runTicketDuplicatesFn }) 
   return ok ? { content } : { isError: true, content };
 }
 
+/**
+ * No `type` → discovery only, dispatched to the read-only list function —
+ * never touches the mutating path. `type` present → dispatched to the
+ * executing function, which itself still refuses without `confirm: true`
+ * (the MCP layer doesn't pre-empt that check, same as ticket_transition).
+ */
+async function callTicketLink(args, { configDir, runTicketLinkListFn, runTicketLinkFn }) {
+  if (!args.ticket) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: ticket' }] };
+  }
+  if (!args.target) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: target' }] };
+  }
+  const capture = capturingStream();
+  if (!args.type) {
+    const { ok } = await runTicketLinkListFn([args.ticket, args.target], { configDir, stream: capture });
+    const content = [{ type: 'text', text: capture.text }];
+    return ok ? { content } : { isError: true, content };
+  }
+  const cmdArgs = [args.ticket, args.target, `--type=${args.type}`];
+  if (args.confirm === true) cmdArgs.push('--confirm');
+  const { ok } = await runTicketLinkFn(cmdArgs, { configDir, stream: capture });
+  const content = [{ type: 'text', text: capture.text }];
+  return ok ? { content } : { isError: true, content };
+}
+
 async function handleToolsCall(params, deps) {
   const { name, arguments: args = {} } = params ?? {};
   if (name === 'recall_add') return callRecallAdd(args, deps);
@@ -241,10 +281,11 @@ async function handleToolsCall(params, deps) {
   if (name === 'ticket_transition') return callTicketTransition(args, deps);
   if (name === 'ticket_assign') return callTicketAssign(args, deps);
   if (name === 'ticket_duplicates') return callTicketDuplicates(args, deps);
+  if (name === 'ticket_link') return callTicketLink(args, deps);
   return { isError: true, content: [{ type: 'text', text: `Unknown tool: ${name}` }] };
 }
 
-async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn }) {
+async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn }) {
   let msg;
   try {
     msg = JSON.parse(raw);
@@ -274,7 +315,7 @@ async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTic
 
   if (method === 'tools/call') {
     try {
-      const result = await handleToolsCall(params, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn });
+      const result = await handleToolsCall(params, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn });
       return jsonRpcResult(id, result);
     } catch (err) {
       return jsonRpcError(id ?? null, -32603, `Internal error: ${err.message}`);
@@ -302,6 +343,8 @@ export function runMcpServer({
   runTicketTransitionFn = runTicketTransition,
   runTicketAssignFn = runTicketAssign,
   runTicketDuplicatesFn = runTicketDuplicates,
+  runTicketLinkListFn = runTicketLinkList,
+  runTicketLinkFn = runTicketLink,
 } = {}) {
   // A client can disconnect mid-write (EPIPE) at any time on a long-lived
   // process — an unhandled 'error' event on either stream would otherwise
@@ -321,7 +364,7 @@ export function runMcpServer({
     // never resolving (a dropped rejection isn't a resolution) — the
     // server would hang on shutdown instead of exiting.
     queue = queue.then(async () => {
-      const response = await handleMessage(line, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn });
+      const response = await handleMessage(line, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn });
       if (response) stdout.write(response);
     }).catch(() => {});
   });
