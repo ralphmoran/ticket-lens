@@ -304,3 +304,40 @@ describe('createJiraAdapter — linkTo', () => {
     await assert.doesNotReject(() => adapter.linkTo('TEST-1', 'TEST-2', 'Duplicate', { lookup: privateLookup }));
   });
 });
+
+describe('createJiraAdapter — updateFields', () => {
+  it('maps title to summary and PUTs fields in one call, reporting every requested field as applied', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = { url, method: opts.method, body: JSON.parse(opts.body) }; return { ok: true, status: 204 }; };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('TEST-1', { title: 'New title', priority: 'High' });
+    assert.deepEqual(captured.body, { fields: { summary: 'New title', priority: { name: 'High' } } });
+    assert.match(captured.url, /\/issue\/TEST-1$/);
+    assert.deepEqual(result, { applied: { title: true, priority: 'High' }, errors: {} });
+  });
+
+  it('reports addLabels/removeLabels back verbatim on success', async () => {
+    const adapter = createJiraAdapter(CONN, { fetcher: async () => ({ ok: true, status: 204 }) });
+    const result = await adapter.updateFields('TEST-1', { addLabels: ['urgent'], removeLabels: ['stale'] });
+    assert.deepEqual(result.applied, { addLabels: ['urgent'], removeLabels: ['stale'] });
+  });
+
+  it('propagates a write failure (single atomic PUT — no partial state to report)', async () => {
+    const fetcher = async () => ({ ok: false, status: 400, json: async () => ({ errors: { priority: 'invalid' } }) });
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    await assert.rejects(() => adapter.updateFields('TEST-1', { priority: 'Bogus' }), (err) => err.status === 400);
+  });
+
+  it('converts description to ADF on Cloud (apiVersion 3)', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, status: 204 }; };
+    const adapter = createJiraAdapter({ ...CONN, auth: 'cloud' }, { fetcher });
+    await adapter.updateFields('TEST-1', { description: 'Cloud desc.' });
+    assert.equal(captured.fields.description.type, 'doc');
+  });
+
+  it('threads conn.allowPrivateIp into updateFields', async () => {
+    const adapter = createJiraAdapter({ ...CONN, allowPrivateIp: true }, { fetcher: async () => ({ ok: true, status: 204 }) });
+    await assert.doesNotReject(() => adapter.updateFields('TEST-1', { title: 'x' }, { lookup: privateLookup }));
+  });
+});

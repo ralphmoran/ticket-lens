@@ -587,6 +587,55 @@ export async function assignIssue(ticketKey, assignee, opts = {}) {
   }
 }
 
+/**
+ * Updates a narrow, named field set on an issue. `fields` (summary,
+ * description, priority) uses plain SET semantics — the same shape Jira's
+ * own GET returns, same convention as assignIssue/postIssueLink. Labels use
+ * a separate verb-based `update.labels` array (`{add}`/`{remove}`) — Jira's
+ * REST API has no plain-replace shape for multi-value fields, only ADD/SET/
+ * REMOVE operations, a genuinely different mechanic from fields. Both keys
+ * can coexist in one request as long as a given field only appears in one
+ * of them — never both — which callers naturally satisfy since labels only
+ * ever go through `update`.
+ */
+export async function updateIssue(ticketKey, { summary, description, priority, addLabels, removeLabels } = {}, opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const url = `${baseUrl}/rest/api/${apiVersion}/issue/${encodeURIComponent(ticketKey)}`;
+
+  const fields = {};
+  if (summary !== undefined) fields.summary = summary;
+  if (description !== undefined) fields.description = apiVersion === 3 ? textToAdf(description) : description;
+  if (priority !== undefined) fields.priority = { name: priority };
+
+  const labelOps = [
+    ...(addLabels ?? []).map(label => ({ add: label })),
+    ...(removeLabels ?? []).map(label => ({ remove: label })),
+  ];
+
+  const body = {};
+  if (Object.keys(fields).length > 0) body.fields = fields;
+  if (labelOps.length > 0) body.update = { labels: labelOps };
+
+  const fetchOpts = {
+    method: 'PUT',
+    headers: { ...buildAuthHeader(env), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
+  if (!response.ok) {
+    let details;
+    try { details = await response.json(); } catch { /* body not JSON — fall through with no details */ }
+    const err = new Error(`Jira API error ${response.status} updating ${ticketKey}`);
+    err.status = response.status;
+    err.details = details;
+    throw err;
+  }
+}
+
 export async function fetchTicket(ticketKey, opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), depth = 1, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false, allowPrivateIp = false, _visited = new Set(), _currentDepth = 0 } = opts;
   validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);

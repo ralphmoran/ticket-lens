@@ -90,6 +90,17 @@ async function fetchIssueStateInfo(key, { token, fetcher, signal }) {
   return node;
 }
 
+/** Splits a list of label names into those found in `byName` (with their resolved id) and those not. */
+function resolveLabelNames(names, byName) {
+  const resolved = [];
+  const missing = [];
+  for (const name of names) {
+    const id = byName.get(name.toLowerCase());
+    if (id) resolved.push({ id, name }); else missing.push(name);
+  }
+  return { resolved, missing };
+}
+
 async function fetchTeamWorkflowStates(teamId, { token, fetcher, signal }) {
   const data = await gql(
     `query ($teamId: ID!) {
@@ -335,6 +346,90 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
         throw new Error(`Linear issueRelationCreate reported success:false linking ${sourceKey} to ${targetKey}`);
       }
       return { executed: true };
+    },
+
+    /**
+     * Unlike Jira's freeform label strings, Linear's addedLabelIds/
+     * removedLabelIds (IssueUpdateInput) take real label UUIDs and never
+     * auto-create a missing one — a name must be resolved against the
+     * issue's own team first (same shape as fetchTeamWorkflowStates).
+     * Resolution failures (unknown label name, unresolvable priority name)
+     * are collected into `errors` and simply excluded from the mutation
+     * input rather than blocking it — whatever DID resolve still lands in
+     * one atomic issueUpdate call. Empty input skips the mutation entirely
+     * (nothing valid to send). Priority is accepted as a display name for
+     * cross-tracker consistency and reverse-mapped via the same
+     * PRIORITY_LABELS table normalizeLinearIssue already uses for reads.
+     */
+    async updateFields(key, { title, description, priority, addLabels, removeLabels } = {}, opts = {}) {
+      const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
+      const info = await fetchIssueStateInfo(key, { token, fetcher, signal });
+
+      const input = {};
+      const applied = {};
+      const errors = {};
+
+      if (title !== undefined) input.title = title;
+      if (description !== undefined) input.description = description;
+
+      let resolvedPriorityLabel;
+      if (priority !== undefined) {
+        const normalized = priority.trim().toLowerCase();
+        if (normalized === 'none') {
+          input.priority = 0;
+          resolvedPriorityLabel = 'None';
+        } else {
+          const entry = Object.entries(PRIORITY_LABELS).find(([, label]) => label.toLowerCase() === normalized);
+          if (entry) {
+            input.priority = Number(entry[0]);
+            resolvedPriorityLabel = entry[1];
+          } else {
+            errors.priority = { reason: 'not-found', options: ['None', ...Object.values(PRIORITY_LABELS)] };
+          }
+        }
+      }
+
+      let addLabelsResolved, addLabelsMissing, removeLabelsResolved, removeLabelsMissing;
+      if (addLabels?.length || removeLabels?.length) {
+        const labelData = await gql(
+          `query ($teamId: ID!) { issueLabels(filter: { team: { id: { eq: $teamId } } }, first: 250) { nodes { id name } } }`,
+          { teamId: info.team.id },
+          { token, fetcher, signal },
+        );
+        const byName = new Map((labelData.issueLabels?.nodes ?? []).map(l => [l.name.toLowerCase(), l.id]));
+
+        if (addLabels?.length) {
+          ({ resolved: addLabelsResolved, missing: addLabelsMissing } = resolveLabelNames(addLabels, byName));
+          if (addLabelsResolved.length) input.addedLabelIds = addLabelsResolved.map(l => l.id);
+          if (addLabelsMissing.length) errors.addLabels = { reason: 'not-found', missing: addLabelsMissing };
+        }
+        if (removeLabels?.length) {
+          ({ resolved: removeLabelsResolved, missing: removeLabelsMissing } = resolveLabelNames(removeLabels, byName));
+          if (removeLabelsResolved.length) input.removedLabelIds = removeLabelsResolved.map(l => l.id);
+          if (removeLabelsMissing.length) errors.removeLabels = { reason: 'not-found', missing: removeLabelsMissing };
+        }
+      }
+
+      if (Object.keys(input).length === 0) {
+        return { applied, errors };
+      }
+
+      const data = await gql(
+        `mutation ($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }`,
+        { id: info.id, input },
+        { token, fetcher, signal },
+      );
+      if (!data.issueUpdate?.success) {
+        throw new Error(`Linear issueUpdate reported success:false updating ${key}`);
+      }
+
+      if (title !== undefined) applied.title = true;
+      if (description !== undefined) applied.description = true;
+      if (input.priority !== undefined) applied.priority = resolvedPriorityLabel;
+      if (addLabelsResolved?.length) applied.addLabels = addLabelsResolved.map(l => l.name);
+      if (removeLabelsResolved?.length) applied.removeLabels = removeLabelsResolved.map(l => l.name);
+
+      return { applied, errors };
     },
   };
 }

@@ -23,7 +23,7 @@ import readline from 'node:readline';
 import { DEFAULT_CONFIG_DIR, getVersion } from './config.mjs';
 import { runNoteAdd } from './note-command.mjs';
 import { runRecall } from './recall-command.mjs';
-import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink } from './ticket-command.mjs';
+import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate } from './ticket-command.mjs';
 
 const PROTOCOL_VERSION = '2025-11-25';
 
@@ -114,6 +114,22 @@ const TOOLS = [
         confirm: { type: 'boolean', description: 'Must be true, alongside `type`, to actually execute the link — a nudge and audit trail, not just a formality.' },
       },
       required: ['ticket', 'target'],
+    },
+  },
+  {
+    name: 'ticket_update',
+    description: 'Update a narrow, named field set on a ticket in its tracker (Jira/GitHub/Linear) — title, description, labels, priority. Labels are add/remove, never a wholesale replace: an unnamed existing label is left alone. No discovery step and no confirm required — these are reversible metadata edits, not workflow-state changes. GitHub has no priority field; passing `priority` for a GitHub-tracked ticket is refused. A call can partially succeed (e.g. title updates but a label does not resolve) — the result reports exactly what landed. Requires a TicketLens Pro license.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ticket: { type: 'string', description: 'Ticket key, e.g. PROJ-123.' },
+        title: { type: 'string', description: 'New title/summary. Omit to leave unchanged.' },
+        description: { type: 'string', description: 'New description. Omit to leave unchanged.' },
+        addLabels: { type: 'array', items: { type: 'string' }, description: 'Labels to add. Existing labels not named here are left alone.' },
+        removeLabels: { type: 'array', items: { type: 'string' }, description: 'Labels to remove.' },
+        priority: { type: 'string', description: 'New priority name, e.g. "High". Not supported on GitHub.' },
+      },
+      required: ['ticket'],
     },
   },
 ];
@@ -273,6 +289,41 @@ async function callTicketLink(args, { configDir, runTicketLinkListFn, runTicketL
   return ok ? { content } : { isError: true, content };
 }
 
+/**
+ * `title`/`description`/`priority` each become one opaque cmdArgs element,
+ * same reasoning as buildNoteAddArgs/callTicketComment above. `addLabels`/
+ * `removeLabels` arrive as arrays per the MCP schema and are comma-joined
+ * into a single element (same convention buildNoteAddArgs already uses for
+ * `tags`) — parsed back apart by ticket-command.mjs's existing split(',')
+ * handling, never by re-splitting a string this function builds itself.
+ */
+function buildTicketUpdateArgs(args) {
+  const cmdArgs = [args.ticket];
+  if (args.title !== undefined) cmdArgs.push(`--title=${args.title}`);
+  if (args.description !== undefined) cmdArgs.push(`--description=${args.description}`);
+  if (args.priority !== undefined) cmdArgs.push(`--priority=${args.priority}`);
+  if (Array.isArray(args.addLabels) && args.addLabels.length > 0) cmdArgs.push(`--add-labels=${args.addLabels.join(',')}`);
+  if (Array.isArray(args.removeLabels) && args.removeLabels.length > 0) cmdArgs.push(`--remove-labels=${args.removeLabels.join(',')}`);
+  return cmdArgs;
+}
+
+/**
+ * No list-then-act split, unlike ticket_transition/ticket_link — update has
+ * no discovery step, so there is exactly one dispatch path. Whether at
+ * least one field was actually given is runTicketUpdateFn's own concern
+ * (same "don't pre-empt the underlying command" principle as ticket_link's
+ * --confirm check).
+ */
+async function callTicketUpdate(args, { configDir, runTicketUpdateFn }) {
+  if (!args.ticket) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: ticket' }] };
+  }
+  const capture = capturingStream();
+  const { ok } = await runTicketUpdateFn(buildTicketUpdateArgs(args), { configDir, stream: capture });
+  const content = [{ type: 'text', text: capture.text }];
+  return ok ? { content } : { isError: true, content };
+}
+
 async function handleToolsCall(params, deps) {
   const { name, arguments: args = {} } = params ?? {};
   if (name === 'recall_add') return callRecallAdd(args, deps);
@@ -282,10 +333,11 @@ async function handleToolsCall(params, deps) {
   if (name === 'ticket_assign') return callTicketAssign(args, deps);
   if (name === 'ticket_duplicates') return callTicketDuplicates(args, deps);
   if (name === 'ticket_link') return callTicketLink(args, deps);
+  if (name === 'ticket_update') return callTicketUpdate(args, deps);
   return { isError: true, content: [{ type: 'text', text: `Unknown tool: ${name}` }] };
 }
 
-async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn }) {
+async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn }) {
   let msg;
   try {
     msg = JSON.parse(raw);
@@ -315,7 +367,7 @@ async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTic
 
   if (method === 'tools/call') {
     try {
-      const result = await handleToolsCall(params, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn });
+      const result = await handleToolsCall(params, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn });
       return jsonRpcResult(id, result);
     } catch (err) {
       return jsonRpcError(id ?? null, -32603, `Internal error: ${err.message}`);
@@ -345,6 +397,7 @@ export function runMcpServer({
   runTicketDuplicatesFn = runTicketDuplicates,
   runTicketLinkListFn = runTicketLinkList,
   runTicketLinkFn = runTicketLink,
+  runTicketUpdateFn = runTicketUpdate,
 } = {}) {
   // A client can disconnect mid-write (EPIPE) at any time on a long-lived
   // process — an unhandled 'error' event on either stream would otherwise
@@ -364,7 +417,7 @@ export function runMcpServer({
     // never resolving (a dropped rejection isn't a resolution) — the
     // server would hang on shutdown instead of exiting.
     queue = queue.then(async () => {
-      const response = await handleMessage(line, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn });
+      const response = await handleMessage(line, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn });
       if (response) stdout.write(response);
     }).catch(() => {});
   });

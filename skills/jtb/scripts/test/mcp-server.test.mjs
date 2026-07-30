@@ -74,7 +74,7 @@ describe('mcp-server', () => {
     it('returns exactly recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const names = messages[0].result.tools.map((t) => t.name).sort();
-      assert.deepEqual(names, ['recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_duplicates', 'ticket_link', 'ticket_transition']);
+      assert.deepEqual(names, ['recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update']);
       for (const tool of messages[0].result.tools) {
         assert.equal(tool.inputSchema.type, 'object');
         assert.ok(tool.inputSchema.properties, `${tool.name} must declare input properties`);
@@ -521,6 +521,58 @@ describe('mcp-server', () => {
     });
   });
 
+  describe('tools/call ticket_update', () => {
+    it('builds cmdArgs from title/description/priority/addLabels/removeLabels — each a single opaque array element', async () => {
+      let seenArgs;
+      const runTicketUpdateFn = async (cmdArgs, opts) => {
+        seenArgs = cmdArgs;
+        opts.stream.write('  PROJ-1 updated: title.\n');
+        return { ok: true };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_update', arguments: { ticket: 'PROJ-1', title: 'New title', description: 'New desc', priority: 'High', addLabels: ['urgent', 'backend'], removeLabels: ['stale'] } } }],
+        { configDir, runTicketUpdateFn },
+      );
+      assert.deepEqual(seenArgs, ['PROJ-1', '--title=New title', '--description=New desc', '--priority=High', '--add-labels=urgent,backend', '--remove-labels=stale']);
+      assert.equal(messages[0].result.isError, undefined);
+    });
+
+    it('omits flags for fields not given — no --title=undefined leaking through', async () => {
+      let seenArgs;
+      const runTicketUpdateFn = async (cmdArgs) => { seenArgs = cmdArgs; return { ok: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_update', arguments: { ticket: 'PROJ-1', title: 'Only this' } } }],
+        { configDir, runTicketUpdateFn },
+      );
+      assert.deepEqual(seenArgs, ['PROJ-1', '--title=Only this']);
+    });
+
+    it('missing ticket returns a JSON-RPC tool error without calling runTicketUpdateFn', async () => {
+      let called = false;
+      const runTicketUpdateFn = async () => { called = true; return { ok: true }; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_update', arguments: { title: 'x' } } }],
+        { configDir, runTicketUpdateFn },
+      );
+      assert.equal(called, false);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /ticket/i);
+    });
+
+    it('a partial-failure result (ok:false with some fields applied) is still surfaced as an MCP tool error, not silently ok', async () => {
+      const runTicketUpdateFn = async (cmdArgs, opts) => {
+        opts.stream.write('  PROJ-1 partially updated: title. Failed: addLabels (not found: bogus).\n');
+        return { ok: false, applied: { title: true }, errors: { addLabels: { reason: 'not-found', missing: ['bogus'] } } };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_update', arguments: { ticket: 'PROJ-1', title: 'x', addLabels: ['bogus'] } } }],
+        { configDir, runTicketUpdateFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /partially updated/);
+    });
+  });
+
   describe('malformed input survival', () => {
     it('a bad JSON-RPC line produces an error response and a following valid message still gets served', async () => {
       const stdin = new PassThrough();
@@ -537,7 +589,7 @@ describe('mcp-server', () => {
       assert.equal(messages.length, 2, 'both the parse-error response and the valid tools/list response must appear');
       assert.ok(messages[0].error, 'first message must be a JSON-RPC error for the malformed line');
       assert.equal(messages[1].id, 2);
-      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_duplicates', 'ticket_link', 'ticket_transition']);
+      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update']);
     });
 
     it('a syntactically-valid-but-non-object JSON line (e.g. bare "null") does not crash the server or drop later messages', async () => {
@@ -647,6 +699,15 @@ describe('mcp-server', () => {
     it('ticket_link: unlicensed configDir is rejected by the real license gate (list mode), never reaching the network', async () => {
       const { messages } = await drive(
         [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_link', arguments: { ticket: 'PROJ-1', target: 'PROJ-2' } } }],
+        { configDir },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /pro/i);
+    });
+
+    it('ticket_update: unlicensed configDir is rejected by the real license gate, never reaching the network', async () => {
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_update', arguments: { ticket: 'PROJ-1', title: 'x' } } }],
         { configDir },
       );
       assert.equal(messages[0].result.isError, true);

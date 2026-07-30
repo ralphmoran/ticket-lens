@@ -166,3 +166,24 @@ Both previously-flagged open unknowns resolved this pass via primary sources, no
 All fixes verified: 2542/2542 tests passing (up from 2494 pre-feature baseline), zero regressions, plus a live re-run against a real Jira instance confirming the `[object Object]` bug is gone.
 
 **Shipped as `ticketlens link` / `ticket_link` (v0.27.0).** Next up per the risk-based order: `ticket_update` (three genuinely different per-tracker label-update mechanics), then `ticket_create` last.
+
+## `ticket_update` — 7-iteration proposal/critique loop (2026-07-30, fourth pass)
+
+Two corrections to this doc's own earlier findings, confirmed via direct WebFetch/WebSearch on primary sources rather than reused from the first pass:
+
+- **GitHub labels are NOT plain-PATCH-full-replace, contrary to iteration 8 above.** GitHub has dedicated atomic endpoints: `POST /issues/{n}/labels` (additive) and `DELETE /issues/{n}/labels/{name}` (single removal) — confirmed via direct WebFetch on GitHub's labels docs. Using the full-replace `PATCH`/`PUT` would have forced an unsafe read-then-write race; the real API avoids it entirely. A 404 on removal means the label was already absent — treated as idempotent success, not a failure.
+- **Linear's `addedLabelIds`/`removedLabelIds` (`IssueUpdateInput`, shipped Jan 2025) take real label UUIDs, never names, and do not auto-create a missing label** — confirmed via WebSearch. A name must resolve against a fresh, team-scoped `issueLabels` query first (same shape as the existing `fetchTeamWorkflowStates` helper); an unresolvable name reports `not-found` rather than reaching `gql()` raw (which would misclassify it as a network/timeout error, the same bug class already fixed once for `linkTo`).
+- **The real rule governing `--confirm` across this whole feature family, resolved by reading `runTicketComment`/`runTicketAssign` directly:** it gates the boundary between a discovery step and an execution step (`transition`/`link` both have list-then-act shapes). `comment`/`assign` have no discovery step and ship with no `--confirm`. `ticket_update` has no discovery step either (priority validity surfaces the tracker's own error, same choice already made for `ticket_create`'s issuetype) and its edits are reversible metadata changes with no workflow-state side effects — same risk tier as `assign`, not `transition`/`link`. Decision: no `--confirm` flag.
+- GitHub Issues have no native priority field at all (confirmed by the codebase itself — `normalizeGitHubIssue` always sets `priority: null`) — `ticket-command.mjs` refuses `--priority` on a GitHub-tracked ticket before the adapter is ever called, mirroring `ticket_link`'s GitHub-type-mismatch guard.
+
+### Resulting design
+
+| Concern | Jira | GitHub | Linear |
+|---|---|---|---|
+| Title/description | `PUT /issue/{key}` `fields:{summary, description}` (description via existing `textToAdf()` on v3) | `PATCH /issues/{n}` `{title, body}` | `issueUpdate` `{title, description}` |
+| Priority | Same PUT, `fields:{priority:{name}}` — invalid name surfaces Jira's own 400 | Refused before the adapter is called — no native field | `issueUpdate` `{priority: int}` — string name reverse-mapped via existing `PRIORITY_LABELS`; unresolvable name → `not-found`, no network call |
+| Labels | Same PUT, `update:{labels:[{add}/{remove}]}` — freeform strings, Jira auto-creates on add | `POST .../labels` (add, batched) + `DELETE .../labels/{name}` per removal (404 = already-absent = success) | Resolve names→IDs via team-scoped `issueLabels` query first, then `addedLabelIds`/`removedLabelIds` in the same `issueUpdate` call |
+| Atomicity | All 4 sub-fields in one HTTP call | Title/desc atomic; each label op independent — genuine partial-failure surface | Label resolution (read) + one atomic mutation |
+| Result shape | Throws on failure (single atomic call, same as every other write) | Always returns `{ applied, errors }` — best-effort, continues after a failure | Pre-flight resolution errors are non-throwing; the mutation itself throws on failure like Jira |
+
+**Shipped as `ticketlens update` / `ticket_update` (v0.28.0).** Code review: 0 CRITICAL, 0 HIGH (2 LOW accepted: comma-in-label-name edge case matching the existing `note add --tags` precedent; duplicate error text when GitHub's shared title/description PATCH fails). Next up per the risk-based order: `ticket_create` last — the only one of the four that fabricates a brand-new tracked item in a real system.

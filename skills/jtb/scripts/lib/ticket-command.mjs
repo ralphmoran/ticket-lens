@@ -97,6 +97,42 @@ function formatLinkListFailure(ticketKey, err) {
   return formatReadFailure(ticketKey, err, 'for link options');
 }
 
+/**
+ * Adapter error shapes for updateFields genuinely differ per tracker: a
+ * thrown Error (Jira/atomic-call failures, GitHub's shared title/description
+ * PATCH, GitHub's addLabels call), a { reason: 'not-found', missing/options }
+ * descriptor (Linear's pre-flight label/priority resolution), or a
+ * label -> Error map (GitHub's per-label DELETE loop, since each removal is
+ * independent and can fail differently). Never assume a single shape.
+ */
+function formatFieldError(field, info) {
+  if (info instanceof Error) return `${field} (${info.message})`;
+  if (info?.reason === 'not-found') {
+    const list = info.missing ?? info.options ?? [];
+    return `${field} (not found${list.length ? `: ${list.join(', ')}` : ''})`;
+  }
+  const perLabel = Object.entries(info ?? {}).map(([label, err]) => `${label}: ${err.message}`).join(', ');
+  return `${field} (${perLabel})`;
+}
+
+function describeAppliedFields(applied) {
+  const parts = [];
+  if (applied.title) parts.push('title');
+  if (applied.description) parts.push('description');
+  if (applied.priority) parts.push(`priority=${applied.priority}`);
+  if (applied.addLabels?.length) parts.push(`+labels(${applied.addLabels.join(', ')})`);
+  if (applied.removeLabels?.length) parts.push(`-labels(${applied.removeLabels.join(', ')})`);
+  return parts.join(', ');
+}
+
+function formatUpdateResult(ticketKey, { applied, errors }) {
+  const appliedText = describeAppliedFields(applied);
+  const errorText = Object.entries(errors).map(([field, info]) => formatFieldError(field, info)).join('; ');
+  if (appliedText && !errorText) return `  ${ticketKey} updated: ${appliedText}.\n`;
+  if (appliedText && errorText) return `  ${ticketKey} partially updated: ${appliedText}. Failed: ${errorText}.\n`;
+  return `  Nothing updated on ${ticketKey}. Failed: ${errorText}.\n`;
+}
+
 function requireLicense(isLicensedFn, configDir, commandName, stream) {
   if (isLicensedFn('pro', configDir)) return true;
   showUpgradePrompt('pro', commandName, { stream });
@@ -502,6 +538,88 @@ export async function runTicketLink(cmdArgs, {
     return { ok: true };
   } catch (err) {
     stream.write(formatWriteFailure(sourceKey, err));
+    return { ok: false };
+  }
+}
+
+/**
+ * Updates a narrow, named field set (title, description, labels, priority).
+ * No --confirm gate, unlike transition/link: those two have a list-then-act
+ * discovery step that --confirm gates the boundary of; update has none
+ * (priority validity surfaces the tracker's own error, same choice already
+ * made for ticket_create's issuetype) and its edits are reversible metadata
+ * changes with no workflow-state side effects — same risk tier as assign,
+ * which also ships with no --confirm.
+ *
+ * updateFields' result shape genuinely differs by how atomic each tracker's
+ * write is: Jira/Linear do it in one call and either fully succeed or throw
+ * (caught below, same as every other write); GitHub's title/description and
+ * label operations are independent HTTP calls, so it always returns
+ * { applied, errors } even on total failure. Whatever DID apply is still
+ * recorded/logged — a caller needs the cooldown to reflect a real partial
+ * write, and the audit trail should show what actually changed even if not
+ * everything did.
+ *
+ * @param {string[]} cmdArgs - [ticketKey, '--title=...', '--description=...', '--add-labels=a,b', '--remove-labels=c', '--priority=...']
+ * @returns {Promise<{ ok: boolean, applied?: object, errors?: object }>}
+ */
+export async function runTicketUpdate(cmdArgs, {
+  configDir = DEFAULT_CONFIG_DIR,
+  stream = process.stderr,
+  isLicensedFn = isLicensed,
+  resolveConnectionFn = resolveConnection,
+  resolveAdapterFn = resolveAdapter,
+  checkCooldownFn = checkCooldown,
+  recordActionFn = recordAction,
+  logActionFn = logAction,
+  actor = os.userInfo().username,
+} = {}) {
+  const usage = 'Usage: ticketlens update TICKET-KEY [--title="..."] [--description="..."] [--add-labels=a,b] [--remove-labels=c] [--priority="High"]\n';
+  if (!requireLicense(isLicensedFn, configDir, 'ticketlens update', stream)) return { ok: false };
+
+  const ticketKey = requireTicketKey(cmdArgs, usage, stream);
+  if (!ticketKey) return { ok: false };
+
+  const title = parseFlag(cmdArgs, 'title');
+  const description = parseFlag(cmdArgs, 'description');
+  const priority = parseFlag(cmdArgs, 'priority');
+  const addLabelsArg = parseFlag(cmdArgs, 'add-labels');
+  const removeLabelsArg = parseFlag(cmdArgs, 'remove-labels');
+  const addLabels = addLabelsArg ? addLabelsArg.split(',').map(l => l.trim()).filter(Boolean) : undefined;
+  const removeLabels = removeLabelsArg ? removeLabelsArg.split(',').map(l => l.trim()).filter(Boolean) : undefined;
+
+  if (title === undefined && description === undefined && priority === undefined && !addLabels?.length && !removeLabels?.length) {
+    stream.write(usage);
+    return { ok: false };
+  }
+
+  const cooldown = checkCooldownFn(ticketKey, 'update', { configDir });
+  if (cooldown.active) {
+    stream.write(`  Skipped — ${ticketKey} was already updated ${Math.ceil(cooldown.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
+    return { ok: false };
+  }
+
+  const adapter = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!adapter) return { ok: false };
+
+  if (adapter.type === 'github' && priority !== undefined) {
+    stream.write(`  GitHub Issues have no native priority field — cannot update priority on ${ticketKey}. Remove --priority and retry.\n`);
+    return { ok: false };
+  }
+
+  try {
+    const result = await adapter.updateFields(ticketKey, { title, description, priority, addLabels, removeLabels });
+    const hasApplied = Object.keys(result.applied).length > 0;
+    const hasErrors = Object.keys(result.errors).length > 0;
+
+    if (hasApplied) {
+      recordActionFn(ticketKey, 'update', { configDir });
+      logActionFn({ ticketKey, action: 'update', actor, tracker: adapter.type, detail: { ...result.applied, failed: Object.keys(result.errors) } }, { configDir });
+    }
+    stream.write(formatUpdateResult(ticketKey, result));
+    return hasErrors ? { ok: false, applied: result.applied, errors: result.errors } : { ok: true, applied: result.applied };
+  } catch (err) {
+    stream.write(formatWriteFailure(ticketKey, err));
     return { ok: false };
   }
 }

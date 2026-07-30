@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue } from '../lib/jira-client.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -1057,6 +1057,72 @@ describe('postIssueLink', () => {
     const badEnv = { ...ENV, JIRA_BASE_URL: 'https://169.254.169.254' };
     await assert.rejects(
       () => postIssueLink('PROJ-1', 'PROJ-2', 'Duplicate', { env: badEnv, fetcher: async () => ({ ok: true, status: 204 }) }),
+      /blocked/,
+    );
+  });
+});
+
+describe('updateIssue', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+
+  it('PUTs summary/priority under "fields" as plain values (no labels touched)', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = { url, method: opts.method, body: JSON.parse(opts.body) }; return { ok: true, status: 204 }; };
+    await updateIssue('PROJ-1', { summary: 'New title', priority: 'High' }, { env: ENV, fetcher, apiVersion: 3 });
+    assert.equal(captured.method, 'PUT');
+    assert.deepEqual(captured.body, { fields: { summary: 'New title', priority: { name: 'High' } } });
+    assert.match(captured.url, /\/issue\/PROJ-1$/);
+  });
+
+  it('sends description as a plain string on v2 (Server/DC)', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, status: 204 }; };
+    await updateIssue('PROJ-1', { description: 'Plain text.' }, { env: ENV, fetcher, apiVersion: 2 });
+    assert.deepEqual(captured, { fields: { description: 'Plain text.' } });
+  });
+
+  it('wraps description in ADF on v3 (Cloud) — same conversion postComment already uses', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, status: 204 }; };
+    await updateIssue('PROJ-1', { description: 'Cloud text.' }, { env: ENV, fetcher, apiVersion: 3 });
+    assert.equal(captured.fields.description.type, 'doc');
+    assert.equal(captured.fields.description.content[0].content[0].text, 'Cloud text.');
+  });
+
+  it('builds a verb-based "update.labels" array for add/remove, never a plain replace', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, status: 204 }; };
+    await updateIssue('PROJ-1', { addLabels: ['urgent', 'backend'], removeLabels: ['stale'] }, { env: ENV, fetcher });
+    assert.deepEqual(captured, { update: { labels: [{ add: 'urgent' }, { add: 'backend' }, { remove: 'stale' }] } });
+  });
+
+  it('sends both "fields" and "update" in the same request when both simple fields and labels are given', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, status: 204 }; };
+    await updateIssue('PROJ-1', { summary: 'Renamed', addLabels: ['urgent'] }, { env: ENV, fetcher });
+    assert.deepEqual(captured, { fields: { summary: 'Renamed' }, update: { labels: [{ add: 'urgent' }] } });
+  });
+
+  it('omits "fields"/"update" entirely when nothing relevant is given for that key', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, status: 204 }; };
+    await updateIssue('PROJ-1', { summary: 'Only this' }, { env: ENV, fetcher });
+    assert.deepEqual(captured, { fields: { summary: 'Only this' } });
+    assert.ok(!('update' in captured));
+  });
+
+  it('surfaces a non-OK response with .status and .details, never silently swallowed', async () => {
+    const fetcher = async () => ({ ok: false, status: 400, json: async () => ({ errors: { priority: "field 'priority' is not on the appropriate screen" } }) });
+    await assert.rejects(
+      () => updateIssue('PROJ-1', { priority: 'NotARealPriority' }, { env: ENV, fetcher }),
+      (err) => err.status === 400 && err.details.errors.priority.includes('screen'),
+    );
+  });
+
+  it('goes through validateBaseUrl/guardedFetch like every other write (SSRF guard not bypassed)', async () => {
+    const badEnv = { ...ENV, JIRA_BASE_URL: 'https://169.254.169.254' };
+    await assert.rejects(
+      () => updateIssue('PROJ-1', { summary: 'x' }, { env: badEnv, fetcher: async () => ({ ok: true, status: 204 }) }),
       /blocked/,
     );
   });

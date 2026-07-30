@@ -637,3 +637,133 @@ describe('linkTo', () => {
     assert.equal(called, false, 'an invalid type must never reach the network — this is what caused it to be misclassified as a network/timeout error before');
   });
 });
+
+// ---------------------------------------------------------------------------
+// updateFields
+// ---------------------------------------------------------------------------
+describe('updateFields', () => {
+  it('sends title/description directly in one mutation when no labels are touched — no issueLabels query needed', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      return makeResponse({ issueUpdate: { success: true } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('ENG-42', { title: 'New title', description: 'New desc' });
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[1].variables.input, { title: 'New title', description: 'New desc' });
+    assert.equal(calls[1].variables.id, 'issue-uuid-1');
+    assert.deepEqual(result, { applied: { title: true, description: true }, errors: {} });
+  });
+
+  it('reverse-maps a priority display name to Linear\'s integer scale', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      return makeResponse({ issueUpdate: { success: true } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('ENG-42', { priority: 'High' });
+    assert.equal(calls[1].variables.input.priority, 2);
+    assert.deepEqual(result.applied, { priority: 'High' });
+  });
+
+  it('maps "None" to priority 0', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      return makeResponse({ issueUpdate: { success: true } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await adapter.updateFields('ENG-42', { priority: 'none' });
+    assert.equal(calls[1].variables.input.priority, 0);
+  });
+
+  it('reports an unresolvable priority name as not-found without ever reaching the mutation for that field', async () => {
+    const fetcher = async () => makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('ENG-42', { priority: 'Critical' });
+    assert.deepEqual(result.errors.priority, { reason: 'not-found', options: ['None', 'Urgent', 'High', 'Medium', 'Low'] });
+    assert.deepEqual(result.applied, {});
+  });
+
+  it('still applies title when priority is unresolvable — partial success, not all-or-nothing', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      return makeResponse({ issueUpdate: { success: true } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('ENG-42', { title: 'New title', priority: 'Critical' });
+    assert.deepEqual(calls[1].variables.input, { title: 'New title' });
+    assert.deepEqual(result.applied, { title: true });
+    assert.deepEqual(result.errors.priority, { reason: 'not-found', options: ['None', 'Urgent', 'High', 'Medium', 'Low'] });
+  });
+
+  it('resolves label names to ids via a team-scoped issueLabels query, then sends addedLabelIds/removedLabelIds', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      if (calls.length === 2) {
+        assert.equal(body.variables.teamId, 'team-uuid-1');
+        return makeResponse({ issueLabels: { nodes: [{ id: 'label-urgent', name: 'urgent' }, { id: 'label-stale', name: 'stale' }] } });
+      }
+      return makeResponse({ issueUpdate: { success: true } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('ENG-42', { addLabels: ['urgent'], removeLabels: ['stale'] });
+    assert.equal(calls.length, 3);
+    assert.deepEqual(calls[2].variables.input, { addedLabelIds: ['label-urgent'], removedLabelIds: ['label-stale'] });
+    assert.deepEqual(result.applied, { addLabels: ['urgent'], removeLabels: ['stale'] });
+  });
+
+  it('never auto-creates or guesses an unresolvable label name — reports not-found, other resolved labels still applied', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      if (calls.length === 2) return makeResponse({ issueLabels: { nodes: [{ id: 'label-urgent', name: 'urgent' }] } });
+      return makeResponse({ issueUpdate: { success: true } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('ENG-42', { addLabels: ['urgent', 'does-not-exist'] });
+    assert.deepEqual(calls[2].variables.input, { addedLabelIds: ['label-urgent'] });
+    assert.deepEqual(result.applied, { addLabels: ['urgent'] });
+    assert.deepEqual(result.errors.addLabels, { reason: 'not-found', missing: ['does-not-exist'] });
+  });
+
+  it('skips the mutation entirely when nothing resolved to a valid field — no network call for an empty input', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      return makeResponse({ issueLabels: { nodes: [] } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('ENG-42', { addLabels: ['does-not-exist'] });
+    assert.equal(calls.length, 2, 'should resolve labels but never call issueUpdate with an empty input');
+    assert.deepEqual(result.applied, {});
+    assert.deepEqual(result.errors.addLabels, { reason: 'not-found', missing: ['does-not-exist'] });
+  });
+
+  it('throws when issueUpdate reports success:false (same convention as transition/assignToSelf)', async () => {
+    const fetcher = sequencedFetcher([
+      () => makeResponse({ issues: { nodes: [ISSUE_INFO] } }),
+      () => makeResponse({ issueUpdate: { success: false } }),
+    ]);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.updateFields('ENG-42', { title: 'x' }), /success:false/);
+  });
+});

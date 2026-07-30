@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, classifyWriteFailure } from '../lib/ticket-command.mjs';
+import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate, classifyWriteFailure } from '../lib/ticket-command.mjs';
 
 function makeStream() {
   const lines = [];
@@ -18,6 +18,7 @@ function fakeAdapter(overrides = {}) {
     findCandidates: async () => ([{ key: 'PROJ-9', summary: 'Login button broken on mobile Safari', description: 'unrelated body' }]),
     getLinkTypes: async () => ['blocks', 'duplicate', 'related'],
     linkTo: async () => ({ executed: true }),
+    updateFields: async () => ({ applied: { title: true }, errors: {} }),
     ...overrides,
   };
 }
@@ -672,6 +673,168 @@ describe('runTicketLink — write failure', () => {
       logActionFn: () => { logged = true; },
     });
     const result = await runTicketLink(['PROJ-1', 'PROJ-2', '--type=duplicate', '--confirm'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(recorded, false);
+    assert.equal(logged, false);
+    assert.match(deps.stream.lines.join(''), /Network error or timeout/);
+  });
+});
+
+describe('runTicketUpdate — license gate', () => {
+  test('unlicensed shows upgrade prompt, never calls updateFields', async () => {
+    let called = false;
+    const deps = baseDeps({
+      isLicensedFn: () => false,
+      resolveAdapterFn: () => fakeAdapter({ updateFields: async () => { called = true; return { applied: {}, errors: {} }; } }),
+    });
+    const result = await runTicketUpdate(['PROJ-1', '--title=New'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(called, false);
+  });
+});
+
+describe('runTicketUpdate — usage validation', () => {
+  test('missing ticket key shows usage', async () => {
+    const deps = baseDeps();
+    const result = await runTicketUpdate([], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Usage/);
+  });
+
+  test('no fields given at all shows usage — never a no-op write', async () => {
+    let called = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ updateFields: async () => { called = true; return { applied: {}, errors: {} }; } }),
+    });
+    const result = await runTicketUpdate(['PROJ-1'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(called, false);
+    assert.match(deps.stream.lines.join(''), /Usage/);
+  });
+});
+
+describe('runTicketUpdate — cooldown', () => {
+  test('active cooldown skips execution', async () => {
+    let called = false;
+    const deps = baseDeps({
+      checkCooldownFn: () => ({ active: true, remainingMs: 3000 }),
+      resolveAdapterFn: () => fakeAdapter({ updateFields: async () => { called = true; return { applied: {}, errors: {} }; } }),
+    });
+    const result = await runTicketUpdate(['PROJ-1', '--title=New'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(called, false);
+  });
+});
+
+describe('runTicketUpdate — GitHub priority restriction', () => {
+  test('refuses --priority on a GitHub-tracked ticket without ever calling updateFields', async () => {
+    let called = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ type: 'github', updateFields: async () => { called = true; return { applied: {}, errors: {} }; } }),
+    });
+    const result = await runTicketUpdate(['PROJ-1', '--priority=High'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(called, false);
+    assert.match(deps.stream.lines.join(''), /GitHub.*priority/i);
+  });
+
+  test('does not block other fields on GitHub as long as --priority is absent', async () => {
+    let called = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ type: 'github', updateFields: async () => { called = true; return { applied: { title: true }, errors: {} }; } }),
+    });
+    const result = await runTicketUpdate(['PROJ-1', '--title=New'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(called, true);
+  });
+});
+
+describe('runTicketUpdate — happy path', () => {
+  test('parses title/description/priority and comma-split add/remove labels, passing them through to updateFields', async () => {
+    let captured;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        updateFields: async (key, fields) => { captured = { key, fields }; return { applied: { title: true, addLabels: ['urgent', 'backend'], removeLabels: ['stale'] }, errors: {} }; },
+      }),
+    });
+    const result = await runTicketUpdate(['PROJ-1', '--title=New title', '--add-labels=urgent, backend', '--remove-labels=stale'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(captured.key, 'PROJ-1');
+    assert.deepEqual(captured.fields, { title: 'New title', description: undefined, priority: undefined, addLabels: ['urgent', 'backend'], removeLabels: ['stale'] });
+  });
+
+  test('records cooldown and logs the audit detail using applied field names/values, never full description text', async () => {
+    let recorded, logged;
+    const deps = baseDeps({
+      recordActionFn: (key, action) => { recorded = { key, action }; },
+      logActionFn: (entry) => { logged = entry; },
+      resolveAdapterFn: () => fakeAdapter({
+        updateFields: async () => ({ applied: { description: true, priority: 'High' }, errors: {} }),
+      }),
+    });
+    const result = await runTicketUpdate(['PROJ-1', '--description=a very long secret-ish body', '--priority=High'], deps);
+    assert.equal(result.ok, true);
+    assert.deepEqual(recorded, { key: 'PROJ-1', action: 'update' });
+    assert.equal(logged.ticketKey, 'PROJ-1');
+    assert.equal(logged.action, 'update');
+    assert.equal(logged.tracker, 'jira');
+    assert.deepEqual(logged.detail, { description: true, priority: 'High', failed: [] });
+    assert.ok(!JSON.stringify(logged).includes('secret-ish'), 'full description text must never reach the audit log');
+  });
+
+  test('reports success with the applied fields in the message', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ updateFields: async () => ({ applied: { title: true, addLabels: ['urgent'] }, errors: {} }) }),
+    });
+    const result = await runTicketUpdate(['PROJ-1', '--title=x', '--add-labels=urgent'], deps);
+    assert.equal(result.ok, true);
+    assert.match(deps.stream.lines.join(''), /PROJ-1/);
+    assert.match(deps.stream.lines.join(''), /title/);
+  });
+});
+
+describe('runTicketUpdate — partial failure', () => {
+  test('some fields applied, some failed — reports ok:false but still records/logs what landed', async () => {
+    let recorded = false, logged;
+    const deps = baseDeps({
+      recordActionFn: () => { recorded = true; },
+      logActionFn: (entry) => { logged = entry; },
+      resolveAdapterFn: () => fakeAdapter({
+        updateFields: async () => ({ applied: { title: true }, errors: { addLabels: { reason: 'not-found', missing: ['bogus'] } } }),
+      }),
+    });
+    const result = await runTicketUpdate(['PROJ-1', '--title=x', '--add-labels=bogus'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(recorded, true, 'whatever did apply should still be recorded for cooldown purposes');
+    assert.deepEqual(logged.detail.failed, ['addLabels']);
+    assert.match(deps.stream.lines.join(''), /bogus/);
+  });
+
+  test('nothing applied at all — reports ok:false and never records/logs', async () => {
+    let recorded = false, logged = false;
+    const deps = baseDeps({
+      recordActionFn: () => { recorded = true; },
+      logActionFn: () => { logged = true; },
+      resolveAdapterFn: () => fakeAdapter({
+        updateFields: async () => ({ applied: {}, errors: { priority: { reason: 'not-found', options: ['High', 'Low'] } } }),
+      }),
+    });
+    const result = await runTicketUpdate(['PROJ-1', '--priority=Critical'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(recorded, false);
+    assert.equal(logged, false);
+  });
+});
+
+describe('runTicketUpdate — write failure', () => {
+  test('a thrown error (Jira/Linear atomic failure) is classified and reported, cooldown/log never recorded', async () => {
+    let recorded = false, logged = false;
+    const deps = baseDeps({
+      recordActionFn: () => { recorded = true; },
+      logActionFn: () => { logged = true; },
+      resolveAdapterFn: () => fakeAdapter({ updateFields: async () => { throw new Error('network down'); } }),
+    });
+    const result = await runTicketUpdate(['PROJ-1', '--title=x'], deps);
     assert.equal(result.ok, false);
     assert.equal(recorded, false);
     assert.equal(logged, false);

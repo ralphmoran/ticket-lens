@@ -649,3 +649,88 @@ describe('linkTo', () => {
     await assert.rejects(adapter.linkTo('WGT-42', 'WGT-2', 'duplicate'), (err) => err.status === 422);
   });
 });
+
+// ---------------------------------------------------------------------------
+// updateFields
+// ---------------------------------------------------------------------------
+describe('updateFields', () => {
+  it('PATCHes title and description together in one call', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => { calls.push({ url, opts }); return { ok: true, status: 200, headers: noHeaders(), json: async () => ({}) }; };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('WGT-42', { title: 'New title', description: 'New body' });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'https://api.github.com/repos/acme/widgets/issues/42');
+    assert.deepEqual(JSON.parse(calls[0].opts.body), { title: 'New title', body: 'New body' });
+    assert.deepEqual(result, { applied: { title: true, description: true }, errors: {} });
+  });
+
+  it('adds labels via the dedicated additive endpoint, never a full-replace call', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => { calls.push({ url, opts }); return { ok: true, status: 200, headers: noHeaders(), json: async () => ({}) }; };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('WGT-42', { addLabels: ['urgent', 'backend'] });
+    assert.equal(calls[0].url, 'https://api.github.com/repos/acme/widgets/issues/42/labels');
+    assert.equal(calls[0].opts.method, 'POST');
+    assert.deepEqual(JSON.parse(calls[0].opts.body), { labels: ['urgent', 'backend'] });
+    assert.deepEqual(result.applied.addLabels, ['urgent', 'backend']);
+  });
+
+  it('removes labels one at a time via DELETE, never a full-replace call', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => { calls.push({ url, opts }); return { ok: true, status: 200, headers: noHeaders(), json: async () => ({}) }; };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('WGT-42', { removeLabels: ['stale', 'wontfix'] });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].url, 'https://api.github.com/repos/acme/widgets/issues/42/labels/stale');
+    assert.equal(calls[0].opts.method, 'DELETE');
+    assert.equal(calls[1].url, 'https://api.github.com/repos/acme/widgets/issues/42/labels/wontfix');
+    assert.deepEqual(result.applied.removeLabels, ['stale', 'wontfix']);
+  });
+
+  it('treats a 404 on label removal as already-absent success, not a failure', async () => {
+    const fetcher = async () => ({ ok: false, status: 404, headers: noHeaders(), json: async () => ({ message: 'Label does not exist' }) });
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('WGT-42', { removeLabels: ['already-gone'] });
+    assert.deepEqual(result.applied.removeLabels, ['already-gone']);
+    assert.deepEqual(result.errors, {});
+  });
+
+  it('URL-encodes a label name containing special characters in the DELETE path', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => { capturedUrl = url; return { ok: true, status: 200, headers: noHeaders(), json: async () => ({}) }; };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    await adapter.updateFields('WGT-42', { removeLabels: ['needs/review'] });
+    assert.equal(capturedUrl, 'https://api.github.com/repos/acme/widgets/issues/42/labels/needs%2Freview');
+  });
+
+  it('reports a partial failure — title/description succeed, an independent label op fails — without losing what succeeded', async () => {
+    const fetcher = async (url, opts) => {
+      if (opts.method === 'PATCH') return { ok: true, status: 200, headers: noHeaders(), json: async () => ({}) };
+      return { ok: false, status: 422, headers: noHeaders(), json: async () => ({ message: 'Invalid label' }) };
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('WGT-42', { title: 'New title', addLabels: ['bogus-label'] });
+    assert.deepEqual(result.applied, { title: true });
+    assert.equal(result.errors.addLabels?.status, 422);
+  });
+
+  it('attempts every requested field even after an earlier one fails — best-effort, not stop-on-first-error', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => {
+      calls.push(url);
+      if (opts.method === 'PATCH') return { ok: false, status: 422, headers: noHeaders(), json: async () => ({}) };
+      return { ok: true, status: 200, headers: noHeaders(), json: async () => ({}) };
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('WGT-42', { title: 'x', addLabels: ['urgent'] });
+    assert.ok(calls.some(u => u.endsWith('/labels')), 'label endpoint should still be called after the title PATCH failed');
+    assert.deepEqual(result.applied.addLabels, ['urgent']);
+    assert.equal(result.errors.title?.status, 422);
+  });
+
+  it('rejects a priority change outright — GitHub Issues has no native priority field', async () => {
+    const adapter = createGitHubAdapter(CONN, { fetcher: async () => { throw new Error('should not fetch'); } });
+    await assert.rejects(() => adapter.updateFields('WGT-42', { priority: 'High' }), /priority/i);
+  });
+});

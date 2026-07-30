@@ -1,4 +1,4 @@
-import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink } from '../jira-client.mjs';
+import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue } from '../jira-client.mjs';
 import { buildJiraEnv } from '../config.mjs';
 
 /**
@@ -109,6 +109,27 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       }
       await postIssueLink(sourceKey, targetKey, match.name, { ...base, ...opts });
       return { executed: true };
+    },
+
+    /**
+     * Jira does this in a single atomic PUT (fields + update.labels in one
+     * request, confirmed via Jira's own docs) — unlike GitHub, there is no
+     * per-field partial-failure surface here: either the whole call
+     * succeeds and every requested field is applied, or it throws and
+     * ticket-command.mjs's existing formatWriteFailure handles it exactly
+     * like every other write. Priority-name validity is not pre-checked —
+     * an invalid name surfaces Jira's own 400 with details, same design
+     * choice already made for ticket_create's issuetype field.
+     */
+    async updateFields(key, { title, description, priority, addLabels, removeLabels } = {}, opts = {}) {
+      await updateIssue(key, { summary: title, description, priority, addLabels, removeLabels }, { ...base, ...opts });
+      const applied = {};
+      if (title !== undefined) applied.title = true;
+      if (description !== undefined) applied.description = true;
+      if (priority !== undefined) applied.priority = priority;
+      if (addLabels?.length) applied.addLabels = addLabels;
+      if (removeLabels?.length) applied.removeLabels = removeLabels;
+      return { applied, errors: {} };
     },
   };
 }

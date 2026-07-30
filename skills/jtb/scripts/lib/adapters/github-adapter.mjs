@@ -272,5 +272,84 @@ export function createGitHubAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       if (!res.ok) await throwGitHubWriteError(res, 'linking', sourceKey);
       return { executed: true, closedAsDuplicateOf: targetKey };
     },
+
+    /**
+     * Unlike Jira/Linear's single atomic mutation, GitHub genuinely has no
+     * one-call way to do this: title/description share a PATCH, but labels
+     * use their own dedicated additive (POST) and per-label (DELETE)
+     * endpoints — never the full-replace PUT, which would force an unsafe
+     * read-then-write race. Each operation is independent and best-effort:
+     * one failing must never prevent the others from being attempted, and
+     * the caller needs to know exactly which fields actually landed.
+     */
+    async updateFields(key, { title, description, priority, addLabels, removeLabels } = {}, opts = {}) {
+      if (priority !== undefined) {
+        throw new Error('GitHub Issues have no native priority field — cannot update priority.');
+      }
+      const number = parseInt(key.split('-').pop(), 10);
+      const signal = () => AbortSignal.timeout(opts.timeoutMs ?? 10_000);
+      const applied = {};
+      const errors = {};
+
+      if (title !== undefined || description !== undefined) {
+        try {
+          const body = {};
+          if (title !== undefined) body.title = title;
+          if (description !== undefined) body.body = description;
+          const res = await fetcher(`${GITHUB_API}/repos/${owner}/${repo}/issues/${number}`, {
+            method: 'PATCH',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: signal(),
+          });
+          if (!res.ok) await throwGitHubWriteError(res, 'updating', key);
+          if (title !== undefined) applied.title = true;
+          if (description !== undefined) applied.description = true;
+        } catch (err) {
+          if (title !== undefined) errors.title = err;
+          if (description !== undefined) errors.description = err;
+        }
+      }
+
+      if (addLabels?.length) {
+        try {
+          const res = await fetcher(`${GITHUB_API}/repos/${owner}/${repo}/issues/${number}/labels`, {
+            method: 'POST',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ labels: addLabels }),
+            signal: signal(),
+          });
+          if (!res.ok) await throwGitHubWriteError(res, 'adding labels to', key);
+          applied.addLabels = addLabels;
+        } catch (err) {
+          errors.addLabels = err;
+        }
+      }
+
+      if (removeLabels?.length) {
+        const removed = [];
+        const removeErrors = {};
+        for (const label of removeLabels) {
+          try {
+            const res = await fetcher(`${GITHUB_API}/repos/${owner}/${repo}/issues/${number}/labels/${encodeURIComponent(label)}`, {
+              method: 'DELETE',
+              headers,
+              signal: signal(),
+            });
+            // A 404 here means the label was already absent — the caller's
+            // goal ("this label is gone") is already true, so this is
+            // treated as success, not a failure to surface.
+            if (!res.ok && res.status !== 404) await throwGitHubWriteError(res, 'removing a label from', key);
+            removed.push(label);
+          } catch (err) {
+            removeErrors[label] = err;
+          }
+        }
+        if (removed.length) applied.removeLabels = removed;
+        if (Object.keys(removeErrors).length) errors.removeLabels = removeErrors;
+      }
+
+      return { applied, errors };
+    },
   };
 }

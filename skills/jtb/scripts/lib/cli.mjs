@@ -150,6 +150,10 @@ export function parseCommand(args) {
     return { command: 'link', args: args.slice(1) };
   }
 
+  if (first === 'update') {
+    return { command: 'update', args: args.slice(1) };
+  }
+
   // Anything that looks like a ticket key or any non-flag arg → fetch
   return { command: 'fetch', args };
 }
