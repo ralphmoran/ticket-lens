@@ -98,6 +98,28 @@ function formatLinkListFailure(ticketKey, err) {
 }
 
 /**
+ * Create-path counterpart to formatWriteFailure — same classification, but
+ * there is no ticket key to interpolate (creation never happened).
+ */
+function formatCreateFailure(err) {
+  const classification = classifyWriteFailure(err);
+  switch (classification.kind) {
+    case 'rate-limited': {
+      const wait = classification.detail.retryAfterSeconds ?? null;
+      return wait
+        ? `  Rate limited by the tracker — retry creating the ticket after ~${wait}s.\n`
+        : `  Rate limited by the tracker — try creating the ticket again later.\n`;
+    }
+    case 'network-or-timeout':
+      return `  Network error or timeout creating the ticket — not retried automatically (a timed-out write may have already landed; check the tracker before retrying).\n`;
+    case 'server-error':
+      return `  Tracker returned a server error (${classification.status}) creating the ticket. Try again later.\n`;
+    default:
+      return `  Failed to create the ticket: ${err.message}\n`;
+  }
+}
+
+/**
  * Adapter error shapes for updateFields genuinely differ per tracker: a
  * thrown Error (Jira/atomic-call failures, GitHub's shared title/description
  * PATCH, GitHub's addLabels call), a { reason: 'not-found', missing/options }
@@ -148,11 +170,19 @@ function requireTicketKey(cmdArgs, usage, stream) {
   return ticketKey;
 }
 
+/**
+ * `ticketKey` is undefined for ticket_create — there is no existing ticket to
+ * prefix-match a connection from, so resolution falls through to --profile
+ * or the default profile (resolveConnectionFn already handles a falsy
+ * ticketKey by skipping prefix matching, see profile-resolver.mjs).
+ */
 function resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream }) {
   const profileName = parseFlag(cmdArgs, 'profile');
   const conn = resolveConnectionFn(ticketKey, { configDir, profileName });
   if (!conn.baseUrl) {
-    stream.write(`  No connection configured for ${ticketKey}. Run \`ticketlens init\`.\n`);
+    stream.write(ticketKey
+      ? `  No connection configured for ${ticketKey}. Run \`ticketlens init\`.\n`
+      : `  No connection configured. Run \`ticketlens init\` or pass --profile=NAME.\n`);
     return null;
   }
   return resolveAdapterFn(conn);
@@ -622,4 +652,100 @@ export async function runTicketUpdate(cmdArgs, {
     stream.write(formatWriteFailure(ticketKey, err));
     return { ok: false };
   }
+}
+
+/**
+ * Creates a new ticket in the tracker (Jira/GitHub/Linear) — architecturally
+ * unlike every other write in this family: there is no existing ticket key
+ * to resolve a connection from, so --profile (or the default profile) picks
+ * the target tracker instead of ticket-prefix matching. --project is the
+ * project key (Jira) or team key (Linear) to create in — GitHub ignores it,
+ * its target repo is fixed by the profile. --type (Jira issuetype) is
+ * Jira-only; GitHub/Linear have no equivalent concept and ignore it with a
+ * warning — unlike an extra --project on GitHub, which is dropped silently,
+ * since a stray --type usually means the caller thought they were talking to
+ * Jira and should hear otherwise. Highest blast radius of the whole write
+ * family — a bad project/issuetype fabricates a real,
+ * hard-to-walk-back item in a live tracker — so, unlike update/assign, the
+ * cooldown key is derived from (project, type, summary) rather than a
+ * ticket key, guarding against exactly the flaky-retry double-creation
+ * scenario this whole mechanism exists to catch. No --confirm gate: same
+ * "no discovery step, reversible-enough risk tier" reasoning already
+ * applied to update/assign — the terminal errors below (missing --project/
+ * --type, an unresolvable Linear team, a bad Jira issuetype) are the
+ * safeguard, not a confirmation prompt.
+ *
+ * @param {string[]} cmdArgs - ['--project=...', '--type=...', '--summary=...', '--description=...', '--profile=...']
+ * @returns {Promise<{ ok: boolean, key?: string }>}
+ */
+export async function runTicketCreate(cmdArgs, {
+  configDir = DEFAULT_CONFIG_DIR,
+  stream = process.stderr,
+  isLicensedFn = isLicensed,
+  resolveConnectionFn = resolveConnection,
+  resolveAdapterFn = resolveAdapter,
+  checkCooldownFn = checkCooldown,
+  recordActionFn = recordAction,
+  logActionFn = logAction,
+  actor = os.userInfo().username,
+} = {}) {
+  const usage = 'Usage: ticketlens create --project=KEY --type="Task" --summary="..." [--description="..."] [--profile=NAME]\n';
+  if (!requireLicense(isLicensedFn, configDir, 'ticketlens create', stream)) return { ok: false };
+
+  const summary = parseFlag(cmdArgs, 'summary');
+  if (!summary) {
+    stream.write(usage);
+    return { ok: false };
+  }
+
+  const project = parseFlag(cmdArgs, 'project');
+  const type = parseFlag(cmdArgs, 'type');
+  const description = parseFlag(cmdArgs, 'description');
+
+  const adapter = resolveTicketAdapter(undefined, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!adapter) return { ok: false };
+
+  if (adapter.type !== 'github' && !project) {
+    stream.write(`  --project is required for ${adapter.type === 'jira' ? 'Jira (project key)' : 'Linear (team key)'}.\n`);
+    return { ok: false };
+  }
+  if (adapter.type === 'jira' && !type) {
+    stream.write(`  --type is required for Jira (issue type, e.g. "Task" or "Bug").\n`);
+    return { ok: false };
+  }
+  if (adapter.type !== 'jira' && type !== undefined) {
+    stream.write(`  Note: --type is ignored by ${adapter.type} — issue created without it.\n`);
+  }
+
+  // JSON-encoded, not naively colon-joined — project/type/summary are free
+  // text that can themselves contain ":", which would let two genuinely
+  // different tuples collide onto the same cooldown key.
+  const cooldownKey = `create:${JSON.stringify([project ?? '', type ?? '', summary])}`;
+  const cooldown = checkCooldownFn(cooldownKey, 'create', { configDir });
+  if (cooldown.active) {
+    stream.write(`  Skipped — a ticket with this summary was already created ${Math.ceil(cooldown.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
+    return { ok: false };
+  }
+
+  let result;
+  try {
+    result = await adapter.createTicket({ project, type, summary, description });
+  } catch (err) {
+    stream.write(formatCreateFailure(err));
+    return { ok: false };
+  }
+
+  // The write already landed — a real, external, hard-to-walk-back ticket
+  // now exists. From here on, nothing may report this as a failed write:
+  // cooldown/audit bookkeeping is best-effort, never the reason a real
+  // success gets mistaken for one (which risks a caller retrying and
+  // fabricating a genuine duplicate).
+  try {
+    recordActionFn(cooldownKey, 'create', { configDir });
+    logActionFn({ ticketKey: result.key, action: 'create', actor, tracker: adapter.type, detail: { project, type } }, { configDir });
+  } catch (bookkeepingErr) {
+    stream.write(`  Warning: ${result.key} was created but could not be logged: ${bookkeepingErr.message}\n`);
+  }
+  stream.write(`  Created ${result.key}${result.url ? ` (${result.url})` : ''}\n`);
+  return { ok: true, key: result.key };
 }

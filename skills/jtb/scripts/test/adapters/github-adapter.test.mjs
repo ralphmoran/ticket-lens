@@ -734,3 +734,34 @@ describe('updateFields', () => {
     await assert.rejects(() => adapter.updateFields('WGT-42', { priority: 'High' }), /priority/i);
   });
 });
+
+describe('createTicket', () => {
+  it('POSTs title/body to the repo fixed by the profile — project/type are ignored, repo has no such concept', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => {
+      calls.push({ url, opts });
+      return { ok: true, status: 201, headers: noHeaders(), json: async () => ({ id: 987654321, number: 55, html_url: 'https://github.com/acme/widgets/issues/55' }) };
+    };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    const result = await adapter.createTicket({ project: 'ignored', type: 'ignored', summary: 'New issue', description: 'Body text.' });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'https://api.github.com/repos/acme/widgets/issues');
+    assert.equal(calls[0].opts.method, 'POST');
+    assert.deepEqual(JSON.parse(calls[0].opts.body), { title: 'New issue', body: 'Body text.' });
+    assert.deepEqual(result, { key: 'WGT-55', id: '987654321', url: 'https://github.com/acme/widgets/issues/55' });
+  });
+
+  it('omits body entirely when description is not given', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, status: 201, headers: noHeaders(), json: async () => ({ id: 1, number: 1, html_url: '' }) }; };
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    await adapter.createTicket({ summary: 'No body' });
+    assert.deepEqual(captured, { title: 'No body' });
+  });
+
+  it('surfaces a non-OK response via the same rate-limit-aware classification as every other write', async () => {
+    const fetcher = async () => ({ ok: false, status: 422, headers: noHeaders(), json: async () => ({ message: 'Validation failed' }) });
+    const adapter = createGitHubAdapter(CONN, { fetcher });
+    await assert.rejects(() => adapter.createTicket({ summary: 'x' }), (err) => err.status === 422);
+  });
+});

@@ -767,3 +767,54 @@ describe('updateFields', () => {
     await assert.rejects(adapter.updateFields('ENG-42', { title: 'x' }), /success:false/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// createTicket
+// ---------------------------------------------------------------------------
+describe('createTicket', () => {
+  it('resolves the team by key then creates the issue with the resolved teamId', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ teams: { nodes: [{ id: 'team-uuid-1' }] } });
+      return makeResponse({ issueCreate: { success: true, issue: { identifier: 'ENG-99', id: 'issue-uuid-99', url: 'https://linear.app/ticketlens/issue/ENG-99' } } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.createTicket({ project: 'ENG', summary: 'New issue', description: 'Body text.' });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].variables.key, 'ENG');
+    assert.deepEqual(calls[1].variables.input, { teamId: 'team-uuid-1', title: 'New issue', description: 'Body text.' });
+    assert.deepEqual(result, { key: 'ENG-99', id: 'issue-uuid-99', url: 'https://linear.app/ticketlens/issue/ENG-99' });
+  });
+
+  it('omits description from the mutation input when not given', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ teams: { nodes: [{ id: 'team-uuid-1' }] } });
+      return makeResponse({ issueCreate: { success: true, issue: { identifier: 'ENG-99', id: 'issue-uuid-99', url: '' } } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await adapter.createTicket({ project: 'ENG', summary: 'No body' });
+    assert.deepEqual(calls[1].variables.input, { teamId: 'team-uuid-1', title: 'No body' });
+  });
+
+  it('throws a clear error when the team key does not resolve — no mutation attempted', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => { calls.push(opts); return makeResponse({ teams: { nodes: [] } }); };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.createTicket({ project: 'BOGUS', summary: 'x' }), /team/i);
+    assert.equal(calls.length, 1, 'must never attempt issueCreate once team resolution fails');
+  });
+
+  it('throws when issueCreate reports success:false (same convention as transition/assignToSelf/updateFields)', async () => {
+    const fetcher = sequencedFetcher([
+      () => makeResponse({ teams: { nodes: [{ id: 'team-uuid-1' }] } }),
+      () => makeResponse({ issueCreate: { success: false } }),
+    ]);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.createTicket({ project: 'ENG', summary: 'x' }), /success:false/);
+  });
+});

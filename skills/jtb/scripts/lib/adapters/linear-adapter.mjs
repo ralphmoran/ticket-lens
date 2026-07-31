@@ -431,5 +431,39 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
 
       return { applied, errors };
     },
+
+    /**
+     * `project` is the team's short key (e.g. "ENG") — mutations need the
+     * UUID, never the key, so it's resolved via TeamFilter.key first
+     * (confirmed against Linear's own official generated GraphQL schema).
+     * No discovery call on an unresolvable key, same "surface a clear
+     * terminal error" choice already made for Jira's issuetype — there is
+     * no partial-creation concept here, unlike updateFields' best-effort
+     * shape. `type` has no Linear equivalent and is intentionally ignored.
+     */
+    async createTicket({ project, summary, description } = {}, opts = {}) {
+      const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
+      const teamData = await gql(
+        `query ($key: String!) { teams(filter: { key: { eq: $key } }, first: 1) { nodes { id } } }`,
+        { key: project },
+        { token, fetcher, signal },
+      );
+      const team = teamData.teams?.nodes?.[0];
+      if (!team) {
+        throw new Error(`Linear team not found for project "${project}".`);
+      }
+      const input = { teamId: team.id, title: summary };
+      if (description !== undefined) input.description = description;
+      const data = await gql(
+        `mutation ($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { identifier id url } } }`,
+        { input },
+        { token, fetcher, signal },
+      );
+      if (!data.issueCreate?.success) {
+        throw new Error(`Linear issueCreate reported success:false creating an issue in team "${project}".`);
+      }
+      const issue = data.issueCreate.issue;
+      return { key: issue.identifier, id: issue.id, url: issue.url ?? null };
+    },
   };
 }

@@ -411,7 +411,7 @@ Every note is scanned before saving — anything shaped like a real secret (API 
 
 **Removing a note:** `ticketlens note delete --id="..." [--ticket=KEY]` removes a note from your local vault. Local only — if it was already pushed to a team, teammates who pulled it keep their copy; deleting it there too is a manager action from the Console (Admin > Recall).
 
-**Any MCP-capable AI harness:** `ticketlens mcp` starts a stdio [MCP](https://modelcontextprotocol.io) server exposing `recall_add`, `recall_search`, `ticket_comment`, `ticket_transition`, `ticket_assign`, `ticket_duplicates`, `ticket_link`, and `ticket_update` as native tools — any MCP-compatible AI assistant, not just Claude Code, can call them directly instead of constructing a shell command. It's a thin adapter over the exact same code as the CLI commands above — same Pro gate, same secret scan/local vault/tracker writes, same team sync — nothing is reimplemented. Point your harness's MCP config at it: `{ "command": "ticketlens", "args": ["mcp"] }` — or run `ticketlens mcp install` in a project to write that entry into its `.mcp.json` for you (creates the file if it doesn't exist, merges in if it does — never touches any other entry already there; `--dry-run` to preview first).
+**Any MCP-capable AI harness:** `ticketlens mcp` starts a stdio [MCP](https://modelcontextprotocol.io) server exposing `recall_add`, `recall_search`, `ticket_comment`, `ticket_transition`, `ticket_assign`, `ticket_duplicates`, `ticket_link`, `ticket_update`, and `ticket_create` as native tools — any MCP-compatible AI assistant, not just Claude Code, can call them directly instead of constructing a shell command. It's a thin adapter over the exact same code as the CLI commands above — same Pro gate, same secret scan/local vault/tracker writes, same team sync — nothing is reimplemented. Point your harness's MCP config at it: `{ "command": "ticketlens", "args": ["mcp"] }` — or run `ticketlens mcp install` in a project to write that entry into its `.mcp.json` for you (creates the file if it doesn't exist, merges in if it does — never touches any other entry already there; `--dry-run` to preview first).
 
 `note add`'s save confirmation and `recall`'s search results are styled by default in a terminal; add `--plain` to either for bare, pipe-safe output. `recall` always shows each note's file ID (e.g. `[1784135399545-fe01c4.md]`) so you can open it directly (`cat ~/.ticketlens/recall/<PREFIX>/<id>`), or pass `--full` to print the full body content inline instead.
 
@@ -419,7 +419,7 @@ Every note is scanned before saving — anything shaped like a real secret (API 
 
 ---
 
-### Comment, Transition, Assign, Duplicates, Link & Update
+### Comment, Transition, Assign, Duplicates, Link, Update & Create
 
 ```bash
 ticketlens comment PROJ-123 --body="Looks good, merging."   # Post a comment to the tracker
@@ -431,9 +431,11 @@ ticketlens link PROJ-123 PROJ-456                             # List valid link 
 ticketlens link PROJ-123 PROJ-456 --type="Duplicate" --confirm  # Execute the link
 ticketlens update PROJ-123 --title="Fix login on mobile"       # Update title/description/labels/priority
 ticketlens update PROJ-123 --add-labels=urgent,backend --remove-labels=stale
+ticketlens create --project=PROJ --type="Task" --summary="Fix login on mobile"  # Create a new ticket
+ticketlens create --project=ENG --summary="New Linear issue" --profile=linear-team
 ```
 
-Write directly to the ticket in its real tracker — Jira, GitHub, or Linear — from your terminal or an AI session via `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update` MCP tools. Requires a Pro license.
+Write directly to the ticket in its real tracker — Jira, GitHub, or Linear — from your terminal or an AI session via `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create` MCP tools. Requires a Pro license.
 
 `ticketlens transition` with just a ticket key lists the tracker's current valid options without changing anything (Jira: real workflow transitions for that issue; GitHub: open/closed; Linear: team-scoped workflow states). Add both `--target` and `--confirm` to execute — `--confirm` is a deliberate two-step gate: a behavioral nudge and forensic trail, not a hard security guarantee. Every write, once resolved, is re-validated against the tracker's current state immediately before executing — never a blind write against a stale option.
 
@@ -445,7 +447,9 @@ Write directly to the ticket in its real tracker — Jira, GitHub, or Linear —
 
 `ticketlens update TICKET-KEY` updates a narrow, named field set — title, description, labels, priority. At least one field is required. Labels are always add/remove (`--add-labels=a,b` / `--remove-labels=c`), never a wholesale replace — an unnamed existing label is left alone, never silently dropped. No `--confirm` needed: unlike transition/link, update has no discovery step and only makes reversible metadata edits, the same risk tier as `assign`. GitHub has no priority field on issues, so `--priority` against a GitHub-tracked ticket is refused up front. Each tracker's label mechanics genuinely differ — Jira and Linear apply everything in one atomic call; GitHub's title/description and each label operation are independent, so a call can partially succeed (e.g. the title updates but one label name doesn't resolve) — the result always reports exactly which fields landed.
 
-All five write actions (comment/transition/assign/link/update) have a short local debounce (10s) against an accidental double-fire (a flaky retry, hitting enter twice), and every successful write is appended to a local, append-only audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — unlike Recall notes, ticket writes aren't naturally idempotent, so a timed-out attempt is surfaced to you instead of silently repeated. `duplicates` has neither, since nothing is written.
+`ticketlens create` creates a new ticket with a fixed minimal field set — no arbitrary custom fields. Unlike every other write command, there's no existing ticket to target, so `--profile` (or your default profile) picks the tracker instead of a ticket key. `--project` is the Jira project key or Linear team key — required for both, ignored on GitHub since its target repo is already fixed by the profile. `--type` is Jira's issue type (e.g. `"Task"`, `"Bug"`) — required for Jira, ignored elsewhere. No `--confirm` gate, same risk tier as `update`/`assign` — but this is the highest-blast-radius command in the whole family: a bad `--project`/`--type` fabricates a real, hard-to-walk-back item in a live tracker, so an invalid value surfaces the tracker's own error rather than a silent guess.
+
+All six write actions (comment/transition/assign/link/update/create) have a short local debounce (10s) against an accidental double-fire (a flaky retry, hitting enter twice), and every successful write is appended to a local, append-only audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — unlike Recall notes, ticket writes aren't naturally idempotent, so a timed-out attempt is surfaced to you instead of silently repeated. `duplicates` has neither, since nothing is written.
 
 ---
 
@@ -726,7 +730,7 @@ ticketlens mcp                                # Start the MCP stdio server (reca
 ticketlens mcp install                        # Register it into the current project's .mcp.json
 ticketlens mcp install --dry-run              # Preview the registration without writing
 
-# ── Comment, Transition, Assign, Duplicates, Link & Update ──────────────────────
+# ── Comment, Transition, Assign, Duplicates, Link, Update & Create ──────────────
 ticketlens comment CNV1-2 --body="Looks good, merging."     # Post a comment to the tracker [Pro]
 ticketlens transition CNV1-2                                # List valid transitions (read-only) [Pro]
 ticketlens transition CNV1-2 --target="Done" --confirm      # Execute the transition [Pro]
@@ -737,6 +741,8 @@ ticketlens link CNV1-2 CNV1-3                               # List valid link ty
 ticketlens link CNV1-2 CNV1-3 --type="Duplicate" --confirm  # Execute the link [Pro]
 ticketlens update CNV1-2 --title="New title"                # Update title/description/labels/priority [Pro]
 ticketlens update CNV1-2 --add-labels=urgent --remove-labels=stale  # Add/remove labels [Pro]
+ticketlens create --project=CNV1 --type="Task" --summary="New ticket"  # Create a new ticket [Pro]
+ticketlens create --project=ENG --summary="New issue" --profile=linear-team  # Create on a different profile [Pro]
 
 # ── Stats ──────────────────────────────────────────────────────────────────────
 ticketlens stats                              # Response-time metrics from local history
@@ -825,6 +831,7 @@ ticketlens assign CNV1-2 --to=me         # Assign the ticket to yourself
 ticketlens duplicates CNV1-2             # Find likely duplicates (read-only)
 ticketlens link CNV1-2 CNV1-3 --type="Duplicate" --confirm  # Link two tickets
 ticketlens update CNV1-2 --title="..."   # Update title/description/labels/priority
+ticketlens create --project=CNV1 --type="Task" --summary="..."  # Create a new ticket
 ticketlens activate YOUR-LICENSE-KEY     # Activate Pro license
 ```
 

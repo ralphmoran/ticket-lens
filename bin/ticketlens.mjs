@@ -28,7 +28,7 @@ import {
   printCollisionsHelp, printStatsHelp,
   printCloudKeysHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
-  printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp,
+  printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { runStats } from '../skills/jtb/scripts/lib/run-stats.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
@@ -810,6 +810,18 @@ switch (command) {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printUpdateHelp(); break; }
     const { runTicketUpdate } = await import('../skills/jtb/scripts/lib/ticket-command.mjs');
     runTicketUpdate(cmdArgs).then(({ ok }) => {
+      if (!ok) process.exitCode = 1;
+    }).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+  }
+
+  case 'create': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printCreateHelp(); break; }
+    const { runTicketCreate } = await import('../skills/jtb/scripts/lib/ticket-command.mjs');
+    runTicketCreate(cmdArgs).then(({ ok }) => {
       if (!ok) process.exitCode = 1;
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);

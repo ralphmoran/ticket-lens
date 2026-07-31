@@ -23,7 +23,7 @@ import readline from 'node:readline';
 import { DEFAULT_CONFIG_DIR, getVersion } from './config.mjs';
 import { runNoteAdd } from './note-command.mjs';
 import { runRecall } from './recall-command.mjs';
-import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate } from './ticket-command.mjs';
+import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate, runTicketCreate } from './ticket-command.mjs';
 
 const PROTOCOL_VERSION = '2025-11-25';
 
@@ -130,6 +130,20 @@ const TOOLS = [
         priority: { type: 'string', description: 'New priority name, e.g. "High". Not supported on GitHub.' },
       },
       required: ['ticket'],
+    },
+  },
+  {
+    name: 'ticket_create',
+    description: 'Create a new ticket in a tracker (Jira/GitHub/Linear) with a fixed minimal field set — no arbitrary custom fields. Architecturally unlike every other ticket-write tool: there is no existing ticket to target, so the target tracker/project is picked by the connection profile rather than a ticket key. `project` is the Jira project key or Linear team key — required for both, ignored on GitHub (its repo is fixed by the profile). `type` is the Jira issue type — required for Jira only, ignored elsewhere. Highest blast radius of the ticket-write family: a bad project/type fabricates a real, hard-to-walk-back item in a live tracker. Requires a TicketLens Pro license.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Jira project key or Linear team key. Required for Jira/Linear; ignored on GitHub.' },
+        type: { type: 'string', description: 'Jira issue type, e.g. "Task" or "Bug". Required for Jira only; ignored on GitHub/Linear.' },
+        summary: { type: 'string', description: 'Ticket title/summary.' },
+        description: { type: 'string', description: 'Ticket description. Omit for none.' },
+      },
+      required: ['summary'],
     },
   },
 ];
@@ -324,6 +338,31 @@ async function callTicketUpdate(args, { configDir, runTicketUpdateFn }) {
   return ok ? { content } : { isError: true, content };
 }
 
+/**
+ * `project`/`type`/`description` each become one opaque cmdArgs element,
+ * same reasoning as buildNoteAddArgs/callTicketComment above. Unlike every
+ * other ticket-write tool, there is no `ticket` argument — creation has no
+ * existing ticket to target.
+ */
+function buildTicketCreateArgs(args) {
+  const cmdArgs = [];
+  if (args.project !== undefined) cmdArgs.push(`--project=${args.project}`);
+  if (args.type !== undefined) cmdArgs.push(`--type=${args.type}`);
+  cmdArgs.push(`--summary=${args.summary}`);
+  if (args.description !== undefined) cmdArgs.push(`--description=${args.description}`);
+  return cmdArgs;
+}
+
+async function callTicketCreate(args, { configDir, runTicketCreateFn }) {
+  if (!args.summary) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: summary' }] };
+  }
+  const capture = capturingStream();
+  const { ok } = await runTicketCreateFn(buildTicketCreateArgs(args), { configDir, stream: capture });
+  const content = [{ type: 'text', text: capture.text }];
+  return ok ? { content } : { isError: true, content };
+}
+
 async function handleToolsCall(params, deps) {
   const { name, arguments: args = {} } = params ?? {};
   if (name === 'recall_add') return callRecallAdd(args, deps);
@@ -334,10 +373,11 @@ async function handleToolsCall(params, deps) {
   if (name === 'ticket_duplicates') return callTicketDuplicates(args, deps);
   if (name === 'ticket_link') return callTicketLink(args, deps);
   if (name === 'ticket_update') return callTicketUpdate(args, deps);
+  if (name === 'ticket_create') return callTicketCreate(args, deps);
   return { isError: true, content: [{ type: 'text', text: `Unknown tool: ${name}` }] };
 }
 
-async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn }) {
+async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn }) {
   let msg;
   try {
     msg = JSON.parse(raw);
@@ -367,7 +407,7 @@ async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTic
 
   if (method === 'tools/call') {
     try {
-      const result = await handleToolsCall(params, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn });
+      const result = await handleToolsCall(params, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
       return jsonRpcResult(id, result);
     } catch (err) {
       return jsonRpcError(id ?? null, -32603, `Internal error: ${err.message}`);
@@ -398,6 +438,7 @@ export function runMcpServer({
   runTicketLinkListFn = runTicketLinkList,
   runTicketLinkFn = runTicketLink,
   runTicketUpdateFn = runTicketUpdate,
+  runTicketCreateFn = runTicketCreate,
 } = {}) {
   // A client can disconnect mid-write (EPIPE) at any time on a long-lived
   // process — an unhandled 'error' event on either stream would otherwise
@@ -417,7 +458,7 @@ export function runMcpServer({
     // never resolving (a dropped rejection isn't a resolution) — the
     // server would hang on shutdown instead of exiting.
     queue = queue.then(async () => {
-      const response = await handleMessage(line, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn });
+      const response = await handleMessage(line, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
       if (response) stdout.write(response);
     }).catch(() => {});
   });

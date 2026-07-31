@@ -7,7 +7,7 @@ import {
   printProfilesHelp, printScheduleHelp,
   printInitHelp, printSwitchHelp, printConfigHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
-  printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp,
+  printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
 } from '../lib/help.mjs';
 
 function captureHelp(fn) {
@@ -375,7 +375,7 @@ describe('printHelp — Recall commands', () => {
 });
 
 describe('printMcpHelp — ticket tools', () => {
-  it('documents ticket_comment, ticket_transition, ticket_assign, ticket_duplicates, ticket_link, and ticket_update alongside recall_add/recall_search', () => {
+  it('documents ticket_comment, ticket_transition, ticket_assign, ticket_duplicates, ticket_link, ticket_update, and ticket_create alongside recall_add/recall_search', () => {
     const out = captureHelp(printMcpHelp);
     assert.match(out, /recall_add/);
     assert.match(out, /recall_search/);
@@ -385,6 +385,7 @@ describe('printMcpHelp — ticket tools', () => {
     assert.match(out, /ticket_duplicates/);
     assert.match(out, /ticket_link/);
     assert.match(out, /ticket_update/);
+    assert.match(out, /ticket_create/);
   });
 
   it('flags ticket_transition as destructive when target+confirm are given', () => {
@@ -448,6 +449,28 @@ describe('printUpdateHelp', () => {
     const out = captureHelp(printUpdateHelp);
     assert.match(out, /GitHub/);
     assert.match(out, /priority/i);
+  });
+});
+
+describe('printCreateHelp', () => {
+  it('documents the --project/--type/--summary/--description flags and the Pro tier gate', () => {
+    const out = captureHelp(printCreateHelp);
+    assert.match(out, /create/);
+    assert.match(out, /--project/);
+    assert.match(out, /--type/);
+    assert.match(out, /--summary/);
+    assert.match(out, /--description/);
+    assert.match(out, /\[Pro\]/);
+  });
+
+  it('notes --project is required for Jira/Linear but not GitHub', () => {
+    const out = captureHelp(printCreateHelp);
+    assert.match(out, /GitHub/);
+  });
+
+  it('notes --type is Jira-only', () => {
+    const out = captureHelp(printCreateHelp);
+    assert.match(out, /Jira/);
   });
 });
 

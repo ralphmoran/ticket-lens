@@ -636,6 +636,42 @@ export async function updateIssue(ticketKey, { summary, description, priority, a
   }
 }
 
+/**
+ * Creates a new issue. `project`/`type` are passed straight through as
+ * Jira's own {key}/{name} references — issue types are project-configurable,
+ * so validity is never pre-checked here; an invalid one surfaces Jira's own
+ * 400 with details, same design choice already made for updateIssue's
+ * priority field. No separate discovery call, no client-side field list.
+ */
+export async function createIssue({ project, type, summary, description } = {}, opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const url = `${baseUrl}/rest/api/${apiVersion}/issue`;
+
+  const fields = { project: { key: project }, issuetype: { name: type }, summary };
+  if (description !== undefined) fields.description = apiVersion === 3 ? textToAdf(description) : description;
+
+  const fetchOpts = {
+    method: 'POST',
+    headers: { ...buildAuthHeader(env), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields }),
+  };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
+  if (!response.ok) {
+    let details;
+    try { details = await response.json(); } catch { /* body not JSON — fall through with no details */ }
+    const err = new Error(`Jira API error ${response.status} creating an issue in ${project}`);
+    err.status = response.status;
+    err.details = details;
+    throw err;
+  }
+  const raw = await response.json();
+  return { key: raw.key, id: raw.id, url: raw.self ?? null };
+}
+
 export async function fetchTicket(ticketKey, opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), depth = 1, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false, allowPrivateIp = false, _visited = new Set(), _currentDepth = 0 } = opts;
   validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);

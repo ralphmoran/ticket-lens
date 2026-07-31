@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue } from '../lib/jira-client.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -1123,6 +1123,54 @@ describe('updateIssue', () => {
     const badEnv = { ...ENV, JIRA_BASE_URL: 'https://169.254.169.254' };
     await assert.rejects(
       () => updateIssue('PROJ-1', { summary: 'x' }, { env: badEnv, fetcher: async () => ({ ok: true, status: 204 }) }),
+      /blocked/,
+    );
+  });
+});
+
+describe('createIssue', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+
+  it('POSTs fields.project/issuetype/summary, no description key when omitted', async () => {
+    let captured;
+    const fetcher = async (url, opts) => {
+      captured = { url, method: opts.method, body: JSON.parse(opts.body) };
+      return { ok: true, status: 201, json: async () => ({ id: '10001', key: 'PROD-789', self: 'https://example.atlassian.net/rest/api/3/issue/10001' }) };
+    };
+    const result = await createIssue({ project: 'PROD', type: 'Task', summary: 'New issue' }, { env: ENV, fetcher, apiVersion: 3 });
+    assert.equal(captured.method, 'POST');
+    assert.deepEqual(captured.body, { fields: { project: { key: 'PROD' }, issuetype: { name: 'Task' }, summary: 'New issue' } });
+    assert.match(captured.url, /\/issue$/);
+    assert.deepEqual(result, { key: 'PROD-789', id: '10001', url: 'https://example.atlassian.net/rest/api/3/issue/10001' });
+  });
+
+  it('sends description as a plain string on v2 (Server/DC)', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, status: 201, json: async () => ({ id: '1', key: 'PROD-1', self: '' }) }; };
+    await createIssue({ project: 'PROD', type: 'Task', summary: 'S', description: 'Plain text.' }, { env: ENV, fetcher, apiVersion: 2 });
+    assert.equal(captured.fields.description, 'Plain text.');
+  });
+
+  it('wraps description in ADF on v3 (Cloud) — same conversion updateIssue/postComment already use', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, status: 201, json: async () => ({ id: '1', key: 'PROD-1', self: '' }) }; };
+    await createIssue({ project: 'PROD', type: 'Task', summary: 'S', description: 'Cloud text.' }, { env: ENV, fetcher, apiVersion: 3 });
+    assert.equal(captured.fields.description.type, 'doc');
+    assert.equal(captured.fields.description.content[0].content[0].text, 'Cloud text.');
+  });
+
+  it('surfaces a non-OK response with .status and .details — issuetype validity is never pre-checked client-side', async () => {
+    const fetcher = async () => ({ ok: false, status: 400, json: async () => ({ errors: { issuetype: "valid issue type is required" } }) });
+    await assert.rejects(
+      () => createIssue({ project: 'PROD', type: 'NotARealType', summary: 'S' }, { env: ENV, fetcher }),
+      (err) => err.status === 400 && err.details.errors.issuetype.includes('issue type'),
+    );
+  });
+
+  it('goes through validateBaseUrl/guardedFetch like every other write (SSRF guard not bypassed)', async () => {
+    const badEnv = { ...ENV, JIRA_BASE_URL: 'https://169.254.169.254' };
+    await assert.rejects(
+      () => createIssue({ project: 'PROD', type: 'Task', summary: 'S' }, { env: badEnv, fetcher: async () => ({ ok: true, status: 201, json: async () => ({}) }) }),
       /blocked/,
     );
   });

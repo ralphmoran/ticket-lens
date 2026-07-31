@@ -351,5 +351,24 @@ export function createGitHubAdapter(conn, { fetcher = globalThis.fetch } = {}) {
 
       return { applied, errors };
     },
+
+    /**
+     * `project`/`type` are ignored — GitHub has no such concepts here: the
+     * target repo is fixed by the profile's baseUrl, and issues have no
+     * type field in this MVP scope.
+     */
+    async createTicket({ summary, description } = {}, opts = {}) {
+      const body = { title: summary };
+      if (description !== undefined) body.body = description;
+      const res = await fetcher(`${GITHUB_API}/repos/${owner}/${repo}/issues`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
+      });
+      if (!res.ok) await throwGitHubWriteError(res, 'creating an issue in', `${owner}/${repo}`);
+      const raw = await res.json();
+      return { key: `${keyPrefix}-${raw.number}`, id: String(raw.id), url: raw.html_url ?? null };
+    },
   };
 }

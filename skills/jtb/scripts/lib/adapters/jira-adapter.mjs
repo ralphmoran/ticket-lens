@@ -1,4 +1,4 @@
-import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue } from '../jira-client.mjs';
+import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue } from '../jira-client.mjs';
 import { buildJiraEnv } from '../config.mjs';
 
 /**
@@ -131,5 +131,13 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       if (removeLabels?.length) applied.removeLabels = removeLabels;
       return { applied, errors: {} };
     },
+
+    /**
+     * project/type are passed straight through — never pre-validated
+     * client-side, same design choice already made for updateFields'
+     * priority field. An invalid issuetype surfaces Jira's own 400.
+     */
+    createTicket: ({ project, type, summary, description } = {}, opts = {}) =>
+      createIssue({ project, type, summary, description }, { ...base, ...opts }),
   };
 }

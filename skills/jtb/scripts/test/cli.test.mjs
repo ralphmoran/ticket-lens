@@ -276,4 +276,15 @@ describe('parseCommand', () => {
     const stillFetch = parseCommand(['PROJ-999']);
     assert.equal(stillFetch.command, 'fetch');
   });
+
+  it('routes "create" to create command', () => {
+    const result = parseCommand(['create', '--project=PROJ', '--type=Task', '--summary=New']);
+    assert.equal(result.command, 'create');
+    assert.deepEqual(result.args, ['--project=PROJ', '--type=Task', '--summary=New']);
+  });
+
+  it('lock — adding "create" does not change the ticket-key fallback for anything else', () => {
+    const stillFetch = parseCommand(['PROJ-999']);
+    assert.equal(stillFetch.command, 'fetch');
+  });
 });

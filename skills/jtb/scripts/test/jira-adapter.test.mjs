@@ -341,3 +341,38 @@ describe('createJiraAdapter — updateFields', () => {
     await assert.doesNotReject(() => adapter.updateFields('TEST-1', { title: 'x' }, { lookup: privateLookup }));
   });
 });
+
+describe('createJiraAdapter — createTicket', () => {
+  it('POSTs project/type/summary and returns the new key/id/url', async () => {
+    let captured;
+    const fetcher = async (url, opts) => {
+      captured = { url, method: opts.method, body: JSON.parse(opts.body) };
+      return { ok: true, status: 201, json: async () => ({ id: '10001', key: 'TEST-99', self: 'https://jira.example.com/rest/api/2/issue/10001' }) };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.createTicket({ project: 'TEST', type: 'Task', summary: 'New one' });
+    assert.equal(captured.method, 'POST');
+    assert.deepEqual(captured.body, { fields: { project: { key: 'TEST' }, issuetype: { name: 'Task' }, summary: 'New one' } });
+    assert.match(captured.url, /\/issue$/);
+    assert.deepEqual(result, { key: 'TEST-99', id: '10001', url: 'https://jira.example.com/rest/api/2/issue/10001' });
+  });
+
+  it('propagates a validation failure — issuetype is never pre-checked client-side', async () => {
+    const fetcher = async () => ({ ok: false, status: 400, json: async () => ({ errors: { issuetype: 'invalid' } }) });
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    await assert.rejects(() => adapter.createTicket({ project: 'TEST', type: 'Bogus', summary: 'x' }), (err) => err.status === 400);
+  });
+
+  it('converts description to ADF on Cloud (apiVersion 3)', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, status: 201, json: async () => ({ id: '1', key: 'TEST-1', self: '' }) }; };
+    const adapter = createJiraAdapter({ ...CONN, auth: 'cloud' }, { fetcher });
+    await adapter.createTicket({ project: 'TEST', type: 'Task', summary: 'x', description: 'Cloud desc.' });
+    assert.equal(captured.fields.description.type, 'doc');
+  });
+
+  it('threads conn.allowPrivateIp into createTicket', async () => {
+    const adapter = createJiraAdapter({ ...CONN, allowPrivateIp: true }, { fetcher: async () => ({ ok: true, status: 201, json: async () => ({ id: '1', key: 'TEST-1', self: '' }) }) });
+    await assert.doesNotReject(() => adapter.createTicket({ project: 'TEST', type: 'Task', summary: 'x' }, { lookup: privateLookup }));
+  });
+});

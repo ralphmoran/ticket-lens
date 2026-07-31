@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate, classifyWriteFailure } from '../lib/ticket-command.mjs';
+import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate, runTicketCreate, classifyWriteFailure } from '../lib/ticket-command.mjs';
 
 function makeStream() {
   const lines = [];
@@ -19,6 +19,7 @@ function fakeAdapter(overrides = {}) {
     getLinkTypes: async () => ['blocks', 'duplicate', 'related'],
     linkTo: async () => ({ executed: true }),
     updateFields: async () => ({ applied: { title: true }, errors: {} }),
+    createTicket: async () => ({ key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }),
     ...overrides,
   };
 }
@@ -839,5 +840,260 @@ describe('runTicketUpdate — write failure', () => {
     assert.equal(recorded, false);
     assert.equal(logged, false);
     assert.match(deps.stream.lines.join(''), /Network error or timeout/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runTicketCreate
+// ---------------------------------------------------------------------------
+describe('runTicketCreate — license gate', () => {
+  test('unlicensed shows upgrade prompt, never calls createTicket', async () => {
+    let called = false;
+    const deps = baseDeps({
+      isLicensedFn: () => false,
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => { called = true; return { key: 'X-1' }; } }),
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(called, false);
+  });
+});
+
+describe('runTicketCreate — usage validation', () => {
+  test('missing --summary shows usage', async () => {
+    const deps = baseDeps();
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Usage/);
+  });
+
+  test('missing --project on Jira is refused before calling createTicket', async () => {
+    let called = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => { called = true; return { key: 'X-1' }; } }),
+    });
+    const result = await runTicketCreate(['--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(called, false);
+    assert.match(deps.stream.lines.join(''), /--project/);
+  });
+
+  test('missing --project on Linear is refused before calling createTicket', async () => {
+    let called = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ type: 'linear', createTicket: async () => { called = true; return { key: 'X-1' }; } }),
+    });
+    const result = await runTicketCreate(['--summary=New'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(called, false);
+    assert.match(deps.stream.lines.join(''), /--project/);
+  });
+
+  test('missing --project on GitHub is fine — repo is fixed by the profile', async () => {
+    let called = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ type: 'github', createTicket: async () => { called = true; return { key: 'GH-1' }; } }),
+    });
+    const result = await runTicketCreate(['--summary=New'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(called, true);
+  });
+
+  test('missing --type on Jira is refused before calling createTicket', async () => {
+    let called = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => { called = true; return { key: 'X-1' }; } }),
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--summary=New'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(called, false);
+    assert.match(deps.stream.lines.join(''), /--type/);
+  });
+
+  test('missing --type on Linear/GitHub is fine — no type concept there', async () => {
+    let called = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ type: 'linear', createTicket: async () => { called = true; return { key: 'X-1' }; } }),
+    });
+    const result = await runTicketCreate(['--project=ENG', '--summary=New'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(called, true);
+  });
+
+  test('--type given on GitHub is accepted but a non-fatal note explains it was ignored', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ type: 'github', createTicket: async () => ({ key: 'GH-1' }) }),
+    });
+    const result = await runTicketCreate(['--type=Bug', '--summary=New'], deps);
+    assert.equal(result.ok, true);
+    assert.match(deps.stream.lines.join(''), /--type is ignored/i);
+  });
+
+  test('--type given on Linear is accepted but a non-fatal note explains it was ignored', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ type: 'linear', createTicket: async () => ({ key: 'ENG-1' }) }),
+    });
+    const result = await runTicketCreate(['--project=ENG', '--type=Bug', '--summary=New'], deps);
+    assert.equal(result.ok, true);
+    assert.match(deps.stream.lines.join(''), /--type is ignored/i);
+  });
+
+  test('--type given on Jira prints no "ignored" note — it is actually used', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => ({ key: 'PROJ-1' }) }),
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, true);
+    assert.doesNotMatch(deps.stream.lines.join(''), /--type is ignored/i);
+  });
+});
+
+describe('runTicketCreate — connection resolution', () => {
+  test('no configured connection reports a create-specific error (no ticket key to reference) and does not call the adapter', async () => {
+    let adapterResolved = false;
+    const deps = baseDeps({
+      resolveConnectionFn: () => ({ baseUrl: null }),
+      resolveAdapterFn: () => { adapterResolved = true; return fakeAdapter(); },
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(adapterResolved, false);
+    assert.match(deps.stream.lines.join(''), /No connection configured\. Run/);
+    assert.doesNotMatch(deps.stream.lines.join(''), /for undefined/);
+  });
+});
+
+describe('runTicketCreate — cooldown', () => {
+  test('active cooldown skips execution', async () => {
+    let called = false;
+    const deps = baseDeps({
+      checkCooldownFn: () => ({ active: true, remainingMs: 3000 }),
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => { called = true; return { key: 'X-1' }; } }),
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(called, false);
+  });
+
+  test('cooldown key is derived from project/type/summary, not a ticket key — guards against a flaky retry double-creating', async () => {
+    let cooldownKey;
+    const deps = baseDeps({
+      checkCooldownFn: (key) => { cooldownKey = key; return { active: false, remainingMs: 0 }; },
+    });
+    await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New issue'], deps);
+    assert.match(cooldownKey, /PROJ/);
+    assert.match(cooldownKey, /Task/);
+    assert.match(cooldownKey, /New issue/);
+  });
+
+  test('two field tuples that would collide under naive colon-joining produce different cooldown keys', async () => {
+    const keys = [];
+    const deps = baseDeps({
+      checkCooldownFn: (key) => { keys.push(key); return { active: false, remainingMs: 0 }; },
+    });
+    await runTicketCreate(['--project=A:B', '--type=C', '--summary=D'], deps);
+    await runTicketCreate(['--project=A', '--type=B:C', '--summary=D'], deps);
+    assert.notEqual(keys[0], keys[1], 'project="A:B",type="C" must not collide with project="A",type="B:C"');
+  });
+});
+
+describe('runTicketCreate — happy path', () => {
+  test('parses project/type/summary/description and passes them through to createTicket', async () => {
+    let captured;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async (fields) => { captured = fields; return { key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }; },
+      }),
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New title', '--description=Body text'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(result.key, 'PROJ-99');
+    assert.deepEqual(captured, { project: 'PROJ', type: 'Task', summary: 'New title', description: 'Body text' });
+  });
+
+  test('records cooldown and logs the audit entry keyed on the newly created ticket, never the full description text', async () => {
+    let recorded, logged;
+    const deps = baseDeps({
+      recordActionFn: (key, action) => { recorded = { key, action }; },
+      logActionFn: (entry) => { logged = entry; },
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async () => ({ key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }),
+      }),
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New title', '--description=a very long secret-ish body'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(recorded.action, 'create');
+    assert.equal(logged.ticketKey, 'PROJ-99');
+    assert.equal(logged.action, 'create');
+    assert.equal(logged.tracker, 'jira');
+    assert.deepEqual(logged.detail, { project: 'PROJ', type: 'Task' });
+    assert.ok(!JSON.stringify(logged).includes('secret-ish'), 'full description text must never reach the audit log');
+  });
+
+  test('reports success with the new key in the message', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => ({ key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }) }),
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, true);
+    assert.match(deps.stream.lines.join(''), /PROJ-99/);
+    assert.match(deps.stream.lines.join(''), /https:\/\/example\/PROJ-99/);
+  });
+});
+
+describe('runTicketCreate — write failure', () => {
+  test('a thrown error is classified and reported with a create-specific message, cooldown/log never recorded', async () => {
+    let recorded = false, logged = false;
+    const deps = baseDeps({
+      recordActionFn: () => { recorded = true; },
+      logActionFn: () => { logged = true; },
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => { throw new Error('network down'); } }),
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(recorded, false);
+    assert.equal(logged, false);
+    assert.match(deps.stream.lines.join(''), /Network error or timeout/);
+    assert.doesNotMatch(deps.stream.lines.join(''), /undefined/);
+  });
+});
+
+describe('runTicketCreate — post-success bookkeeping failure', () => {
+  test('a real, already-created ticket is still reported ok:true with its key when recordActionFn throws — never mistaken for a failed write', async () => {
+    let createCalls = 0;
+    const deps = baseDeps({
+      recordActionFn: () => { throw new Error('disk full'); },
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => { createCalls++; return { key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }; } }),
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, true, 'a real external write must never be reported as failed');
+    assert.equal(result.key, 'PROJ-99');
+    assert.equal(createCalls, 1, 'must not retry createTicket after a bookkeeping failure');
+    assert.match(deps.stream.lines.join(''), /PROJ-99/, 'the real ticket key must still be surfaced to the caller');
+    assert.match(deps.stream.lines.join(''), /Warning/i);
+    assert.doesNotMatch(deps.stream.lines.join(''), /Network error or timeout/, 'must never be misreported as a network/timeout failure');
+  });
+
+  test('a real, already-created ticket is still reported ok:true with its key when logActionFn throws (e.g. TICKET_KEY_PATTERN rejects an odd tracker-returned key)', async () => {
+    const deps = baseDeps({
+      logActionFn: () => { throw new Error('Refusing to log malformed ticket key: "G-42"'); },
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => ({ key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }) }),
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(result.key, 'PROJ-99');
+    assert.match(deps.stream.lines.join(''), /PROJ-99/);
+    assert.match(deps.stream.lines.join(''), /Warning/i);
+  });
+
+  test('recordActionFn still runs (and its cooldown effect still applies) even when logActionFn throws afterward', async () => {
+    let recordedKey;
+    const deps = baseDeps({
+      recordActionFn: (key) => { recordedKey = key; },
+      logActionFn: () => { throw new Error('boom'); },
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => ({ key: 'PROJ-99' }) }),
+    });
+    await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    assert.match(recordedKey, /PROJ/);
   });
 });

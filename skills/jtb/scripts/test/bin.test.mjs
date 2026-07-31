@@ -212,6 +212,8 @@ describe('bin/ticketlens.mjs', () => {
     ['link', '-h'],
     ['update', '--help'],
     ['update', '-h'],
+    ['create', '--help'],
+    ['create', '-h'],
   ]) {
     it(`"ticketlens ${cmd} ${flag}" exits 0 and prints help`, () => {
       const result = spawnSync('node', [binPath, cmd, flag], {
@@ -384,6 +386,21 @@ describe('bin/ticketlens.mjs', () => {
     const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-update-gate-'));
     try {
       const result = spawnSync('node', [binPath, 'update', 'PROD-1', '--title=New title'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        env: { ...process.env, HOME: freshHome, CI: 'true' },
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /pro/i);
+    } finally {
+      rmSync(freshHome, { recursive: true, force: true });
+    }
+  });
+
+  it('"ticketlens create" with no Pro license shows an upgrade prompt and exits non-zero', () => {
+    const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-create-gate-'));
+    try {
+      const result = spawnSync('node', [binPath, 'create', '--project=PROD', '--type=Task', '--summary=New'], {
         encoding: 'utf8',
         timeout: 5000,
         env: { ...process.env, HOME: freshHome, CI: 'true' },
