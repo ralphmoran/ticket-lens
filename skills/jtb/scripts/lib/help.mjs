@@ -53,7 +53,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} recall ${s.dim('<query|TICKET-KEY>')}   Search your saved Recall notes  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} recall sync                 Retry any notes stuck in the local queue  ${s.dim('[Team+]')}`,
     `    ${s.brand('ticketlens')} recall settings             Show effective retry-queue settings, fetched live  ${s.dim('[Team+]')}`,
-    `    ${s.brand('ticketlens')} mcp                         Start the MCP stdio server for Recall  ${s.dim('[Pro]')}`,
+    `    ${s.brand('ticketlens')} mcp                         Start the MCP stdio server (Recall + ticket writes)  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} comment ${s.dim('<TICKET-KEY> --body=...')}  Post a comment to the tracker  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} transition ${s.dim('<TICKET-KEY> [--target=... --confirm]')}  Move ticket status  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} assign ${s.dim('<TICKET-KEY> --to=me')}      Assign a ticket to yourself  ${s.dim('[Pro]')}`,
@@ -181,6 +181,7 @@ export function printFetchHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--cloud')}            Route AI request through TicketLens API ${s.dim('[Pro]')}`,
     `    ${s.brand('--provider')}=${s.dim('NAME')}    Force AI provider ${s.dim('(anthropic|openai|groq)')}`,
     `    ${s.brand('--template')}=${s.dim('SLUG')}    Apply a brief template ${s.dim('(full|quick|code-review, or custom [Team])')}`,
+    `    ${s.brand('--budget')}=${s.dim('N')}         Trim brief to fit a token budget  ${s.dim('[Pro]')}`,
     `    ${s.brand('-h')}, ${s.brand('--help')}         Show this help`,
     '',
     `  ${s.bold('EXAMPLES')}`,
@@ -191,6 +192,32 @@ export function printFetchHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('$')} ticketlens PROJ-123 --handoff`,
     `    ${s.dim('$')} ticketlens PROJ-123 --handoff --cloud`,
     `    ${s.dim('$')} ticketlens PROJ-123 --summarize --provider=groq`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printHistoryHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('history')} ${s.dim('TICKET-KEY')}  ${s.dim('[Pro]')}`,
+    '',
+    `  Show this ticket's urgency timeline from your local triage history — ${s.dim('[Pro]')}`,
+    `  every prior triage scan that surfaced it, with the urgency level and reason`,
+    `  computed at that point in time. Read-only, entirely local — no network call.`,
+    '',
+    `  ${s.bold('ARGUMENTS')}`,
+    '',
+    `    ${s.brand('TICKET-KEY')}   The ticket to show history for ${s.dim('(required)')}`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens history PROJ-123`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

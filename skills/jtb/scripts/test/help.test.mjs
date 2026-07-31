@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  printHelp, printTriageHelp,
+  printHelp, printTriageHelp, printFetchHelp, printHistoryHelp,
   printLoginHelp, printLogoutHelp, printSyncHelp,
   printActivateHelp, printLicenseHelp, printDeleteHelp,
   printProfilesHelp, printScheduleHelp,
@@ -59,6 +59,42 @@ describe('printHelp — main USAGE', () => {
       scheduleIdx !== -1 && scheduleIdx < fetchOptionsIdx,
       `"ticketlens schedule" must appear in USAGE (before FETCH OPTIONS), found at ${scheduleIdx} vs FETCH OPTIONS at ${fetchOptionsIdx}`
     );
+  });
+
+  it('the mcp summary line reflects that it now serves the whole ticket-write family, not just Recall', () => {
+    const out = captureHelp(printHelp);
+    const mcpLine = out.split('\n').find(l => /\bmcp\b/.test(l) && l.includes('Start the MCP'));
+    assert.ok(mcpLine, 'expected a top-level line describing the mcp command');
+    assert.doesNotMatch(mcpLine, /for Recall/, 'stale — mcp now also serves ticket_comment/transition/assign/duplicates/link/update/create, not just Recall');
+  });
+});
+
+describe('printFetchHelp', () => {
+  it('documents every flag also listed in the general help\'s FETCH OPTIONS section, including --budget', () => {
+    const out = captureHelp(printFetchHelp);
+    assert.match(out, /--profile/);
+    assert.match(out, /--depth/);
+    assert.match(out, /--plain/);
+    assert.match(out, /--styled/);
+    assert.match(out, /--no-attachments/);
+    assert.match(out, /--no-cache/);
+    assert.match(out, /--check/);
+    assert.match(out, /--compliance/);
+    assert.match(out, /--summarize/);
+    assert.match(out, /--handoff/);
+    assert.match(out, /--cloud/);
+    assert.match(out, /--provider/);
+    assert.match(out, /--template/);
+    assert.match(out, /--budget/);
+  });
+});
+
+describe('printHistoryHelp', () => {
+  it('documents the required ticket key and the Pro tier gate', () => {
+    const out = captureHelp(printHistoryHelp);
+    assert.match(out, /history/);
+    assert.match(out, /TICKET-KEY/);
+    assert.match(out, /\[Pro\]/);
   });
 });
 

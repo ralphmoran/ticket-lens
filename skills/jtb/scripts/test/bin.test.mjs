@@ -214,6 +214,8 @@ describe('bin/ticketlens.mjs', () => {
     ['update', '-h'],
     ['create', '--help'],
     ['create', '-h'],
+    ['history', '--help'],
+    ['history', '-h'],
   ]) {
     it(`"ticketlens ${cmd} ${flag}" exits 0 and prints help`, () => {
       const result = spawnSync('node', [binPath, cmd, flag], {
@@ -392,6 +394,23 @@ describe('bin/ticketlens.mjs', () => {
       });
       assert.notEqual(result.status, 0);
       assert.match(result.stderr, /pro/i);
+    } finally {
+      rmSync(freshHome, { recursive: true, force: true });
+    }
+  });
+
+  it('"ticketlens history --help" shows real help and exits 0 even without a Pro license — --help must win over the license gate, matching every other Pro-gated command', () => {
+    const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-history-help-gate-'));
+    try {
+      const result = spawnSync('node', [binPath, 'history', '--help'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        env: { ...process.env, HOME: freshHome, CI: 'true' },
+      });
+      assert.equal(result.status, 0, `Expected exit 0 for --help regardless of license, got ${result.status}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+      const combined = result.stdout + result.stderr;
+      assert.match(combined, /history/i);
+      assert.doesNotMatch(combined, /requires Pro/i, '--help must never fall through to the upgrade prompt');
     } finally {
       rmSync(freshHome, { recursive: true, force: true });
     }

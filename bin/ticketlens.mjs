@@ -18,7 +18,7 @@ import { activateLicense, checkLicense, revalidateIfStale, isLicensed, showUpgra
 import { deleteProfile, loadProfiles, saveCredentialKey } from '../skills/jtb/scripts/lib/profile-resolver.mjs';
 import { run as runCache } from '../skills/jtb/scripts/lib/cache-manager.mjs';
 import {
-  printHelp, printProfiles,
+  printHelp, printProfiles, printHistoryHelp,
   printLoginHelp, printLogoutHelp, printSyncHelp,
   printActivateHelp, printLicenseHelp, printDeleteHelp,
   printProfilesHelp, printScheduleHelp,
@@ -134,6 +134,7 @@ switch (command) {
   }
 
   case 'history': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printHistoryHelp(); break; }
     if (!isLicensed('pro')) { showUpgradePrompt('pro', 'ticketlens history'); break; }
     const ticketKey = cmdArgs[0];
     if (!ticketKey || ticketKey.startsWith('-')) {
