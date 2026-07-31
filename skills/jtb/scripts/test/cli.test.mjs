@@ -185,6 +185,23 @@ describe('parseCommand', () => {
     assert.deepEqual(result.args, ['--json']);
   });
 
+  it('routes "cloud-keys" to the cloud-keys command, not the default fetch fallthrough', () => {
+    const result = parseCommand(['cloud-keys']);
+    assert.equal(result.command, 'cloud-keys');
+    assert.deepEqual(result.args, []);
+  });
+
+  it('routes "cloud-keys remove groq" with subcommand args preserved', () => {
+    const result = parseCommand(['cloud-keys', 'remove', 'groq', '--yes']);
+    assert.equal(result.command, 'cloud-keys');
+    assert.deepEqual(result.args, ['remove', 'groq', '--yes']);
+  });
+
+  it('lock — adding "cloud-keys" does not change the ticket-key fallback for anything else', () => {
+    const stillFetch = parseCommand(['PROJ-999']);
+    assert.equal(stillFetch.command, 'fetch');
+  });
+
   it('routes "note" to note command', () => {
     const result = parseCommand(['note', 'add', '--title=x']);
     assert.equal(result.command, 'note');

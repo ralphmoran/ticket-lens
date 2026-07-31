@@ -8,6 +8,7 @@ import {
   printInitHelp, printSwitchHelp, printConfigHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
   printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
+  printCloudKeysHelp,
 } from '../lib/help.mjs';
 
 function captureHelp(fn) {
@@ -547,6 +548,23 @@ describe('printNoteHelp', () => {
     const out = captureHelp(printNoteHelp);
     assert.match(out, /note patch/);
     assert.match(out, /--id/);
+  });
+
+  it('documents that note delete prompts for confirmation and can be skipped with --yes', () => {
+    const out = captureHelp(printNoteHelp);
+    assert.match(out, /note delete/);
+    assert.match(out, /confirm/i);
+    assert.match(out, /--yes/);
+  });
+});
+
+describe('printCloudKeysHelp', () => {
+  it('documents that remove prompts for confirmation and can be skipped with --yes', () => {
+    const out = captureHelp(printCloudKeysHelp);
+    assert.match(out, /remove/);
+    assert.match(out, /confirmation/i);
+    assert.match(out, /--yes/);
+    assert.match(out, /-y/);
   });
 });
 

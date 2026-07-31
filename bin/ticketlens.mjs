@@ -542,7 +542,7 @@ switch (command) {
   case 'cloud-keys': {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printCloudKeysHelp(); break; }
 
-    const { listCloudKeys, addCloudKey, removeCloudKey, setPriority, setTimeout_, testCloudKey } =
+    const { listCloudKeys, addCloudKey, runCloudKeysRemove, setPriority, setTimeout_, testCloudKey } =
       await import('../skills/jtb/scripts/lib/cloud-keys.mjs');
 
     const cliToken = readCliToken();
@@ -592,12 +592,14 @@ switch (command) {
       if (subCmd === 'remove') {
         const provider = cmdArgs[1];
         if (!provider) {
-          process.stderr.write('Usage: ticketlens cloud-keys remove <provider>\n');
+          process.stderr.write('Usage: ticketlens cloud-keys remove <provider> [--yes|-y]\n');
           process.exitCode = 1;
           return;
         }
-        await removeCloudKey(cfg, provider);
-        process.stdout.write(`${s.brand('✓')} ${provider} key removed.\n`);
+        const forceYes = cmdArgs.includes('--yes') || cmdArgs.includes('-y');
+        const { removed } = await runCloudKeysRemove(cfg, provider, { forceYes });
+        if (removed) process.stdout.write(`${s.brand('✓')} ${provider} key removed.\n`);
+        else process.exitCode = 1;
         return;
       }
 

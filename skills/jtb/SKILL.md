@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.26.0 -->
+<!-- jtb-skill-version: 0.27.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -66,6 +66,8 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb assign PROD-1234 --to=me          # assign the ticket to yourself (Pro)
 ```
 
+**Destructive commands** (`note delete`, `cloud-keys remove`, `delete <profile>`) prompt for interactive y/N confirmation and refuse outright in a non-interactive shell unless `--yes` is passed — there is no way to silently skip this. Only pass `--yes` when the user has explicitly asked for that specific deletion in this conversation (their message *is* the confirmation); never add it to route around the prompt for a deletion you decided to make on your own.
+
 ## Prerequisites
 
 TicketLens supports two connection methods — check in this order:
@@ -91,7 +93,7 @@ If the first argument is `triage`:
 
 Run:
 ```bash
-node ~/.agents/skills/jtb/scripts/fetch-my-tickets.mjs $EXTRA_ARGS
+ticketlens triage $EXTRA_ARGS
 ```
 
 Where `$EXTRA_ARGS` are any flags passed (e.g. `--stale=3 --status=QA --profile=acme`).
@@ -112,7 +114,7 @@ If the first argument is `collisions`:
 
 Run:
 ```bash
-node ~/.agents/skills/jtb/scripts/lib/run-collisions.mjs $EXTRA_ARGS
+ticketlens collisions $EXTRA_ARGS
 ```
 
 Where `$EXTRA_ARGS` are any flags passed (e.g. `--json`, `--plain`).
@@ -136,7 +138,7 @@ Follow the Prerequisites section above:
 
 Run:
 ```bash
-node ~/.agents/skills/jtb/scripts/fetch-ticket.mjs "$TICKET_KEY" $EXTRA_ARGS
+ticketlens "$TICKET_KEY" $EXTRA_ARGS
 ```
 
 Where `$TICKET_KEY` is the first argument (e.g. `PROD-1234`) and `$EXTRA_ARGS` are any flags passed (e.g. `--depth=0`).
@@ -238,7 +240,7 @@ echo "The body text of the note, one or more paragraphs." | \
 
 To search saved notes directly (outside of automatic brief injection): `ticketlens recall "<query>"`.
 
-**Pick exactly one path per capture — never both.** If this harness has TicketLens's MCP server configured (`ticketlens mcp` — `recall_add`/`recall_search` as native tools, see `ticketlens mcp --help`), prefer calling those tools directly over the bash commands above — same license gate, same secret scan, same vault, same team sync, just no shell command to construct. Fall back to the bash form only when the MCP tools aren't available. Calling both for the same insight creates two near-duplicate notes (no dedup exists between the two paths) and, with team sync on, two separate pushes for a manager to review.
+**Pick exactly one path per capture — never both.** If this harness has TicketLens's MCP server configured (tools named `recall_add`/`recall_search` — often shown as `mcp__ticketlens__recall_add` — visible in your tool list), **use those tools, not the bash commands above** — same license gate, same secret scan, same vault, same team sync, just no shell command to construct. Only fall back to the bash form when the MCP tools are genuinely absent from your tool list. If they're absent because this project has never registered the server, tell the user once: `ticketlens mcp install` writes (or merges into) this project's `.mcp.json` — don't run it yourself unprompted, since it changes what your harness auto-connects to on next launch, and the user should be the one deciding that. Calling both for the same insight creates two near-duplicate notes (no dedup exists between the two paths) and, with team sync on, two separate pushes for a manager to review.
 
 ### Quality loop (Pro, in-session only)
 
@@ -286,7 +288,7 @@ ticketlens duplicates PROD-1234                               # find likely dupl
 
 The three write actions (comment/transition/assign) have a short local debounce (10s) against an accidental double-fire, and every write is appended to a local audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — surface the failure to the user rather than silently re-attempting, since a ticket write isn't naturally idempotent the way a Recall note save is. `duplicates` has neither, since nothing is written.
 
-**Pick exactly one path per action — never both.** If this harness has TicketLens's MCP server configured (`ticketlens mcp` — `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates` as native tools, see `ticketlens mcp --help`), prefer calling those tools directly over the bash commands above — same license gate, same cooldown, same audit log. Fall back to the bash form only when the MCP tools aren't available.
+**Pick exactly one path per action — never both.** If this harness has TicketLens's MCP server configured (tools named `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create` — often shown as `mcp__ticketlens__ticket_comment` etc. — visible in your tool list), **use those tools, not the bash commands above** — same license gate, same cooldown, same audit log. Only fall back to the bash form when the MCP tools are genuinely absent from your tool list; if that's because this project has never registered the server, see the `ticketlens mcp install` note above (Recall section) — same guidance applies here.
 
 Requires a Pro license — on Free, all four no-op with an upgrade hint on stderr.
 

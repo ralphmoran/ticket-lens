@@ -4,6 +4,7 @@ import {
   listCloudKeys,
   addCloudKey,
   removeCloudKey,
+  runCloudKeysRemove,
   setPriority,
   setTimeout_,
   testCloudKey,
@@ -142,6 +143,70 @@ describe('removeCloudKey', () => {
     const del = calls.find(c => c.method === 'DELETE');
     assert.ok(del, 'DELETE request should be sent');
     assert.ok(del.url.includes('/1'), 'DELETE should target provider id=1');
+  });
+});
+
+function makeStream() {
+  const lines = [];
+  return { lines, write: (s) => lines.push(s) };
+}
+
+describe('runCloudKeysRemove — destructive-action confirmation gate', () => {
+  it('declining the confirmation prompt never calls removeCloudKeyFn', async () => {
+    let removeCalls = 0;
+    const stream = makeStream();
+    const result = await runCloudKeysRemove(mockConfig(okFetcher({})), 'groq', {
+      stream,
+      confirmFn: async () => false,
+      removeCloudKeyFn: async () => { removeCalls++; },
+    });
+    assert.equal(result.removed, false);
+    assert.equal(removeCalls, 0);
+    assert.match(stream.lines.join(''), /Aborted/);
+  });
+
+  it('confirming calls removeCloudKeyFn with the config and provider', async () => {
+    const config = mockConfig(okFetcher({}));
+    let captured;
+    const result = await runCloudKeysRemove(config, 'anthropic', {
+      stream: makeStream(),
+      confirmFn: async () => true,
+      removeCloudKeyFn: async (cfg, provider) => { captured = { cfg, provider }; },
+    });
+    assert.equal(result.removed, true);
+    assert.equal(captured.cfg, config);
+    assert.equal(captured.provider, 'anthropic');
+  });
+
+  it('confirmFn receives the provider name in the action description', async () => {
+    let action;
+    await runCloudKeysRemove(mockConfig(okFetcher({})), 'openai', {
+      stream: makeStream(),
+      confirmFn: async (a) => { action = a; return true; },
+      removeCloudKeyFn: async () => {},
+    });
+    assert.match(action, /openai/);
+  });
+
+  it('--yes (forceYes) is passed through to confirmFn', async () => {
+    let receivedOpts;
+    await runCloudKeysRemove(mockConfig(okFetcher({})), 'groq', {
+      stream: makeStream(),
+      forceYes: true,
+      confirmFn: async (action, opts) => { receivedOpts = opts; return true; },
+      removeCloudKeyFn: async () => {},
+    });
+    assert.equal(receivedOpts.forceYes, true);
+  });
+
+  it('defaults forceYes to false when not passed', async () => {
+    let receivedOpts;
+    await runCloudKeysRemove(mockConfig(okFetcher({})), 'groq', {
+      stream: makeStream(),
+      confirmFn: async (action, opts) => { receivedOpts = opts; return true; },
+      removeCloudKeyFn: async () => {},
+    });
+    assert.equal(receivedOpts.forceYes, false);
   });
 });
 

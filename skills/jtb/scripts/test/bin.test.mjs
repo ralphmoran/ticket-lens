@@ -279,6 +279,24 @@ describe('bin/ticketlens.mjs', () => {
     assert.equal(response.result.serverInfo.name, 'ticketlens');
   });
 
+  it('"ticketlens cloud-keys" routes to the cloud-keys handler, not the ticket-fetch fallback', () => {
+    // Regression test for a real bug: cli.mjs's parseCommand had no branch for
+    // "cloud-keys", so it silently fell through to the default fetch handler and
+    // was misinterpreted as a ticket key ("cloud-keys" is not a valid ticket key).
+    const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-cloud-keys-route-'));
+    try {
+      const result = spawnSync('node', [binPath, 'cloud-keys', 'list'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        env: { ...process.env, HOME: freshHome, CI: 'true' },
+      });
+      assert.doesNotMatch(result.stderr + result.stdout, /not a valid ticket key/);
+      assert.match(result.stderr + result.stdout, /not logged in/i);
+    } finally {
+      rmSync(freshHome, { recursive: true, force: true });
+    }
+  });
+
   it('"ticketlens comment" with no Pro license shows an upgrade prompt and exits non-zero, without reaching the network', () => {
     const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-comment-gate-'));
     try {

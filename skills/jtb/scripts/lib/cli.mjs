@@ -130,6 +130,10 @@ export function parseCommand(args) {
     return { command: 'mcp', args: args.slice(1) };
   }
 
+  if (first === 'cloud-keys') {
+    return { command: 'cloud-keys', args: args.slice(1) };
+  }
+
   if (first === 'comment') {
     return { command: 'comment', args: args.slice(1) };
   }

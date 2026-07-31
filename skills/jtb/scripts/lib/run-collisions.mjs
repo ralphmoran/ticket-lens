@@ -71,3 +71,12 @@ export async function runCollisions(args = [], opts = {}) {
     return { ok: false };
   }
 }
+
+// Run if invoked directly
+const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/.*\//, ''));
+if (isMain) {
+  runCollisions(process.argv.slice(2)).catch(err => {
+    process.stderr.write(`Error: ${err.message}\n`);
+    process.exitCode = 1;
+  });
+}

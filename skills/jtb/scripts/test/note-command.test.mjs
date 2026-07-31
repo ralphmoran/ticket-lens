@@ -310,6 +310,7 @@ function baseDeleteDeps(overrides = {}) {
     stream: makeStream(),
     isLicensedFn: () => true,
     deleteNoteFn: () => ({ deleted: true, prefix: 'PROD' }),
+    confirmFn: async () => true,
     ...overrides,
   };
 }
@@ -643,5 +644,59 @@ describe('runNoteDelete — delegates to deleteNoteFn with the right shape', () 
     const result = await runNoteDelete(['--id=note-1.md'], deps);
     assert.equal(result.deleted, false);
     assert.match(deps.stream.lines.join(''), /not deleted/i);
+  });
+});
+
+describe('runNoteDelete — destructive-action confirmation gate', () => {
+  test('declining the confirmation prompt never calls deleteNoteFn', async () => {
+    let deleteCalls = 0;
+    const deps = baseDeleteDeps({
+      confirmFn: async () => false,
+      deleteNoteFn: () => { deleteCalls++; return { deleted: true, prefix: 'PROD' }; },
+    });
+    const result = await runNoteDelete(['--id=note-1.md'], deps);
+    assert.equal(result.deleted, false);
+    assert.equal(deleteCalls, 0);
+    assert.match(deps.stream.lines.join(''), /Aborted/);
+  });
+
+  test('confirmFn is asked before deleteNoteFn runs, with the note id in the prompt', async () => {
+    const calls = [];
+    const deps = baseDeleteDeps({
+      confirmFn: async (action) => { calls.push(['confirm', action]); return true; },
+      deleteNoteFn: () => { calls.push(['delete']); return { deleted: true, prefix: 'PROD' }; },
+    });
+    await runNoteDelete(['--id=note-1.md'], deps);
+    assert.equal(calls[0][0], 'confirm');
+    assert.match(calls[0][1], /note-1\.md/);
+    assert.equal(calls[1][0], 'delete');
+  });
+
+  test('--yes is passed through to confirmFn as forceYes', async () => {
+    let receivedOpts;
+    const deps = baseDeleteDeps({
+      confirmFn: async (action, opts) => { receivedOpts = opts; return true; },
+    });
+    await runNoteDelete(['--id=note-1.md', '--yes'], deps);
+    assert.equal(receivedOpts.forceYes, true);
+  });
+
+  test('without --yes, forceYes is false', async () => {
+    let receivedOpts;
+    const deps = baseDeleteDeps({
+      confirmFn: async (action, opts) => { receivedOpts = opts; return true; },
+    });
+    await runNoteDelete(['--id=note-1.md'], deps);
+    assert.equal(receivedOpts.forceYes, false);
+  });
+
+  test('license gate still fires before the confirmation prompt', async () => {
+    let confirmCalls = 0;
+    const deps = baseDeleteDeps({
+      isLicensedFn: () => false,
+      confirmFn: async () => { confirmCalls++; return true; },
+    });
+    await runNoteDelete(['--id=note-1.md'], deps);
+    assert.equal(confirmCalls, 0);
   });
 });

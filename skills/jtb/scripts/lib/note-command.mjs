@@ -19,6 +19,7 @@ import { incrementDraftKept, incrementDraftDeleted } from './activity-counter.mj
 import { extractText } from './attachment-text.mjs';
 import { TICKET_KEY_PATTERN } from './cli.mjs';
 import { createStyler } from './ansi.mjs';
+import { confirmDestructive } from './confirm.mjs';
 
 function defaultListAttachments(configDir, ticketKey) {
   const cacheDir = path.join(configDir, 'cache', ticketKey);
@@ -226,8 +227,10 @@ export async function runNotePatch(cmdArgs, {
 export async function runNoteDelete(cmdArgs, {
   configDir = DEFAULT_CONFIG_DIR,
   stream = process.stderr,
+  stdin = process.stdin,
   isLicensedFn = isLicensed,
   deleteNoteFn = deleteNote,
+  confirmFn = confirmDestructive,
 } = {}) {
   if (!isLicensedFn('pro', configDir)) {
     showUpgradePrompt('pro', 'ticketlens note', { stream });
@@ -236,13 +239,20 @@ export async function runNoteDelete(cmdArgs, {
 
   const id = parseFlag(cmdArgs, 'id');
   if (!id) {
-    stream.write('Usage: ticketlens note delete --id="..." [--ticket=KEY]\n');
+    stream.write('Usage: ticketlens note delete --id="..." [--ticket=KEY] [--yes|-y]\n');
     return { deleted: false };
   }
 
   const ticketKey = parseFlag(cmdArgs, 'ticket');
   if (ticketKey && !TICKET_KEY_PATTERN.test(ticketKey)) {
     stream.write(`  Invalid --ticket value "${ticketKey}" — expected a ticket key like PROJ-123.\n`);
+    return { deleted: false };
+  }
+
+  const forceYes = cmdArgs.includes('--yes') || cmdArgs.includes('-y');
+  const confirmed = await confirmFn(`Delete note (${id})`, { stdin, stream, forceYes });
+  if (!confirmed) {
+    stream.write('  Aborted — note was not deleted.\n');
     return { deleted: false };
   }
 

@@ -1,6 +1,12 @@
 import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runCollisions } from '../lib/run-collisions.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const scriptPath = path.join(__dirname, '..', 'lib', 'run-collisions.mjs');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -226,5 +232,21 @@ describe('runCollisions — cliToken guard (new auth)', () => {
     });
     assert.ok(lines.some(l => l.includes('Session expired')), `got: ${lines.join(' ')}`);
     assert.ok(lines.some(l => l.includes('ticketlens login')), `got: ${lines.join(' ')}`);
+  });
+});
+
+describe('run-collisions.mjs — direct invocation (isMain guard)', () => {
+  it('running the script directly with `node` actually invokes runCollisions, not a silent no-op', () => {
+    const result = spawnSync('node', [scriptPath, '--json'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      env: { ...process.env, HOME: '/tmp/ticketlens-run-collisions-guard-test' },
+    });
+    // No CLI token configured in this sandboxed HOME → runCollisions prints the
+    // "not logged in" message. The point of this test is that it prints
+    // *something* at all — before the isMain guard existed, direct invocation
+    // produced zero output and exit 0, a silent no-op.
+    assert.notEqual(result.stdout + result.stderr, '', 'direct invocation must not be a silent no-op');
+    assert.match(result.stdout + result.stderr, /login|token/i);
   });
 });

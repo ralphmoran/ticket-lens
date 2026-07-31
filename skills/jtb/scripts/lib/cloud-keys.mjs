@@ -4,6 +4,8 @@
  * All operations require a CLI token (set via `ticketlens login`).
  */
 
+import { confirmDestructive } from './confirm.mjs';
+
 const SUPPORTED_PROVIDERS = ['groq', 'anthropic', 'openai'];
 
 function apiBase(config) {
@@ -82,6 +84,29 @@ export async function addCloudKey(config, provider, apiKey, timeout = 5) {
 export async function removeCloudKey(config, provider) {
   const target = await findProvider(config, provider);
   await fetchApi(config, `/v1/ai-providers/${target.id}`, 'DELETE');
+}
+
+/**
+ * CLI-facing wrapper around removeCloudKey — gates the irreversible remote
+ * deletion behind a y/N confirmation (or --yes) before calling it.
+ */
+export async function runCloudKeysRemove(config, provider, opts = {}) {
+  const {
+    stream = process.stderr,
+    stdin = process.stdin,
+    forceYes = false,
+    confirmFn = confirmDestructive,
+    removeCloudKeyFn = removeCloudKey,
+  } = opts;
+
+  const confirmed = await confirmFn(`Remove the ${provider} key`, { stdin, stream, forceYes });
+  if (!confirmed) {
+    stream.write('  Aborted — key was not removed.\n');
+    return { removed: false };
+  }
+
+  await removeCloudKeyFn(config, provider);
+  return { removed: true };
 }
 
 export async function setPriority(config, provider, priority) {
