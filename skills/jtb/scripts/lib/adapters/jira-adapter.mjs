@@ -1,4 +1,4 @@
-import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue } from '../jira-client.mjs';
+import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue } from '../jira-client.mjs';
 import { buildJiraEnv } from '../config.mjs';
 
 /**
@@ -139,5 +139,15 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
      */
     createTicket: ({ project, type, summary, description } = {}, opts = {}) =>
       createIssue({ project, type, summary, description }, { ...base, ...opts }),
+
+    /**
+     * Real, currently-creatable projects for this token — used to enrich a
+     * ticket_create failure message with actual options, never to
+     * pre-validate before writing.
+     */
+    listCreatableProjects: (opts = {}) => fetchProjects({ ...base, ...opts }),
+
+    /** Real, currently-configured issue types for one project. */
+    listIssueTypes: (projectKey, opts = {}) => fetchIssueTypes(projectKey, { ...base, ...opts }),
   };
 }

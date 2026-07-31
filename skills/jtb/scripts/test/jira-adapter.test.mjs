@@ -376,3 +376,23 @@ describe('createJiraAdapter — createTicket', () => {
     await assert.doesNotReject(() => adapter.createTicket({ project: 'TEST', type: 'Task', summary: 'x' }, { lookup: privateLookup }));
   });
 });
+
+describe('createJiraAdapter — listCreatableProjects', () => {
+  it('wraps fetchProjects unchanged', async () => {
+    const fetcher = async () => ({ ok: true, status: 200, json: async () => [{ key: 'TEST', name: 'Test Project' }] });
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.listCreatableProjects();
+    assert.deepEqual(result, [{ key: 'TEST', name: 'Test Project' }]);
+  });
+});
+
+describe('createJiraAdapter — listIssueTypes', () => {
+  it('wraps fetchIssueTypes for the given project key', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => { capturedUrl = url; return { ok: true, status: 200, json: async () => ({ values: [{ id: '1', name: 'Task' }] }) }; };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.listIssueTypes('TEST');
+    assert.match(capturedUrl, /\/createmeta\/TEST\/issuetypes/);
+    assert.deepEqual(result, [{ id: '1', name: 'Task' }]);
+  });
+});

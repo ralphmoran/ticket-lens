@@ -637,6 +637,49 @@ export async function updateIssue(ticketKey, { summary, description, priority, a
 }
 
 /**
+ * Discovers the issue types actually configured for a project — used only
+ * to enrich a ticket_create failure message with real, current options,
+ * never as a client-side pre-validation step (issuetype validity is still
+ * surfaced via the tracker's own 400, same design choice as createIssue
+ * itself). A single, unpaginated call: real-world Jira projects rarely
+ * exceed a handful to a few dozen issue types (well under the endpoint's
+ * own default maxResults=50), and a truncated list here would only ever
+ * under-inform an error message, never break the actual write path — full
+ * pagination (as fetchProjects needs, since an org's total project count
+ * has no such natural ceiling) would be disproportionate complexity for
+ * an enrichment-only feature.
+ *
+ * v2 (Server/DC) and v3 (Cloud) return genuinely different response
+ * envelopes for this same resource — confirmed directly against
+ * Atlassian's own Cloud OpenAPI spec and a live-downloaded Server/DC WADL,
+ * not assumed just because the URL pattern matches: v3 nests results under
+ * `issueTypes`, v2 under `values` (same distinction fetchProjects already
+ * makes for its own project-listing endpoint, for the same underlying
+ * reason — the two API generations were never response-shape-compatible).
+ */
+export async function fetchIssueTypes(projectKey, opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
+
+  const url = `${baseUrl}/rest/api/${apiVersion}/issue/createmeta/${encodeURIComponent(projectKey)}/issuetypes`;
+  const fetchOpts = { headers };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
+
+  if (!response.ok) {
+    const err = new Error(`Jira API error ${response.status} fetching issue types for ${projectKey}`);
+    err.status = response.status;
+    throw err;
+  }
+
+  const raw = await response.json();
+  const values = apiVersion >= 3 ? (raw.issueTypes ?? []) : (raw.values ?? []);
+  return values.map(t => ({ id: t.id, name: t.name }));
+}
+
+/**
  * Creates a new issue. `project`/`type` are passed straight through as
  * Jira's own {key}/{name} references — issue types are project-configurable,
  * so validity is never pre-checked here; an invalid one surfaces Jira's own

@@ -16,6 +16,8 @@ import { resolveConnection } from './profile-resolver.mjs';
 import { resolveAdapter } from './resolve-adapter.mjs';
 import { checkCooldown, recordAction } from './ticket-action-cooldown.mjs';
 import { logAction } from './ticket-action-log.mjs';
+import { readMetadataCache, writeMetadataCache } from './ticket-metadata-cache.mjs';
+import { detectProjectOrTypeError, enrichCreateFailure } from './ticket-create-enrichment.mjs';
 import { TICKET_KEY_PATTERN } from './cli.mjs';
 import { scoreCandidates } from './duplicate-scorer.mjs';
 
@@ -687,6 +689,8 @@ export async function runTicketCreate(cmdArgs, {
   checkCooldownFn = checkCooldown,
   recordActionFn = recordAction,
   logActionFn = logAction,
+  readMetadataCacheFn = readMetadataCache,
+  writeMetadataCacheFn = writeMetadataCache,
   actor = os.userInfo().username,
 } = {}) {
   const usage = 'Usage: ticketlens create --project=KEY --type="Task" --summary="..." [--description="..."] [--profile=NAME]\n';
@@ -731,7 +735,15 @@ export async function runTicketCreate(cmdArgs, {
   try {
     result = await adapter.createTicket({ project, type, summary, description });
   } catch (err) {
-    stream.write(formatCreateFailure(err));
+    // profileName is only resolved when this failure is actually
+    // project/issuetype-shaped — not on every failure, and never on the
+    // success path — since it exists solely to scope the enrichment cache.
+    let enrichment = '';
+    if (detectProjectOrTypeError(err)) {
+      const profileName = resolveConnectionFn(undefined, { configDir, profileName: parseFlag(cmdArgs, 'profile') }).profileName;
+      enrichment = await enrichCreateFailure(err, { adapter, project, profileName, configDir, readMetadataCacheFn, writeMetadataCacheFn });
+    }
+    stream.write(formatCreateFailure(err) + enrichment);
     return { ok: false };
   }
 

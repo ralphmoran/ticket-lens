@@ -809,6 +809,15 @@ describe('createTicket', () => {
     assert.equal(calls.length, 1, 'must never attempt issueCreate once team resolution fails');
   });
 
+  it('marks a team-not-found error with err.code = PROJECT_NOT_FOUND, for clean detection by ticket-command.mjs without message-sniffing', async () => {
+    const fetcher = async () => makeResponse({ teams: { nodes: [] } });
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await assert.rejects(adapter.createTicket({ project: 'BOGUS', summary: 'x' }), (err) => {
+      assert.equal(err.code, 'PROJECT_NOT_FOUND');
+      return true;
+    });
+  });
+
   it('throws when issueCreate reports success:false (same convention as transition/assignToSelf/updateFields)', async () => {
     const fetcher = sequencedFetcher([
       () => makeResponse({ teams: { nodes: [{ id: 'team-uuid-1' }] } }),
@@ -816,5 +825,23 @@ describe('createTicket', () => {
     ]);
     const adapter = createLinearAdapter(CONN, { fetcher });
     await assert.rejects(adapter.createTicket({ project: 'ENG', summary: 'x' }), /success:false/);
+  });
+});
+
+describe('listCreatableProjects', () => {
+  it('lists all accessible teams, unfiltered, mapped to {key, name}', async () => {
+    let captured;
+    const fetcher = async (_url, opts) => { captured = JSON.parse(opts.body); return makeResponse({ teams: { nodes: [{ id: 'uuid-1', key: 'ENG', name: 'Engineering' }, { id: 'uuid-2', key: 'DES', name: 'Design' }] } }); };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.listCreatableProjects();
+    assert.equal(captured.variables?.filter, undefined, 'must be unfiltered — no filter variable sent');
+    assert.deepEqual(result, [{ key: 'ENG', name: 'Engineering' }, { key: 'DES', name: 'Design' }]);
+  });
+
+  it('returns an empty array when no teams are accessible', async () => {
+    const fetcher = async () => makeResponse({ teams: { nodes: [] } });
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.listCreatableProjects();
+    assert.deepEqual(result, []);
   });
 });

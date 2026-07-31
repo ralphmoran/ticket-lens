@@ -450,7 +450,12 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       );
       const team = teamData.teams?.nodes?.[0];
       if (!team) {
-        throw new Error(`Linear team not found for project "${project}".`);
+        const err = new Error(`Linear team not found for project "${project}".`);
+        // Marked, not message-sniffed — ticket-command.mjs's cache-refresh
+        // enrichment needs a clean way to detect "the project/team didn't
+        // resolve" without parsing this string.
+        err.code = 'PROJECT_NOT_FOUND';
+        throw err;
       }
       const input = { teamId: team.id, title: summary };
       if (description !== undefined) input.description = description;
@@ -464,6 +469,23 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       }
       const issue = data.issueCreate.issue;
       return { key: issue.identifier, id: issue.id, url: issue.url ?? null };
+    },
+
+    /**
+     * Real, currently-accessible teams for this token — unfiltered, used
+     * only to enrich a ticket_create failure message with actual options
+     * (Jira calls the equivalent concept "projects"; --project already
+     * conflates the two at the CLI level, so the shape matches for a
+     * uniform cache).
+     */
+    async listCreatableProjects(opts = {}) {
+      const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
+      const data = await gql(
+        `query { teams(first: 250) { nodes { key name } } }`,
+        {},
+        { token, fetcher, signal },
+      );
+      return (data.teams?.nodes ?? []).map(t => ({ key: t.key, name: t.name }));
     },
   };
 }

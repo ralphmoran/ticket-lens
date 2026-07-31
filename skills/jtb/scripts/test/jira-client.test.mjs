@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue } from '../lib/jira-client.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -1123,6 +1123,61 @@ describe('updateIssue', () => {
     const badEnv = { ...ENV, JIRA_BASE_URL: 'https://169.254.169.254' };
     await assert.rejects(
       () => updateIssue('PROJ-1', { summary: 'x' }, { env: badEnv, fetcher: async () => ({ ok: true, status: 204 }) }),
+      /blocked/,
+    );
+  });
+});
+
+describe('fetchIssueTypes', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+
+  it('v3 (Cloud) reads the "issueTypes" envelope key and maps to {id, name}', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, status: 200, json: async () => ({ issueTypes: [{ id: '10001', name: 'Task' }, { id: '10002', name: 'Bug' }], startAt: 0, maxResults: 50, total: 2 }) };
+    };
+    const result = await fetchIssueTypes('CNV1', { env: ENV, fetcher, apiVersion: 3 });
+    assert.match(capturedUrl, /\/issue\/createmeta\/CNV1\/issuetypes/);
+    assert.deepEqual(result, [{ id: '10001', name: 'Task' }, { id: '10002', name: 'Bug' }]);
+  });
+
+  it('v2 (Server/DC) reads the "values" envelope key — genuinely different from v3, confirmed against the official WADL', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, status: 200, json: async () => ({ values: [{ id: '1', name: 'Story' }], last: true, start: 0, size: 1, total: 1 }) };
+    };
+    const result = await fetchIssueTypes('PROD', { env: ENV, fetcher, apiVersion: 2 });
+    assert.match(capturedUrl, /\/issue\/createmeta\/PROD\/issuetypes/);
+    assert.deepEqual(result, [{ id: '1', name: 'Story' }]);
+  });
+
+  it('URL-encodes the project key', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => { capturedUrl = url; return { ok: true, status: 200, json: async () => ({ values: [] }) }; };
+    await fetchIssueTypes('PROJ WITH SPACE', { env: ENV, fetcher, apiVersion: 2 });
+    assert.ok(!capturedUrl.includes(' '), `URL must not contain a raw space: ${capturedUrl}`);
+  });
+
+  it('returns an empty array when the project has no issue types configured', async () => {
+    const fetcher = async () => ({ ok: true, status: 200, json: async () => ({ issueTypes: [] }) });
+    const result = await fetchIssueTypes('CNV1', { env: ENV, fetcher, apiVersion: 3 });
+    assert.deepEqual(result, []);
+  });
+
+  it('surfaces a non-OK response with .status, never silently swallowed', async () => {
+    const fetcher = async () => ({ ok: false, status: 400 });
+    await assert.rejects(
+      () => fetchIssueTypes('BOGUS', { env: ENV, fetcher }),
+      (err) => err.status === 400,
+    );
+  });
+
+  it('goes through validateBaseUrl/guardedFetch like every other read (SSRF guard not bypassed)', async () => {
+    const badEnv = { ...ENV, JIRA_BASE_URL: 'https://169.254.169.254' };
+    await assert.rejects(
+      () => fetchIssueTypes('CNV1', { env: badEnv, fetcher: async () => ({ ok: true, status: 200, json: async () => ({}) }) }),
       /blocked/,
     );
   });

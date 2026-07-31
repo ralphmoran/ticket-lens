@@ -20,6 +20,8 @@ function fakeAdapter(overrides = {}) {
     linkTo: async () => ({ executed: true }),
     updateFields: async () => ({ applied: { title: true }, errors: {} }),
     createTicket: async () => ({ key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }),
+    listCreatableProjects: async () => ([{ key: 'PROJ', name: 'Project' }]),
+    listIssueTypes: async () => ([{ id: '1', name: 'Task' }]),
     ...overrides,
   };
 }
@@ -34,6 +36,8 @@ function baseDeps(overrides = {}) {
     checkCooldownFn: () => ({ active: false, remainingMs: 0 }),
     recordActionFn: () => {},
     logActionFn: () => {},
+    readMetadataCacheFn: () => null,
+    writeMetadataCacheFn: () => {},
     actor: 'ralph',
     ...overrides,
   };
@@ -1095,5 +1099,166 @@ describe('runTicketCreate — post-success bookkeeping failure', () => {
     });
     await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
     assert.match(recordedKey, /PROJ/);
+  });
+});
+
+describe('runTicketCreate — cache-refresh enrichment on project/issuetype failure', () => {
+  test('a non-project/type failure (e.g. rate-limited) is byte-identical to before this feature — enrichment never engages', async () => {
+    let projectsCalled = false;
+    const err = Object.assign(new Error('x'), { rateLimit: { kind: 'secondary-rate-limit', retryAfterSeconds: 30 } });
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async () => { throw err; },
+        listCreatableProjects: async () => { projectsCalled = true; return []; },
+      }),
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(projectsCalled, false, 'enrichment must never engage for a non-project/type error shape');
+    assert.equal(deps.stream.lines.join(''), '  Rate limited by the tracker — retry creating the ticket after ~30s.\n');
+  });
+
+  test('a Jira project error (err.details.errors.project) with a cache miss fetches fresh, writes the cache, and appends known projects to the message', async () => {
+    let writtenProfile, writtenData;
+    const jiraErr = Object.assign(new Error('Jira API error 400 creating an issue in BADPROJ'), {
+      status: 400,
+      details: { errorMessages: ["The target project doesn't exist or you don't have permission to create issues in it."], errors: { project: "The target project doesn't exist or you don't have permission to create issues in it." } },
+    });
+    const deps = baseDeps({
+      readMetadataCacheFn: () => null,
+      writeMetadataCacheFn: (profile, data) => { writtenProfile = profile; writtenData = data; },
+      resolveConnectionFn: () => ({ baseUrl: 'https://jira.example.com', profileName: 'work' }),
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async () => { throw jiraErr; },
+        listCreatableProjects: async () => ([{ key: 'CNV1', name: 'Corenexus v1.0' }]),
+      }),
+    });
+    const result = await runTicketCreate(['--project=BADPROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(writtenProfile, 'work');
+    assert.deepEqual(writtenData.projects, [{ key: 'CNV1', name: 'Corenexus v1.0' }]);
+    assert.match(deps.stream.lines.join(''), /Known creatable projects: CNV1/);
+  });
+
+  test('a cache that has projects but not this project\'s issue types still fetches issue types (incremental merge, not all-or-nothing) — reproduces a real bug caught via live-instance testing', async () => {
+    let listIssueTypesCalled = false;
+    let writtenData;
+    const jiraErr = Object.assign(new Error('x'), { status: 400, details: { errors: { issuetype: 'Specify a valid issue type' } } });
+    const deps = baseDeps({
+      readMetadataCacheFn: () => ({ projects: [{ key: 'CNV1', name: 'Corenexus v1.0' }], issueTypesByProject: {} }),
+      writeMetadataCacheFn: (profile, data) => { writtenData = data; },
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async () => { throw jiraErr; },
+        listIssueTypes: async (key) => { listIssueTypesCalled = true; assert.equal(key, 'CNV1'); return [{ id: '1', name: 'Task' }, { id: '2', name: 'Bug' }]; },
+      }),
+    });
+    const result = await runTicketCreate(['--project=CNV1', '--type=BadType', '--summary=New'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(listIssueTypesCalled, true, 'a cache lacking this project\'s issue types must still fetch them, even though projects were already cached');
+    assert.match(deps.stream.lines.join(''), /Known issue types for CNV1: Task, Bug/);
+    assert.deepEqual(writtenData.projects, [{ key: 'CNV1', name: 'Corenexus v1.0' }], 'the pre-existing cached projects must be preserved, not dropped, on this incremental merge');
+  });
+
+  test('a Jira project error with a fresh cache hit reuses it — never calls listCreatableProjects again', async () => {
+    let listCalled = false;
+    const jiraErr = Object.assign(new Error('x'), { status: 400, details: { errors: { project: 'bad' } } });
+    const deps = baseDeps({
+      readMetadataCacheFn: () => ({ projects: [{ key: 'CNV1', name: 'x' }], issueTypesByProject: {} }),
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async () => { throw jiraErr; },
+        listCreatableProjects: async () => { listCalled = true; return []; },
+      }),
+    });
+    await runTicketCreate(['--project=BADPROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(listCalled, false, 'a fresh cache hit must never trigger a network call');
+    assert.match(deps.stream.lines.join(''), /Known creatable projects: CNV1/);
+  });
+
+  test('a Jira issuetype error also fetches and reports known issue types for the given project', async () => {
+    const jiraErr = Object.assign(new Error('x'), { status: 400, details: { errors: { issuetype: 'valid issue type is required' } } });
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async () => { throw jiraErr; },
+        listCreatableProjects: async () => ([{ key: 'CNV1', name: 'x' }]),
+        listIssueTypes: async () => ([{ id: '1', name: 'Task' }, { id: '2', name: 'Bug' }]),
+      }),
+    });
+    const result = await runTicketCreate(['--project=CNV1', '--type=BadType', '--summary=New'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Known issue types for CNV1: Task, Bug/);
+  });
+
+  test('a Linear PROJECT_NOT_FOUND error (err.code, not message-sniffed) triggers enrichment with Linear\'s own listCreatableProjects', async () => {
+    const linearErr = Object.assign(new Error('Linear team not found for project "BOGUS".'), { code: 'PROJECT_NOT_FOUND' });
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        type: 'linear',
+        createTicket: async () => { throw linearErr; },
+        listCreatableProjects: async () => ([{ key: 'ENG', name: 'Engineering' }]),
+      }),
+    });
+    const result = await runTicketCreate(['--project=BOGUS', '--summary=New'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Known creatable projects: ENG/);
+  });
+
+  test('never attempts enrichment for a GitHub-tracked failure — GitHub never produces this error shape', async () => {
+    let listCalled = false;
+    const err = Object.assign(new Error('GitHub API error 422'), { status: 422, details: { errors: { project: 'irrelevant — should never be read for github' } } });
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        type: 'github',
+        createTicket: async () => { throw err; },
+        listCreatableProjects: async () => { listCalled = true; return []; },
+      }),
+    });
+    await runTicketCreate(['--summary=New'], deps);
+    assert.equal(listCalled, false);
+  });
+
+  test('a refresh failure during enrichment is swallowed — the original error message still surfaces, no crash', async () => {
+    const jiraErr = Object.assign(new Error('x'), { status: 400, details: { errors: { project: 'bad' } } });
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async () => { throw jiraErr; },
+        listCreatableProjects: async () => { throw new Error('network down during refresh'); },
+      }),
+    });
+    const result = await runTicketCreate(['--project=BADPROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Failed to create the ticket/);
+    assert.doesNotMatch(deps.stream.lines.join(''), /Known creatable projects/);
+  });
+
+  test('--project="__proto__" is stored as a real own key, not redirected into the object\'s prototype chain', async () => {
+    let writtenData;
+    const jiraErr = Object.assign(new Error('x'), { status: 400, details: { errors: { issuetype: 'invalid' } } });
+    const deps = baseDeps({
+      writeMetadataCacheFn: (profile, data) => { writtenData = data; },
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async () => { throw jiraErr; },
+        listIssueTypes: async () => ([{ id: '1', name: 'Task' }]),
+      }),
+    });
+    await runTicketCreate(['--project=__proto__', '--type=BadType', '--summary=New'], deps);
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(writtenData.issueTypesByProject, '__proto__'),
+      'expected a real own "__proto__" key on a plain {} target, assigning to obj.__proto__ instead reassigns the internal prototype slot and silently drops the entry',
+    );
+    assert.deepEqual(Object.getOwnPropertyDescriptor(writtenData.issueTypesByProject, '__proto__').value, [{ id: '1', name: 'Task' }]);
+  });
+
+  test('a refresh failure never writes a cache entry', async () => {
+    let writeCalled = false;
+    const jiraErr = Object.assign(new Error('x'), { status: 400, details: { errors: { project: 'bad' } } });
+    const deps = baseDeps({
+      writeMetadataCacheFn: () => { writeCalled = true; },
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async () => { throw jiraErr; },
+        listCreatableProjects: async () => { throw new Error('network down'); },
+      }),
+    });
+    await runTicketCreate(['--project=BADPROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(writeCalled, false);
   });
 });
