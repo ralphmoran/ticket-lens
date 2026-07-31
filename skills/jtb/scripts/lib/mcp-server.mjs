@@ -36,7 +36,7 @@ const TOOLS = [
       properties: {
         title: { type: 'string', description: 'Short one-line title.' },
         ticket: { type: 'string', description: 'Optional ticket key, e.g. PROJ-123.' },
-        tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags.' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags derived from this note\'s actual content — the specific technology, error type, root cause, or affected component (e.g. "retry-backoff", "null-pointer", "auth-middleware"). Never the project name or a generic category word like "gotcha" or "bug" — those provide no search signal to someone else looking for this note later.' },
         body: { type: 'string', description: 'The note body — one or more paragraphs.' },
       },
       required: ['title', 'body'],

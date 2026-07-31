@@ -115,7 +115,7 @@ export function styleRecallResults(digests, opts = {}) {
   if (!styled) {
     const entries = digests.map(d => {
       const ticketList = d.tickets?.length > 0 ? ` (${escapeLeadingHeading(d.tickets.join(', '))})` : '';
-      const summary = `${escapeLeadingHeading(d.title)}${ticketList} — ${d.created.split('T')[0]}  [${d.id}]`;
+      const summary = `${escapeLeadingHeading(d.title)}${ticketList} — ${timeAgo(d.created)}  [${d.id}]`;
       return full ? `${summary}\n${escapeLeadingHeading(d.body)}` : summary;
     });
     return entries.join(full ? '\n\n' : '\n');
@@ -124,9 +124,9 @@ export function styleRecallResults(digests, opts = {}) {
   const s = createStyler({ forceColor: true });
   const entries = digests.map(d => {
     const ticketList = d.tickets?.length > 0 ? ` ${s.dim(`(${escapeLeadingHeading(d.tickets.join(', '))})`)}` : '';
-    const date = s.dim(d.created.split('T')[0]);
+    const ago = s.dim(timeAgo(d.created));
     const id = s.dim(`[${d.id}]`);
-    const summary = `${s.brand('●')} ${s.bold(escapeLeadingHeading(d.title))}${ticketList} ${s.dim('—')} ${date}  ${id}`;
+    const summary = `${s.brand('●')} ${s.bold(escapeLeadingHeading(d.title))}${ticketList} ${s.dim('—')} ${ago}  ${id}`;
     return full ? `${summary}\n${escapeLeadingHeading(d.body)}` : summary;
   });
   return entries.join(full ? '\n\n' : '\n');

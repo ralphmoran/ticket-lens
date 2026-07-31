@@ -2,6 +2,17 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { runRecall, runRecallSync, runRecallSettings } from '../lib/recall-command.mjs';
 import { DEFAULT_RECALL_SETTINGS } from '../lib/recall-settings-sync.mjs';
+import { timeAgo } from '../lib/config.mjs';
+
+// Offset well clear of any minute/hour/day rollover boundary, so the
+// resulting timeAgo() text is stable for the sub-second a test run takes.
+//
+// Tests below compute their expected string via this same timeAgo() call —
+// that verifies the right field (created) is threaded through to the right
+// place in the output, not timeAgo()'s own arithmetic. The arithmetic
+// itself (minute/hour/day boundaries) is independently pinned with a fully
+// deterministic injected clock in config.test.mjs.
+const FIXTURE_CREATED = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 - 5 * 60_000).toISOString();
 
 function makeStream({ isTTY = false } = {}) {
   const lines = [];
@@ -71,19 +82,19 @@ describe('runRecall — output', () => {
   test('prints each matching note title with its tickets and date', async () => {
     const deps = baseDeps({
       listNotesFn: () => [
-        { title: 'Retry gotcha', tickets: ['PROD-1'], created: '2026-07-10T00:00:00.000Z' },
+        { title: 'Retry gotcha', tickets: ['PROD-1'], created: FIXTURE_CREATED },
       ],
     });
     await runRecall(['retry'], deps);
     const output = deps.stream.lines.join('');
     assert.match(output, /Retry gotcha/);
     assert.match(output, /PROD-1/);
-    assert.match(output, /2026-07-10/);
+    assert.match(output, new RegExp(timeAgo(FIXTURE_CREATED)));
   });
 
   test('a note with no linked tickets prints without a ticket list', async () => {
     const deps = baseDeps({
-      listNotesFn: () => [{ title: 'General note', tickets: [], created: '2026-07-10T00:00:00.000Z' }],
+      listNotesFn: () => [{ title: 'General note', tickets: [], created: FIXTURE_CREATED }],
     });
     await runRecall(['general'], deps);
     assert.match(deps.stream.lines.join(''), /General note/);
@@ -98,7 +109,7 @@ describe('runRecall — output', () => {
 
   test('a completed search with results reports success', async () => {
     const deps = baseDeps({
-      listNotesFn: () => [{ title: 'x', tickets: [], created: '2026-07-10T00:00:00.000Z' }],
+      listNotesFn: () => [{ title: 'x', tickets: [], created: FIXTURE_CREATED }],
     });
     const result = await runRecall(['x'], deps);
     assert.equal(result.ok, true);
@@ -106,7 +117,7 @@ describe('runRecall — output', () => {
 });
 
 describe('runRecall — styled vs --plain output', () => {
-  const oneNote = () => [{ id: 'note-1.md', title: 'Retry gotcha', tickets: ['PROD-1'], created: '2026-07-10T00:00:00.000Z', body: 'Add backoff.' }];
+  const oneNote = () => [{ id: 'note-1.md', title: 'Retry gotcha', tickets: ['PROD-1'], created: FIXTURE_CREATED, body: 'Add backoff.' }];
 
   test('a TTY stream without --plain gets styled output (ANSI codes present)', async () => {
     const deps = baseDeps({ stream: makeStream({ isTTY: true }), listNotesFn: oneNote });
@@ -119,7 +130,7 @@ describe('runRecall — styled vs --plain output', () => {
     await runRecall(['retry', '--plain'], deps);
     const output = deps.stream.lines.join('');
     assert.doesNotMatch(output, /\x1b\[/);
-    assert.equal(output, 'Retry gotcha (PROD-1) — 2026-07-10  [note-1.md]\n');
+    assert.equal(output, `Retry gotcha (PROD-1) — ${timeAgo(FIXTURE_CREATED)}  [note-1.md]\n`);
   });
 
   test('a non-TTY stream (piped) gets plain output even without --plain', async () => {
@@ -130,7 +141,7 @@ describe('runRecall — styled vs --plain output', () => {
 });
 
 describe('runRecall — --full prints note content', () => {
-  const oneNote = () => [{ id: 'note-1.md', title: 'Retry gotcha', tickets: ['PROD-1'], created: '2026-07-10T00:00:00.000Z', body: 'Add exponential backoff.' }];
+  const oneNote = () => [{ id: 'note-1.md', title: 'Retry gotcha', tickets: ['PROD-1'], created: FIXTURE_CREATED, body: 'Add exponential backoff.' }];
 
   test('without --full, body content is not printed', async () => {
     const deps = baseDeps({ listNotesFn: oneNote });
@@ -149,7 +160,7 @@ describe('runRecall — --full prints note content', () => {
     await runRecall(['retry', '--plain', '--full'], deps);
     const output = deps.stream.lines.join('');
     assert.doesNotMatch(output, /\x1b\[/);
-    assert.equal(output, 'Retry gotcha (PROD-1) — 2026-07-10  [note-1.md]\nAdd exponential backoff.\n');
+    assert.equal(output, `Retry gotcha (PROD-1) — ${timeAgo(FIXTURE_CREATED)}  [note-1.md]\nAdd exponential backoff.\n`);
   });
 });
 
@@ -178,7 +189,7 @@ describe('runRecall — team sync (pull before search)', () => {
     const deps = baseDeps({
       readCliTokenFn: () => 'tl_key',
       pullNotesFn: () => Promise.resolve({ ok: false, count: 0 }),
-      listNotesFn: () => [{ title: 'Local note', tickets: [], created: '2026-07-10T00:00:00.000Z' }],
+      listNotesFn: () => [{ title: 'Local note', tickets: [], created: FIXTURE_CREATED }],
     });
     const result = await runRecall(['retry'], deps);
     assert.equal(result.ok, true);

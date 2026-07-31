@@ -234,6 +234,8 @@ echo "The body text of the note, one or more paragraphs." | \
   ticketlens note add --title="Short title" --ticket=TICKET-KEY --tags=a,b
 ```
 
+**Choosing tags:** derive them from this note's actual content — the specific technology, error type, root cause, or affected component (e.g. `retry-backoff`, `null-pointer`, `auth-middleware`) — never the project name or a generic category word like `gotcha` or `bug`. A tag like `jtb` or `ticketlens` tells a future search nothing that the ticket/project context doesn't already say; a tag like `retry-backoff` is what actually surfaces this note when someone else hits the same problem. Same rule whether you're constructing the bash command above or calling `recall_add` directly — see its tool description for the same guidance.
+
 To search saved notes directly (outside of automatic brief injection): `ticketlens recall "<query>"`.
 
 **Pick exactly one path per capture — never both.** If this harness has TicketLens's MCP server configured (`ticketlens mcp` — `recall_add`/`recall_search` as native tools, see `ticketlens mcp --help`), prefer calling those tools directly over the bash commands above — same license gate, same secret scan, same vault, same team sync, just no shell command to construct. Fall back to the bash form only when the MCP tools aren't available. Calling both for the same insight creates two near-duplicate notes (no dedup exists between the two paths) and, with team sync on, two separate pushes for a manager to review.

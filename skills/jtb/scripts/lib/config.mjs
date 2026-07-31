@@ -42,10 +42,13 @@ export function getPackageMeta() {
   };
 }
 
-/** Human-readable relative time from an ISO date string. */
-export function timeAgo(dateStr) {
+/**
+ * Human-readable relative time from an ISO date string.
+ * @param {{ now?: () => Date }} [opts] - injectable clock, for deterministic tests only
+ */
+export function timeAgo(dateStr, { now = () => new Date() } = {}) {
   if (!dateStr) return '';
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const diff = now().getTime() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 60) return `${mins}m ago`;
   const hours = Math.floor(mins / 60);

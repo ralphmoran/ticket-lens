@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { writeNote, listNotes, rebuildIndex, resolvePrefix, upsertPulledNote, deleteNote, patchNoteBody } from '../lib/recall-vault.mjs';
+import { timeAgo } from '../lib/config.mjs';
 
 let configDir;
 
@@ -214,6 +215,22 @@ describe('rebuildIndex — Obsidian-facing summary file', () => {
     const indexText = fs.readFileSync(indexPath, 'utf8');
     assert.match(indexText, /First note/);
     assert.match(indexText, /Second note/);
+  });
+
+  test('shows a human-readable relative time, not a bare YYYY-MM-DD date', () => {
+    // Offset well clear of any minute/hour/day rollover boundary, so the
+    // resulting timeAgo() text is stable for the sub-second a test run takes.
+    //
+    // The expected string below is computed via this same timeAgo() call —
+    // that verifies the right field (created) reaches the right place in the
+    // output, not timeAgo()'s own arithmetic, which is independently pinned
+    // with a fully deterministic injected clock in config.test.mjs.
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 - 5 * 60_000);
+    writeNote({ title: 'Aged note', ticketKeys: ['PROD-1'], tags: [], author: 'ralph', body: 'x' }, { configDir, now: () => twoDaysAgo });
+    rebuildIndex('PROD', { configDir });
+    const indexText = fs.readFileSync(path.join(configDir, 'recall', 'PROD', 'index.md'), 'utf8');
+    assert.doesNotMatch(indexText, /\d{4}-\d{2}-\d{2}/);
+    assert.match(indexText, new RegExp(timeAgo(twoDaysAgo.toISOString())));
   });
 
   test('escapes a leading heading marker in a pulled (teammate-authored) title, same as every other Recall render site', () => {

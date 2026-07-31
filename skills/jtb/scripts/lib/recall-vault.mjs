@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { DEFAULT_CONFIG_DIR, escapeLeadingHeading } from './config.mjs';
+import { DEFAULT_CONFIG_DIR, escapeLeadingHeading, timeAgo } from './config.mjs';
 import { TICKET_KEY_PATTERN } from './cli.mjs';
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter.mjs';
 
@@ -348,7 +348,7 @@ export function rebuildIndex(prefix, { configDir = DEFAULT_CONFIG_DIR } = {}) {
     // content is lower trust than a user's own local notes, so it needs the same
     // heading-injection guard already applied in brief-assembler.mjs/styled-assembler.mjs.
     const ticketList = n.tickets.length > 0 ? ` — ${escapeLeadingHeading(n.tickets.join(', '))}` : '';
-    lines.push(`- [[${escapeLeadingHeading(n.title)}]]${ticketList} — ${n.created.split('T')[0]}`);
+    lines.push(`- [[${escapeLeadingHeading(n.title)}]]${ticketList} — ${timeAgo(n.created)}`);
   }
 
   writeFileAtomically(indexPath, lines.join('\n') + '\n');

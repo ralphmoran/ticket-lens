@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { styleTriageSummary, styleBrief, styleRecallResults } from '../lib/styled-assembler.mjs';
+import { timeAgo } from '../lib/config.mjs';
 
 function makeTicket(overrides = {}) {
   return {
@@ -151,6 +152,15 @@ describe('styleBrief', () => {
     assert.ok(result.includes('In Progress'), 'Should show status');
     assert.ok(result.includes('High'), 'Should show priority');
     assert.ok(result.includes('John Dev'), 'Should show assignee');
+  });
+
+  it('regression: ticket Created:/Updated: stay bare YYYY-MM-DD dates — unaffected by Recall\'s switch to relative time', () => {
+    const ticket = makeBriefTicket({ created: '2026-03-01T10:00:00Z', updated: '2026-03-05T10:00:00Z' });
+    const result = styleBrief(ticket, null, { styled: false });
+    const metaLine = result.split('\n').find(l => l.includes('Created:'));
+    assert.match(metaLine, /Created: 2026-03-01/);
+    assert.match(metaLine, /Updated: 2026-03-05/);
+    assert.doesNotMatch(metaLine, /ago/, 'ticket dates must never switch to relative time — that change is scoped to Recall notes only');
   });
 
   it('colors the priority value, consistent with status coloring', () => {
@@ -405,20 +415,37 @@ describe('styleBrief', () => {
 });
 
 describe('styleRecallResults', () => {
+  // Offsets chosen well clear of any minute/hour/day rollover boundary, so
+  // the resulting timeAgo() text is stable for the sub-second a test run takes.
+  //
+  // Tests below compute their expected string via this same timeAgo() call —
+  // that verifies the right field (created) reaches the right place in the
+  // output, not timeAgo()'s own arithmetic. The arithmetic itself is
+  // independently pinned with a fully deterministic injected clock in
+  // config.test.mjs.
+  const TWO_DAYS_AGO = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 - 5 * 60_000).toISOString();
+  const ONE_DAY_AGO = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000 - 5 * 60_000).toISOString();
+
   const digests = [
-    { id: 'note-1.md', title: 'Retry gotcha', tickets: ['PROD-1'], created: '2026-07-10T00:00:00.000Z', body: 'Add exponential backoff to the retry loop.' },
-    { id: 'note-2.md', title: 'General note', tickets: [], created: '2026-07-09T00:00:00.000Z', body: 'Onboarding context.' },
+    { id: 'note-1.md', title: 'Retry gotcha', tickets: ['PROD-1'], created: TWO_DAYS_AGO, body: 'Add exponential backoff to the retry loop.' },
+    { id: 'note-2.md', title: 'General note', tickets: [], created: ONE_DAY_AGO, body: 'Onboarding context.' },
   ];
 
-  it('renders each note title, its tickets, its date, and its id', () => {
+  it('renders each note title, its tickets, a human-readable relative time, and its id', () => {
     const result = styleRecallResults(digests, { styled: false });
     assert.match(result, /Retry gotcha/);
     assert.match(result, /PROD-1/);
-    assert.match(result, /2026-07-10/);
+    assert.match(result, new RegExp(timeAgo(TWO_DAYS_AGO)));
     assert.match(result, /note-1\.md/);
     assert.match(result, /General note/);
-    assert.match(result, /2026-07-09/);
+    assert.match(result, new RegExp(timeAgo(ONE_DAY_AGO)));
     assert.match(result, /note-2\.md/);
+  });
+
+  it('shows a relative time, never a bare YYYY-MM-DD date', () => {
+    const result = styleRecallResults(digests, { styled: false });
+    assert.doesNotMatch(result, /\d{4}-\d{2}-\d{2}/);
+    assert.match(result, /\d+[mhd] ago/);
   });
 
   it('a note with no linked tickets renders without a ticket list', () => {
@@ -443,7 +470,10 @@ describe('styleRecallResults', () => {
 
   it('regression: unstyled output is the exact plain-text format --plain must reproduce, no bullet/decoration', () => {
     const result = styleRecallResults(digests, { styled: false });
-    assert.equal(result, 'Retry gotcha (PROD-1) — 2026-07-10  [note-1.md]\nGeneral note — 2026-07-09  [note-2.md]');
+    assert.equal(
+      result,
+      `Retry gotcha (PROD-1) — ${timeAgo(TWO_DAYS_AGO)}  [note-1.md]\nGeneral note — ${timeAgo(ONE_DAY_AGO)}  [note-2.md]`,
+    );
   });
 
   it('by default (full: false) body content is never printed, even though the digest carries it', () => {
@@ -462,7 +492,7 @@ describe('styleRecallResults', () => {
     const result = styleRecallResults(digests, { styled: false, full: true });
     assert.equal(
       result,
-      'Retry gotcha (PROD-1) — 2026-07-10  [note-1.md]\nAdd exponential backoff to the retry loop.\n\nGeneral note — 2026-07-09  [note-2.md]\nOnboarding context.',
+      `Retry gotcha (PROD-1) — ${timeAgo(TWO_DAYS_AGO)}  [note-1.md]\nAdd exponential backoff to the retry loop.\n\nGeneral note — ${timeAgo(ONE_DAY_AGO)}  [note-2.md]\nOnboarding context.`,
     );
   });
 
