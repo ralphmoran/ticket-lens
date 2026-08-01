@@ -1,4 +1,6 @@
 import { tokenize } from '../duplicate-scorer.mjs';
+import { readAttachments } from '../attachment-uploader.mjs';
+import { isSafeRedirectUrl, validateResolvedHost, defaultLookupFor } from '../jira-client.mjs';
 
 const LINEAR_API = 'https://api.linear.app/graphql';
 
@@ -486,6 +488,78 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
         { token, fetcher, signal },
       );
       return (data.teams?.nodes ?? []).map(t => ({ key: t.key, name: t.name }));
+    },
+
+    /**
+     * Linear's fileUpload mutation is workspace-scoped, not issue-scoped —
+     * unlike Jira, there is no issue key involved in the upload itself, so
+     * this works identically whether the target issue already exists
+     * (comment) or was just created (create). Two-step, both officially
+     * documented: request a signed PUT URL, then PUT the bytes directly to
+     * it. Linear renders any Markdown image URL inline automatically — no
+     * separate node-graph system the way Jira's ADF has, so this is the one
+     * tracker in this family with a fully working, gap-free thumbnail path.
+     * Best-effort per file, same `{uploaded, errors}` shape as Jira's
+     * attachFiles.
+     */
+    async attachFiles(key, filePaths, opts = {}) {
+      const signal = AbortSignal.timeout(opts.timeoutMs ?? 30_000);
+      const { lookup = defaultLookupFor(fetcher), allowPrivateIp = false } = opts;
+      const { files, droppedCount } = readAttachments(filePaths);
+      const uploaded = [];
+      const errors = [];
+      for (const f of files) {
+        if (!f.ok) {
+          errors.push({ path: f.path, message: f.error });
+          continue;
+        }
+        try {
+          const data = await gql(
+            `mutation ($contentType: String!, $filename: String!, $size: Int!) {
+              fileUpload(contentType: $contentType, filename: $filename, size: $size) {
+                success
+                uploadFile { uploadUrl assetUrl headers { key value } }
+              }
+            }`,
+            { contentType: f.mimeType, filename: f.filename, size: f.size },
+            { token, fetcher, signal },
+          );
+          const target = data.fileUpload?.uploadFile;
+          if (!data.fileUpload?.success || !target) {
+            errors.push({ path: f.path, message: 'Linear fileUpload did not return an upload target' });
+            continue;
+          }
+          if (!isSafeRedirectUrl(target.uploadUrl)) {
+            errors.push({ path: f.path, message: 'refusing an unsafe upload URL returned by Linear (non-HTTPS or a private/internal host)' });
+            continue;
+          }
+          // DNS-rebinding guard, same as every other server-supplied URL
+          // this codebase connects to (see jira-client.mjs's guardedFetch) —
+          // isSafeRedirectUrl above only checks the hostname string; this
+          // resolves it. redirect:'manual' + the explicit 3xx refusal below
+          // mirrors guardedFetch's "never follow a redirect on a write" rule.
+          await validateResolvedHost(new URL(target.uploadUrl).hostname, lookup, allowPrivateIp);
+          const putHeaders = Object.fromEntries((target.headers ?? []).map(h => [h.key, h.value]));
+          const putRes = await fetcher(target.uploadUrl, { method: 'PUT', headers: putHeaders, body: f.buffer, signal, redirect: 'manual' });
+          if (putRes.status >= 300 && putRes.status < 400) {
+            errors.push({ path: f.path, message: `upload PUT redirected unexpectedly (status ${putRes.status}) — refusing to follow` });
+            continue;
+          }
+          if (!putRes.ok) {
+            errors.push({ path: f.path, message: `upload PUT failed with ${putRes.status}` });
+            continue;
+          }
+          uploaded.push({
+            filename: f.filename,
+            size: f.size,
+            url: target.assetUrl,
+            inlineMarkup: f.mimeType.startsWith('image/') ? `![${f.filename}](${target.assetUrl})` : `[${f.filename}](${target.assetUrl})`,
+          });
+        } catch (err) {
+          errors.push({ path: f.path, message: err.message });
+        }
+      }
+      return { uploaded, errors, droppedCount };
     },
   };
 }

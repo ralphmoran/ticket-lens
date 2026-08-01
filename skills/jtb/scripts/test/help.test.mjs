@@ -509,6 +509,12 @@ describe('printCreateHelp', () => {
     const out = captureHelp(printCreateHelp);
     assert.match(out, /Jira/);
   });
+
+  it('documents --attach, including that GitHub is not supported', () => {
+    const out = captureHelp(printCreateHelp);
+    assert.match(out, /--attach/);
+    assert.match(out, /GitHub/);
+  });
 });
 
 describe('printCommentHelp', () => {
@@ -517,6 +523,12 @@ describe('printCommentHelp', () => {
     assert.match(out, /comment/);
     assert.match(out, /--body/);
     assert.match(out, /\[Pro\]/);
+  });
+
+  it('documents --attach, including that GitHub is not supported', () => {
+    const out = captureHelp(printCommentHelp);
+    assert.match(out, /--attach/);
+    assert.match(out, /GitHub/);
   });
 });
 

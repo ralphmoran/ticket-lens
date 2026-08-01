@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue } from '../lib/jira-client.mjs';
+import { buildMediaNode } from '../lib/adf-converter.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', '..', 'fixtures', 'jira-fixtures');
@@ -918,6 +919,30 @@ describe('postComment', () => {
   it('throws with the response status on a non-OK response', async () => {
     const fetcher = async () => ({ ok: false, status: 403 });
     await assert.rejects(() => postComment('PROJ-1', 'x', { env: ENV, fetcher }), (err) => err.status === 403);
+  });
+
+  it('appends extraAdfNodes after the text content on v3 (Cloud) — real inline media', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, json: async () => ({ id: '11' }) }; };
+    const mediaNode = buildMediaNode('uuid-1', 'PROJ-1');
+    await postComment('PROJ-1', 'See attached', { env: ENV, apiVersion: 3, fetcher, extraAdfNodes: [mediaNode] });
+    assert.equal(captured.body.content.length, 2);
+    assert.equal(captured.body.content[0].content[0].text, 'See attached');
+    assert.deepEqual(captured.body.content[1], mediaNode);
+  });
+
+  it('ignores extraAdfNodes on v2 (Server/DC) — plain string body has no ADF structure to append to', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, json: async () => ({ id: '11' }) }; };
+    await postComment('PROJ-1', 'See attached', { env: ENV, apiVersion: 2, fetcher, extraAdfNodes: [buildMediaNode('uuid-1', 'PROJ-1')] });
+    assert.equal(captured.body, 'See attached');
+  });
+
+  it('omitting extraAdfNodes is byte-identical to before this feature', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, json: async () => ({ id: '11' }) }; };
+    await postComment('PROJ-1', 'Plain', { env: ENV, apiVersion: 3, fetcher });
+    assert.equal(captured.body.content.length, 1);
   });
 });
 

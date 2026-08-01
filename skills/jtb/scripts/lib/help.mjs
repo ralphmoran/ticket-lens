@@ -670,20 +670,24 @@ export function printCommentHelp({ stream = process.stdout } = {}) {
   const s = createStyler({ isTTY: stream.isTTY });
   const lines = [
     '',
-    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('comment')} ${s.dim('TICKET-KEY --body="..."')}  ${s.dim('[Pro]')}`,
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('comment')} ${s.dim('TICKET-KEY --body="..." [--attach=path1,path2]')}  ${s.dim('[Pro]')}`,
     '',
     `  Post a comment directly to the ticket in its tracker (Jira/GitHub/Linear). ${s.dim('[Pro]')}`,
     `  Writes to the real tracker — this is not a local Recall note.`,
     '',
     `  ${s.bold('OPTIONS')}`,
     '',
-    `    ${s.brand('--body')}=${s.dim('TEXT')}    Comment body ${s.dim('(required)')}`,
-    `    ${s.brand('--profile')}=${s.dim('NAME')} Connection profile to use ${s.dim('(optional)')}`,
-    `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
+    `    ${s.brand('--body')}=${s.dim('TEXT')}      Comment body ${s.dim('(required)')}`,
+    `    ${s.brand('--attach')}=${s.dim('PATHS')}   Comma-separated local file paths to attach ${s.dim('(optional)')}`,
+    `                    Images render as an inline thumbnail on Jira and Linear.`,
+    `                    Not supported on GitHub — no attachment upload API exists there.`,
+    `    ${s.brand('--profile')}=${s.dim('NAME')}   Connection profile to use ${s.dim('(optional)')}`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}     Show this help`,
     '',
     `  ${s.bold('EXAMPLES')}`,
     '',
     `    ${s.dim('$')} ticketlens comment PROD-123 --body="Looks good, merging."`,
+    `    ${s.dim('$')} ticketlens comment PROD-123 --body="See screenshot" --attach=./bug.png`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');
@@ -861,6 +865,8 @@ export function printCreateHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--type')}=${s.dim('NAME')}       Issue type ${s.dim('(Jira only, required there)')}`,
     `    ${s.brand('--summary')}=${s.dim('TEXT')}    Ticket title/summary ${s.dim('(required)')}`,
     `    ${s.brand('--description')}=${s.dim('TEXT')}  Ticket description`,
+    `    ${s.brand('--attach')}=${s.dim('PATHS')}    Comma-separated local file paths to attach, uploaded after creation`,
+    `                    ${s.dim('(optional)')}. Not supported on GitHub — no attachment upload API exists there.`,
     `    ${s.brand('--profile')}=${s.dim('NAME')}     Connection profile to use ${s.dim('(optional)')}`,
     `    ${s.brand('-h')}, ${s.brand('--help')}       Show this help`,
     '',
@@ -868,6 +874,7 @@ export function printCreateHelp({ stream = process.stdout } = {}) {
     '',
     `    ${s.dim('$')} ticketlens create --project=PROD --type="Task" --summary="Fix login on mobile"`,
     `    ${s.dim('$')} ticketlens create --project=ENG --summary="New Linear issue" --profile=linear-team`,
+    `    ${s.dim('$')} ticketlens create --project=PROD --type="Bug" --summary="Broken layout" --attach=./screenshot.png`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

@@ -253,6 +253,36 @@ describe('mcp-server', () => {
       );
       assert.equal(messages[0].result.isError, true);
     });
+
+    it('threads a single attachments path through as --attach=', async () => {
+      let seenArgs;
+      const runTicketCommentFn = async (cmdArgs) => { seenArgs = cmdArgs; return { ok: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_comment', arguments: { ticket: 'PROJ-1', body: 'y', attachments: ['/tmp/shot.png'] } } }],
+        { configDir, runTicketCommentFn },
+      );
+      assert.deepEqual(seenArgs, ['PROJ-1', '--body=y', '--attach=/tmp/shot.png']);
+    });
+
+    it('joins multiple attachments paths with a comma', async () => {
+      let seenArgs;
+      const runTicketCommentFn = async (cmdArgs) => { seenArgs = cmdArgs; return { ok: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_comment', arguments: { ticket: 'PROJ-1', body: 'y', attachments: ['/a.png', '/b.txt'] } } }],
+        { configDir, runTicketCommentFn },
+      );
+      assert.deepEqual(seenArgs, ['PROJ-1', '--body=y', '--attach=/a.png,/b.txt']);
+    });
+
+    it('omits --attach entirely when attachments is not given — byte-identical to before this feature', async () => {
+      let seenArgs;
+      const runTicketCommentFn = async (cmdArgs) => { seenArgs = cmdArgs; return { ok: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_comment', arguments: { ticket: 'PROJ-1', body: 'y' } } }],
+        { configDir, runTicketCommentFn },
+      );
+      assert.deepEqual(seenArgs, ['PROJ-1', '--body=y']);
+    });
   });
 
   describe('tools/call ticket_transition', () => {
@@ -605,6 +635,26 @@ describe('mcp-server', () => {
         { configDir, runTicketCreateFn },
       );
       assert.deepEqual(seenArgs, ['--summary=Only this']);
+    });
+
+    it('threads attachments through as a comma-joined --attach=, appended last', async () => {
+      let seenArgs;
+      const runTicketCreateFn = async (cmdArgs) => { seenArgs = cmdArgs; return { ok: true, key: 'PROJ-99' }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_create', arguments: { project: 'PROJ', type: 'Task', summary: 'New', attachments: ['/a.png', '/b.png'] } } }],
+        { configDir, runTicketCreateFn },
+      );
+      assert.deepEqual(seenArgs, ['--project=PROJ', '--type=Task', '--summary=New', '--attach=/a.png,/b.png']);
+    });
+
+    it('omits --attach entirely when attachments is not given — byte-identical to before this feature', async () => {
+      let seenArgs;
+      const runTicketCreateFn = async (cmdArgs) => { seenArgs = cmdArgs; return { ok: true, key: 'PROJ-99' }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_create', arguments: { project: 'PROJ', type: 'Task', summary: 'New' } } }],
+        { configDir, runTicketCreateFn },
+      );
+      assert.deepEqual(seenArgs, ['--project=PROJ', '--type=Task', '--summary=New']);
     });
 
     it('missing summary returns a JSON-RPC tool error without calling runTicketCreateFn', async () => {

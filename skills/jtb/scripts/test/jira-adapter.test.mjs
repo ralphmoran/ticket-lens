@@ -1,5 +1,8 @@
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { createJiraAdapter } from '../lib/adapters/jira-adapter.mjs';
 
 const CONN = {
@@ -394,5 +397,93 @@ describe('createJiraAdapter — listIssueTypes', () => {
     const result = await adapter.listIssueTypes('TEST');
     assert.match(capturedUrl, /\/createmeta\/TEST\/issuetypes/);
     assert.deepEqual(result, [{ id: '1', name: 'Task' }]);
+  });
+});
+
+describe('createJiraAdapter — attachFiles', () => {
+  let tmpDir;
+  beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jtb-jira-attach-test-')); });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  function writeFixture(name, content = 'x') {
+    const p = path.join(tmpDir, name);
+    fs.writeFileSync(p, content);
+    return p;
+  }
+
+  it('uploads a file and returns Server/DC (v2) thumbnail markup for an image', async () => {
+    const p = writeFixture('screenshot.png', 'fake-bytes');
+    const fetcher = async () => ({ ok: true, json: async () => [{ id: '1', filename: 'screenshot.png', size: 10, content: 'https://jira.example.com/secure/attachment/1/screenshot.png' }] });
+    const adapter = createJiraAdapter(CONN, { fetcher }); // CONN uses 'pat' auth -> apiVersion 2
+    const result = await adapter.attachFiles('TEST-1', [p]);
+    assert.equal(result.uploaded.length, 1);
+    assert.equal(result.errors.length, 0);
+    assert.equal(result.uploaded[0].inlineMarkup, '!screenshot.png|thumbnail!');
+  });
+
+  it('resolves a real ADF media node on Cloud (v3) via the content-redirect UUID technique', async () => {
+    const p = writeFixture('screenshot.png', 'fake-bytes');
+    let call = 0;
+    const fetcher = async () => {
+      call++;
+      if (call === 1) return { ok: true, json: async () => [{ id: '1', filename: 'screenshot.png', size: 10, content: 'https://x/attachment/content/1' }] };
+      return { status: 303, headers: { get: (h) => h === 'location' ? 'https://api.media.atlassian.com/file/uuid-abc/binary?token=t' : null } };
+    };
+    const adapter = createJiraAdapter({ ...CONN, auth: 'cloud' }, { fetcher });
+    const result = await adapter.attachFiles('TEST-1', [p]);
+    assert.equal(result.uploaded[0].inlineMarkup, null);
+    assert.deepEqual(result.uploaded[0].adfMediaNode, {
+      type: 'mediaSingle',
+      attrs: { layout: 'center' },
+      content: [{ type: 'media', attrs: { type: 'file', id: 'uuid-abc', collection: 'TEST-1' } }],
+    });
+  });
+
+  it('falls back to no adfMediaNode on Cloud when media UUID resolution fails — the classic attachment still succeeded', async () => {
+    const p = writeFixture('screenshot.png', 'fake-bytes');
+    let call = 0;
+    const fetcher = async () => {
+      call++;
+      if (call === 1) return { ok: true, json: async () => [{ id: '1', filename: 'screenshot.png', size: 10, content: 'https://x/attachment/content/1' }] };
+      return { status: 500, headers: { get: () => null } };
+    };
+    const adapter = createJiraAdapter({ ...CONN, auth: 'cloud' }, { fetcher });
+    const result = await adapter.attachFiles('TEST-1', [p]);
+    assert.equal(result.errors.length, 0, 'the classic attachment upload succeeded — this is not an error');
+    assert.equal(result.uploaded.length, 1);
+    assert.equal(result.uploaded[0].adfMediaNode, null);
+  });
+
+  it('returns no inline markup for a non-image file even on Server/DC', async () => {
+    const p = writeFixture('log.txt', 'plain text');
+    const fetcher = async () => ({ ok: true, json: async () => [{ id: '1', filename: 'log.txt', size: 10, content: 'https://x/1' }] });
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.attachFiles('TEST-1', [p]);
+    assert.equal(result.uploaded[0].inlineMarkup, null);
+  });
+
+  it('reports a missing local path as an error without throwing', async () => {
+    const fetcher = async () => { throw new Error('should not be called'); };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.attachFiles('TEST-1', [path.join(tmpDir, 'missing.png')]);
+    assert.equal(result.uploaded.length, 0);
+    assert.equal(result.errors.length, 1);
+    assert.equal(result.errors[0].message, 'not-found');
+  });
+
+  it('reports an HTTP upload failure as an error, best-effort across multiple files', async () => {
+    const good = writeFixture('a.png', 'good');
+    const bad = writeFixture('b.png', 'bad');
+    let call = 0;
+    const fetcher = async () => {
+      call++;
+      if (call === 1) return { ok: true, json: async () => [{ id: '1', filename: 'a.png', size: 4, content: 'https://x/1' }] };
+      return { ok: false, status: 413 };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.attachFiles('TEST-1', [good, bad]);
+    assert.equal(result.uploaded.length, 1);
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0].message, /413/);
   });
 });

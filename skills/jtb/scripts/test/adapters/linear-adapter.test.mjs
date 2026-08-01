@@ -1,5 +1,8 @@
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { createLinearAdapter, normalizeLinearIssue } from '../../lib/adapters/linear-adapter.mjs';
 
 // ---------------------------------------------------------------------------
@@ -843,5 +846,153 @@ describe('listCreatableProjects', () => {
     const adapter = createLinearAdapter(CONN, { fetcher });
     const result = await adapter.listCreatableProjects();
     assert.deepEqual(result, []);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// attachFiles
+// ---------------------------------------------------------------------------
+describe('attachFiles', () => {
+  let tmpDir;
+  beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jtb-linear-attach-test-')); });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  function writeFixture(name, content = 'x') {
+    const p = path.join(tmpDir, name);
+    fs.writeFileSync(p, content);
+    return p;
+  }
+
+  function makeUploadFileResponse(uploadUrl = 'https://uploads.linear.app/abc', assetUrl = 'https://uploads.linear.app/abc/screenshot.png') {
+    return makeResponse({
+      fileUpload: {
+        success: true,
+        uploadFile: {
+          uploadUrl,
+          assetUrl,
+          headers: [{ key: 'x-amz-acl', value: 'public-read' }],
+        },
+      },
+    });
+  }
+
+  it('requests a signed upload URL, PUTs the file bytes, and returns Markdown image syntax for an image', async () => {
+    const p = writeFixture('screenshot.png', 'fake-bytes');
+    const calls = [];
+    const fetcher = sequencedFetcher([
+      () => { calls.push('graphql'); return makeUploadFileResponse(); },
+      () => { calls.push('put'); return { ok: true, status: 200 }; },
+    ]);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.attachFiles('ENG-1', [p]);
+
+    assert.deepEqual(calls, ['graphql', 'put']);
+    assert.equal(result.uploaded.length, 1);
+    assert.equal(result.errors.length, 0);
+    assert.equal(result.uploaded[0].url, 'https://uploads.linear.app/abc/screenshot.png');
+    assert.equal(result.uploaded[0].inlineMarkup, '![screenshot.png](https://uploads.linear.app/abc/screenshot.png)');
+  });
+
+  it('returns a plain (non-image) link for a non-image file', async () => {
+    const p = writeFixture('log.txt', 'plain text');
+    const fetcher = sequencedFetcher([
+      () => makeUploadFileResponse('https://uploads.linear.app/def-upload', 'https://uploads.linear.app/def'),
+      () => ({ ok: true, status: 200 }),
+    ]);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.attachFiles('ENG-1', [p]);
+    assert.equal(result.uploaded[0].inlineMarkup, '[log.txt](https://uploads.linear.app/def)');
+  });
+
+  it('reports a missing local path as an error without calling the network', async () => {
+    let called = false;
+    const fetcher = async () => { called = true; return makeResponse({}); };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.attachFiles('ENG-1', [path.join(tmpDir, 'missing.png')]);
+    assert.equal(result.uploaded.length, 0);
+    assert.equal(result.errors[0].message, 'not-found');
+    assert.equal(called, false);
+  });
+
+  it('reports fileUpload success:false as an error without attempting the PUT', async () => {
+    const p = writeFixture('a.png', 'x');
+    let putCalled = false;
+    const fetcher = sequencedFetcher([
+      () => makeResponse({ fileUpload: { success: false } }),
+      () => { putCalled = true; return { ok: true, status: 200 }; },
+    ]);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.attachFiles('ENG-1', [p]);
+    assert.equal(result.uploaded.length, 0);
+    assert.equal(result.errors.length, 1);
+    assert.equal(putCalled, false);
+  });
+
+  it('refuses a non-HTTPS upload URL without ever sending the file bytes', async () => {
+    const p = writeFixture('a.png', 'x');
+    let putCalled = false;
+    const fetcher = sequencedFetcher([
+      () => makeUploadFileResponse('http://insecure.example.com/upload'),
+      () => { putCalled = true; return { ok: true, status: 200 }; },
+    ]);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.attachFiles('ENG-1', [p]);
+    assert.equal(result.uploaded.length, 0);
+    assert.match(result.errors[0].message, /https/i);
+    assert.equal(putCalled, false);
+  });
+
+  it('refuses an upload URL resolving to a private/internal-looking host, even over HTTPS', async () => {
+    const p = writeFixture('a.png', 'x');
+    let putCalled = false;
+    const fetcher = sequencedFetcher([
+      () => makeUploadFileResponse('https://169.254.169.254/upload'),
+      () => { putCalled = true; return { ok: true, status: 200 }; },
+    ]);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.attachFiles('ENG-1', [p]);
+    assert.equal(result.uploaded.length, 0);
+    assert.match(result.errors[0].message, /unsafe/i);
+    assert.equal(putCalled, false);
+  });
+
+  it('reports a failed PUT upload as an error, best-effort across multiple files', async () => {
+    const good = writeFixture('a.png', 'good');
+    const bad = writeFixture('b.png', 'bad');
+    const fetcher = sequencedFetcher([
+      () => makeUploadFileResponse('https://uploads.linear.app/good'),
+      () => ({ ok: true, status: 200 }),
+      () => makeUploadFileResponse('https://uploads.linear.app/bad'),
+      () => ({ ok: false, status: 500 }),
+    ]);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.attachFiles('ENG-1', [good, bad]);
+    assert.equal(result.uploaded.length, 1);
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0].message, /500/);
+  });
+
+  it('refuses to follow a redirect from the upload PUT — never sends the same bytes to an unvalidated second host', async () => {
+    const p = writeFixture('a.png', 'x');
+    const fetcher = sequencedFetcher([
+      () => makeUploadFileResponse('https://uploads.linear.app/good'),
+      () => ({ ok: false, status: 302 }),
+    ]);
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.attachFiles('ENG-1', [p]);
+    assert.equal(result.uploaded.length, 0);
+    assert.match(result.errors[0].message, /redirect/i);
+  });
+
+  it('sends redirect:manual on the PUT request', async () => {
+    const p = writeFixture('a.png', 'x');
+    let putOpts;
+    const fetcher = async (url, opts) => {
+      if (url === 'https://uploads.linear.app/good') { putOpts = opts; return { ok: true, status: 200 }; }
+      return makeUploadFileResponse('https://uploads.linear.app/good');
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await adapter.attachFiles('ENG-1', [p]);
+    assert.equal(putOpts.redirect, 'manual');
   });
 });

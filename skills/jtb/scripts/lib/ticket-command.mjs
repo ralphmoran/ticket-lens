@@ -20,9 +20,37 @@ import { readMetadataCache, writeMetadataCache } from './ticket-metadata-cache.m
 import { detectProjectOrTypeError, enrichCreateFailure } from './ticket-create-enrichment.mjs';
 import { TICKET_KEY_PATTERN } from './cli.mjs';
 import { scoreCandidates } from './duplicate-scorer.mjs';
+import { MAX_ATTACHMENTS } from './attachment-uploader.mjs';
 
 function parseFlag(cmdArgs, name) {
   return cmdArgs.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3);
+}
+
+function parseAttachPaths(cmdArgs) {
+  const raw = parseFlag(cmdArgs, 'attach');
+  return raw ? raw.split(',').map(p => p.trim()).filter(Boolean) : [];
+}
+
+/**
+ * GitHub has no PAT-compatible public API for uploading issue/comment
+ * assets (confirmed via research — the only upload endpoint requires a
+ * browser session, not a token). Refused before the adapter is ever
+ * called, same pattern already used for GitHub's --priority refusal in
+ * ticket_update, rather than silently no-op-ing.
+ */
+function refuseGithubAttachments(adapter, attachPaths, stream) {
+  if (!attachPaths.length || adapter.type !== 'github') return false;
+  stream.write('  Note: GitHub does not support file attachments via the API — no supported way to upload issue/comment assets exists. Continuing without --attach.\n');
+  return true;
+}
+
+function formatAttachSummary(attachResult) {
+  if (!attachResult) return '';
+  const lines = [];
+  for (const u of attachResult.uploaded) lines.push(`  Attached ${u.filename}${u.url ? ` (${u.url})` : ''}\n`);
+  for (const e of attachResult.errors) lines.push(`  Failed to attach ${e.path}: ${e.message}\n`);
+  if (attachResult.droppedCount > 0) lines.push(`  ${attachResult.droppedCount} attachment(s) dropped — exceeds the ${MAX_ATTACHMENTS}-file limit per call.\n`);
+  return lines.join('');
 }
 
 /**
@@ -205,7 +233,7 @@ export async function runTicketComment(cmdArgs, {
   logActionFn = logAction,
   actor = os.userInfo().username,
 } = {}) {
-  const usage = 'Usage: ticketlens comment TICKET-KEY --body="..."\n';
+  const usage = 'Usage: ticketlens comment TICKET-KEY --body="..." [--attach=path1,path2]\n';
   if (!requireLicense(isLicensedFn, configDir, 'ticketlens comment', stream)) return { ok: false };
 
   const ticketKey = requireTicketKey(cmdArgs, usage, stream);
@@ -216,6 +244,7 @@ export async function runTicketComment(cmdArgs, {
     stream.write(usage);
     return { ok: false };
   }
+  const attachPaths = parseAttachPaths(cmdArgs);
 
   const cooldown = checkCooldownFn(ticketKey, 'comment', { configDir });
   if (cooldown.active) {
@@ -226,14 +255,32 @@ export async function runTicketComment(cmdArgs, {
   const adapter = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
   if (!adapter) return { ok: false };
 
+  // Uploaded BEFORE the comment write so a tracker capable of inline
+  // rendering (Jira Server/DC via wiki markup, Jira Cloud via a real ADF
+  // media node, Linear via Markdown) can fold it into the same atomic
+  // comment post rather than needing a second edit call.
+  let attachResult = null;
+  if (attachPaths.length && !refuseGithubAttachments(adapter, attachPaths, stream)) {
+    attachResult = await adapter.attachFiles(ticketKey, attachPaths);
+  }
+  const inlineSnippets = (attachResult?.uploaded ?? []).filter(a => a.inlineMarkup).map(a => a.inlineMarkup).join('\n\n');
+  const finalBody = inlineSnippets ? `${body}\n\n${inlineSnippets}` : body;
+  const extraAdfNodes = (attachResult?.uploaded ?? []).filter(a => a.adfMediaNode).map(a => a.adfMediaNode);
+
   try {
-    const result = await adapter.addComment(ticketKey, body);
+    const result = await adapter.addComment(ticketKey, finalBody, extraAdfNodes.length ? { extraAdfNodes } : {});
     recordActionFn(ticketKey, 'comment', { configDir });
-    logActionFn({ ticketKey, action: 'comment', actor, tracker: adapter.type, detail: { id: result.id } }, { configDir });
-    stream.write(`  Comment posted to ${ticketKey}${result.url ? ` (${result.url})` : ''}\n`);
+    // attachPaths (every path attempted, raw) plus attachedFilenames (what
+    // actually landed) — a partial attach failure is reconstructable from
+    // the difference between the two, not just silently absent from audit.
+    logActionFn({ ticketKey, action: 'comment', actor, tracker: adapter.type, detail: { id: result.id, attachPaths, attachedFilenames: (attachResult?.uploaded ?? []).map(a => a.filename) } }, { configDir });
+    stream.write(`  Comment posted to ${ticketKey}${result.url ? ` (${result.url})` : ''}\n` + formatAttachSummary(attachResult));
     return { ok: true };
   } catch (err) {
-    stream.write(formatWriteFailure(ticketKey, err));
+    // Attachments (if any) genuinely landed on the tracker before this
+    // write was attempted — formatAttachSummary is still shown here so a
+    // caller retrying the whole command doesn't blindly re-upload them.
+    stream.write(formatWriteFailure(ticketKey, err) + formatAttachSummary(attachResult));
     return { ok: false };
   }
 }
@@ -705,9 +752,11 @@ export async function runTicketCreate(cmdArgs, {
   const project = parseFlag(cmdArgs, 'project');
   const type = parseFlag(cmdArgs, 'type');
   const description = parseFlag(cmdArgs, 'description');
+  const attachPaths = parseAttachPaths(cmdArgs);
 
   const adapter = resolveTicketAdapter(undefined, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
   if (!adapter) return { ok: false };
+  const attachRefused = refuseGithubAttachments(adapter, attachPaths, stream);
 
   if (adapter.type !== 'github' && !project) {
     stream.write(`  --project is required for ${adapter.type === 'jira' ? 'Jira (project key)' : 'Linear (team key)'}.\n`);
@@ -758,6 +807,44 @@ export async function runTicketCreate(cmdArgs, {
   } catch (bookkeepingErr) {
     stream.write(`  Warning: ${result.key} was created but could not be logged: ${bookkeepingErr.message}\n`);
   }
-  stream.write(`  Created ${result.key}${result.url ? ` (${result.url})` : ''}\n`);
+
+  // Attachments upload AFTER creation — Jira/Linear both need a real issue
+  // key to attach to (Jira strictly; Linear's fileUpload doesn't, but the
+  // same ordering is kept uniform across trackers for simplicity). The
+  // ticket has already landed, so nothing in this block may ever cause
+  // runTicketCreate to report the create itself as failed — wrapped in its
+  // own try/catch, mirroring the bookkeeping block above.
+  let attachResult = null;
+  if (attachPaths.length && !attachRefused) {
+    try {
+      attachResult = await adapter.attachFiles(result.key, attachPaths);
+
+      // Linear has no separate attachment list on an issue — unlike Jira's
+      // classic attachment (real regardless of description text), an
+      // uploaded Linear asset is only ever associated with the issue by
+      // referencing its URL in a text field. Without this follow-up edit,
+      // the file would be uploaded to Linear's storage but completely
+      // orphaned from the ticket. Best-effort: if this edit fails, the
+      // asset is still genuinely uploaded, just not linked — reported as
+      // an error entry, not a lost/misreported create.
+      const inlineSnippets = attachResult.uploaded.filter(a => a.inlineMarkup).map(a => a.inlineMarkup).join('\n\n');
+      if (inlineSnippets && adapter.type === 'linear') {
+        try {
+          await adapter.updateFields(result.key, { description: description ? `${description}\n\n${inlineSnippets}` : inlineSnippets });
+        } catch (linkErr) {
+          attachResult = { ...attachResult, errors: [...attachResult.errors, { path: '(description update)', message: `uploaded but failed to link into the ticket description: ${linkErr.message}` }] };
+        }
+      }
+
+      try {
+        logActionFn({ ticketKey: result.key, action: 'create', actor, tracker: adapter.type, detail: { attachPaths, attachedFilenames: attachResult.uploaded.map(a => a.filename) } }, { configDir });
+      } catch { /* best-effort, same as the primary bookkeeping above */ }
+    } catch (attachErr) {
+      stream.write(`  Warning: ${result.key} was created but attaching files failed: ${attachErr.message}\n`);
+      attachResult = null;
+    }
+  }
+
+  stream.write(`  Created ${result.key}${result.url ? ` (${result.url})` : ''}\n` + formatAttachSummary(attachResult));
   return { ok: true, key: result.key };
 }

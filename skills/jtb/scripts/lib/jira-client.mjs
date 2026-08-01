@@ -4,7 +4,7 @@
  * Supports v2 (Server/DC) and v3 (Cloud) API versions.
  */
 
-import { adfToText, textToAdf } from './adf-converter.mjs';
+import { adfToText, textToAdf, appendNodesToAdf } from './adf-converter.mjs';
 import { lookup as dnsLookup } from 'node:dns/promises';
 
 function toText(value) {
@@ -420,14 +420,21 @@ export async function fetchRemoteLinks(ticketKey, opts = {}) {
  * Adds a comment to an issue. Cloud (v3) rejects a plain string body
  * outright and requires ADF; Server/DC (v2) accepts plain text directly —
  * same apiVersion branch point every other write/read here already uses.
+ *
+ * `extraAdfNodes` (Cloud only — a v2 string body has no ADF structure to
+ * append to) lets a caller embed real inline media (e.g. an uploaded
+ * attachment's mediaSingle node from adf-converter.mjs's buildMediaNode)
+ * after the text content, in the same atomic comment write.
  */
 export async function postComment(ticketKey, body, opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false, extraAdfNodes = [] } = opts;
   validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const url = `${baseUrl}/rest/api/${apiVersion}/issue/${encodeURIComponent(ticketKey)}/comment`;
 
-  const payload = { body: apiVersion === 3 ? textToAdf(body) : body };
+  let payloadBody = apiVersion === 3 ? textToAdf(body) : body;
+  if (apiVersion === 3 && extraAdfNodes.length) payloadBody = appendNodesToAdf(payloadBody, extraAdfNodes);
+  const payload = { body: payloadBody };
   const fetchOpts = {
     method: 'POST',
     headers: { ...buildAuthHeader(env), 'Content-Type': 'application/json' },

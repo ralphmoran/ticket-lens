@@ -61,6 +61,7 @@ const TOOLS = [
       properties: {
         ticket: { type: 'string', description: 'Ticket key, e.g. PROJ-123.' },
         body: { type: 'string', description: 'Comment body.' },
+        attachments: { type: 'array', items: { type: 'string' }, description: 'Local file paths to attach — images render as a real inline thumbnail in the posted comment on both Jira (Cloud and Server/Data Center) and Linear. Not supported on GitHub — no PAT-compatible upload API exists there.' },
       },
       required: ['ticket', 'body'],
     },
@@ -142,6 +143,7 @@ const TOOLS = [
         type: { type: 'string', description: 'Jira issue type, e.g. "Task" or "Bug". Required for Jira only; ignored on GitHub/Linear.' },
         summary: { type: 'string', description: 'Ticket title/summary.' },
         description: { type: 'string', description: 'Ticket description. Omit for none.' },
+        attachments: { type: 'array', items: { type: 'string' }, description: 'Local file paths to attach, uploaded after the ticket is created. On Linear the image is automatically linked into the description. On Jira it becomes a real, visible attachment on the issue, but is not embedded inline in the initial description (use ticket_comment afterward for an inline thumbnail). Not supported on GitHub.' },
       },
       required: ['summary'],
     },
@@ -222,8 +224,10 @@ async function callTicketComment(args, { configDir, runTicketCommentFn }) {
   if (!args.body) {
     return { isError: true, content: [{ type: 'text', text: 'Missing required argument: body' }] };
   }
+  const cmdArgs = [args.ticket, `--body=${args.body}`];
+  if (args.attachments?.length) cmdArgs.push(`--attach=${args.attachments.join(',')}`);
   const capture = capturingStream();
-  const { ok } = await runTicketCommentFn([args.ticket, `--body=${args.body}`], { configDir, stream: capture });
+  const { ok } = await runTicketCommentFn(cmdArgs, { configDir, stream: capture });
   const content = [{ type: 'text', text: capture.text }];
   return ok ? { content } : { isError: true, content };
 }
@@ -350,6 +354,7 @@ function buildTicketCreateArgs(args) {
   if (args.type !== undefined) cmdArgs.push(`--type=${args.type}`);
   cmdArgs.push(`--summary=${args.summary}`);
   if (args.description !== undefined) cmdArgs.push(`--description=${args.description}`);
+  if (args.attachments?.length) cmdArgs.push(`--attach=${args.attachments.join(',')}`);
   return cmdArgs;
 }
 

@@ -1,4 +1,7 @@
 import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue } from '../jira-client.mjs';
+import { uploadAttachment, resolveMediaId } from '../jira-attachment-client.mjs';
+import { readAttachments } from '../attachment-uploader.mjs';
+import { buildMediaNode } from '../adf-converter.mjs';
 import { buildJiraEnv } from '../config.mjs';
 
 /**
@@ -149,5 +152,54 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
 
     /** Real, currently-configured issue types for one project. */
     listIssueTypes: (projectKey, opts = {}) => fetchIssueTypes(projectKey, { ...base, ...opts }),
+
+    /**
+     * Best-effort, per-file: one bad path or one failed upload never blocks
+     * the rest (same `{applied/uploaded, errors}` shape convention as
+     * updateFields' GitHub label loop). Two different inline-thumbnail
+     * mechanisms per apiVersion, both real:
+     *  - Server/DC (v2, plain-string bodies): legacy wiki markup
+     *    `!filename|thumbnail!`, resolved by filename — returned as
+     *    `inlineMarkup`, a plain string the caller appends to body text.
+     *  - Cloud (v3, ADF): a real `mediaSingle`/`media` ADF node — returned
+     *    as `adfMediaNode`, an object the caller threads through
+     *    `postComment`'s `extraAdfNodes`. Requires one extra call
+     *    (`resolveMediaId`) to resolve the Media Services UUID; if that
+     *    fails, `adfMediaNode` stays null — the classic attachment above
+     *    already succeeded and is genuinely visible on the issue either
+     *    way, so this failure is swallowed, not surfaced as an error.
+     * Both are image-only; non-image files get neither.
+     */
+    async attachFiles(key, filePaths, opts = {}) {
+      const { files, droppedCount } = readAttachments(filePaths);
+      const uploaded = [];
+      const errors = [];
+      for (const f of files) {
+        if (!f.ok) {
+          errors.push({ path: f.path, message: f.error });
+          continue;
+        }
+        try {
+          const result = await uploadAttachment(key, f, { ...base, ...opts });
+          const isImage = f.mimeType.startsWith('image/');
+          let inlineMarkup = null;
+          let adfMediaNode = null;
+          if (isImage && apiVersion === 2) {
+            inlineMarkup = `!${result.filename}|thumbnail!`;
+          } else if (isImage && apiVersion === 3 && result.url) {
+            try {
+              const mediaId = await resolveMediaId(result.url, { ...base, ...opts });
+              adfMediaNode = buildMediaNode(mediaId, key);
+            } catch {
+              // Enhancement only — see doc comment above.
+            }
+          }
+          uploaded.push({ filename: result.filename, size: result.size, url: result.url, inlineMarkup, adfMediaNode });
+        } catch (err) {
+          errors.push({ path: f.path, message: err.message });
+        }
+      }
+      return { uploaded, errors, droppedCount };
+    },
   };
 }

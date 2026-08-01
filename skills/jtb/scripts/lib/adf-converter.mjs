@@ -23,6 +23,32 @@ export function textToAdf(text) {
   };
 }
 
+/**
+ * Builds an ADF mediaSingle+media node embedding an already-uploaded Jira
+ * attachment as a real inline image. `collection` does NOT need to be
+ * Jira's actual internal Media Services collection — real-instance
+ * verification against a live Jira Cloud site confirmed the image renders
+ * correctly regardless of the collection value given (including the
+ * ticket key, used here as a stable value requiring no extra lookup);
+ * the content-scoped access token embedded when resolving `id` is what
+ * actually grants read access, not this field.
+ */
+export function buildMediaNode(mediaId, collection) {
+  return {
+    type: 'mediaSingle',
+    attrs: { layout: 'center' },
+    content: [{ type: 'media', attrs: { type: 'file', id: mediaId, collection } }],
+  };
+}
+
+/**
+ * Appends block-level nodes (e.g. a media node) after an ADF doc's existing
+ * content, without mutating the original doc.
+ */
+export function appendNodesToAdf(adfDoc, extraNodes) {
+  return { ...adfDoc, content: [...adfDoc.content, ...extraNodes] };
+}
+
 export function adfToText(value) {
   if (value == null) return '';
   if (typeof value === 'string') return value;

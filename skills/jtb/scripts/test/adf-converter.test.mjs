@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { adfToText } from '../lib/adf-converter.mjs';
+import { adfToText, textToAdf, buildMediaNode, appendNodesToAdf } from '../lib/adf-converter.mjs';
 
 describe('adfToText', () => {
   it('returns plain string unchanged', () => {
@@ -188,5 +188,34 @@ describe('adfToText', () => {
 
   it('returns empty string for object without type=doc', () => {
     assert.equal(adfToText({ random: 'object' }), '');
+  });
+});
+
+describe('buildMediaNode', () => {
+  it('builds a mediaSingle+media node with type:file, the given id, and collection', () => {
+    const node = buildMediaNode('5399f134-e823-4504-afbd-0874a0227dc9', 'CNV1-24');
+    assert.deepEqual(node, {
+      type: 'mediaSingle',
+      attrs: { layout: 'center' },
+      content: [{ type: 'media', attrs: { type: 'file', id: '5399f134-e823-4504-afbd-0874a0227dc9', collection: 'CNV1-24' } }],
+    });
+  });
+});
+
+describe('appendNodesToAdf', () => {
+  it('appends extra block nodes after the existing text content', () => {
+    const doc = textToAdf('Looks good');
+    const mediaNode = buildMediaNode('uuid-1', 'CNV1-24');
+    const result = appendNodesToAdf(doc, [mediaNode]);
+    assert.equal(result.content.length, 2);
+    assert.equal(result.content[0].type, 'paragraph');
+    assert.equal(result.content[1], mediaNode);
+  });
+
+  it('does not mutate the original doc', () => {
+    const doc = textToAdf('Looks good');
+    const originalLength = doc.content.length;
+    appendNodesToAdf(doc, [buildMediaNode('uuid-1', 'CNV1-24')]);
+    assert.equal(doc.content.length, originalLength);
   });
 });

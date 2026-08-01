@@ -22,6 +22,7 @@ function fakeAdapter(overrides = {}) {
     createTicket: async () => ({ key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }),
     listCreatableProjects: async () => ([{ key: 'PROJ', name: 'Project' }]),
     listIssueTypes: async () => ([{ id: '1', name: 'Task' }]),
+    attachFiles: async () => ({ uploaded: [], errors: [], droppedCount: 0 }),
     ...overrides,
   };
 }
@@ -169,6 +170,144 @@ describe('runTicketComment — write failure', () => {
     assert.equal(recorded, false);
     assert.equal(logged, false);
     assert.match(deps.stream.lines.join(''), /server error/);
+  });
+});
+
+describe('runTicketComment — attachments', () => {
+  test('uploads --attach paths and folds inline markup into the comment body before posting', async () => {
+    let attachArgs, postedBody;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        attachFiles: async (key, paths) => {
+          attachArgs = { key, paths };
+          return { uploaded: [{ filename: 'shot.png', size: 10, url: 'https://x/shot.png', inlineMarkup: '!shot.png|thumbnail!' }], errors: [], droppedCount: 0 };
+        },
+        addComment: async (key, body) => { postedBody = body; return { id: 'c1', url: 'https://example/c1' }; },
+      }),
+    });
+    const result = await runTicketComment(['PROJ-1', '--body=Looks good', '--attach=/tmp/shot.png'], deps);
+    assert.equal(result.ok, true);
+    assert.deepEqual(attachArgs, { key: 'PROJ-1', paths: ['/tmp/shot.png'] });
+    assert.equal(postedBody, 'Looks good\n\n!shot.png|thumbnail!');
+  });
+
+  test('posts the original body unchanged when no uploaded file has inline markup (non-image, or a tracker with neither mechanism)', async () => {
+    let postedBody;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        attachFiles: async () => ({ uploaded: [{ filename: 'log.txt', size: 10, url: 'https://x/log.txt', inlineMarkup: null, adfMediaNode: null }], errors: [], droppedCount: 0 }),
+        addComment: async (key, body) => { postedBody = body; return { id: 'c1' }; },
+      }),
+    });
+    await runTicketComment(['PROJ-1', '--body=Looks good', '--attach=/tmp/log.txt'], deps);
+    assert.equal(postedBody, 'Looks good');
+  });
+
+  test('threads Jira Cloud adfMediaNode entries through to addComment as extraAdfNodes', async () => {
+    let addCommentOpts;
+    const mediaNode = { type: 'mediaSingle', attrs: { layout: 'center' }, content: [{ type: 'media', attrs: { type: 'file', id: 'uuid-1', collection: 'PROJ-1' } }] };
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        attachFiles: async () => ({ uploaded: [{ filename: 'shot.png', size: 10, url: 'https://x/shot.png', inlineMarkup: null, adfMediaNode: mediaNode }], errors: [], droppedCount: 0 }),
+        addComment: async (key, body, opts) => { addCommentOpts = opts; return { id: 'c1' }; },
+      }),
+    });
+    await runTicketComment(['PROJ-1', '--body=Looks good', '--attach=/tmp/shot.png'], deps);
+    assert.deepEqual(addCommentOpts, { extraAdfNodes: [mediaNode] });
+  });
+
+  test('passes an empty opts object to addComment when no file has an adfMediaNode', async () => {
+    let addCommentOpts;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        addComment: async (key, body, opts) => { addCommentOpts = opts; return { id: 'c1' }; },
+      }),
+    });
+    await runTicketComment(['PROJ-1', '--body=hi'], deps);
+    assert.deepEqual(addCommentOpts, {});
+  });
+
+  test('parses multiple comma-separated --attach paths', async () => {
+    let attachPaths;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        attachFiles: async (key, paths) => { attachPaths = paths; return { uploaded: [], errors: [], droppedCount: 0 }; },
+      }),
+    });
+    await runTicketComment(['PROJ-1', '--body=hi', '--attach=/a.png,/b.txt'], deps);
+    assert.deepEqual(attachPaths, ['/a.png', '/b.txt']);
+  });
+
+  test('never calls attachFiles on GitHub — warns and posts the comment without attachments', async () => {
+    let attachCalled = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        type: 'github',
+        attachFiles: async () => { attachCalled = true; return { uploaded: [], errors: [], droppedCount: 0 }; },
+      }),
+    });
+    const result = await runTicketComment(['PROJ-1', '--body=hi', '--attach=/a.png'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(attachCalled, false);
+    assert.match(deps.stream.lines.join(''), /GitHub does not support file attachments/i);
+  });
+
+  test('an attach failure does not block posting the comment (best-effort)', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        attachFiles: async () => ({ uploaded: [], errors: [{ path: '/missing.png', message: 'not-found' }], droppedCount: 0 }),
+      }),
+    });
+    const result = await runTicketComment(['PROJ-1', '--body=hi', '--attach=/missing.png'], deps);
+    assert.equal(result.ok, true);
+    assert.match(deps.stream.lines.join(''), /Failed to attach \/missing\.png: not-found/);
+  });
+
+  test('records the full attempted attach path plus the filename that actually landed, in the audit log detail', async () => {
+    let logged;
+    const deps = baseDeps({
+      logActionFn: (entry) => { logged = entry; },
+      resolveAdapterFn: () => fakeAdapter({
+        attachFiles: async () => ({ uploaded: [{ filename: 'shot.png', size: 10, url: 'https://x/shot.png', inlineMarkup: null, adfMediaNode: null }], errors: [], droppedCount: 0 }),
+      }),
+    });
+    await runTicketComment(['PROJ-1', '--body=hi', '--attach=/Users/x/shot.png'], deps);
+    assert.deepEqual(logged.detail.attachPaths, ['/Users/x/shot.png']);
+    assert.deepEqual(logged.detail.attachedFilenames, ['shot.png']);
+  });
+
+  test('records every attempted path even when some failed to upload — a partial success is reconstructable from the audit log alone', async () => {
+    let logged;
+    const deps = baseDeps({
+      logActionFn: (entry) => { logged = entry; },
+      resolveAdapterFn: () => fakeAdapter({
+        attachFiles: async () => ({ uploaded: [{ filename: 'good.png', size: 10, url: 'https://x/good.png', inlineMarkup: null, adfMediaNode: null }], errors: [{ path: '/etc/passwd', message: 'not-found' }], droppedCount: 0 }),
+      }),
+    });
+    await runTicketComment(['PROJ-1', '--body=hi', '--attach=/good.png,/etc/passwd'], deps);
+    assert.deepEqual(logged.detail.attachPaths, ['/good.png', '/etc/passwd']);
+    assert.deepEqual(logged.detail.attachedFilenames, ['good.png']);
+  });
+
+  test('still reports the attach summary when the comment write itself fails afterward — a caller must not blindly re-upload already-landed files', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        attachFiles: async () => ({ uploaded: [{ filename: 'shot.png', size: 10, url: 'https://x/shot.png', inlineMarkup: null, adfMediaNode: null }], errors: [], droppedCount: 0 }),
+        addComment: async () => { throw Object.assign(new Error('boom'), { status: 500 }); },
+      }),
+    });
+    const result = await runTicketComment(['PROJ-1', '--body=hi', '--attach=/shot.png'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Attached shot\.png/);
+  });
+
+  test('no --attach flag never calls attachFiles', async () => {
+    let called = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ attachFiles: async () => { called = true; return { uploaded: [], errors: [], droppedCount: 0 }; } }),
+    });
+    await runTicketComment(['PROJ-1', '--body=hi'], deps);
+    assert.equal(called, false);
   });
 });
 
@@ -1042,6 +1181,144 @@ describe('runTicketCreate — happy path', () => {
     assert.equal(result.ok, true);
     assert.match(deps.stream.lines.join(''), /PROJ-99/);
     assert.match(deps.stream.lines.join(''), /https:\/\/example\/PROJ-99/);
+  });
+});
+
+describe('runTicketCreate — attachments', () => {
+  test('uploads --attach paths AFTER the ticket is created, using the new key', async () => {
+    let attachArgs;
+    const calls = [];
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async () => { calls.push('create'); return { key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }; },
+        attachFiles: async (key, paths) => { calls.push('attach'); attachArgs = { key, paths }; return { uploaded: [{ filename: 'shot.png', size: 10, url: 'https://x/1', inlineMarkup: null }], errors: [], droppedCount: 0 }; },
+      }),
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New', '--attach=/tmp/shot.png'], deps);
+    assert.equal(result.ok, true);
+    assert.deepEqual(calls, ['create', 'attach']);
+    assert.deepEqual(attachArgs, { key: 'PROJ-99', paths: ['/tmp/shot.png'] });
+    assert.match(deps.stream.lines.join(''), /Attached shot\.png/);
+  });
+
+  test('never calls attachFiles on GitHub — warns and still reports the created ticket', async () => {
+    let attachCalled = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        type: 'github',
+        createTicket: async () => ({ key: 'GH-5', id: '5', url: 'https://github.com/x/y/issues/5' }),
+        attachFiles: async () => { attachCalled = true; return { uploaded: [], errors: [], droppedCount: 0 }; },
+      }),
+    });
+    const result = await runTicketCreate(['--summary=New', '--attach=/a.png'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(attachCalled, false);
+    assert.match(deps.stream.lines.join(''), /GitHub does not support file attachments/i);
+  });
+
+  test('an attach failure never flips a successful create to ok:false — the ticket already exists', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async () => ({ key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }),
+        attachFiles: async () => ({ uploaded: [], errors: [{ path: '/missing.png', message: 'not-found' }], droppedCount: 0 }),
+      }),
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New', '--attach=/missing.png'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(result.key, 'PROJ-99');
+    assert.match(deps.stream.lines.join(''), /Failed to attach \/missing\.png: not-found/);
+  });
+
+  test('an unexpected exception from attachFiles itself never flips a successful create to ok:false', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async () => ({ key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }),
+        attachFiles: async () => { throw new Error('unexpected'); },
+      }),
+    });
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New', '--attach=/a.png'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(result.key, 'PROJ-99');
+    assert.match(deps.stream.lines.join(''), /Warning: PROJ-99 was created but attaching files failed: unexpected/);
+  });
+
+  test('on Linear, an uploaded image with inlineMarkup is folded into the description via a follow-up updateFields — otherwise the asset is orphaned', async () => {
+    let updateFieldsArgs;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        type: 'linear',
+        createTicket: async () => ({ key: 'ENG-1', id: '1', url: 'https://linear.app/x/issue/ENG-1' }),
+        attachFiles: async () => ({ uploaded: [{ filename: 'shot.png', size: 10, url: 'https://x/shot.png', inlineMarkup: '![shot.png](https://x/shot.png)', adfMediaNode: null }], errors: [], droppedCount: 0 }),
+        updateFields: async (key, fields) => { updateFieldsArgs = { key, fields }; return { applied: { description: true }, errors: {} }; },
+      }),
+    });
+    const result = await runTicketCreate(['--project=ENG', '--summary=New', '--description=Body text', '--attach=/tmp/shot.png'], deps);
+    assert.equal(result.ok, true);
+    assert.deepEqual(updateFieldsArgs, { key: 'ENG-1', fields: { description: 'Body text\n\n![shot.png](https://x/shot.png)' } });
+  });
+
+  test('on Linear, the follow-up description link uses the markup alone when no description was given', async () => {
+    let updateFieldsArgs;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        type: 'linear',
+        createTicket: async () => ({ key: 'ENG-1', id: '1', url: '' }),
+        attachFiles: async () => ({ uploaded: [{ filename: 'shot.png', size: 10, url: 'https://x/shot.png', inlineMarkup: '![shot.png](https://x/shot.png)', adfMediaNode: null }], errors: [], droppedCount: 0 }),
+        updateFields: async (key, fields) => { updateFieldsArgs = { key, fields }; return { applied: {}, errors: {} }; },
+      }),
+    });
+    await runTicketCreate(['--project=ENG', '--summary=New', '--attach=/tmp/shot.png'], deps);
+    assert.deepEqual(updateFieldsArgs.fields, { description: '![shot.png](https://x/shot.png)' });
+  });
+
+  test('on Linear, a failed description-link is reported as an attach error but never flips create to ok:false — the asset genuinely uploaded, just not linked', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        type: 'linear',
+        createTicket: async () => ({ key: 'ENG-1', id: '1', url: '' }),
+        attachFiles: async () => ({ uploaded: [{ filename: 'shot.png', size: 10, url: 'https://x/shot.png', inlineMarkup: '![shot.png](https://x/shot.png)', adfMediaNode: null }], errors: [], droppedCount: 0 }),
+        updateFields: async () => { throw new Error('permission denied'); },
+      }),
+    });
+    const result = await runTicketCreate(['--project=ENG', '--summary=New', '--attach=/tmp/shot.png'], deps);
+    assert.equal(result.ok, true);
+    assert.match(deps.stream.lines.join(''), /uploaded but failed to link into the ticket description: permission denied/);
+  });
+
+  test('on Jira, updateFields is never called for attachments — the classic attachment is real regardless of description text', async () => {
+    let updateFieldsCalled = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async () => ({ key: 'PROJ-99', id: '99', url: '' }),
+        attachFiles: async () => ({ uploaded: [{ filename: 'shot.png', size: 10, url: 'https://x/1', inlineMarkup: null, adfMediaNode: { type: 'mediaSingle' } }], errors: [], droppedCount: 0 }),
+        updateFields: async () => { updateFieldsCalled = true; return { applied: {}, errors: {} }; },
+      }),
+    });
+    await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New', '--attach=/tmp/shot.png'], deps);
+    assert.equal(updateFieldsCalled, false);
+  });
+
+  test('records the full attempted attach path plus the filename that actually landed, in the audit log detail', async () => {
+    let logged;
+    const deps = baseDeps({
+      logActionFn: (entry) => { logged = entry; },
+      resolveAdapterFn: () => fakeAdapter({
+        createTicket: async () => ({ key: 'PROJ-99', id: '99', url: '' }),
+        attachFiles: async () => ({ uploaded: [{ filename: 'shot.png', size: 10, url: 'https://x/1', inlineMarkup: null, adfMediaNode: null }], errors: [], droppedCount: 0 }),
+      }),
+    });
+    await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New', '--attach=/Users/x/shot.png'], deps);
+    assert.deepEqual(logged.detail.attachPaths, ['/Users/x/shot.png']);
+    assert.deepEqual(logged.detail.attachedFilenames, ['shot.png']);
+  });
+
+  test('no --attach flag never calls attachFiles', async () => {
+    let called = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ attachFiles: async () => { called = true; return { uploaded: [], errors: [], droppedCount: 0 }; } }),
+    });
+    await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(called, false);
   });
 });
 

@@ -159,7 +159,7 @@ function makeResult(attachment, localPath, skipReason, error) {
   };
 }
 
-function sanitizeFilename(filename) {
+export function sanitizeFilename(filename) {
   // Strip directory components, replace unsafe chars, preserve extension
   return path.basename(filename).replace(/[^a-zA-Z0-9._\-]/g, '_');
 }
