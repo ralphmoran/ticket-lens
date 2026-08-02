@@ -370,13 +370,18 @@ export async function fetchProjects(opts = {}) {
   return projects.sort((a, b) => a.key.localeCompare(b.key));
 }
 
+// Exported so callers with a narrower or wider need (e.g. duplicate-detection
+// candidate search, which also wants `description`) can extend it instead of
+// duplicating the list — the default stays identical for every caller that
+// doesn't pass an override.
+export const DEFAULT_SEARCH_FIELDS = 'summary,status,assignee,priority,issuetype,comment,updated,statuscategorychangedate,created,customfield_10020';
+
 export async function searchTickets(jql, opts = {}) {
-  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), maxResults = 50, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false, allowPrivateIp = false } = opts;
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), maxResults = 50, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false, allowPrivateIp = false, fields = DEFAULT_SEARCH_FIELDS } = opts;
   validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
 
-  const fields = 'summary,status,assignee,priority,issuetype,comment,updated,statuscategorychangedate,created,customfield_10020';
   const params = new URLSearchParams({ jql, fields, maxResults: String(maxResults) });
   if (expandChangelog) params.set('expand', 'changelog');
   const endpoint = apiVersion >= 3 ? `/rest/api/3/search/jql` : `/rest/api/2/search`;

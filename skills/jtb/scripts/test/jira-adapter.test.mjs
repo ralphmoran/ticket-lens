@@ -195,25 +195,50 @@ describe('findCandidates — duplicate-detection candidate search', () => {
     const jql = decodeURIComponent(new URL(capturedUrl).searchParams.get('jql'));
     assert.match(jql, /project = "TEST"/);
     assert.match(jql, /key != "TEST-42"/);
-    assert.match(jql, /text ~ "login button broken"/);
   });
 
-  it('caps the search text before building the JQL so a long description cannot blow past URL/proxy length limits', async () => {
+  it('ORs tokenized terms together instead of one long phrase — Jira\'s text ~ operator stops matching past ~40-70 chars of literal phrase', async () => {
     let capturedUrl;
     const fetcher = async (url) => {
       capturedUrl = url;
       return { ok: true, status: 200, json: async () => ({ issues: [] }) };
     };
     const adapter = createJiraAdapter(CONN, { fetcher });
-    const longText = 'x'.repeat(2000);
-    await adapter.findCandidates(longText, 'TEST-1');
+    await adapter.findCandidates('login button broken', 'TEST-42');
     const jql = decodeURIComponent(new URL(capturedUrl).searchParams.get('jql'));
-    const match = jql.match(/text ~ "(x+)"/);
-    assert.ok(match, 'expected a text ~ "..." clause');
-    assert.ok(match[1].length <= 300, `search text should be capped, got ${match[1].length} chars`);
+    assert.match(jql, /text ~ "login"/);
+    assert.match(jql, /text ~ "button"/);
+    assert.match(jql, /text ~ "broken"/);
+    assert.match(jql, / OR /, 'terms must be ORed, not concatenated into one phrase clause');
   });
 
-  it('escapes double quotes in the search text so a crafted title cannot break out of the JQL string literal', async () => {
+  it('caps the number of OR-ed terms so a long description cannot blow past URL/proxy length limits or JQL complexity', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, status: 200, json: async () => ({ issues: [] }) };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const longText = Array.from({ length: 30 }, (_, i) => `uniqueword${i}`).join(' ');
+    await adapter.findCandidates(longText, 'TEST-1');
+    const jql = decodeURIComponent(new URL(capturedUrl).searchParams.get('jql'));
+    const termCount = [...jql.matchAll(/text ~ "/g)].length;
+    assert.ok(termCount <= 8, `expected at most 8 OR-ed terms, got ${termCount}`);
+  });
+
+  it('requests the description field so duplicate-scorer.mjs can score on summary+description, not summary-only', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, status: 200, json: async () => ({ issues: [] }) };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    await adapter.findCandidates('login button broken', 'TEST-1');
+    const fields = new URL(capturedUrl).searchParams.get('fields');
+    assert.ok(fields.includes('description'), `expected fields to include description, got: ${fields}`);
+  });
+
+  it('tokenizes search-text terms, so a crafted title has no quote/paren characters left to break out with', async () => {
     let capturedUrl;
     const fetcher = async (url) => {
       capturedUrl = url;
@@ -222,7 +247,32 @@ describe('findCandidates — duplicate-detection candidate search', () => {
     const adapter = createJiraAdapter(CONN, { fetcher });
     await adapter.findCandidates('a" OR project = "OTHER', 'TEST-1');
     const jql = decodeURIComponent(new URL(capturedUrl).searchParams.get('jql'));
-    assert.match(jql, /text ~ "a\\" OR project = \\"OTHER"/);
+    // tokenize() strips every non-letter/digit character before a term ever
+    // reaches the query, so a crafted title has nothing left to break out with —
+    // this is a property of tokenize(), covered directly in duplicate-scorer.test.mjs.
+    assert.doesNotMatch(jql, /"OTHER/, 'no term-derived text may contain a bare, unescaped double quote');
+  });
+
+  it('escapes double quotes in sourceKey — the one findCandidates input that is NOT tokenize()-sanitized — so it cannot break out of the JQL string literal', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, status: 200, json: async () => ({ issues: [] }) };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    await adapter.findCandidates('login', 'TEST-1" OR project = "OTHER');
+    const jql = decodeURIComponent(new URL(capturedUrl).searchParams.get('jql'));
+    assert.match(jql, /key != "TEST-1\\" OR project = \\"OTHER"/, 'sourceKey must be escaped before being embedded in the key != "..." clause');
+    assert.doesNotMatch(jql, /key != "TEST-1" OR project = "OTHER"/, 'an unescaped sourceKey would let a crafted key inject additional JQL clauses');
+  });
+
+  it('returns an empty array without a network call when the text has no meaningful tokens', async () => {
+    let called = false;
+    const fetcher = async () => { called = true; return { ok: true, status: 200, json: async () => ({ issues: [] }) }; };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const results = await adapter.findCandidates('a an the', 'TEST-1');
+    assert.deepEqual(results, []);
+    assert.equal(called, false);
   });
 
   it('normalizes returned issues to the standard ticket shape', async () => {

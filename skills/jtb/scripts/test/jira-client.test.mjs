@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue, DEFAULT_SEARCH_FIELDS } from '../lib/jira-client.mjs';
 import { buildMediaNode } from '../lib/adf-converter.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -468,6 +468,36 @@ describe('fetchCurrentUser', () => {
 });
 
 describe('searchTickets', () => {
+  it('requests the default field list when no override is passed (lock — must not change for the triage/search path)', async () => {
+    let capturedUrl = '';
+    const mockFetch = async (url) => {
+      capturedUrl = url;
+      return { ok: true, json: async () => ({ issues: [] }) };
+    };
+    await searchTickets('assignee = currentUser()', {
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+    });
+    const fields = new URL(capturedUrl).searchParams.get('fields');
+    assert.equal(fields, DEFAULT_SEARCH_FIELDS);
+    assert.ok(!fields.includes('description'), 'default field list must not request description — that would bloat every triage/search response');
+  });
+
+  it('honors a caller-supplied fields override instead of the default', async () => {
+    let capturedUrl = '';
+    const mockFetch = async (url) => {
+      capturedUrl = url;
+      return { ok: true, json: async () => ({ issues: [] }) };
+    };
+    await searchTickets('assignee = currentUser()', {
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+      fields: `${DEFAULT_SEARCH_FIELDS},description`,
+    });
+    const fields = new URL(capturedUrl).searchParams.get('fields');
+    assert.equal(fields, `${DEFAULT_SEARCH_FIELDS},description`);
+  });
+
   it('constructs correct URL with JQL and normalizes results', async () => {
     let capturedUrl = '';
     const mockFetch = async (url) => {

@@ -1,8 +1,9 @@
-import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue } from '../jira-client.mjs';
+import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue, DEFAULT_SEARCH_FIELDS } from '../jira-client.mjs';
 import { uploadAttachment, resolveMediaId } from '../jira-attachment-client.mjs';
 import { readAttachments } from '../attachment-uploader.mjs';
 import { buildMediaNode } from '../adf-converter.mjs';
 import { buildJiraEnv } from '../config.mjs';
+import { tokenize } from '../duplicate-scorer.mjs';
 
 /**
  * Finds the option in a fresh transitions list matching a caller-given
@@ -10,7 +11,12 @@ import { buildJiraEnv } from '../config.mjs';
  * trusts a caller-supplied id without confirming it's still a real,
  * currently-valid option for this exact issue right now.
  */
-const SEARCH_TEXT_CHAR_LIMIT = 300;
+// Jira's `text ~ "..."` operator behaves like phrase/proximity matching, not
+// "contains these words" — a single literal phrase over ~40-70 chars silently
+// stops matching. Same cap GitHub's findCandidates uses for the same reason
+// (tokenize + OR significant terms instead of sending one long phrase).
+const CANDIDATE_TERM_LIMIT = 8;
+const CANDIDATE_SEARCH_FIELDS = `${DEFAULT_SEARCH_FIELDS},description`;
 
 function resolveTransitionTarget(options, target) {
   const t = String(target).toLowerCase();
@@ -75,16 +81,29 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
      * project as `sourceKey` (derived from its own prefix) and excludes it
      * from results. Jira has no server-side similarity scoring — this only
      * narrows the candidate pool; ranking happens in duplicate-scorer.mjs.
+     *
+     * Tokenizes and ORs significant terms rather than sending one long
+     * phrase — same pattern as github-adapter.mjs and linear-adapter.mjs's
+     * findCandidates, both of which already do this (for a different
+     * original reason on GitHub's side: query-injection, not this bug).
+     * Requests `description` in addition to the default field list so
+     * duplicate-scorer.mjs can score on summary+description as designed,
+     * not silently degrade to summary-only.
      */
     async findCandidates(text, sourceKey, opts = {}) {
       const hyphenIndex = sourceKey.lastIndexOf('-');
       if (hyphenIndex < 1) {
         throw new Error(`Cannot derive a project key from "${sourceKey}" — expected PROJECT-123.`);
       }
+      const terms = tokenize(text).slice(0, CANDIDATE_TERM_LIMIT);
+      if (terms.length === 0) return [];
       const project = sourceKey.slice(0, hyphenIndex);
-      const searchText = text.slice(0, SEARCH_TEXT_CHAR_LIMIT);
-      const jql = `project = "${escapeJql(project)}" AND key != "${escapeJql(sourceKey)}" AND text ~ "${escapeJql(searchText)}" ORDER BY updated DESC`;
-      return searchTickets(jql, { ...base, ...opts });
+      const textClause = terms.map(term => `text ~ "${escapeJql(term)}"`).join(' OR ');
+      const jql = `project = "${escapeJql(project)}" AND key != "${escapeJql(sourceKey)}" AND (${textClause}) ORDER BY updated DESC`;
+      // fields is intentionally non-overridable here (unlike every other method's
+      // {...base, ...opts} pattern) — candidate search always needs description to
+      // score correctly, so a caller-supplied override would silently break scoring.
+      return searchTickets(jql, { ...base, ...opts, fields: CANDIDATE_SEARCH_FIELDS });
     },
 
     /**
