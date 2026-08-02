@@ -28,3 +28,20 @@ describe('SKILL.md — Recall tag-quality guidance', () => {
     assert.match(section, /(never|not|don't).*(project name|generic)/i);
   });
 });
+
+describe('SKILL.md — privacy: no pilot-client identifying references', () => {
+  it('does not name the pilot client\'s employer-specific wrapper command', () => {
+    // This file ships in every `npm install -g ticketlens` and is copied into
+    // users' AI command directories by `update-skill` — a real name here is a
+    // distributed privacy leak, not just an internal doc slip.
+    assert.doesNotMatch(SKILL_MD, /advent-ticket/i);
+  });
+});
+
+describe('SKILL.md — skill version marker', () => {
+  it('is bumped past 0.27.0 so update-skill actually propagates the privacy fix to existing installs', () => {
+    const m = SKILL_MD.match(/jtb-skill-version:\s*([\d.]+)/);
+    assert.ok(m, 'expected a jtb-skill-version marker on line 1');
+    assert.notEqual(m[1], '0.27.0', 'marker must move — update-skill propagates on exact-string mismatch only');
+  });
+});
