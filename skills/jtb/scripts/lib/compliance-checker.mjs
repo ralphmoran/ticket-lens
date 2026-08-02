@@ -6,15 +6,31 @@ import { findLinkedCommits } from './commit-linker.mjs';
 import { analyzeDiff } from './diff-analyzer.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { appendLedger } from './ledger.mjs';
+import { createStyler } from './ansi.mjs';
 
 export const STATUS_ICON = { FOUND: '✔', PARTIAL: '~', NOT_FOUND: '✖' };
 
-function formatReport({ ticketKey, requirements, analysis, usage, isPro }) {
+export function statusColor(status, s) {
+  if (status === 'FOUND') return s.green;
+  if (status === 'PARTIAL') return s.yellow;
+  return s.dim;
+}
+
+// Shared with matchColor in ticket-command.mjs (duplicates' match-confidence
+// tiers) — same 70/50 thresholds, same green/yellow/dim vocabulary, applied
+// here to overall requirement coverage instead of a single match score.
+function coverageColor(pct, s) {
+  if (pct >= 70) return s.green;
+  if (pct >= 50) return s.yellow;
+  return s.dim;
+}
+
+function formatReport({ ticketKey, requirements, analysis, usage, isPro, s }) {
   const { results, coveragePercent } = analysis;
   const lines = [
     '',
-    `  Compliance Check — ${ticketKey}`,
-    `  ${'─'.repeat(50)}`,
+    `  Compliance Check — ${s.brand(s.bold(ticketKey))}`,
+    `  ${s.dim('─'.repeat(50))}`,
     '',
   ];
 
@@ -26,14 +42,15 @@ function formatReport({ ticketKey, requirements, analysis, usage, isPro }) {
   }
 
   for (const { requirement, status, evidence } of results) {
-    const icon = STATUS_ICON[status] ?? '?';
+    const icon = statusColor(status, s)(STATUS_ICON[status] ?? '?');
     lines.push(`  ${icon} ${requirement}`);
-    if (evidence) lines.push(`      └─ ${evidence}`);
+    if (evidence) lines.push(`      └─ ${s.dim(evidence)}`);
     lines.push('');
   }
 
   lines.push('');
-  lines.push(`  Coverage: ${coveragePercent}%  (${results.filter(r => r.status === 'FOUND').length}/${results.length} requirements found)`);
+  const found = results.filter(r => r.status === 'FOUND').length;
+  lines.push(`  Coverage: ${coverageColor(coveragePercent, s)(`${coveragePercent}%`)}  (${found}/${results.length} requirements found)`);
   lines.push('');
 
   if (!isPro) {
@@ -52,6 +69,12 @@ export async function runComplianceCheck({
   ticketKey,
   configDir = DEFAULT_CONFIG_DIR,
   stream = process.stderr,
+  // Separate from `stream` (stderr, only used for the Pro-upgrade nudge
+  // above) — the report string itself is printed to stdout by the caller
+  // (fetch-ticket.mjs), so styling must gate on stdout's TTY-ness, not
+  // stderr's, or ANSI codes would leak into `tl compliance X > out.txt`
+  // while stderr stays attached to a real terminal.
+  outStream = process.stdout,
   isLicensedFn       = isLicensed,
   showUpgradeFn      = showUpgradePrompt,
   checkUsageFn       = checkUsage,
@@ -78,7 +101,8 @@ export async function runComplianceCheck({
   const { diff } = findLinkedCommitsFn(ticketKey, { cwd: process.cwd() });
   const analysis = analyzeDiffFn(requirements, diff);
 
-  const report = formatReport({ ticketKey, requirements, analysis, usage, isPro });
+  const s = createStyler({ isTTY: outStream.isTTY });
+  const report = formatReport({ ticketKey, requirements, analysis, usage, isPro, s });
   const coveragePercent = analysis.coveragePercent;
   const missing = analysis.results
     .filter(r => r.status === 'NOT_FOUND')

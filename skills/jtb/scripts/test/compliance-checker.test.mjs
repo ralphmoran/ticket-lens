@@ -16,6 +16,7 @@ function makeOpts(overrides = {}) {
     ticketKey: 'PROJ-123',
     configDir: '/tmp/test-config',
     stream: { write: () => {}, isTTY: false },
+    outStream: { write: () => {}, isTTY: false },
     isLicensedFn: () => true,
     showUpgradeFn: () => {},
     checkUsageFn: () => ({ count: 0, month: '2026-03', canUse: true }),
@@ -48,6 +49,24 @@ describe('runComplianceCheck', () => {
   it('report includes FOUND status marker', async () => {
     const result = await runComplianceCheck(makeOpts());
     assert.ok(result.report.includes('✔') || result.report.includes('FOUND'));
+  });
+
+  it('styles the report with colored status icons and coverage percentage in a TTY', async () => {
+    const result = await runComplianceCheck(makeOpts({ outStream: { write: () => {}, isTTY: true } }));
+    assert.match(result.report, /\x1b\[38;5;71m✔\x1b\[39m/, 'expected a green FOUND icon');
+    assert.match(result.report, /\x1b\[38;5;178m50%\x1b\[39m/, 'expected the 50% coverage line colored yellow (50-69% tier)');
+  });
+
+  it('report is plain (no ANSI codes) when outStream is not a TTY', async () => {
+    const result = await runComplianceCheck(makeOpts());
+    assert.doesNotMatch(result.report, /\x1b\[/, 'a non-TTY outStream (e.g. `tl compliance X > out.txt`, or the pre-push git hook) must never receive raw ANSI escape codes');
+  });
+
+  it('defaults outStream to process.stdout without throwing when omitted entirely', async () => {
+    const opts = makeOpts();
+    delete opts.outStream;
+    const result = await runComplianceCheck(opts);
+    assert.equal(typeof result.report, 'string');
   });
 
   it('report includes NOT FOUND status marker', async () => {

@@ -24,11 +24,19 @@ function captureOutput() {
   let stderr = '';
   const origWrite = process.stdout.write;
   const origErr = process.stderr.write;
+  // Force non-TTY regardless of how the test runner's own stdout happens to be
+  // connected — commands that style output based on process.stdout.isTTY (pr,
+  // compliance) would otherwise leak real ANSI codes into these captures when
+  // `node --test` is run directly in an interactive terminal, silently masking
+  // exactly the leak class this must never allow into a piped/redirected result.
+  const origIsTTY = process.stdout.isTTY;
+  process.stdout.isTTY = false;
   process.stdout.write = (s) => { stdout += s; };
   process.stderr.write = (s) => { stderr += s; };
   const restore = () => {
     process.stdout.write = origWrite;
     process.stderr.write = origErr;
+    process.stdout.isTTY = origIsTTY;
     process.exitCode = undefined;
   };
   return { get stdout() { return stdout; }, get stderr() { return stderr; }, restore };
@@ -928,6 +936,14 @@ describe('pr subcommand', () => {
       assert.ok(out.stdout.includes('PROD-1234'), 'output should include ticket key');
       assert.ok(out.stdout.includes('### What changed'), 'output should include What changed section');
       assert.equal(process.exitCode, undefined);
+    } finally { out.restore(); }
+  });
+
+  it('never emits ANSI escape codes through the real dispatch path — critical since this is piped into a real PR description', async () => {
+    const out = captureOutput();
+    try {
+      await run(['pr', 'PROD-1234'], validEnv, mockFetcher, NO_CONFIG);
+      assert.doesNotMatch(out.stdout, /\x1b\[/, 'the real fetch-ticket.mjs dispatch must never leak ANSI codes into piped/redirected output');
     } finally { out.restore(); }
   });
 

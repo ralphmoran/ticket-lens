@@ -8,8 +8,9 @@ import { spawnSync } from 'node:child_process';
 import { fetchTicket } from './jira-client.mjs';
 import { extractRequirements } from './requirement-extractor.mjs';
 import { findLinkedCommits } from './commit-linker.mjs';
-import { runComplianceCheck, STATUS_ICON } from './compliance-checker.mjs';
+import { runComplianceCheck, STATUS_ICON, statusColor } from './compliance-checker.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
+import { createStyler } from './ansi.mjs';
 
 /**
  * Detect the git remote URL using execFn.
@@ -34,15 +35,16 @@ function detectRemoteUrl(execFn) {
  * Build the "### Linked tickets" section from a ticket's linkedIssues.
  *
  * @param {Array} linkedIssues - array of { key, summary, linkType, direction }
+ * @param {object} s - styler from createStyler()
  * @returns {string} section markdown or empty string
  */
-function buildLinkedTicketsSection(linkedIssues) {
+function buildLinkedTicketsSection(linkedIssues, s) {
   if (!linkedIssues || linkedIssues.length === 0) return '';
 
   const lines = ['', '### Linked tickets'];
   for (const issue of linkedIssues) {
     const rel = issue.linkType ?? issue.direction ?? 'Linked';
-    lines.push(`- ${issue.key}: ${rel} — ${issue.summary}`);
+    lines.push(`- ${s.brand(s.bold(issue.key))}: ${rel} — ${issue.summary}`);
   }
   return lines.join('\n');
 }
@@ -52,9 +54,10 @@ function buildLinkedTicketsSection(linkedIssues) {
  *
  * @param {object|null} complianceResult - result from runComplianceCheckFn or null
  * @param {string[]} requirements - raw requirements list
+ * @param {object} s - styler from createStyler()
  * @returns {string} section markdown
  */
-function buildCoverageSection(complianceResult, requirements) {
+function buildCoverageSection(complianceResult, requirements, s) {
   if (complianceResult === null) {
     const lines = ['', '### Requirements coverage (coverage unavailable — Pro required)'];
     for (const req of requirements) {
@@ -67,7 +70,7 @@ function buildCoverageSection(complianceResult, requirements) {
   const lines = [``, `### Requirements coverage (${coveragePercent}%)`];
 
   for (const { requirement, status, evidence } of results) {
-    const icon = STATUS_ICON[status] ?? '?';
+    const icon = statusColor(status, s)(STATUS_ICON[status] ?? '?');
     const suffix = evidence ? ` (${evidence})` : '';
     lines.push(`- ${icon} ${requirement}${suffix}`);
   }
@@ -86,7 +89,8 @@ function buildCoverageSection(complianceResult, requirements) {
  * @param {Function} [opts.findLinkedCommitsFn] - async fn(ticketKey, opts) → commit[]
  * @param {Function} [opts.runComplianceCheckFn] - async fn({ brief, ticketKey, configDir }) → result|null
  * @param {Function} [opts.execFn] - spawnSync-compatible for git remote detection
- * @param {object} [opts.stream] - stderr for progress output (optional)
+ * @param {object} [opts.outStream] - stdout — where this markdown is ultimately printed
+ *   (`tl pr KEY | pbcopy` pipes stdout), so styling gates on its TTY-ness, not stderr's
  * @returns {Promise<string>} markdown PR description
  */
 export async function assemblePr(ticketKey, {
@@ -97,8 +101,9 @@ export async function assemblePr(ticketKey, {
   findLinkedCommitsFn = findLinkedCommits,
   runComplianceCheckFn = runComplianceCheck,
   execFn = spawnSync,
-  stream,
+  outStream = process.stdout,
 } = {}) {
+  const s = createStyler({ isTTY: outStream.isTTY });
   // Fetch ticket data
   const ticket = await fetchTicketFn(ticketKey, { configDir });
 
@@ -130,7 +135,7 @@ export async function assemblePr(ticketKey, {
   );
 
   // Build output
-  const lines = [`## ${ticketKey}: ${summary}`, ''];
+  const lines = [`## ${s.brand(s.bold(ticketKey))}: ${summary}`, ''];
 
   // What changed — commits are raw git --oneline strings: "<sha> <message>"
   lines.push('### What changed');
@@ -143,7 +148,7 @@ export async function assemblePr(ticketKey, {
   }
 
   // Requirements coverage
-  lines.push(buildCoverageSection(complianceResult, requirements));
+  lines.push(buildCoverageSection(complianceResult, requirements, s));
 
   // Acceptance criteria
   lines.push('');
@@ -157,7 +162,7 @@ export async function assemblePr(ticketKey, {
   }
 
   // Linked tickets (optional section)
-  const linkedSection = buildLinkedTicketsSection(linkedIssues);
+  const linkedSection = buildLinkedTicketsSection(linkedIssues, s);
   if (linkedSection) {
     lines.push(linkedSection);
   }
