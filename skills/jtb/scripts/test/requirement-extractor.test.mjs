@@ -173,4 +173,82 @@ Implementation detail that is not a requirement
     assert.ok(result.some(r => r.includes('Must do X')));
     assert.ok(result.every(r => !r.includes('not a requirement')));
   });
+
+  it('extracts inline numbered enumeration flattened into one ADF paragraph (H-2)', () => {
+    // Real-world shape from CNV1-25: Jira ADF flattens a numbered list into one
+    // paragraph with inline "1) ... 2) ... 3) ..." markers, no newlines between items.
+    const text = 'Requirements for compliance-check testing: 1) Add a --dry-run flag to the sync command. 2) Log a warning when the dry-run flag is used without a valid profile. 3) Update the README with a dry-run usage example.';
+    const result = extractRequirements(text);
+    assert.equal(result.length, 3, `expected 3 items, got ${result.length}: ${JSON.stringify(result)}`);
+    assert.ok(result.some(r => r.includes('Add a --dry-run flag')));
+    assert.ok(result.some(r => r.includes('Log a warning')));
+    assert.ok(result.some(r => r.includes('Update the README')));
+  });
+
+  it('extracts a plain newline-separated numbered list with no modal verb and no AC header (H-2)', () => {
+    const text = `
+1. Add a --dry-run flag to the sync command.
+2. Log a warning when the dry-run flag is used without a valid profile.
+3. Update the README with a dry-run usage example.
+    `;
+    const result = extractRequirements(text);
+    assert.equal(result.length, 3, `expected 3 items, got ${result.length}: ${JSON.stringify(result)}`);
+  });
+
+  it('extracts a plain numbered list using ")" markers outside an AC header (H-2)', () => {
+    const text = `
+1) Add a --dry-run flag to the sync command.
+2) Log a warning when the dry-run flag is used without a valid profile.
+    `;
+    const result = extractRequirements(text);
+    assert.equal(result.length, 2, `expected 2 items, got ${result.length}: ${JSON.stringify(result)}`);
+  });
+
+  it('does not treat stray version-like numbers as an inline enumeration (H-2 false-positive guard)', () => {
+    const text = 'We shipped v1. Then we shipped v2. Nothing here is a requirement list.';
+    const result = extractRequirements(text);
+    assert.deepStrictEqual(result, []);
+  });
+
+  it('does not treat a "Steps to Reproduce" numbered list as requirements (H-2 false-positive guard)', () => {
+    const text = `
+Steps to Reproduce:
+1. Log in as an admin user
+2. Navigate to the billing page
+3. Click export
+4. Observe the crash
+
+Expected: no crash
+Actual: 500 error
+    `;
+    const result = extractRequirements(text);
+    assert.deepStrictEqual(result, []);
+  });
+
+  it('does not treat a single isolated numbered line outside an AC section as a requirement (H-2 false-positive guard)', () => {
+    const text = 'See item 1. Some other unrelated sentence follows on the next paragraph.';
+    const result = extractRequirements(text);
+    assert.deepStrictEqual(result, []);
+  });
+
+  it('does not treat non-sequential numbered lines outside an AC section as requirements (H-2 false-positive guard)', () => {
+    const text = `
+1. First unrelated note
+3. Second unrelated note, numbering skips 2
+    `;
+    const result = extractRequirements(text);
+    assert.deepStrictEqual(result, []);
+  });
+
+  it('known limitation: a blank line between numbered items outside an AC section breaks the run', () => {
+    // Documents current behavior (see findValidNumberedRuns) rather than asserting it's
+    // desirable — items must be on strictly consecutive lines without an AC header.
+    const text = `
+1. Add a --dry-run flag to the sync command.
+
+2. Log a warning when the dry-run flag is used without a valid profile.
+    `;
+    const result = extractRequirements(text);
+    assert.deepStrictEqual(result, []);
+  });
 });
