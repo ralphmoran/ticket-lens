@@ -110,7 +110,7 @@ function plural(n, word) {
  * Prompts the user to pick a profile when the ticket's prefix isn't
  * configured in any profile. The resolved profile is pre-selected.
  *
- * @param {string} ticketKey         e.g. "ECNT-3888"
+ * @param {string} ticketKey         e.g. "PROJ-123"
  * @param {string} currentProfile    name of the auto-resolved profile
  * @param {Array<{name:string, baseUrl:string|null}>} profiles  all known profiles
  * @param {{ stream?: NodeJS.WriteStream }} [opts]
