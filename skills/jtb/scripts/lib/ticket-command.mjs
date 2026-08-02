@@ -21,6 +21,7 @@ import { detectProjectOrTypeError, enrichCreateFailure } from './ticket-create-e
 import { TICKET_KEY_PATTERN } from './cli.mjs';
 import { scoreCandidates } from './duplicate-scorer.mjs';
 import { MAX_ATTACHMENTS } from './attachment-uploader.mjs';
+import { createStyler } from './ansi.mjs';
 
 function parseFlag(cmdArgs, name) {
   return cmdArgs.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -121,6 +122,18 @@ function formatReadFailure(ticketKey, err, actionPhrase) {
 
 function formatDuplicatesFailure(ticketKey, err) {
   return formatReadFailure(ticketKey, err, 'for duplicates');
+}
+
+/**
+ * Match-confidence color tier for a duplicates result: ≥70% reads as a strong
+ * signal, 50-69% as worth a look, below that as a weak, low-confidence nudge.
+ * Exported standalone so the boundary values are pinned by a direct test
+ * rather than reverse-engineered from real Jaccard scores in a fixture.
+ */
+export function matchColor(pct, s) {
+  if (pct >= 70) return s.green;
+  if (pct >= 50) return s.yellow;
+  return s.dim;
 }
 
 function formatLinkListFailure(ticketKey, err) {
@@ -478,13 +491,18 @@ export async function runTicketDuplicates(cmdArgs, {
     const scoreOpts = threshold !== undefined ? { threshold } : {};
     const results = scoreCandidates({ key: ticketKey, summary: source.summary, description: source.description }, candidates, scoreOpts);
 
+    const s = createStyler({ isTTY: stream.isTTY });
+    stream.write(`  ${s.brand(s.bold(ticketKey))}: ${s.bold(source.summary ?? '')}\n\n`);
+
     if (results.length === 0) {
-      stream.write(`  No likely duplicates found for ${ticketKey}.\n`);
+      stream.write(`  No likely duplicates found.\n`);
       return { ok: true, results: [] };
     }
-    stream.write(`  Possible duplicates of ${ticketKey}:\n`);
+    stream.write(`  Possible duplicates:\n\n`);
     for (const r of results) {
-      stream.write(`    ${r.key} (${Math.round(r.score * 100)}% match) — ${r.summary}\n`);
+      const pct = Math.round(r.score * 100);
+      const pctColor = matchColor(pct, s);
+      stream.write(`    ${s.brand('●')} ${s.bold(r.key)} (${pctColor(`${pct}% match`)}) — ${r.summary}\n`);
     }
     return { ok: true, results };
   } catch (err) {

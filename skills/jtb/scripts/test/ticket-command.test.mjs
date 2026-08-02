@@ -1,6 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate, runTicketCreate, classifyWriteFailure } from '../lib/ticket-command.mjs';
+import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate, runTicketCreate, classifyWriteFailure, matchColor } from '../lib/ticket-command.mjs';
+import { createStyler } from '../lib/ansi.mjs';
 
 function makeStream() {
   const lines = [];
@@ -579,6 +580,60 @@ describe('runTicketDuplicates — happy path', () => {
     assert.equal(result.ok, true);
     assert.deepEqual(result.results, []);
     assert.match(deps.stream.lines.join(''), /No likely duplicates/);
+  });
+
+  test('prints the source ticket key and title as a header', async () => {
+    const deps = baseDeps();
+    await runTicketDuplicates(['PROJ-1'], deps);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /PROJ-1/);
+    assert.match(output, /Login button broken on mobile/);
+  });
+
+  test('prints the source ticket title even when no duplicates are found', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ findCandidates: async () => ([]) }),
+    });
+    await runTicketDuplicates(['PROJ-1'], deps);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /Login button broken on mobile/);
+    assert.match(output, /No likely duplicates/);
+  });
+
+  test('output is plain (no ANSI codes) when the stream is not a TTY', async () => {
+    const deps = baseDeps();
+    await runTicketDuplicates(['PROJ-1'], deps);
+    const output = deps.stream.lines.join('');
+    assert.doesNotMatch(output, /\x1b\[/, 'MCP/non-TTY callers must never receive raw ANSI escape codes');
+  });
+
+  test('a real match in the results list is styled with the bold key and brand bullet in a TTY', async () => {
+    const lines = [];
+    const ttyStream = { write: (s) => lines.push(s), lines, isTTY: true };
+    const deps = baseDeps({ stream: ttyStream });
+    await runTicketDuplicates(['PROJ-1'], deps);
+    const output = lines.join('');
+    assert.match(output, /\x1b\[1mPROJ-9\x1b\[22m/, 'expected the result ticket key to be bolded');
+    assert.match(output, /\x1b\[38;5;117m●\x1b\[39m/, 'expected the brand-colored bullet before each result');
+  });
+});
+
+describe('matchColor', () => {
+  const s = createStyler({ isTTY: true });
+
+  test('colors a 70%+ match green', () => {
+    assert.equal(matchColor(70, s), s.green);
+    assert.equal(matchColor(96, s), s.green);
+  });
+
+  test('colors a 50-69% match yellow', () => {
+    assert.equal(matchColor(50, s), s.yellow);
+    assert.equal(matchColor(69, s), s.yellow);
+  });
+
+  test('colors anything below 50% dim', () => {
+    assert.equal(matchColor(49, s), s.dim);
+    assert.equal(matchColor(0, s), s.dim);
   });
 });
 
