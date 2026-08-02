@@ -8,6 +8,11 @@ function makeStream() {
   return { write: (s) => lines.push(s), lines };
 }
 
+function makeTtyStream() {
+  const lines = [];
+  return { write: (s) => lines.push(s), lines, isTTY: true };
+}
+
 function fakeAdapter(overrides = {}) {
   return {
     type: 'jira',
@@ -156,6 +161,21 @@ describe('runTicketComment — happy path', () => {
     assert.equal(logged.tracker, 'jira');
     assert.match(deps.stream.lines.join(''), /Comment posted to PROJ-1/);
   });
+
+  test('styles the success line with a green checkmark and bold brand key in a TTY', async () => {
+    const ttyStream = makeTtyStream();
+    const deps = baseDeps({ stream: ttyStream });
+    await runTicketComment(['PROJ-1', '--body=Looks good'], deps);
+    const output = ttyStream.lines.join('');
+    assert.match(output, /\x1b\[38;5;71m✔\x1b\[39m/, 'expected a green checkmark');
+    assert.match(output, /\x1b\[1mPROJ-1\x1b\[22m/, 'expected the ticket key bolded');
+  });
+
+  test('output is plain (no ANSI codes) when the stream is not a TTY', async () => {
+    const deps = baseDeps();
+    await runTicketComment(['PROJ-1', '--body=Looks good'], deps);
+    assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/, 'MCP/non-TTY callers must never receive raw ANSI escape codes');
+  });
 });
 
 describe('runTicketComment — write failure', () => {
@@ -302,6 +322,30 @@ describe('runTicketComment — attachments', () => {
     assert.match(deps.stream.lines.join(''), /Attached shot\.png/);
   });
 
+  test('styles the attached-file line with a green checkmark and bold filename in a TTY', async () => {
+    const ttyStream = makeTtyStream();
+    const deps = baseDeps({
+      stream: ttyStream,
+      resolveAdapterFn: () => fakeAdapter({
+        attachFiles: async () => ({ uploaded: [{ filename: 'shot.png', size: 10, url: 'https://x/shot.png', inlineMarkup: null, adfMediaNode: null }], errors: [], droppedCount: 0 }),
+      }),
+    });
+    await runTicketComment(['PROJ-1', '--body=hi', '--attach=/shot.png'], deps);
+    const output = ttyStream.lines.join('');
+    assert.match(output, /\x1b\[38;5;71m✔\x1b\[39m/, 'expected a green checkmark on the attached-file line');
+    assert.match(output, /\x1b\[1mshot\.png\x1b\[22m/, 'expected the filename bolded');
+  });
+
+  test('attachment summary is plain (no ANSI codes) when the stream is not a TTY', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        attachFiles: async () => ({ uploaded: [{ filename: 'shot.png', size: 10, url: 'https://x/shot.png', inlineMarkup: null, adfMediaNode: null }], errors: [], droppedCount: 0 }),
+      }),
+    });
+    await runTicketComment(['PROJ-1', '--body=hi', '--attach=/shot.png'], deps);
+    assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/, 'MCP/non-TTY callers must never receive raw ANSI escape codes');
+  });
+
   test('no --attach flag never calls attachFiles', async () => {
     let called = false;
     const deps = baseDeps({
@@ -337,6 +381,21 @@ describe('runTicketTransitionList', () => {
     assert.equal(result.options.length, 1);
     assert.equal(transitionCalled, false);
     assert.match(deps.stream.lines.join(''), /Done/);
+  });
+
+  test('styles the list header key and bullets in a TTY', async () => {
+    const ttyStream = makeTtyStream();
+    const deps = baseDeps({ stream: ttyStream });
+    await runTicketTransitionList(['PROJ-1'], deps);
+    const output = ttyStream.lines.join('');
+    assert.match(output, /\x1b\[1mPROJ-1\x1b\[22m/, 'expected the ticket key bolded');
+    assert.match(output, /\x1b\[38;5;117m●\x1b\[39m/, 'expected the brand-colored bullet before each option');
+  });
+
+  test('output is plain (no ANSI codes) when the stream is not a TTY', async () => {
+    const deps = baseDeps();
+    await runTicketTransitionList(['PROJ-1'], deps);
+    assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/, 'MCP/non-TTY callers must never receive raw ANSI escape codes');
   });
 
   test('reports zero valid transitions distinctly from a failure', async () => {
@@ -395,6 +454,21 @@ describe('runTicketTransition — happy path', () => {
     assert.deepEqual(recorded, { key: 'PROJ-1', action: 'transition' });
     assert.equal(logged.detail.to, 'Done');
     assert.match(deps.stream.lines.join(''), /transitioned to "Done"/);
+  });
+
+  test('styles the success line with a green checkmark and bold brand key in a TTY', async () => {
+    const ttyStream = makeTtyStream();
+    const deps = baseDeps({ stream: ttyStream });
+    await runTicketTransition(['PROJ-1', '--target=Done', '--confirm'], deps);
+    const output = ttyStream.lines.join('');
+    assert.match(output, /\x1b\[38;5;71m✔\x1b\[39m/, 'expected a green checkmark');
+    assert.match(output, /\x1b\[1mPROJ-1\x1b\[22m/, 'expected the ticket key bolded');
+  });
+
+  test('output is plain (no ANSI codes) when the stream is not a TTY', async () => {
+    const deps = baseDeps();
+    await runTicketTransition(['PROJ-1', '--target=Done', '--confirm'], deps);
+    assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/, 'MCP/non-TTY callers must never receive raw ANSI escape codes');
   });
 });
 
@@ -497,6 +571,21 @@ describe('runTicketAssign — happy path', () => {
     assert.deepEqual(recorded, { key: 'PROJ-1', action: 'assign' });
     assert.equal(logged.detail.assignee, 'Ralph Moran');
     assert.match(deps.stream.lines.join(''), /assigned to Ralph Moran/);
+  });
+
+  test('styles the success line with a green checkmark and bold brand key in a TTY', async () => {
+    const ttyStream = makeTtyStream();
+    const deps = baseDeps({ stream: ttyStream });
+    await runTicketAssign(['PROJ-1', '--to=me'], deps);
+    const output = ttyStream.lines.join('');
+    assert.match(output, /\x1b\[38;5;71m✔\x1b\[39m/, 'expected a green checkmark');
+    assert.match(output, /\x1b\[1mPROJ-1\x1b\[22m/, 'expected the ticket key bolded');
+  });
+
+  test('output is plain (no ANSI codes) when the stream is not a TTY', async () => {
+    const deps = baseDeps();
+    await runTicketAssign(['PROJ-1', '--to=me'], deps);
+    assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/, 'MCP/non-TTY callers must never receive raw ANSI escape codes');
   });
 });
 
@@ -608,11 +697,10 @@ describe('runTicketDuplicates — happy path', () => {
   });
 
   test('a real match in the results list is styled with the bold key and brand bullet in a TTY', async () => {
-    const lines = [];
-    const ttyStream = { write: (s) => lines.push(s), lines, isTTY: true };
+    const ttyStream = makeTtyStream();
     const deps = baseDeps({ stream: ttyStream });
     await runTicketDuplicates(['PROJ-1'], deps);
-    const output = lines.join('');
+    const output = ttyStream.lines.join('');
     assert.match(output, /\x1b\[1mPROJ-9\x1b\[22m/, 'expected the result ticket key to be bolded');
     assert.match(output, /\x1b\[38;5;117m●\x1b\[39m/, 'expected the brand-colored bullet before each result');
   });
@@ -827,6 +915,22 @@ describe('runTicketLinkList — happy path', () => {
     assert.match(deps.stream.lines.join(''), /duplicate/);
   });
 
+  test('styles the list header keys and bullets in a TTY', async () => {
+    const ttyStream = makeTtyStream();
+    const deps = baseDeps({ stream: ttyStream });
+    await runTicketLinkList(['PROJ-1', 'PROJ-2'], deps);
+    const output = ttyStream.lines.join('');
+    assert.match(output, /\x1b\[1mPROJ-1\x1b\[22m/, 'expected the source key bolded');
+    assert.match(output, /\x1b\[1mPROJ-2\x1b\[22m/, 'expected the target key bolded');
+    assert.match(output, /\x1b\[38;5;117m●\x1b\[39m/, 'expected the brand-colored bullet before each link type');
+  });
+
+  test('output is plain (no ANSI codes) when the stream is not a TTY', async () => {
+    const deps = baseDeps();
+    await runTicketLinkList(['PROJ-1', 'PROJ-2'], deps);
+    assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/, 'MCP/non-TTY callers must never receive raw ANSI escape codes');
+  });
+
   test('warns explicitly that GitHub\'s link action closes the source issue — louder than Jira/Linear\'s pure relationship-add', async () => {
     const deps = baseDeps({
       resolveAdapterFn: () => fakeAdapter({ type: 'github', getLinkTypes: async () => ['duplicate'] }),
@@ -940,6 +1044,22 @@ describe('runTicketLink — happy path', () => {
     assert.deepEqual(recorded, { key: 'PROJ-1:PROJ-2', action: 'link' });
     assert.deepEqual(logged, { ticketKey: 'PROJ-1', action: 'link', actor: 'ralph', tracker: 'jira', detail: { targetKey: 'PROJ-2', type: 'duplicate' } });
     assert.match(deps.stream.lines.join(''), /linked to PROJ-2/);
+  });
+
+  test('styles the success line with a green checkmark and bold brand keys in a TTY', async () => {
+    const ttyStream = makeTtyStream();
+    const deps = baseDeps({ stream: ttyStream });
+    await runTicketLink(['PROJ-1', 'PROJ-2', '--type=duplicate', '--confirm'], deps);
+    const output = ttyStream.lines.join('');
+    assert.match(output, /\x1b\[38;5;71m✔\x1b\[39m/, 'expected a green checkmark');
+    assert.match(output, /\x1b\[1mPROJ-1\x1b\[22m/, 'expected the source key bolded');
+    assert.match(output, /\x1b\[1mPROJ-2\x1b\[22m/, 'expected the target key bolded');
+  });
+
+  test('output is plain (no ANSI codes) when the stream is not a TTY', async () => {
+    const deps = baseDeps();
+    await runTicketLink(['PROJ-1', 'PROJ-2', '--type=duplicate', '--confirm'], deps);
+    assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/, 'MCP/non-TTY callers must never receive raw ANSI escape codes');
   });
 
   test('reports GitHub\'s close-semantics distinctly in the success message', async () => {
@@ -1087,6 +1207,26 @@ describe('runTicketUpdate — happy path', () => {
     assert.match(deps.stream.lines.join(''), /PROJ-1/);
     assert.match(deps.stream.lines.join(''), /title/);
   });
+
+  test('styles a full update with a green checkmark and bold brand key in a TTY', async () => {
+    const ttyStream = makeTtyStream();
+    const deps = baseDeps({
+      stream: ttyStream,
+      resolveAdapterFn: () => fakeAdapter({ updateFields: async () => ({ applied: { title: true }, errors: {} }) }),
+    });
+    await runTicketUpdate(['PROJ-1', '--title=x'], deps);
+    const output = ttyStream.lines.join('');
+    assert.match(output, /\x1b\[38;5;71m✔\x1b\[39m/, 'expected a green checkmark for a fully-applied update');
+    assert.match(output, /\x1b\[1mPROJ-1\x1b\[22m/, 'expected the ticket key bolded');
+  });
+
+  test('output is plain (no ANSI codes) when the stream is not a TTY', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ updateFields: async () => ({ applied: { title: true }, errors: {} }) }),
+    });
+    await runTicketUpdate(['PROJ-1', '--title=x'], deps);
+    assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/, 'MCP/non-TTY callers must never receive raw ANSI escape codes');
+  });
 });
 
 describe('runTicketUpdate — partial failure', () => {
@@ -1106,6 +1246,20 @@ describe('runTicketUpdate — partial failure', () => {
     assert.match(deps.stream.lines.join(''), /bogus/);
   });
 
+  test('styles a partial update with a yellow tilde, distinct from a full success', async () => {
+    const ttyStream = makeTtyStream();
+    const deps = baseDeps({
+      stream: ttyStream,
+      resolveAdapterFn: () => fakeAdapter({
+        updateFields: async () => ({ applied: { title: true }, errors: { addLabels: { reason: 'not-found', missing: ['bogus'] } } }),
+      }),
+    });
+    await runTicketUpdate(['PROJ-1', '--title=x', '--add-labels=bogus'], deps);
+    const output = ttyStream.lines.join('');
+    assert.match(output, /\x1b\[38;5;178m~\x1b\[39m/, 'expected a yellow tilde for a partially-applied update');
+    assert.doesNotMatch(output, /38;5;71m✔/, 'a partial update must not also render the full-success green checkmark');
+  });
+
   test('nothing applied at all — reports ok:false and never records/logs', async () => {
     let recorded = false, logged = false;
     const deps = baseDeps({
@@ -1119,6 +1273,19 @@ describe('runTicketUpdate — partial failure', () => {
     assert.equal(result.ok, false);
     assert.equal(recorded, false);
     assert.equal(logged, false);
+  });
+
+  test('a total failure (nothing applied) stays plain — no icon, no styled key, even in a TTY', async () => {
+    const ttyStream = makeTtyStream();
+    const deps = baseDeps({
+      stream: ttyStream,
+      resolveAdapterFn: () => fakeAdapter({
+        updateFields: async () => ({ applied: {}, errors: { priority: { reason: 'not-found', options: ['High', 'Low'] } } }),
+      }),
+    });
+    await runTicketUpdate(['PROJ-1', '--priority=Critical'], deps);
+    const output = ttyStream.lines.join('');
+    assert.doesNotMatch(output, /\x1b\[/, 'a total failure must render exactly like a plain refusal message, no ANSI at all');
   });
 });
 
@@ -1333,6 +1500,26 @@ describe('runTicketCreate — happy path', () => {
     assert.equal(result.ok, true);
     assert.match(deps.stream.lines.join(''), /PROJ-99/);
     assert.match(deps.stream.lines.join(''), /https:\/\/example\/PROJ-99/);
+  });
+
+  test('styles the success line with a green checkmark and bold brand key in a TTY', async () => {
+    const ttyStream = makeTtyStream();
+    const deps = baseDeps({
+      stream: ttyStream,
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => ({ key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }) }),
+    });
+    await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    const output = ttyStream.lines.join('');
+    assert.match(output, /\x1b\[38;5;71m✔\x1b\[39m/, 'expected a green checkmark');
+    assert.match(output, /\x1b\[1mPROJ-99\x1b\[22m/, 'expected the new ticket key bolded');
+  });
+
+  test('output is plain (no ANSI codes) when the stream is not a TTY', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => ({ key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }) }),
+    });
+    await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/, 'MCP/non-TTY callers must never receive raw ANSI escape codes');
   });
 });
 

@@ -45,10 +45,10 @@ function refuseGithubAttachments(adapter, attachPaths, stream) {
   return true;
 }
 
-function formatAttachSummary(attachResult) {
+function formatAttachSummary(attachResult, s) {
   if (!attachResult) return '';
   const lines = [];
-  for (const u of attachResult.uploaded) lines.push(`  Attached ${u.filename}${u.url ? ` (${u.url})` : ''}\n`);
+  for (const u of attachResult.uploaded) lines.push(`  ${s.green('✔')} Attached ${s.bold(u.filename)}${u.url ? ` (${u.url})` : ''}\n`);
   for (const e of attachResult.errors) lines.push(`  Failed to attach ${e.path}: ${e.message}\n`);
   if (attachResult.droppedCount > 0) lines.push(`  ${attachResult.droppedCount} attachment(s) dropped — exceeds the ${MAX_ATTACHMENTS}-file limit per call.\n`);
   return lines.join('');
@@ -190,11 +190,14 @@ function describeAppliedFields(applied) {
   return parts.join(', ');
 }
 
-function formatUpdateResult(ticketKey, { applied, errors }) {
+function formatUpdateResult(ticketKey, { applied, errors }, s) {
   const appliedText = describeAppliedFields(applied);
   const errorText = Object.entries(errors).map(([field, info]) => formatFieldError(field, info)).join('; ');
-  if (appliedText && !errorText) return `  ${ticketKey} updated: ${appliedText}.\n`;
-  if (appliedText && errorText) return `  ${ticketKey} partially updated: ${appliedText}. Failed: ${errorText}.\n`;
+  // Success/partial get the styled brand+bold key; total failure stays plain,
+  // consistent with every other refusal/error message in this file (e.g. the
+  // GitHub-priority-refusal line just above in runTicketUpdate).
+  if (appliedText && !errorText) return `  ${s.green('✔')} ${s.brand(s.bold(ticketKey))} updated: ${s.bold(appliedText)}.\n`;
+  if (appliedText && errorText) return `  ${s.yellow('~')} ${s.brand(s.bold(ticketKey))} partially updated: ${s.bold(appliedText)}. Failed: ${errorText}.\n`;
   return `  Nothing updated on ${ticketKey}. Failed: ${errorText}.\n`;
 }
 
@@ -267,6 +270,7 @@ export async function runTicketComment(cmdArgs, {
 
   const adapter = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
   if (!adapter) return { ok: false };
+  const s = createStyler({ isTTY: stream.isTTY });
 
   // Uploaded BEFORE the comment write so a tracker capable of inline
   // rendering (Jira Server/DC via wiki markup, Jira Cloud via a real ADF
@@ -287,13 +291,13 @@ export async function runTicketComment(cmdArgs, {
     // actually landed) — a partial attach failure is reconstructable from
     // the difference between the two, not just silently absent from audit.
     logActionFn({ ticketKey, action: 'comment', actor, tracker: adapter.type, detail: { id: result.id, attachPaths, attachedFilenames: (attachResult?.uploaded ?? []).map(a => a.filename) } }, { configDir });
-    stream.write(`  Comment posted to ${ticketKey}${result.url ? ` (${result.url})` : ''}\n` + formatAttachSummary(attachResult));
+    stream.write(`  ${s.green('✔')} Comment posted to ${s.brand(s.bold(ticketKey))}${result.url ? ` (${result.url})` : ''}\n` + formatAttachSummary(attachResult, s));
     return { ok: true };
   } catch (err) {
     // Attachments (if any) genuinely landed on the tracker before this
     // write was attempted — formatAttachSummary is still shown here so a
     // caller retrying the whole command doesn't blindly re-upload them.
-    stream.write(formatWriteFailure(ticketKey, err) + formatAttachSummary(attachResult));
+    stream.write(formatWriteFailure(ticketKey, err) + formatAttachSummary(attachResult, s));
     return { ok: false };
   }
 }
@@ -323,13 +327,14 @@ export async function runTicketTransitionList(cmdArgs, {
 
   try {
     const options = await adapter.getTransitions(ticketKey);
+    const s = createStyler({ isTTY: stream.isTTY });
     if (options.length === 0) {
-      stream.write(`  No valid transitions available for ${ticketKey}.\n`);
+      stream.write(`  No valid transitions available for ${s.brand(s.bold(ticketKey))}.\n`);
       return { ok: true, options: [] };
     }
-    stream.write(`  Valid transitions for ${ticketKey}:\n`);
-    for (const o of options) stream.write(`    - ${o.name}\n`);
-    stream.write(`  Run again with --target="<name>" --confirm to execute.\n`);
+    stream.write(`  Valid transitions for ${s.brand(s.bold(ticketKey))}:\n\n`);
+    for (const o of options) stream.write(`    ${s.brand('●')} ${o.name}\n`);
+    stream.write(`\n  Run again with --target="<name>" --confirm to execute.\n`);
     return { ok: true, options };
   } catch (err) {
     stream.write(formatWriteFailure(ticketKey, err));
@@ -389,7 +394,8 @@ export async function runTicketTransition(cmdArgs, {
     }
     recordActionFn(ticketKey, 'transition', { configDir });
     logActionFn({ ticketKey, action: 'transition', actor, tracker: adapter.type, detail: { to: result.to } }, { configDir });
-    stream.write(`  ${ticketKey} transitioned to "${result.to}".\n`);
+    const s = createStyler({ isTTY: stream.isTTY });
+    stream.write(`  ${s.green('✔')} ${s.brand(s.bold(ticketKey))} transitioned to ${s.bold(`"${result.to}"`)}.\n`);
     return { ok: true };
   } catch (err) {
     stream.write(formatWriteFailure(ticketKey, err));
@@ -443,7 +449,8 @@ export async function runTicketAssign(cmdArgs, {
     const result = await adapter.assignToSelf(ticketKey);
     recordActionFn(ticketKey, 'assign', { configDir });
     logActionFn({ ticketKey, action: 'assign', actor, tracker: adapter.type, detail: { assignee: result.assignee } }, { configDir });
-    stream.write(`  ${ticketKey} assigned to ${result.assignee}.\n`);
+    const s = createStyler({ isTTY: stream.isTTY });
+    stream.write(`  ${s.green('✔')} ${s.brand(s.bold(ticketKey))} assigned to ${s.bold(result.assignee)}.\n`);
     return { ok: true };
   } catch (err) {
     stream.write(formatWriteFailure(ticketKey, err));
@@ -563,12 +570,14 @@ export async function runTicketLinkList(cmdArgs, {
 
   try {
     const types = await adapter.getLinkTypes();
+    const s = createStyler({ isTTY: stream.isTTY });
     if (types.length === 0) {
-      stream.write(`  No link types available for ${sourceKey} → ${targetKey} on ${adapter.type}.\n`);
+      stream.write(`  No link types available for ${s.brand(s.bold(sourceKey))} → ${s.brand(s.bold(targetKey))} on ${adapter.type}.\n`);
       return { ok: true, types: [] };
     }
-    stream.write(`  Available link types for ${sourceKey} → ${targetKey} (${adapter.type}):\n`);
-    for (const t of types) stream.write(`    - ${t}\n`);
+    stream.write(`  Available link types for ${s.brand(s.bold(sourceKey))} → ${s.brand(s.bold(targetKey))} (${adapter.type}):\n\n`);
+    for (const t of types) stream.write(`    ${s.brand('●')} ${t}\n`);
+    stream.write('\n');
     if (adapter.type === 'github') {
       stream.write(`  Note: GitHub has no generic link relationship — linking will CLOSE ${sourceKey} as a duplicate of ${targetKey}.\n`);
     }
@@ -647,10 +656,11 @@ export async function runTicketLink(cmdArgs, {
     }
     recordActionFn(cooldownKey, 'link', { configDir });
     logActionFn({ ticketKey: sourceKey, action: 'link', actor, tracker: adapter.type, detail: { targetKey, type } }, { configDir });
+    const s = createStyler({ isTTY: stream.isTTY });
     stream.write(
       adapter.type === 'github'
-        ? `  ${sourceKey} closed as a duplicate of ${targetKey}.\n`
-        : `  ${sourceKey} linked to ${targetKey} as "${type}".\n`,
+        ? `  ${s.green('✔')} ${s.brand(s.bold(sourceKey))} closed as a duplicate of ${s.brand(s.bold(targetKey))}.\n`
+        : `  ${s.green('✔')} ${s.brand(s.bold(sourceKey))} linked to ${s.brand(s.bold(targetKey))} as ${s.bold(`"${type}"`)}.\n`,
     );
     return { ok: true };
   } catch (err) {
@@ -733,7 +743,7 @@ export async function runTicketUpdate(cmdArgs, {
       recordActionFn(ticketKey, 'update', { configDir });
       logActionFn({ ticketKey, action: 'update', actor, tracker: adapter.type, detail: { ...result.applied, failed: Object.keys(result.errors) } }, { configDir });
     }
-    stream.write(formatUpdateResult(ticketKey, result));
+    stream.write(formatUpdateResult(ticketKey, result, createStyler({ isTTY: stream.isTTY })));
     return hasErrors ? { ok: false, applied: result.applied, errors: result.errors } : { ok: true, applied: result.applied };
   } catch (err) {
     stream.write(formatWriteFailure(ticketKey, err));
@@ -794,6 +804,7 @@ export async function runTicketCreate(cmdArgs, {
 
   const adapter = resolveTicketAdapter(undefined, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
   if (!adapter) return { ok: false };
+  const s = createStyler({ isTTY: stream.isTTY });
   const attachRefused = refuseGithubAttachments(adapter, attachPaths, stream);
 
   if (adapter.type !== 'github' && !project) {
@@ -883,6 +894,6 @@ export async function runTicketCreate(cmdArgs, {
     }
   }
 
-  stream.write(`  Created ${result.key}${result.url ? ` (${result.url})` : ''}\n` + formatAttachSummary(attachResult));
+  stream.write(`  ${s.green('✔')} Created ${s.brand(s.bold(result.key))}${result.url ? ` (${result.url})` : ''}\n` + formatAttachSummary(attachResult, s));
   return { ok: true, key: result.key };
 }
