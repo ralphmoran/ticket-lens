@@ -93,6 +93,10 @@ export function normalizeTicket(raw) {
       return {
         direction,
         linkType: link.type.name,
+        // The actual directional wording ("is duplicated by" / "duplicates") as
+        // named in Jira itself, not just the link type's generic name — lets
+        // callers show the user's own words instead of inventing new phrasing.
+        linkPhrase: direction === 'outward' ? link.type.outward : link.type.inward,
         key: issue.key,
         summary: issue.fields.summary,
         status: issue.fields.status?.name ?? null,

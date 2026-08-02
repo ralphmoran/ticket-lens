@@ -38,6 +38,7 @@ describe('normalizeTicket', () => {
     assert.deepStrictEqual(result.linkedIssues[0], {
       direction: 'outward',
       linkType: 'Blocks',
+      linkPhrase: 'blocks',
       key: 'PROD-1235',
       summary: 'Deploy payment hotfix to production',
       status: 'Blocked',
@@ -45,6 +46,47 @@ describe('normalizeTicket', () => {
     });
     assert.equal(result.linkedIssues[1].direction, 'inward');
     assert.equal(result.linkedIssues[1].key, 'PROD-1100');
+  });
+
+  it('uses the inward phrase for an inward-direction link (linkPhrase reflects the reader\'s own perspective)', () => {
+    const result = normalizeTicket(cloudFixture);
+    // linkedIssues[1] is inward ("Relates", symmetric wording either direction)
+    assert.equal(result.linkedIssues[1].linkType, 'Relates');
+    assert.equal(result.linkedIssues[1].linkPhrase, 'relates to');
+  });
+
+  it('uses the outward phrase for an outward-direction Duplicate link', () => {
+    const raw = {
+      key: 'PROJ-1',
+      fields: {
+        summary: 'S', issuetype: { name: 'Task' }, status: { name: 'Open' },
+        comment: { comments: [] }, attachment: [],
+        issuelinks: [{
+          type: { name: 'Duplicate', inward: 'is duplicated by', outward: 'duplicates' },
+          outwardIssue: { key: 'PROJ-2', fields: { summary: 'Duplicate target', status: { name: 'Open' }, issuetype: { name: 'Bug' } } },
+        }],
+      },
+    };
+    const result = normalizeTicket(raw);
+    assert.equal(result.linkedIssues[0].linkType, 'Duplicate');
+    assert.equal(result.linkedIssues[0].linkPhrase, 'duplicates');
+  });
+
+  it('uses the inward phrase for an inward-direction Duplicate link ("is duplicated by")', () => {
+    const raw = {
+      key: 'PROJ-1',
+      fields: {
+        summary: 'S', issuetype: { name: 'Task' }, status: { name: 'Open' },
+        comment: { comments: [] }, attachment: [],
+        issuelinks: [{
+          type: { name: 'Duplicate', inward: 'is duplicated by', outward: 'duplicates' },
+          inwardIssue: { key: 'PROJ-3', fields: { summary: 'Original ticket', status: { name: 'Open' }, issuetype: { name: 'Bug' } } },
+        }],
+      },
+    };
+    const result = normalizeTicket(raw);
+    assert.equal(result.linkedIssues[0].linkType, 'Duplicate');
+    assert.equal(result.linkedIssues[0].linkPhrase, 'is duplicated by');
   });
 
   it('extracts attachments with id, filename, mimeType, size, and content URL', () => {

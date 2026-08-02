@@ -485,11 +485,27 @@ export async function runTicketDuplicates(cmdArgs, {
   if (!adapter) return { ok: false };
 
   try {
-    const source = await adapter.fetchTicket(ticketKey);
+    // depth: 0 — only the shallow linkedIssues list is needed (for explicit
+    // Duplicate links, below); the default depth:1 would also recursively
+    // fetch full details of every linked ticket just to discard them here.
+    const source = await adapter.fetchTicket(ticketKey, { depth: 0 });
     const searchText = [source.summary, source.description].filter(Boolean).join(' ');
     const candidates = await adapter.findCandidates(searchText, ticketKey);
     const scoreOpts = threshold !== undefined ? { threshold } : {};
-    const results = scoreCandidates({ key: ticketKey, summary: source.summary, description: source.description }, candidates, scoreOpts);
+    const textMatches = scoreCandidates({ key: ticketKey, summary: source.summary, description: source.description }, candidates, scoreOpts);
+
+    // A human already said these are duplicates — always include them,
+    // regardless of --threshold, ahead of anything the local scorer finds.
+    // Jira doesn't enforce uniqueness of link-type+target pairs, so the same
+    // key could appear via two separately-typed "duplicate-ish" links —
+    // de-duped against itself here, not just against textMatches below.
+    const seenLinkedKeys = new Set();
+    const linkedDuplicates = (source.linkedIssues ?? [])
+      .filter(l => /duplicate/i.test(l.linkType))
+      .filter(l => !seenLinkedKeys.has(l.key) && seenLinkedKeys.add(l.key))
+      .map(l => ({ key: l.key, summary: l.summary, linked: true, linkPhrase: l.linkPhrase }));
+    const linkedKeys = new Set(linkedDuplicates.map(l => l.key));
+    const results = [...linkedDuplicates, ...textMatches.filter(r => !linkedKeys.has(r.key))];
 
     const s = createStyler({ isTTY: stream.isTTY });
     stream.write(`  ${s.brand(s.bold(ticketKey))}: ${s.bold(source.summary ?? '')}\n\n`);
@@ -500,6 +516,10 @@ export async function runTicketDuplicates(cmdArgs, {
     }
     stream.write(`  Possible duplicates:\n\n`);
     for (const r of results) {
+      if (r.linked) {
+        stream.write(`    ${s.brand('●')} ${s.bold(r.key)} (${s.green(`Jira-linked — ${r.linkPhrase}`)}) — ${r.summary}\n`);
+        continue;
+      }
       const pct = Math.round(r.score * 100);
       const pctColor = matchColor(pct, s);
       stream.write(`    ${s.brand('●')} ${s.bold(r.key)} (${pctColor(`${pct}% match`)}) — ${r.summary}\n`);

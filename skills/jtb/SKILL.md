@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.28.0 -->
+<!-- jtb-skill-version: 0.29.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -284,7 +284,7 @@ ticketlens duplicates PROD-1234                               # find likely dupl
 
 `assign` is self-assign only — `--to` must be `me`. There is no way to assign to anyone else yet; don't attempt a workaround (e.g. via `comment`) if the user asks for that — tell them it isn't supported.
 
-`duplicates` lists likely-duplicate tickets in the same project, ranked by local title/description overlap — no tracker scores similarity server-side, so treat a match as a nudge for the user to check manually, never as a confirmed duplicate to act on unprompted (e.g. don't auto-close or auto-comment based on a match). `--threshold=N` (0–1, default 0.35) tightens or loosens what counts as a match.
+`duplicates` lists likely-duplicate tickets in the same project. On Jira, any ticket already linked as a "Duplicate" is always listed first — that's a confirmed relationship a human already recorded, not a heuristic. Everything else is ranked by local title/description overlap — no tracker scores similarity server-side, so treat those as a nudge for the user to check manually, never as a confirmed duplicate to act on unprompted (e.g. don't auto-close or auto-comment based on a match). `--threshold=N` (0–1, default 0.35) tightens or loosens what counts as a text-match — it has no effect on Jira-linked duplicates, which are always shown.
 
 The three write actions (comment/transition/assign) have a short local debounce (10s) against an accidental double-fire, and every write is appended to a local audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — surface the failure to the user rather than silently re-attempting, since a ticket write isn't naturally idempotent the way a Recall note save is. `duplicates` has neither, since nothing is written.
 

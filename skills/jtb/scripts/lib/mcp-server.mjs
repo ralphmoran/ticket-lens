@@ -93,7 +93,7 @@ const TOOLS = [
   },
   {
     name: 'ticket_duplicates',
-    description: 'Find likely duplicate tickets in the same project (Jira/GitHub/Linear). Read-only — never links or changes anything; no tracker scores similarity server-side, so ranking is local and approximate. Requires a TicketLens Pro license.',
+    description: 'Find likely duplicate tickets in the same project (Jira/GitHub/Linear). Read-only — never links or changes anything. On Jira, any ticket already linked as a "Duplicate" is always included first (a confirmed relationship, not a guess); everything else comes from a local, approximate title/description overlap score, since no tracker scores similarity server-side. Requires a TicketLens Pro license.',
     inputSchema: {
       type: 'object',
       properties: {

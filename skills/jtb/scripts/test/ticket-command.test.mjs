@@ -618,6 +618,103 @@ describe('runTicketDuplicates — happy path', () => {
   });
 });
 
+describe('runTicketDuplicates — Jira-linked duplicates', () => {
+  test('a Jira "Duplicate"-type linked issue is always surfaced, even with no text-match candidates', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        fetchTicket: async () => ({
+          key: 'PROJ-1', summary: 'Login button broken on mobile', description: '',
+          linkedIssues: [{ key: 'PROJ-50', summary: 'Duplicate report of login bug', linkType: 'Duplicate', linkPhrase: 'is duplicated by', direction: 'inward' }],
+        }),
+        findCandidates: async () => ([]),
+      }),
+    });
+    const result = await runTicketDuplicates(['PROJ-1'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(result.results.length, 1);
+    assert.equal(result.results[0].key, 'PROJ-50');
+    const output = deps.stream.lines.join('');
+    assert.match(output, /PROJ-50/);
+    assert.match(output, /is duplicated by/);
+  });
+
+  test('a non-duplicate link type (e.g. Blocks, Relates) is never surfaced as a duplicate', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        fetchTicket: async () => ({
+          key: 'PROJ-1', summary: 'Login button broken on mobile', description: '',
+          linkedIssues: [
+            { key: 'PROJ-51', summary: 'Blocking ticket', linkType: 'Blocks', linkPhrase: 'blocks', direction: 'outward' },
+            { key: 'PROJ-52', summary: 'Related ticket', linkType: 'Relates', linkPhrase: 'relates to', direction: 'outward' },
+          ],
+        }),
+        findCandidates: async () => ([]),
+      }),
+    });
+    const result = await runTicketDuplicates(['PROJ-1'], deps);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.results, []);
+    assert.match(deps.stream.lines.join(''), /No likely duplicates/);
+  });
+
+  test('a ticket that is both Jira-linked and above the Jaccard threshold appears exactly once, as the linked entry', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        fetchTicket: async () => ({
+          key: 'PROJ-1', summary: 'Login button broken on mobile', description: 'Tapping login does nothing on iOS Safari',
+          linkedIssues: [{ key: 'PROJ-9', summary: 'Login button broken on mobile Safari', linkType: 'Duplicate', linkPhrase: 'duplicates', direction: 'outward' }],
+        }),
+        // Same key ('PROJ-9') also comes back from the text-match candidate search.
+        findCandidates: async () => ([{ key: 'PROJ-9', summary: 'Login button broken on mobile Safari', description: 'unrelated body' }]),
+      }),
+    });
+    const result = await runTicketDuplicates(['PROJ-1'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(result.results.length, 1, 'PROJ-9 must not be listed twice');
+    assert.equal(result.results[0].key, 'PROJ-9');
+    assert.equal(result.results[0].linked, true);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /duplicates/);
+    // Should not also render the percentage-match styling for the same key
+    assert.doesNotMatch(output, /% match/);
+  });
+
+  test('two separately-typed duplicate-ish links to the same target key are collapsed into one entry', async () => {
+    // Jira doesn't enforce uniqueness of link-type+target pairs — a ticket could
+    // have both a "Duplicate" link and a differently-named "duplicate-ish" link
+    // to the same target key.
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        fetchTicket: async () => ({
+          key: 'PROJ-1', summary: 'Login button broken on mobile', description: '',
+          linkedIssues: [
+            { key: 'PROJ-9', summary: 'Dup A', linkType: 'Duplicate', linkPhrase: 'duplicates', direction: 'outward' },
+            { key: 'PROJ-9', summary: 'Dup A again', linkType: 'Cloners (Duplicate)', linkPhrase: 'is a duplicate clone of', direction: 'outward' },
+          ],
+        }),
+        findCandidates: async () => ([]),
+      }),
+    });
+    const result = await runTicketDuplicates(['PROJ-1'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(result.results.length, 1, 'the same target key from two duplicate-ish link types must collapse to one entry');
+    assert.equal(result.results[0].key, 'PROJ-9');
+  });
+
+  test('GitHub/Linear adapters (linkedIssues always empty) are unaffected — pure text-match behavior preserved', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        fetchTicket: async () => ({ key: 'PROJ-1', summary: 'Login button broken on mobile', description: '', linkedIssues: [] }),
+      }),
+    });
+    const result = await runTicketDuplicates(['PROJ-1'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(result.results.length, 1);
+    assert.equal(result.results[0].key, 'PROJ-9');
+    assert.notEqual(result.results[0].linked, true);
+  });
+});
+
 describe('matchColor', () => {
   const s = createStyler({ isTTY: true });
 
