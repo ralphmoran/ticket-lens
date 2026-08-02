@@ -16,7 +16,7 @@ function extractTicketKeys(text) {
   return [...new Set([...text.matchAll(TICKET_KEY_RE)].map(m => m[1]))];
 }
 
-function detectBase(execFn, cwd) {
+export function detectBase(execFn, cwd) {
   for (const candidate of BASE_CANDIDATES) {
     if (run(execFn, ['rev-parse', '--verify', candidate], cwd) !== null) return candidate;
   }
