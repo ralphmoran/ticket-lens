@@ -281,6 +281,10 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     return;
   }
 
+  // The real resolved profile name (ticket-prefix / cwd / config.default), not just the
+  // explicit --profile= arg — used for triage-history labeling regardless of how it resolved.
+  const resolvedProfileName = conn.profileName ?? 'default';
+
   const adapter = resolveAdapter(conn, { fetcher });
 
   // Status resolution: --status flag > profile triageStatuses > defaults
@@ -432,7 +436,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   // Always save a daily snapshot for history tracking (non-fatal)
   try {
     const { saveTriageSnapshot } = await import('./lib/triage-history.mjs');
-    saveTriageSnapshot(scored, { profile: profileName ?? 'default', configDir });
+    saveTriageSnapshot(scored, { profile: resolvedProfileName, configDir });
   } catch { /* non-fatal */ }
 
   // Track this triage run (best-effort, non-fatal)
@@ -453,7 +457,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     try {
       const { loadYesterdaySnapshot, diffSnapshots, buildDeltaSection } =
         await import('./lib/triage-history.mjs');
-      const yesterday = loadYesterdaySnapshot({ profile: profileName ?? 'default', configDir });
+      const yesterday = loadYesterdaySnapshot({ profile: resolvedProfileName, configDir });
       if (yesterday) {
         const deltas = diffSnapshots(sorted, yesterday.tickets);
         delta = buildDeltaSection(deltas) || null;
@@ -461,7 +465,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     } catch { /* non-fatal — digest still sends */ }
 
     await deliverer({
-      profile: profileName ?? 'default',
+      profile: resolvedProfileName,
       staleDays,
       summary: (() => {
         let needsResponse = 0, aging = 0;
@@ -481,7 +485,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   if (exportArg) {
     const { exportTriage } = await import('./lib/triage-exporter.mjs');
     const exporterFn = opts.exporter ?? exportTriage;
-    const outputPath = await Promise.resolve(exporterFn({ tickets: sorted, format: exportArg, profile: profileName ?? 'default', configDir }));
+    const outputPath = await Promise.resolve(exporterFn({ tickets: sorted, format: exportArg, profile: resolvedProfileName, configDir }));
     const printFn = opts.print ?? ((msg) => process.stdout.write(msg + '\n'));
     printFn(`Export written to ${outputPath}`);
     return;
@@ -503,7 +507,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     await pushFn({
       sorted: pushable,
       rawTicketMap,
-      profile: profileName ?? 'default',
+      profile: resolvedProfileName,
       baseUrl: conn.baseUrl,
       cliToken,
       gitBranches: scanFn(),
@@ -521,7 +525,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     await shareFn({
       sorted,
       rawTicketMap,
-      profile: profileName ?? 'default',
+      profile: resolvedProfileName,
       baseUrl: conn.baseUrl,
       cliToken,
       fetcher,
@@ -564,7 +568,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       metrics = metricsInjector();
     } else {
       const { computeResponseMetrics } = await import('./lib/triage-history.mjs');
-      metrics = computeResponseMetrics(profileName ?? 'default', { days: 7, configDir });
+      metrics = computeResponseMetrics(resolvedProfileName, { days: 7, configDir });
     }
     // Only show footer when there's a meaningful metric to display
     const hasAvg = metrics && metrics.avgResponseHours !== null;

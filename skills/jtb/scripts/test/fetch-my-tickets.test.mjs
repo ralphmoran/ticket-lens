@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { run } from '../fetch-my-tickets.mjs';
@@ -1231,6 +1231,84 @@ describe('triage inline stats footer', () => {
       // This test passes if the run completes without error
     } finally {
       out.restore();
+    }
+  });
+});
+
+describe('triage — profile label resolution (H-3)', () => {
+  function todayDateString() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  it('LOCK: explicit --profile=testprofile still saves the snapshot under testprofile.json', async () => {
+    const configDir = setupConfig();
+    const out = captureOutput();
+    try {
+      await run(['triage', '--profile=testprofile', '--plain', '--static'], {}, mockFetcher, configDir);
+      const snapshotPath = join(configDir, 'triage-history', todayDateString(), 'testprofile.json');
+      assert.ok(existsSync(snapshotPath), `Expected snapshot at ${snapshotPath}`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('LOCK: pure env-var connection (no profiles.json match) still saves the snapshot under default.json', async () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'ticketlens-envfallback-'));
+    const out = captureOutput();
+    try {
+      await run(['triage', '--plain', '--static'], { env: mockEnv, fetcher: mockFetcher, configDir });
+      const snapshotPath = join(configDir, 'triage-history', todayDateString(), 'default.json');
+      assert.ok(existsSync(snapshotPath), `Expected snapshot at ${snapshotPath}`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('RED: implicit profile resolution (no --profile flag) saves the snapshot under the real resolved profile name, not default.json', async () => {
+    const configDir = setupConfig();
+    const out = captureOutput();
+    try {
+      await run(['triage', '--plain', '--static'], {}, mockFetcher, configDir);
+      const realSnapshotPath = join(configDir, 'triage-history', todayDateString(), 'testprofile.json');
+      const buggyDefaultPath = join(configDir, 'triage-history', todayDateString(), 'default.json');
+      assert.ok(existsSync(realSnapshotPath), `Expected snapshot under the real resolved profile name at ${realSnapshotPath}`);
+      assert.ok(!existsSync(buggyDefaultPath), 'Snapshot must NOT be written under the literal "default" label when a real profile was resolved implicitly');
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('RED: implicit profile resolution also fixes the inline stats footer profile lookup', async () => {
+    // Seed a needs-response -> clear transition under the REAL profile name across two
+    // prior days, so the footer has a non-null avg/clear-rate to show, then confirm an
+    // implicit (no --profile) run finds it instead of an empty "default" history.
+    const configDir = setupConfig();
+    const { saveTriageSnapshot } = await import('../lib/triage-history.mjs');
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    saveTriageSnapshot(
+      [{ ticketKey: 'HIST-1', urgency: 'needs-response', lastComment: { created: twoDaysAgo.toISOString() } }],
+      { profile: 'testprofile', configDir, now: twoDaysAgo }
+    );
+    saveTriageSnapshot(
+      [{ ticketKey: 'HIST-1', urgency: 'clear' }],
+      { profile: 'testprofile', configDir, now: yesterday }
+    );
+
+    const out = captureOutput();
+    try {
+      await run(['triage', '--plain', '--static'], {}, mockFetcher, configDir);
+      assert.ok(out.stdout.includes('This week:'), `Expected inline stats footer, got: ${out.stdout}`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
     }
   });
 });
