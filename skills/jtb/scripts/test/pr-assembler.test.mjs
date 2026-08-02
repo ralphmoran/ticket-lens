@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { assemblePr } from '../lib/pr-assembler.mjs';
+import { runComplianceCheck } from '../lib/compliance-checker.mjs';
 
 const TICKET_KEY = 'PROJ-123';
 
@@ -28,8 +29,7 @@ const MOCK_COMMITS = [{ sha: 'abc1234', message: 'feat: PROJ-123 login' }];
 const MOCK_REQUIREMENTS = ['Must validate email'];
 const MOCK_COMPLIANCE = {
   coveragePercent: 75,
-  report: [{ req: 'Must validate email', covered: true, location: 'src/Auth.php:10' }],
-  missing: [],
+  results: [{ requirement: 'Must validate email', status: 'FOUND', evidence: 'src/Auth.php:10' }],
 };
 
 function makeOpts(overrides = {}) {
@@ -107,20 +107,30 @@ describe('assemblePr', () => {
     assert.ok(!result.includes('Closes PROJ-123'), 'Should omit "Closes" when no remote detected');
   });
 
-  it('marks covered requirements with ✔ and missing with ✖', async () => {
+  it('marks FOUND requirements with ✔ and NOT_FOUND with ✖', async () => {
     const result = await assemblePr(TICKET_KEY, makeOpts({
       extractRequirementsFn: () => ['Must validate email', 'Must handle empty fields'],
       runComplianceCheckFn: async () => ({
         coveragePercent: 50,
-        report: [
-          { req: 'Must validate email', covered: true, location: 'src/Auth.php:10' },
-          { req: 'Must handle empty fields', covered: false, location: null },
+        results: [
+          { requirement: 'Must validate email', status: 'FOUND', evidence: 'src/Auth.php:10' },
+          { requirement: 'Must handle empty fields', status: 'NOT_FOUND', evidence: null },
         ],
-        missing: ['Must handle empty fields'],
       }),
     }));
-    assert.ok(result.includes('✔'), 'Missing ✔ for covered requirement');
-    assert.ok(result.includes('✖'), 'Missing ✖ for missing requirement');
+    assert.ok(result.includes('✔ Must validate email'), 'Missing ✔ for FOUND requirement');
+    assert.ok(result.includes('✖ Must handle empty fields'), 'Missing ✖ for NOT_FOUND requirement');
+    assert.ok(!result.includes('undefined'), 'Coverage section must not render raw "undefined"');
+  });
+
+  it('marks PARTIAL requirements with ~', async () => {
+    const result = await assemblePr(TICKET_KEY, makeOpts({
+      runComplianceCheckFn: async () => ({
+        coveragePercent: 50,
+        results: [{ requirement: 'Must validate email', status: 'PARTIAL', evidence: null }],
+      }),
+    }));
+    assert.ok(result.includes('~ Must validate email'), 'Missing ~ for PARTIAL requirement');
   });
 
   it('handles ticket with no requirements gracefully', async () => {
@@ -128,12 +138,34 @@ describe('assemblePr', () => {
       extractRequirementsFn: () => [],
       runComplianceCheckFn: async () => ({
         coveragePercent: 0,
-        report: [],
-        missing: [],
+        results: [],
       }),
     }));
     assert.equal(typeof result, 'string');
     assert.ok(result.includes('### Requirements coverage'), 'Should still include section header');
+  });
+
+  it('renders correctly against the real runComplianceCheck (integration — guards against interface drift)', async () => {
+    // Regression guard: buildCoverageSection previously assumed runComplianceCheck
+    // returned an array as `report`; it actually returns a formatted string under
+    // `report` and the structured per-requirement data under `results`. Every prior
+    // test here mocked runComplianceCheckFn, so the mismatch shipped undetected.
+    const result = await assemblePr(TICKET_KEY, makeOpts({
+      fetchTicketFn: async () => ({ ...MOCK_TICKET, description: '- Must validate email\n' }),
+      extractRequirementsFn: undefined,
+      runComplianceCheckFn: ({ brief, ticketKey, configDir }) => runComplianceCheck({
+        brief,
+        ticketKey,
+        configDir,
+        isLicensedFn: () => true,
+        checkUsageFn: () => ({ count: 0, month: '2026-03', canUse: true }),
+        incrementUsageFn: () => {},
+        findLinkedCommitsFn: () => ({ commits: [], branches: [], diff: '+validateEmail(input)' }),
+        appendLedgerFn: () => {},
+      }),
+    }));
+    assert.ok(result.includes('✔ Must validate email'), `Expected real FOUND requirement, got: ${result}`);
+    assert.ok(!result.includes('undefined'), 'Coverage section must not render raw "undefined"');
   });
 
   it('handles ticket with no linked commits gracefully', async () => {

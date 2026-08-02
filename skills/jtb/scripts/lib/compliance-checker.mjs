@@ -7,7 +7,7 @@ import { analyzeDiff } from './diff-analyzer.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { appendLedger } from './ledger.mjs';
 
-const STATUS_ICON = { FOUND: '✔', PARTIAL: '~', NOT_FOUND: '✖' };
+export const STATUS_ICON = { FOUND: '✔', PARTIAL: '~', NOT_FOUND: '✖' };
 
 function formatReport({ ticketKey, requirements, analysis, usage, isPro }) {
   const { results, coveragePercent } = analysis;
@@ -92,5 +92,5 @@ export async function runComplianceCheck({
     );
   }
 
-  return { report, coveragePercent, noCriteria: requirements.length === 0 };
+  return { report, results: analysis.results, coveragePercent, noCriteria: requirements.length === 0 };
 }

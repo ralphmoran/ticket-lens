@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fetchTicket } from './jira-client.mjs';
 import { extractRequirements } from './requirement-extractor.mjs';
 import { findLinkedCommits } from './commit-linker.mjs';
-import { runComplianceCheck } from './compliance-checker.mjs';
+import { runComplianceCheck, STATUS_ICON } from './compliance-checker.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 
 /**
@@ -63,26 +63,13 @@ function buildCoverageSection(complianceResult, requirements) {
     return lines.join('\n');
   }
 
-  const { coveragePercent, report } = complianceResult;
+  const { coveragePercent, results } = complianceResult;
   const lines = [``, `### Requirements coverage (${coveragePercent}%)`];
 
-  for (const entry of report) {
-    if (entry.covered) {
-      const loc = entry.location ? ` (${entry.location})` : '';
-      lines.push(`- ✔ ${entry.req}${loc}`);
-    } else {
-      lines.push(`- ✖ ${entry.req}`);
-    }
-  }
-
-  // Include any missing reqs not already in report
-  if (complianceResult.missing && complianceResult.missing.length > 0) {
-    const reportedReqs = new Set(report.map(r => r.req));
-    for (const missed of complianceResult.missing) {
-      if (!reportedReqs.has(missed)) {
-        lines.push(`- ✖ ${missed}`);
-      }
-    }
+  for (const { requirement, status, evidence } of results) {
+    const icon = STATUS_ICON[status] ?? '?';
+    const suffix = evidence ? ` (${evidence})` : '';
+    lines.push(`- ${icon} ${requirement}${suffix}`);
   }
 
   return lines.join('\n');
