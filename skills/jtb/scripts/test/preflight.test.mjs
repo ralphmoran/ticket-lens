@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkApiBase } from '../../../../scripts/preflight.mjs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { checkApiBase, checkForLeaks } from '../../../../scripts/preflight.mjs';
 
 test('non-latest tag always passes regardless of URL', () => {
   for (const tag of ['beta', 'dev', 'next', 'canary']) {
@@ -42,4 +45,29 @@ test('undefined tag (npm_config_tag unset) defaults to latest behavior', () => {
 
 test('empty string tag (some CI environments) defaults to latest behavior', () => {
   assert.equal(checkApiBase('http://ticketlens.test', '').ok, false);
+});
+
+test('checkForLeaks: ok:true and a summary reason for a clean tree', () => {
+  const root = mkdtempSync(join(tmpdir(), 'preflight-leak-test-'));
+  try {
+    writeFileSync(join(root, 'clean.mjs'), "export const x = 'PROJ-123';\n");
+    const result = checkForLeaks(root, ['clean.mjs']);
+    assert.equal(result.ok, true);
+    assert.match(result.reason, /no employer\/pilot-client leaks found/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('checkForLeaks: ok:false with each violation listed in the reason', () => {
+  const root = mkdtempSync(join(tmpdir(), 'preflight-leak-test-'));
+  try {
+    writeFileSync(join(root, 'dirty.mjs'), "const t = 'ECNT-3888';\n");
+    const result = checkForLeaks(root, ['dirty.mjs']);
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /Found 1 employer\/pilot-client leak/);
+    assert.match(result.reason, /dirty\.mjs:1/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

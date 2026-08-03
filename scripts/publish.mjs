@@ -16,6 +16,7 @@ import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkApiBase, checkForLeaks, runChecks } from './preflight.mjs';
 
 const __dir  = dirname(fileURLToPath(import.meta.url));
 const ROOT   = resolve(__dir, '..');
@@ -25,6 +26,17 @@ const PROD_URL  = 'https://api.ticketlens.app';
 const args    = process.argv.slice(2);
 const tag     = args.find(a => a.startsWith('--tag='))?.split('=')[1] ?? 'beta';
 const prodUrl = args.find(a => a.startsWith('--prod-url='))?.split('=')[1] ?? PROD_URL;
+
+// `npm publish <tarball-file>` (below) does NOT trigger npm's `prepublishOnly`
+// lifecycle hook — that only fires when npm packs a directory itself, not
+// when handed an already-built tarball. So these checks are run directly
+// here, not left to package.json's `prepublishOnly` script, which would
+// silently never execute during a real publish:beta/publish:latest run.
+// checkApiBase validates `prodUrl` (the value about to be swapped in and
+// shipped), not the on-disk source — the source is *supposed* to stay local.
+const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+const preflightChecks = [checkApiBase(prodUrl, tag), checkForLeaks(ROOT, pkg.files)];
+runChecks(preflightChecks, '[publish] Preflight:');
 
 const original = readFileSync(API_UTILS, 'utf8');
 const swapped  = original.replace(
