@@ -54,7 +54,7 @@ export async function runRecall(cmdArgs, {
   const filter = TICKET_KEY_PATTERN.test(arg) ? { ticketKey: arg } : { query: arg };
   const results = listNotesFn(filter, { configDir });
 
-  const styled = !cmdArgs.includes('--plain') && stream.isTTY;
+  const styled = !cmdArgs.includes('--plain') && !!stream.isTTY;
   const full = cmdArgs.includes('--full');
   stream.write(styleRecallResults(results, { styled, full }) + '\n');
   return { ok: true };

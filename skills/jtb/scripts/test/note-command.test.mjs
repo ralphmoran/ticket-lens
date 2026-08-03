@@ -311,6 +311,7 @@ function baseDeleteDeps(overrides = {}) {
     isLicensedFn: () => true,
     deleteNoteFn: () => ({ deleted: true, prefix: 'PROD' }),
     confirmFn: async () => true,
+    rebuildIndexFn: () => {},
     ...overrides,
   };
 }
@@ -644,6 +645,29 @@ describe('runNoteDelete — delegates to deleteNoteFn with the right shape', () 
     const result = await runNoteDelete(['--id=note-1.md'], deps);
     assert.equal(result.deleted, false);
     assert.match(deps.stream.lines.join(''), /not deleted/i);
+  });
+
+  // Regression for M-6: deleteNote() returns prefix specifically so the
+  // caller can rebuild the vault index — recall-sync.mjs's tombstone-pull
+  // path already does this correctly; runNoteDelete previously discarded it.
+  test('a successful delete rebuilds the vault index for the deleted note\'s prefix', async () => {
+    let rebuiltPrefix;
+    const deps = baseDeleteDeps({
+      deleteNoteFn: () => ({ deleted: true, prefix: 'PROD' }),
+      rebuildIndexFn: (prefix) => { rebuiltPrefix = prefix; },
+    });
+    await runNoteDelete(['--id=note-1.md'], deps);
+    assert.equal(rebuiltPrefix, 'PROD');
+  });
+
+  test('a no-op delete never rebuilds the index — nothing changed on disk', async () => {
+    let rebuildCalls = 0;
+    const deps = baseDeleteDeps({
+      deleteNoteFn: () => ({ deleted: false, prefix: null }),
+      rebuildIndexFn: () => { rebuildCalls++; },
+    });
+    await runNoteDelete(['--id=note-1.md'], deps);
+    assert.equal(rebuildCalls, 0);
   });
 });
 

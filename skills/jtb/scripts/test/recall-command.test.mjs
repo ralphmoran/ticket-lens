@@ -138,6 +138,18 @@ describe('runRecall — styled vs --plain output', () => {
     await runRecall(['retry'], deps);
     assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/);
   });
+
+  // Regression for M-5: real piped stdout and the MCP capturingStream() both
+  // leave isTTY `undefined`, not `false` — which styleRecallResults' own
+  // `{ styled = true }` default then reads as "absent" and styles anyway.
+  // The explicit-boolean mock above can never reach that path.
+  test('a stream with no isTTY property at all (real piped stdout, MCP capturingStream) gets plain output', async () => {
+    const lines = [];
+    const noTtyStream = { write: (s) => lines.push(s) };
+    const deps = baseDeps({ stream: noTtyStream, listNotesFn: oneNote });
+    await runRecall(['retry'], deps);
+    assert.doesNotMatch(lines.join(''), /\x1b\[/);
+  });
 });
 
 describe('runRecall — --full prints note content', () => {

@@ -11,7 +11,7 @@ import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { isLicensed, showUpgradePrompt } from './license.mjs';
 import { scanForSecrets } from './secret-scanner.mjs';
 import { checkNoteStructure } from './note-structural-check.mjs';
-import { writeNote, patchNoteBody, deleteNote } from './recall-vault.mjs';
+import { writeNote, patchNoteBody, deleteNote, rebuildIndex } from './recall-vault.mjs';
 import { readCliToken } from './cli-auth.mjs';
 import { pushNote } from './recall-sync.mjs';
 import { enqueueNote, isRetryableFailure, maybeAutoFlush } from './recall-queue.mjs';
@@ -230,6 +230,7 @@ export async function runNoteDelete(cmdArgs, {
   stdin = process.stdin,
   isLicensedFn = isLicensed,
   deleteNoteFn = deleteNote,
+  rebuildIndexFn = rebuildIndex,
   confirmFn = confirmDestructive,
 } = {}) {
   if (!isLicensedFn('pro', configDir)) {
@@ -256,7 +257,8 @@ export async function runNoteDelete(cmdArgs, {
     return { deleted: false };
   }
 
-  const { deleted } = deleteNoteFn({ external_id: id, tickets: ticketKey ? [ticketKey] : [] }, { configDir });
+  const { deleted, prefix } = deleteNoteFn({ external_id: id, tickets: ticketKey ? [ticketKey] : [] }, { configDir });
+  if (deleted) rebuildIndexFn(prefix, { configDir });
   stream.write(deleted
     ? `  Deleted note (${id}) — local vault only; see help for team-synced notes.\n`
     : `  Note not deleted — (${id}) not found.\n`);
