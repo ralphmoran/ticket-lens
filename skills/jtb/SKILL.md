@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.29.0 -->
+<!-- jtb-skill-version: 0.30.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -268,16 +268,22 @@ Recall notes are stored locally at `~/.ticketlens/recall/`. On a Pro account wit
 
 ---
 
-## Comment, Transition, Assign & Duplicates — write back to the tracker (Pro)
+## Comment, Transition, Assign, Duplicates, Link, Update & Create — write back to the tracker (Pro)
 
-Unlike Recall (a local note about a ticket), comment/transition/assign write directly to the ticket's real tracker — Jira, GitHub, or Linear. Only dispatch a write when the user has actually asked for the ticket to be commented on, moved, or assigned — never as a routine end-of-session action the way Recall capture is. `duplicates` is read-only and safe to run more freely — it never mutates anything.
+Unlike Recall (a local note about a ticket), these seven commands write directly to the ticket's real tracker — Jira, GitHub, or Linear. Only dispatch a write when the user has actually asked for it — never as a routine end-of-session action the way Recall capture is. `duplicates` is read-only and safe to run more freely — it never mutates anything.
 
 ```bash
 ticketlens comment PROD-1234 --body="Fixed in a2f9c1, deployed to staging."
+ticketlens comment PROD-1234 --body="See screenshot" --attach=./bug.png  # attach local files
 ticketlens transition PROD-1234                              # list valid transitions — read-only
 ticketlens transition PROD-1234 --target="Done" --confirm    # execute
 ticketlens assign PROD-1234 --to=me                          # assign to yourself
 ticketlens duplicates PROD-1234                               # find likely duplicates — read-only
+ticketlens link PROD-1234 PROD-5678                            # list valid link types — read-only
+ticketlens link PROD-1234 PROD-5678 --type="Duplicate" --confirm  # execute the link
+ticketlens update PROD-1234 --title="Fix login on mobile"     # update title/description/labels/priority
+ticketlens update PROD-1234 --add-labels=urgent --remove-labels=stale
+ticketlens create --project=PROD --type="Task" --summary="Fix login on mobile"  # create a new ticket
 ```
 
 `transition` called with just a ticket key never mutates anything — it lists the tracker's current valid options (Jira: real workflow transitions for that issue; GitHub: open/closed; Linear: team-scoped workflow states). Only add `--target` **and** `--confirm` once the target has actually been confirmed with the user — `--confirm` is a deliberate two-step gate, not a formality to route around. Never guess a `--target` value; always list first, then use one of the names shown.
@@ -286,11 +292,19 @@ ticketlens duplicates PROD-1234                               # find likely dupl
 
 `duplicates` lists likely-duplicate tickets in the same project. On Jira, any ticket already linked as a "Duplicate" is always listed first — that's a confirmed relationship a human already recorded, not a heuristic. Everything else is ranked by local title/description overlap — no tracker scores similarity server-side, so treat those as a nudge for the user to check manually, never as a confirmed duplicate to act on unprompted (e.g. don't auto-close or auto-comment based on a match). `--threshold=N` (0–1, default 0.35) tightens or loosens what counts as a text-match — it has no effect on Jira-linked duplicates, which are always shown.
 
-The three write actions (comment/transition/assign) have a short local debounce (10s) against an accidental double-fire, and every write is appended to a local audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — surface the failure to the user rather than silently re-attempting, since a ticket write isn't naturally idempotent the way a Recall note save is. `duplicates` has neither, since nothing is written.
+`link SOURCE-KEY TARGET-KEY` links two tickets — direction matters: SOURCE "types" TARGET (e.g. `link A B --type=Duplicate` means A duplicates B, not the other way around). Called with just the two keys, it lists the tracker's current valid link types without changing anything — never guess `--type`; always list first, then use one of the names shown. GitHub has no generic link relationship, so linking on a GitHub-tracked ticket *closes SOURCE as a duplicate of TARGET* — a real state change, not just a relationship add — and prints an explicit warning immediately before that happens, on top of the same `--confirm` gate.
+
+`update TICKET-KEY` updates a narrow, named field set — title, description, labels, priority. At least one field is required. Labels are always add/remove (`--add-labels=a,b` / `--remove-labels=c`), never a wholesale replace — an unnamed existing label is left alone, never silently dropped. No `--confirm` needed — these are reversible metadata edits, same risk tier as `assign`.
+
+`create` makes a brand-new ticket — there's no existing ticket to target, so `--project` (Jira project key / Linear team key) and `--type` (Jira issue type, ignored elsewhere) pick the destination instead of a ticket key. This is the highest-blast-radius command in the family: a bad `--project`/`--type` fabricates a real, hard-to-walk-back item in a live tracker. No `--confirm` gate — double-check the values with the user before calling it, since an invalid value surfaces the tracker's own error rather than a silent guess.
+
+`--attach=path1,path2` (comma-separated local file paths) is available on `comment` and `create` only. Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
+
+The six write actions (comment/transition/assign/link/update/create) have a short local debounce (10s) against an accidental double-fire, and every write is appended to a local audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — surface the failure to the user rather than silently re-attempting, since a ticket write isn't naturally idempotent the way a Recall note save is. `duplicates` has neither, since nothing is written.
 
 **Pick exactly one path per action — never both.** If this harness has TicketLens's MCP server configured (tools named `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create` — often shown as `mcp__ticketlens__ticket_comment` etc. — visible in your tool list), **use those tools, not the bash commands above** — same license gate, same cooldown, same audit log. Only fall back to the bash form when the MCP tools are genuinely absent from your tool list; if that's because this project has never registered the server, see the `ticketlens mcp install` note above (Recall section) — same guidance applies here.
 
-Requires a Pro license — on Free, all four no-op with an upgrade hint on stderr.
+Requires a Pro license — on Free, all seven no-op with an upgrade hint on stderr.
 
 ---
 

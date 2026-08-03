@@ -44,4 +44,38 @@ describe('SKILL.md — skill version marker', () => {
     assert.ok(m, 'expected a jtb-skill-version marker on line 1');
     assert.notEqual(m[1], '0.27.0', 'marker must move — update-skill propagates on exact-string mismatch only');
   });
+
+  it('is bumped past 0.29.0 so update-skill propagates the H-5/H-6 write-back doc fixes', () => {
+    const m = SKILL_MD.match(/jtb-skill-version:\s*([\d.]+)/);
+    assert.ok(m, 'expected a jtb-skill-version marker on line 1');
+    assert.notEqual(m[1], '0.29.0', 'marker must move past the pre-fix version');
+  });
+});
+
+function writeBackSection() {
+  const start = SKILL_MD.indexOf('write back to the tracker');
+  assert.ok(start !== -1, 'expected the ticket-write-back section to still exist');
+  const end = SKILL_MD.indexOf('\n## ', start + 1);
+  return end === -1 ? SKILL_MD.slice(start) : SKILL_MD.slice(start, end);
+}
+
+describe('SKILL.md — write-back section documents attachments (H-5)', () => {
+  it('mentions --attach so an AI can discover the capability', () => {
+    const section = writeBackSection();
+    assert.match(section, /--attach/, 'expected --attach to be documented in the write-back section');
+  });
+});
+
+describe('SKILL.md — write-back section documents link/update/create (H-6)', () => {
+  it('lists ticketlens link, update, and create in the bash example block', () => {
+    const section = writeBackSection();
+    assert.match(section, /ticketlens link /, 'expected a `ticketlens link` example');
+    assert.match(section, /ticketlens update /, 'expected a `ticketlens update` example');
+    assert.match(section, /ticketlens create /, 'expected a `ticketlens create` example');
+  });
+
+  it('does not undercount the write-command family as "all four"', () => {
+    const section = writeBackSection();
+    assert.doesNotMatch(section, /all four/i, 'the family has seven commands now, not four');
+  });
 });

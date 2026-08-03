@@ -853,6 +853,26 @@ describe('triage --push', () => {
     assert.equal(fetcherCallCount, 0, 'triage fetcher must NOT be called when --push token is absent');
   });
 
+  it('--push with missing token reports the real login command, not a nonexistent auth login subcommand', async () => {
+    const out = captureOutput();
+    try {
+      await run(['triage', '--push'], {
+        env: mockEnv,
+        fetcher: mockFetcher,
+        configDir: '/tmp/no-token-dir-login-msg-test',
+        scanFn: () => null,
+        isLicensed: () => true,
+      });
+      assert.ok(out.stderr.includes('ticketlens login'), `expected stderr to mention 'ticketlens login', got: ${out.stderr}`);
+      assert.ok(
+        !out.stderr.includes('ticketlens auth login'),
+        `stderr must not reference the nonexistent 'ticketlens auth login' command, got: ${out.stderr}`
+      );
+    } finally {
+      out.restore();
+    }
+  });
+
 });
 
 describe('triage --push — pushable set (includes clear, excludes ignore)', () => {
