@@ -458,7 +458,7 @@ export async function postComment(ticketKey, body, opts = {}) {
     throw err;
   }
   const raw = await response.json();
-  return { id: raw.id, url: raw.self ?? null };
+  return { id: raw.id, url: `${baseUrl}/browse/${ticketKey}?focusedCommentId=${raw.id}` };
 }
 
 /**
@@ -728,7 +728,7 @@ export async function createIssue({ project, type, summary, description } = {}, 
     throw err;
   }
   const raw = await response.json();
-  return { key: raw.key, id: raw.id, url: raw.self ?? null };
+  return { key: raw.key, id: raw.id, url: `${baseUrl}/browse/${raw.key}` };
 }
 
 export async function fetchTicket(ticketKey, opts = {}) {

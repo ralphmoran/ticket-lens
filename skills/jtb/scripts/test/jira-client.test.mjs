@@ -1016,6 +1016,12 @@ describe('postComment', () => {
     await postComment('PROJ-1', 'Plain', { env: ENV, apiVersion: 3, fetcher });
     assert.equal(captured.body.content.length, 1);
   });
+
+  it('returns a browsable /browse/{key}?focusedCommentId= url, not Jira\'s internal rest/api self-link (M-1)', async () => {
+    const fetcher = async () => ({ ok: true, json: async () => ({ id: '10', self: 'https://example.atlassian.net/rest/api/2/issue/10120/comment/10' }) });
+    const result = await postComment('PROJ-1', 'A plain comment.', { env: ENV, apiVersion: 2, fetcher });
+    assert.equal(result.url, 'https://example.atlassian.net/browse/PROJ-1?focusedCommentId=10');
+  });
 });
 
 describe('getTransitions', () => {
@@ -1293,7 +1299,7 @@ describe('createIssue', () => {
     assert.equal(captured.method, 'POST');
     assert.deepEqual(captured.body, { fields: { project: { key: 'PROD' }, issuetype: { name: 'Task' }, summary: 'New issue' } });
     assert.match(captured.url, /\/issue$/);
-    assert.deepEqual(result, { key: 'PROD-789', id: '10001', url: 'https://example.atlassian.net/rest/api/3/issue/10001' });
+    assert.deepEqual(result, { key: 'PROD-789', id: '10001', url: 'https://example.atlassian.net/browse/PROD-789' });
   });
 
   it('sends description as a plain string on v2 (Server/DC)', async () => {

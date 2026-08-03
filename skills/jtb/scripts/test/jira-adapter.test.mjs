@@ -76,6 +76,13 @@ describe('createJiraAdapter — addComment', () => {
     assert.match(captured.url, /\/issue\/TEST-1\/comment$/);
     assert.equal(result.id, '99');
   });
+
+  it('returns a browsable /browse/{key}?focusedCommentId= url, not Jira\'s internal rest/api self-link (M-1)', async () => {
+    const fetcher = async () => ({ ok: true, status: 200, json: async () => ({ id: '99', self: 'https://jira.example.com/rest/api/2/issue/10/comment/99' }) });
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.addComment('TEST-1', 'a plain comment');
+    assert.equal(result.url, 'https://jira.example.com/browse/TEST-1?focusedCommentId=99');
+  });
 });
 
 describe('createJiraAdapter — getTransitions', () => {
@@ -407,7 +414,7 @@ describe('createJiraAdapter — createTicket', () => {
     assert.equal(captured.method, 'POST');
     assert.deepEqual(captured.body, { fields: { project: { key: 'TEST' }, issuetype: { name: 'Task' }, summary: 'New one' } });
     assert.match(captured.url, /\/issue$/);
-    assert.deepEqual(result, { key: 'TEST-99', id: '10001', url: 'https://jira.example.com/rest/api/2/issue/10001' });
+    assert.deepEqual(result, { key: 'TEST-99', id: '10001', url: 'https://jira.example.com/browse/TEST-99' });
   });
 
   it('propagates a validation failure — issuetype is never pre-checked client-side', async () => {
