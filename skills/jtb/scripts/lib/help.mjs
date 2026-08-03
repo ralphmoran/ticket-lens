@@ -760,6 +760,7 @@ export function printDuplicatesHelp({ stream = process.stdout } = {}) {
     `  that's a confirmed relationship, not a guess. Everything else comes from a`,
     `  local title/description overlap score (no tracker scores similarity`,
     `  server-side) — not exact, treat those as a nudge to check.`,
+    `  An empty result isn't a guarantee — this heuristic can miss real matches too.`,
     '',
     `  ${s.bold('OPTIONS')}`,
     '',

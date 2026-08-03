@@ -518,7 +518,7 @@ export async function runTicketDuplicates(cmdArgs, {
     stream.write(`  ${s.brand(s.bold(ticketKey))}: ${s.bold(source.summary ?? '')}\n\n`);
 
     if (results.length === 0) {
-      stream.write(`  No likely duplicates found.\n`);
+      stream.write(`  No likely duplicates found (heuristic match only — not a guarantee none exist).\n`);
       return { ok: true, results: [] };
     }
     stream.write(`  Possible duplicates:\n\n`);

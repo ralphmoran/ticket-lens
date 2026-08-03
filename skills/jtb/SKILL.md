@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.31.0 -->
+<!-- jtb-skill-version: 0.32.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -292,7 +292,7 @@ ticketlens create --project=PROD --type="Task" --summary="Fix login on mobile"  
 
 `assign` is self-assign only — `--to` must be `me`. There is no way to assign to anyone else yet; don't attempt a workaround (e.g. via `comment`) if the user asks for that — tell them it isn't supported.
 
-`duplicates` lists likely-duplicate tickets in the same project. On Jira, any ticket already linked as a "Duplicate" is always listed first — that's a confirmed relationship a human already recorded, not a heuristic. Everything else is ranked by local title/description overlap — no tracker scores similarity server-side, so treat those as a nudge for the user to check manually, never as a confirmed duplicate to act on unprompted (e.g. don't auto-close or auto-comment based on a match). `--threshold=N` (0–1, default 0.35) tightens or loosens what counts as a text-match — it has no effect on Jira-linked duplicates, which are always shown.
+`duplicates` lists likely-duplicate tickets in the same project. On Jira, any ticket already linked as a "Duplicate" is always listed first — that's a confirmed relationship a human already recorded, not a heuristic. Everything else is ranked by local title/description overlap — no tracker scores similarity server-side, so treat those as a nudge for the user to check manually, never as a confirmed duplicate to act on unprompted (e.g. don't auto-close or auto-comment based on a match). `--threshold=N` (0–1, default 0.35) tightens or loosens what counts as a text-match — it has no effect on Jira-linked duplicates, which are always shown. An empty result is the same approximation in the other direction — the local scorer can miss a real duplicate too, so don't treat "no likely duplicates found" as proof none exist.
 
 `link SOURCE-KEY TARGET-KEY` links two tickets — direction matters: SOURCE "types" TARGET (e.g. `link A B --type=Duplicate` means A duplicates B, not the other way around). Called with just the two keys, it lists the tracker's current valid link types without changing anything — never guess `--type`; always list first, then use one of the names shown. GitHub has no generic link relationship, so linking on a GitHub-tracked ticket *closes SOURCE as a duplicate of TARGET* — a real state change, not just a relationship add — and prints an explicit warning immediately before that happens, on top of the same `--confirm` gate.
 

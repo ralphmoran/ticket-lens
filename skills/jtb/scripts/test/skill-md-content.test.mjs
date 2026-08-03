@@ -56,6 +56,12 @@ describe('SKILL.md — skill version marker', () => {
     assert.ok(m, 'expected a jtb-skill-version marker on line 1');
     assert.notEqual(m[1], '0.30.0', 'marker must move past the pre-fix version');
   });
+
+  it('is bumped past 0.31.0 so update-skill propagates the M-11 duplicates-hedging fix', () => {
+    const m = SKILL_MD.match(/jtb-skill-version:\s*([\d.]+)/);
+    assert.ok(m, 'expected a jtb-skill-version marker on line 1');
+    assert.notEqual(m[1], '0.31.0', 'marker must move past the pre-fix version');
+  });
 });
 
 function writeBackSection() {
@@ -103,5 +109,17 @@ describe('SKILL.md — MCP tool schema cache staleness caveat (H-8)', () => {
   it('cross-references the same caveat from the write-back section', () => {
     const section = writeBackSection();
     assert.match(section, /MCP tool-cache staleness note above/i, 'expected the write-back section to reference the Recall section\'s cache-staleness note');
+  });
+});
+
+function duplicatesProse() {
+  const start = SKILL_MD.indexOf('`duplicates` lists likely-duplicate tickets');
+  assert.ok(start !== -1, 'expected the duplicates prose to still exist');
+  return SKILL_MD.slice(start, start + 800);
+}
+
+describe('SKILL.md — duplicates hedges both directions (M-11)', () => {
+  it('warns the local scorer can also miss real duplicates, not just over-match', () => {
+    assert.match(duplicatesProse(), /miss|not a guarantee|no proof/i);
   });
 });

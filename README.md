@@ -20,6 +20,47 @@
 
 ---
 
+## Contents
+
+- [What is TicketLens?](#what-is-ticketlens)
+- [Why TicketLens?](#why-ticketlens)
+- [Quick Start](#quick-start)
+- [Demos](#demos)
+- [Commands](#commands)
+  - [Setup](#setup)
+  - [Fetch a ticket](#fetch-a-ticket)
+  - [Brief Templates](#brief-templates)
+  - [Triage](#triage)
+  - [Collisions](#collisions)
+  - [Review](#review)
+  - [Compliance](#compliance)
+  - [Compliance Ledger](#compliance-ledger)
+  - [Git Hook](#git-hook)
+  - [PR Description](#pr-description)
+  - [Standup](#standup)
+  - [Cache](#cache)
+  - [Schedule](#schedule)
+  - [History](#history)
+  - [Recall](#recall)
+  - [Comment, Transition, Assign, Duplicates, Link, Update & Create](#comment-transition-assign-duplicates-link-update--create)
+  - [Response-Time Stats](#response-time-stats)
+  - [Custom Attention Rules](#custom-attention-rules)
+  - [Login](#login)
+  - [License](#license)
+  - [Update Skill](#update-skill)
+  - [/jtb — Jira TicketBrief for Claude Code](#jtb--jira-ticketbrief-for-claude-code)
+- [All Examples](#all-examples)
+- [Pro & Teams Features](#pro--teams-features)
+  - [Pro — $9/mo](#pro--9mo)
+  - [Team — $19/seat/mo](#team--19seatmo)
+- [Multi-Profile Setup](#multi-profile-setup)
+- [Running Tests](#running-tests)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license-1)
+
+---
+
 ## What is TicketLens?
 
 TicketLens is a local-first Jira CLI that preprocesses ticket context on your machine and hands your AI tools a clean, compressed brief — instead of dumping raw Jira API JSON into your session. It supports Jira Cloud, Server, and Data Center, works with any AI tool that accepts text, and runs independently of any AI session.
@@ -271,24 +312,24 @@ Displays the append-only local ledger of all compliance checks run on this machi
 ### Git Hook
 
 ```bash
-ticketlens install-hooks                      # Install pre-push compliance gate [Pro]
+ticketlens install-hooks                      # Install pre-push compliance gate
 ticketlens install-hooks --uninstall          # Remove installed hooks
 ```
 
-Installs a `pre-push` git hook that runs `ticketlens compliance` on every push. Blocks the push if compliance coverage falls below the configured threshold. Requires a Pro license.
+Installs a `pre-push` git hook that runs `ticketlens compliance` on every push. Blocks the push if compliance coverage falls below the configured threshold. Free — the hook itself needs no license; the `compliance` check it runs follows its own free (3/month) or Pro (unlimited) limit.
 
 ---
 
 ### PR Description
 
 ```bash
-ticketlens pr <TICKET-KEY>                    # Generate PR description from ticket [Pro]
+ticketlens pr <TICKET-KEY>                    # Generate PR description from ticket
 ticketlens pr <TICKET-KEY> --profile=acme    # Specify a profile
 ticketlens pr <TICKET-KEY> --plain           # Plain markdown output
 ticketlens pr <TICKET-KEY> | pbcopy          # Copy to clipboard
 ```
 
-Generates a PR description template pre-filled with the ticket summary, acceptance criteria, and compliance coverage. Requires a Pro license.
+Generates a PR description template pre-filled with the ticket summary, acceptance criteria, and compliance coverage. Free — the compliance coverage section follows the `compliance` command's own free (3/month) or Pro (unlimited) limit.
 
 ---
 
@@ -425,6 +466,7 @@ Every note is scanned before saving — anything shaped like a real secret (API 
 
 ```bash
 ticketlens comment PROJ-123 --body="Looks good, merging."   # Post a comment to the tracker
+ticketlens comment PROJ-123 --body="See screenshot" --attach=./bug.png  # Attach local files
 ticketlens transition PROJ-123                              # List valid transitions (read-only)
 ticketlens transition PROJ-123 --target="Done" --confirm    # Execute the transition
 ticketlens assign PROJ-123 --to=me                           # Assign the ticket to yourself
@@ -435,6 +477,7 @@ ticketlens update PROJ-123 --title="Fix login on mobile"       # Update title/de
 ticketlens update PROJ-123 --add-labels=urgent,backend --remove-labels=stale
 ticketlens create --project=PROJ --type="Task" --summary="Fix login on mobile"  # Create a new ticket
 ticketlens create --project=ENG --summary="New Linear issue" --profile=linear-team
+ticketlens create --project=PROJ --type="Bug" --summary="Broken layout" --attach=./screenshot.png
 ```
 
 Write directly to the ticket in its real tracker — Jira, GitHub, or Linear — from your terminal or an AI session via `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create` MCP tools. Requires a Pro license.
@@ -443,13 +486,15 @@ Write directly to the ticket in its real tracker — Jira, GitHub, or Linear —
 
 `ticketlens assign` is self-assign only for now — `--to` must be `me`. Assigning to someone else needs a per-tracker user-lookup step this doesn't do yet, so it's deliberately out of scope until that's built.
 
-`ticketlens duplicates` is read-only — it never links or changes anything, just lists likely matches in the same project. No tracker (Jira/GitHub/Linear) scores similarity server-side, so ranking happens locally from title/description word overlap; treat a match as a nudge to check manually, not a verdict. `--threshold=N` (0–1, default 0.35) controls how loose a match counts.
+`ticketlens duplicates` is read-only — it never links or changes anything, just lists likely matches in the same project. No tracker (Jira/GitHub/Linear) scores similarity server-side, so ranking happens locally from title/description word overlap; treat a match as a nudge to check manually, not a verdict. That local scoring can also miss a real duplicate — an empty result means none were found by this heuristic, not a confirmed absence. `--threshold=N` (0–1, default 0.35) controls how loose a match counts.
 
 `ticketlens link SOURCE-KEY TARGET-KEY` links two tickets — direction matters: SOURCE "types" TARGET (e.g. `link A B --type=Duplicate` means A duplicates B, not the other way around). With just the two keys it lists the tracker's current valid link types without changing anything — always fetched live for Jira, since link type names are per-instance configurable there. GitHub is different from Jira/Linear: it has no generic link relationship, so linking on a GitHub-tracked ticket *closes SOURCE as a duplicate of TARGET* — a state change, not just a relationship add — and prints an explicit warning immediately before that happens, on top of the same `--confirm` gate.
 
 `ticketlens update TICKET-KEY` updates a narrow, named field set — title, description, labels, priority. At least one field is required. Labels are always add/remove (`--add-labels=a,b` / `--remove-labels=c`), never a wholesale replace — an unnamed existing label is left alone, never silently dropped. No `--confirm` needed: unlike transition/link, update has no discovery step and only makes reversible metadata edits, the same risk tier as `assign`. GitHub has no priority field on issues, so `--priority` against a GitHub-tracked ticket is refused up front. Each tracker's label mechanics genuinely differ — Jira and Linear apply everything in one atomic call; GitHub's title/description and each label operation are independent, so a call can partially succeed (e.g. the title updates but one label name doesn't resolve) — the result always reports exactly which fields landed.
 
 `ticketlens create` creates a new ticket with a fixed minimal field set — no arbitrary custom fields. Unlike every other write command, there's no existing ticket to target, so `--profile` (or your default profile) picks the tracker instead of a ticket key. `--project` is the Jira project key or Linear team key — required for both, ignored on GitHub since its target repo is already fixed by the profile. `--type` is Jira's issue type (e.g. `"Task"`, `"Bug"`) — required for Jira, ignored elsewhere. No `--confirm` gate, same risk tier as `update`/`assign` — but this is the highest-blast-radius command in the whole family: a bad `--project`/`--type` fabricates a real, hard-to-walk-back item in a live tracker, so an invalid value surfaces the tracker's own error rather than a silent guess.
+
+`--attach=path1,path2` (comma-separated local file paths) is available on `comment` and `create` only. Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
 
 **A bad `--project`/`--type` gets a better error, automatically.** If create fails because the project or issue type doesn't exist, TicketLens fetches your tracker's real, current project list (and, for Jira, the real issue types for that project) and shows them alongside the failure — e.g. `Known creatable projects: CNV1, CNV2.` — rather than a bare tracker error. This is reactive only: it never runs on a successful create, never auto-retries the write, and is cached locally per profile for 24h so a burst of failed attempts doesn't re-fetch every time.
 
@@ -736,6 +781,7 @@ ticketlens mcp install --dry-run              # Preview the registration without
 
 # ── Comment, Transition, Assign, Duplicates, Link, Update & Create ──────────────
 ticketlens comment CNV1-2 --body="Looks good, merging."     # Post a comment to the tracker [Pro]
+ticketlens comment CNV1-2 --body="See screenshot" --attach=./bug.png  # Attach local files [Pro]
 ticketlens transition CNV1-2                                # List valid transitions (read-only) [Pro]
 ticketlens transition CNV1-2 --target="Done" --confirm      # Execute the transition [Pro]
 ticketlens assign CNV1-2 --to=me                            # Assign the ticket to yourself [Pro]
@@ -747,6 +793,7 @@ ticketlens update CNV1-2 --title="New title"                # Update title/descr
 ticketlens update CNV1-2 --add-labels=urgent --remove-labels=stale  # Add/remove labels [Pro]
 ticketlens create --project=CNV1 --type="Task" --summary="New ticket"  # Create a new ticket [Pro]
 ticketlens create --project=ENG --summary="New issue" --profile=linear-team  # Create on a different profile [Pro]
+ticketlens create --project=CNV1 --type="Bug" --summary="Broken layout" --attach=./screenshot.png  # Create with an attachment [Pro]
 
 # ── Stats ──────────────────────────────────────────────────────────────────────
 ticketlens stats                              # Response-time metrics from local history
@@ -757,12 +804,12 @@ ticketlens stats --format=json               # JSON output for scripting
 # ── Compliance ────────────────────────────────────────────────────────────────
 ticketlens compliance <TICKET-KEY>            # Check ticket requirements against local diff [Pro/Free 3/mo]
 ticketlens ledger                             # View local compliance audit ledger [Pro]
-ticketlens install-hooks                      # Install pre-push compliance gate [Pro]
-ticketlens install-hooks --uninstall          # Remove installed hooks [Pro]
+ticketlens install-hooks                      # Install pre-push compliance gate
+ticketlens install-hooks --uninstall          # Remove installed hooks
 
 # ── PR Description ─────────────────────────────────────────────────────────────
-ticketlens pr <TICKET-KEY>                    # Generate PR description from ticket [Pro]
-ticketlens pr <TICKET-KEY> | pbcopy          # Copy to clipboard [Pro]
+ticketlens pr <TICKET-KEY>                    # Generate PR description from ticket
+ticketlens pr <TICKET-KEY> | pbcopy          # Copy to clipboard
 
 # ── AI provider keys (BYOK) ───────────────────────────────────────────────────
 ticketlens cloud-keys list                            # List configured AI providers
@@ -820,7 +867,6 @@ ticketlens CNV1-2 --summarize --cloud    # AI summary via TicketLens API (no loc
 ticketlens CNV1-2 --handoff              # AI handoff brief from the ticket's comment thread (BYOK)
 ticketlens CNV1-2 --handoff --cloud      # AI handoff brief via TicketLens API
 ticketlens CNV1-2 --compliance           # Check ticket requirements against local diff [Pro/Free 3/mo]
-ticketlens triage --stale=3              # Custom stale threshold (default is 5)
 ticketlens triage --digest               # POST scored triage results to digest endpoint
 ticketlens schedule                      # Set up a scheduled daily digest
 ticketlens note add --title="..."        # Save a Recall note (body from stdin)
@@ -830,6 +876,7 @@ ticketlens recall sync                   # Retry any notes stuck in the local qu
 ticketlens recall settings               # Show effective retry-queue settings, fetched live
 ticketlens mcp                           # Start the MCP stdio server (recall/ticket write tools)
 ticketlens comment CNV1-2 --body="..."   # Post a comment to the tracker
+ticketlens comment CNV1-2 --body="..." --attach=./bug.png  # Attach local files (comment/create only)
 ticketlens transition CNV1-2 --target="Done" --confirm  # Transition ticket status
 ticketlens assign CNV1-2 --to=me         # Assign the ticket to yourself
 ticketlens duplicates CNV1-2             # Find likely duplicates (read-only)

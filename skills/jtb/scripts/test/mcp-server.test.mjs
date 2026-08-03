@@ -88,6 +88,12 @@ describe('mcp-server', () => {
       assert.ok(tagsDesc.length > 'Optional tags.'.length, 'must be more than a bare placeholder description');
       assert.match(tagsDesc, /content|body|specific/i);
     });
+
+    it('ticket_duplicates warns an empty result can be a false negative, not just that matches can be imprecise (M-11)', async () => {
+      const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
+      const dup = messages[0].result.tools.find((t) => t.name === 'ticket_duplicates');
+      assert.match(dup.description, /miss|not a guarantee/i);
+    });
   });
 
   describe('tools/call recall_add', () => {

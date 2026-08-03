@@ -458,6 +458,11 @@ describe('printDuplicatesHelp', () => {
     assert.match(out, /--threshold/);
     assert.match(out, /\[Pro\]/);
   });
+
+  it('warns an empty result is not a guarantee none exist (M-11)', () => {
+    const out = captureHelp(printDuplicatesHelp);
+    assert.match(out, /miss|not a guarantee/i);
+  });
 });
 
 describe('printLinkHelp', () => {

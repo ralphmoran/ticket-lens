@@ -671,6 +671,16 @@ describe('runTicketDuplicates — happy path', () => {
     assert.match(deps.stream.lines.join(''), /No likely duplicates/);
   });
 
+  test('the empty-result message caveats that absence is not a guarantee (M-11)', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ findCandidates: async () => ([]) }),
+    });
+    await runTicketDuplicates(['PROJ-1'], deps);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /No likely duplicates/);
+    assert.match(output, /not a guarantee|heuristic/i);
+  });
+
   test('prints the source ticket key and title as a header', async () => {
     const deps = baseDeps();
     await runTicketDuplicates(['PROJ-1'], deps);

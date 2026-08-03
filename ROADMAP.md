@@ -251,6 +251,7 @@ Build only what paying customers or market demand requires.
 | # | Type | Feature | Detail | Effort |
 |---|------|---------|--------|--------|
 | 46 | ~~Feature~~ | ~~**"TicketLens for PRs"**~~ | Done (v0.1.18). `ticketlens review` assembles a code-review context brief from the current branch: extracts linked ticket keys from the branch name and commit messages, fetches each via the configured profile, and outputs a structured brief (branch, changed files, ticket context). Styled ANSI output on TTY. `--branch=BRANCH` (or `--base=BRANCH` alias) sets the base; auto-detects `main`/`master`/`develop`. Flag validation with typo detection (`--branch-main` → `--branch=main`). Spinner for sync and async phases. Warns when head = base. 904 tests. | ~~Large~~ |
+| 46b | ~~Feature~~ | ~~**Ticket write-back (comment/transition/assign/duplicates/link/update/create)**~~ | Done. Direct write access to the ticket's real tracker (Jira/GitHub/Linear) from the CLI or any MCP-capable AI harness — `ticketlens comment`/`transition`/`assign`/`duplicates`/`link`/`update`/`create` plus matching `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create` MCP tools, one shared implementation, same Pro gate, per-write debounce, and an append-only audit log (`ticket-action-log.jsonl`) for all six mutating commands. `comment`/`transition` (v0.24.0), `assign` (v0.25.0), `duplicates` (v0.26.0), `link` (v0.27.0), `update` (v0.28.0), `create` (v0.29.0). File/image attachments (`--attach=`) added for `comment`/`create` (v0.32.0) — images render inline on Jira/Linear, unsupported on GitHub. Pro-gated throughout. | ~~Large~~ |
 | 47 | Feature | **Public API** | REST API for third-party integrations, webhooks. | Large |
 | 48 | Feature | **AI ticket summarization** | LLM-powered summary of long ticket threads. | Medium |
 | 49 | Feature | **AI priority recommendations** | Suggest what to work on next based on urgency + deadlines. | Medium |
@@ -324,8 +325,8 @@ Phase D:   Multi-tracker + Enterprise
 | Custom attention rules | No | Yes | Yes | Yes |
 | Ticket history tracking | No | Yes | Yes | Yes |
 | Spec drift detection | No | Yes | Yes | Yes |
-| Git hook compliance gate | No | Yes | Yes | Yes |
-| Ticket-to-PR assembler (`ticketlens pr`) | No | Yes | Yes | Yes |
+| Git hook compliance gate | Yes | Yes | Yes | Yes |
+| Ticket-to-PR assembler (`ticketlens pr`) | Yes | Yes | Yes | Yes |
 | Token budget optimizer (`--budget N`) | No | Yes | Yes | Yes |
 | Compliance ledger (audit trail) | No | Yes | Yes | Yes |
 | Stale delta report (diff, not snapshot) | No | Yes | Yes | Yes |
