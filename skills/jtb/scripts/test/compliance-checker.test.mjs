@@ -30,6 +30,12 @@ function makeOpts(overrides = {}) {
       ],
       coveragePercent: 50,
     }),
+    // Default isLicensedFn is true (Pro), so runComplianceCheck's isPro branch always
+    // executes here. Without these no-op stand-ins, every test in this file — not just
+    // the ledger-focused ones — would silently shell out to real `git` and write to
+    // real `/tmp/test-config/ledger.jsonl` via the real appendLedger.
+    execFn: () => ({ stdout: '' }),
+    appendLedgerFn: () => {},
     ...overrides,
   };
 }
@@ -133,6 +139,85 @@ describe('runComplianceCheck', () => {
     const result = await runComplianceCheck(opts);
     assert.ok(result !== null);
     assert.equal(result.noCriteria, true);
+  });
+
+  describe('ledger writes (Pro tier, M-3)', () => {
+    function makeExecFn({ email = 'dev@example.com', sha = 'a1b2c3d' } = {}) {
+      return (_cmd, args) => {
+        if (args[0] === 'config') return { stdout: email };
+        if (args[0] === 'rev-parse') return { stdout: sha };
+        return { stdout: '' };
+      };
+    }
+
+    it('does not call appendLedgerFn when not Pro', async () => {
+      let called = false;
+      const opts = makeOpts({
+        isLicensedFn: () => false,
+        checkUsageFn: () => ({ count: 1, month: '2026-03', canUse: true }),
+        execFn: makeExecFn(),
+        appendLedgerFn: () => { called = true; },
+      });
+      await runComplianceCheck(opts);
+      assert.ok(!called, 'appendLedgerFn must not be called for free-tier users');
+    });
+
+    it('calls appendLedgerFn with ticketKey, author, coverage, and missing when Pro', async () => {
+      let record = null;
+      const opts = makeOpts({
+        execFn: makeExecFn({ email: 'dev@example.com' }),
+        appendLedgerFn: (r) => { record = r; },
+      });
+      await runComplianceCheck(opts);
+      assert.equal(record.ticketKey, 'PROJ-123');
+      assert.equal(record.author, 'dev@example.com');
+      assert.equal(record.coverage, 50);
+      assert.deepEqual(record.missing, ['Must handle empty fields']);
+    });
+
+    it('resolves commitSha via `git rev-parse HEAD` instead of the literal string HEAD', async () => {
+      let record = null;
+      const opts = makeOpts({
+        execFn: makeExecFn({ sha: 'deadbeef1' }),
+        appendLedgerFn: (r) => { record = r; },
+      });
+      await runComplianceCheck(opts);
+      assert.equal(record.commitSha, 'deadbeef1');
+      assert.notEqual(record.commitSha, 'HEAD');
+    });
+
+    it('falls back to "unknown" commitSha when `git rev-parse HEAD` produces no stdout', async () => {
+      let record = null;
+      const opts = makeOpts({
+        execFn: () => ({ stdout: '' }),
+        appendLedgerFn: (r) => { record = r; },
+      });
+      await runComplianceCheck(opts);
+      assert.equal(record.commitSha, 'unknown');
+    });
+
+    it('marks the ledger record noCriteria: false when requirements are found', async () => {
+      let record = null;
+      const opts = makeOpts({
+        execFn: makeExecFn(),
+        appendLedgerFn: (r) => { record = r; },
+      });
+      await runComplianceCheck(opts);
+      assert.equal(record.noCriteria, false);
+    });
+
+    it('marks the ledger record noCriteria: true instead of a bare coverage: 0 when nothing was checked', async () => {
+      let record = null;
+      const opts = makeOpts({
+        extractRequirementsFn: () => [],
+        analyzeDiffFn: () => ({ results: [], coveragePercent: 0 }),
+        execFn: makeExecFn(),
+        appendLedgerFn: (r) => { record = r; },
+      });
+      await runComplianceCheck(opts);
+      assert.equal(record.noCriteria, true);
+      assert.equal(record.coverage, 0);
+    });
   });
 
   it('passes description to extractRequirementsFn when provided (not full brief)', async () => {

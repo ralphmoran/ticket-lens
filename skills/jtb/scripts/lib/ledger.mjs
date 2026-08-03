@@ -65,10 +65,10 @@ export function exportLedger(format, { configDir = DEFAULT_CONFIG_DIR, fsModule 
   const records = readLedger({ configDir, fsModule });
 
   if (format === 'csv') {
-    const header = 'ts,ticketKey,commitSha,author,coverage,missing';
+    const header = 'ts,ticketKey,commitSha,author,coverage,missing,noCriteria';
     const rows = records.map(r => {
       const missing = Array.isArray(r.missing) ? r.missing.join('|') : (r.missing ?? '');
-      return [r.ts, r.ticketKey, r.commitSha, r.author, r.coverage, missing]
+      return [r.ts, r.ticketKey, r.commitSha, r.author, r.coverage, missing, r.noCriteria]
         .map(v => `"${String(v ?? '').replace(/"/g, '""')}"`)
         .join(',');
     });

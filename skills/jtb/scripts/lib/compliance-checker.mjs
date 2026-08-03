@@ -107,14 +107,16 @@ export async function runComplianceCheck({
   const missing = analysis.results
     .filter(r => r.status === 'NOT_FOUND')
     .map(r => r.requirement);
+  const noCriteria = requirements.length === 0;
 
   if (isPro) {
     const gitEmail = execFn('git', ['config', 'user.email'], { encoding: 'utf8' }).stdout?.trim() ?? 'unknown';
+    const commitSha = execFn('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout?.trim() ?? 'unknown';
     appendLedgerFn(
-      { ticketKey, commitSha: 'HEAD', author: gitEmail || 'unknown', coverage: coveragePercent, missing },
+      { ticketKey, commitSha: commitSha || 'unknown', author: gitEmail || 'unknown', coverage: coveragePercent, missing, noCriteria },
       { configDir, isPro }
     );
   }
 
-  return { report, results: analysis.results, coveragePercent, noCriteria: requirements.length === 0 };
+  return { report, results: analysis.results, coveragePercent, noCriteria };
 }

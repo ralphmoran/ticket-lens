@@ -146,6 +146,15 @@ describe('exportLedger', () => {
     assert.ok(result.startsWith('ts,ticketKey,commitSha,author,coverage,missing'));
   });
 
+  it('includes noCriteria column in CSV export (M-3)', () => {
+    const dir = mkdtempSync(join(tmpDir, 'export-csv-nocriteria-'));
+    appendLedger({ ticketKey: 'E-3', commitSha: 's3', author: 'e@f.com', coverage: 0, missing: [], noCriteria: true }, { configDir: dir, isPro: true });
+    const result = exportLedger('csv', { configDir: dir });
+    const [header, row] = result.trim().split('\n');
+    assert.match(header, /noCriteria/, 'CSV header must include a noCriteria column so a nothing-checked record is distinguishable from a real failure');
+    assert.ok(row.includes('"true"'), `expected row to carry noCriteria=true, got: ${row}`);
+  });
+
   it('HMAC signature in JSON export verifies correctly with stored key', () => {
     const dir = mkdtempSync(join(tmpDir, 'export-hmac-'));
     appendLedger({ ticketKey: 'H-1', commitSha: 's1', author: 'h@i.com', coverage: 75, missing: [] }, { configDir: dir, isPro: true });

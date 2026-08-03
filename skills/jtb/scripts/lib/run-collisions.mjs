@@ -55,7 +55,7 @@ export async function runCollisions(args = [], opts = {}) {
     const { collisions = [], message } = await res.json();
 
     if (message && collisions.length === 0) {
-      print(message + '\n');
+      print(jsonFlag ? formatCollisions([], { json: true }) : message + '\n');
       return { ok: true };
     }
 

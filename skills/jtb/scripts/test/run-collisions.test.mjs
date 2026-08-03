@@ -135,6 +135,19 @@ describe('runCollisions — --json flag', () => {
     const combined = lines.join('');
     JSON.parse(combined); // must be valid JSON, throws if not
   });
+
+  it('outputs a parseable empty array, not prose, on the no-data path (M-2)', async () => {
+    const lines = [];
+    const result = await runCollisions(['--json'], {
+      readCliTokenFn: () => 'tl_team-key',
+      fetcher: makeFetcher(200, { collisions: [], message: 'No branch data found.' }),
+      print: s => lines.push(s),
+    });
+    const combined = lines.join('');
+    const parsed = JSON.parse(combined); // must be valid JSON, throws if not
+    assert.deepEqual(parsed, []);
+    assert.ok(result.ok);
+  });
 });
 
 // ── Network error ─────────────────────────────────────────────────────────────
