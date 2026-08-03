@@ -434,6 +434,12 @@ describe('printMcpHelp — ticket tools', () => {
     const out = captureHelp(printMcpHelp);
     assert.match(out, /ticket_duplicates.*read-only/s);
   });
+
+  it('warns that an already-connected client session can have a stale tool list after an upgrade (H-8)', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /restart|reconnect/i);
+    assert.match(out, /stale/i);
+  });
 });
 
 describe('printAssignHelp', () => {

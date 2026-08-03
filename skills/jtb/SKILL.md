@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.30.0 -->
+<!-- jtb-skill-version: 0.31.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -242,6 +242,8 @@ To search saved notes directly (outside of automatic brief injection): `ticketle
 
 **Pick exactly one path per capture — never both.** If this harness has TicketLens's MCP server configured (tools named `recall_add`/`recall_search` — often shown as `mcp__ticketlens__recall_add` — visible in your tool list), **use those tools, not the bash commands above** — same license gate, same secret scan, same vault, same team sync, just no shell command to construct. Only fall back to the bash form when the MCP tools are genuinely absent from your tool list. If they're absent because this project has never registered the server, tell the user once: `ticketlens mcp install` writes (or merges into) this project's `.mcp.json` — don't run it yourself unprompted, since it changes what your harness auto-connects to on next launch, and the user should be the one deciding that. Calling both for the same insight creates two near-duplicate notes (no dedup exists between the two paths) and, with team sync on, two separate pushes for a manager to review.
 
+**Stale tool schemas after an upgrade.** Right after a `ticketlens` upgrade, an already-connected MCP client can still be serving the tool list it cached beforehand — so a call may reject a parameter this document says exists. Retrying won't fix it: the running `ticketlens mcp` server is always current, only the client's copy is stale. Tell the user once that restarting or reconnecting the MCP client picks up the new schema.
+
 ### Quality loop (Pro, in-session only)
 
 Only when `note add` above was dispatched *by you, inside this skill*, and it printed a saved note id (e.g. `Saved note "Retry gotcha" (1784135399545-fe01c4.md)`) — never for a note a user typed directly into a bare shell, which has no Task/Agent tool available. If there's no such tool in your environment, skip this whole section silently: no warning, no degraded fallback, the note is already saved and that's a complete, correct outcome on its own.
@@ -303,6 +305,8 @@ ticketlens create --project=PROD --type="Task" --summary="Fix login on mobile"  
 The six write actions (comment/transition/assign/link/update/create) have a short local debounce (10s) against an accidental double-fire, and every write is appended to a local audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — surface the failure to the user rather than silently re-attempting, since a ticket write isn't naturally idempotent the way a Recall note save is. `duplicates` has neither, since nothing is written.
 
 **Pick exactly one path per action — never both.** If this harness has TicketLens's MCP server configured (tools named `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create` — often shown as `mcp__ticketlens__ticket_comment` etc. — visible in your tool list), **use those tools, not the bash commands above** — same license gate, same cooldown, same audit log. Only fall back to the bash form when the MCP tools are genuinely absent from your tool list; if that's because this project has never registered the server, see the `ticketlens mcp install` note above (Recall section) — same guidance applies here.
+
+The same stale-schema caveat applies here — if a call rejects a parameter this document says exists (e.g. `attachments` on `ticket_comment`/`ticket_create`) right after an upgrade, see the MCP tool-cache staleness note above (Recall section).
 
 Requires a Pro license — on Free, all seven no-op with an upgrade hint on stderr.
 

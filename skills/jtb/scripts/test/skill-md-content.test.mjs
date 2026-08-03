@@ -50,6 +50,12 @@ describe('SKILL.md — skill version marker', () => {
     assert.ok(m, 'expected a jtb-skill-version marker on line 1');
     assert.notEqual(m[1], '0.29.0', 'marker must move past the pre-fix version');
   });
+
+  it('is bumped past 0.30.0 so update-skill propagates the H-8 MCP cache-staleness doc fix', () => {
+    const m = SKILL_MD.match(/jtb-skill-version:\s*([\d.]+)/);
+    assert.ok(m, 'expected a jtb-skill-version marker on line 1');
+    assert.notEqual(m[1], '0.30.0', 'marker must move past the pre-fix version');
+  });
 });
 
 function writeBackSection() {
@@ -77,5 +83,25 @@ describe('SKILL.md — write-back section documents link/update/create (H-6)', (
   it('does not undercount the write-command family as "all four"', () => {
     const section = writeBackSection();
     assert.doesNotMatch(section, /all four/i, 'the family has seven commands now, not four');
+  });
+});
+
+function recallMcpToolSection() {
+  const start = SKILL_MD.indexOf('Pick exactly one path per capture');
+  assert.ok(start !== -1, 'expected the Recall MCP-tool-selection paragraph to still exist');
+  const end = SKILL_MD.indexOf('\n### ', start + 1);
+  return end === -1 ? SKILL_MD.slice(start) : SKILL_MD.slice(start, end);
+}
+
+describe('SKILL.md — MCP tool schema cache staleness caveat (H-8)', () => {
+  it('warns that an already-connected client session can have a stale tool list after an upgrade', () => {
+    const section = recallMcpToolSection();
+    assert.match(section, /restart|reconnect/i);
+    assert.match(section, /stale/i);
+  });
+
+  it('cross-references the same caveat from the write-back section', () => {
+    const section = writeBackSection();
+    assert.match(section, /MCP tool-cache staleness note above/i, 'expected the write-back section to reference the Recall section\'s cache-staleness note');
   });
 });
