@@ -224,7 +224,11 @@ function requireTicketKey(cmdArgs, usage, stream) {
  */
 function resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream }) {
   const profileName = parseFlag(cmdArgs, 'profile');
-  const conn = resolveConnectionFn(ticketKey, { configDir, profileName });
+  const conn = resolveConnectionFn(ticketKey, {
+    configDir,
+    profileName,
+    onWarning: (msg) => stream.write(`  ⚠ ${msg}\n`),
+  });
   if (!conn.baseUrl) {
     stream.write(ticketKey
       ? `  No connection configured for ${ticketKey}. Run \`ticketlens init\`.\n`

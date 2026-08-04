@@ -144,6 +144,18 @@ describe('runTicketComment — connection resolution', () => {
     assert.equal(result.ok, false);
     assert.equal(adapterResolved, false);
   });
+
+  test('an ambiguous-prefix warning from the resolver is surfaced to the stream, not swallowed', async () => {
+    const deps = baseDeps({
+      resolveConnectionFn: (ticketKey, opts) => {
+        opts.onWarning('Prefix "PROJ" matches multiple profiles: corenexus, advent. Using corenexus. Use --profile=NAME to override.');
+        return { baseUrl: 'https://jira.example.com' };
+      },
+    });
+    const result = await runTicketComment(['PROJ-1', '--body=hi'], deps);
+    assert.equal(result.ok, true);
+    assert.match(deps.stream.lines.join(''), /Prefix "PROJ" matches multiple profiles: corenexus, advent/);
+  });
 });
 
 describe('runTicketComment — happy path', () => {
