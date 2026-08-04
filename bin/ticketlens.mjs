@@ -262,11 +262,13 @@ switch (command) {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printLicenseHelp(); break; }
     const s = createStyler({ isTTY: process.stdout.isTTY });
     const status = checkLicense();
+    const hasLicense = Boolean(status.key);
     const daysSinceVal = status.validatedAt
       ? (Date.now() - new Date(status.validatedAt)) / 86400000
       : Infinity;
-    // Grace period: treat as inactive if not revalidated within 30 days
-    const graceExpired = daysSinceVal > 30;
+    // Grace period: treat as inactive if not revalidated within 30 days — only applies
+    // once a license has actually been activated (never conflate "never had one" with "lapsed").
+    const graceExpired = hasLicense && daysSinceVal > 30;
     process.stdout.write('\n');
     if (status.active && !graceExpired) {
       process.stdout.write(`  ${s.green('●')} ${s.bold('License active')}\n\n`);

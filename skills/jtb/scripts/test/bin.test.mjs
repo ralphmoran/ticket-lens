@@ -5,6 +5,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { writeLicense } from '../lib/license.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const binPath = join(__dirname, '..', '..', '..', '..', 'bin', 'ticketlens.mjs');
@@ -464,5 +465,97 @@ describe('bin/ticketlens.mjs', () => {
     } finally {
       rmSync(freshCwd, { recursive: true, force: true });
     }
+  });
+
+  describe('"ticketlens license"', () => {
+    const validLicense = {
+      key: 'AAAA-BBBB-CCCC-DDDD',
+      tier: 'pro',
+      email: 'dev@example.com',
+      provider: 'lemonsqueezy',
+    };
+
+    // LOCK: existing behavior for an active, recently-validated license — must survive the M-12 fix.
+    it('LOCK: shows "License active" for a recently-validated pro license', () => {
+      const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-license-active-'));
+      try {
+        writeLicense({
+          ...validLicense,
+          validatedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 365 * 86400000).toISOString(),
+        }, join(freshHome, '.ticketlens'));
+        const result = spawnSync('node', [binPath, 'license'], {
+          encoding: 'utf8',
+          timeout: 5000,
+          env: { ...process.env, HOME: freshHome, CI: 'true' },
+        });
+        assert.equal(result.status, 0);
+        assert.match(result.stdout, /License active/);
+        assert.match(result.stdout, /dev@example\.com/);
+      } finally {
+        rmSync(freshHome, { recursive: true, force: true });
+      }
+    });
+
+    // LOCK: existing behavior for a genuinely lapsed license (real key, stale validatedAt) — must survive the M-12 fix.
+    it('LOCK: shows "License inactive" / "Not revalidated in 30+ days" for a genuinely lapsed license', () => {
+      const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-license-lapsed-'));
+      try {
+        writeLicense({
+          ...validLicense,
+          validatedAt: new Date(Date.now() - 40 * 86400000).toISOString(),
+          expiresAt: new Date(Date.now() + 365 * 86400000).toISOString(),
+        }, join(freshHome, '.ticketlens'));
+        const result = spawnSync('node', [binPath, 'license'], {
+          encoding: 'utf8',
+          timeout: 5000,
+          env: { ...process.env, HOME: freshHome, CI: 'true' },
+        });
+        assert.equal(result.status, 0);
+        assert.match(result.stdout, /License inactive/);
+        assert.match(result.stdout, /Not revalidated in 30\+ days/);
+      } finally {
+        rmSync(freshHome, { recursive: true, force: true });
+      }
+    });
+
+    // LOCK: existing behavior for an expired license (past expiresAt) — must survive the M-12 fix.
+    it('LOCK: shows "License expired" for a license past its expiresAt', () => {
+      const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-license-expired-'));
+      try {
+        writeLicense({
+          ...validLicense,
+          validatedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() - 86400000).toISOString(),
+        }, join(freshHome, '.ticketlens'));
+        const result = spawnSync('node', [binPath, 'license'], {
+          encoding: 'utf8',
+          timeout: 5000,
+          env: { ...process.env, HOME: freshHome, CI: 'true' },
+        });
+        assert.equal(result.status, 0);
+        assert.match(result.stdout, /License expired/);
+      } finally {
+        rmSync(freshHome, { recursive: true, force: true });
+      }
+    });
+
+    // RED (M-12): a never-activated install must show "Free tier", not a false "lapsed" warning.
+    it('shows "Free tier" (not "Not revalidated") for an install that never activated a license', () => {
+      const freshHome = mkdtempSync(join(tmpdir(), 'ticketlens-license-never-activated-'));
+      try {
+        const result = spawnSync('node', [binPath, 'license'], {
+          encoding: 'utf8',
+          timeout: 5000,
+          env: { ...process.env, HOME: freshHome, CI: 'true' },
+        });
+        assert.equal(result.status, 0);
+        assert.match(result.stdout, /Free tier/);
+        assert.doesNotMatch(result.stdout, /Not revalidated/);
+        assert.doesNotMatch(result.stdout, /undefined/);
+      } finally {
+        rmSync(freshHome, { recursive: true, force: true });
+      }
+    });
   });
 });
