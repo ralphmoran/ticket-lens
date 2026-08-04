@@ -576,6 +576,43 @@ describe('pushTriageSnapshot — compliance enrichment from ledger', () => {
     assert.equal(capturedBody.tickets[0].compliance_status, 'gap');
   });
 
+  // M-3 residual gap: a noCriteria ledger record (nothing was actually checked, since the
+  // ticket had no extractable acceptance criteria) has an empty missing array too, so the
+  // old missing.length===0 check alone mislabeled it 'pass'.
+  it('sets compliance_status to no-criteria (not pass) when ledger entry is noCriteria', async () => {
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-1')],
+      rawTicketMap: new Map(),
+      cliToken: 'tl_k',
+      isLicensedFn: () => true,
+      readLedgerFn: () => [{ ts: '2026-05-20T10:00:00.000Z', ticketKey: 'PROJ-1', commitSha: 'abc1234', author: 'dev', coverage: 0, missing: [], noCriteria: true }],
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 201 };
+      },
+      print: () => {},
+    });
+    assert.equal(capturedBody.tickets[0].compliance_status, 'no-criteria');
+  });
+
+  it('sets compliance_coverage to null (not 0) when ledger entry is noCriteria', async () => {
+    let capturedBody;
+    await pushTriageSnapshot({
+      sorted: [makeScored('PROJ-1')],
+      rawTicketMap: new Map(),
+      cliToken: 'tl_k',
+      isLicensedFn: () => true,
+      readLedgerFn: () => [{ ts: '2026-05-20T10:00:00.000Z', ticketKey: 'PROJ-1', commitSha: 'abc1234', author: 'dev', coverage: 0, missing: [], noCriteria: true }],
+      fetcher: async (_url, opts) => {
+        capturedBody = JSON.parse(opts.body);
+        return { ok: true, status: 201 };
+      },
+      print: () => {},
+    });
+    assert.equal(capturedBody.tickets[0].compliance_coverage, null);
+  });
+
   it('sets compliance_coverage from ledger entry coverage value', async () => {
     let capturedBody;
     await pushTriageSnapshot({

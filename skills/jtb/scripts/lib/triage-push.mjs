@@ -73,6 +73,9 @@ export async function pushTriageSnapshot({
       tickets = tickets.map(t => {
         const entry = latestByKey.get(t.key);
         if (!entry) return t;
+        if (entry.noCriteria) {
+          return { ...t, compliance_coverage: null, compliance_status: 'no-criteria' };
+        }
         return {
           ...t,
           compliance_coverage: entry.coverage ?? null,

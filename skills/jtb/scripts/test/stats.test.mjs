@@ -451,6 +451,41 @@ describe('runStats profile resolution', () => {
       rmSync(configDir, { recursive: true, force: true });
     }
   });
+
+  // H-3 residual gap: implicit resolution only fell back to config.default, skipping
+  // the cwd-projectPaths tier that triage's full resolveProfile() chain already has.
+  it('resolves via cwd projectPaths match even when it differs from config.default', async () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'stats-cwd-match-'));
+    let usedProfile = null;
+    let output = '';
+    try {
+      writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({
+        profiles: {
+          defaultprofile: { baseUrl: 'https://default.atlassian.net', auth: 'cloud', email: 'a@a.com' },
+          corenexus: {
+            baseUrl: 'https://corenexus.atlassian.net',
+            auth: 'cloud',
+            email: 'b@b.com',
+            projectPaths: ['/home/dev/projects/corenexus'],
+          },
+        },
+        default: 'defaultprofile',
+      }));
+      await runStats([], {
+        configDir,
+        cwd: '/home/dev/projects/corenexus/src',
+        print: (s) => { output += s; },
+        isLicensed: () => true,
+        metricsCalculator: (profile, opts) => {
+          usedProfile = profile;
+          return { avgResponseHours: null, medianResponseHours: null, clearRate: null, triageRunCount: 0, currentUrgency: null, windowDays: opts.days, trendHours: null };
+        },
+      });
+      assert.equal(usedProfile, 'corenexus', `Expected cwd-matched profile 'corenexus', got: ${usedProfile}`);
+    } finally {
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

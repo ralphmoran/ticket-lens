@@ -1,5 +1,5 @@
 import { computeResponseMetrics, DEFAULT_CONFIG_DIR } from './triage-history.mjs';
-import { loadProfiles } from './profile-resolver.mjs';
+import { resolveConnection } from './profile-resolver.mjs';
 import { isLicensed as defaultIsLicensed } from './license.mjs';
 import { createStyler } from './ansi.mjs';
 import { handleUnknownFlags } from './arg-validator.mjs';
@@ -51,12 +51,11 @@ export async function runStats(args = [], opts = {}) {
   const isPro = isLic('pro', configDir);
   const days  = (!isPro && parsedDays > FREE_DAYS_CAP) ? FREE_DAYS_CAP : parsedDays;
 
-  // Resolve profile name
-  let profile = profileArg ? profileArg.split('=')[1] : null;
-  if (!profile) {
-    const config = loadProfiles(configDir);
-    profile = config?.default ?? 'default';
-  }
+  // Resolve profile name (same chain as triage: --profile flag → cwd projectPaths → config.default)
+  const explicitProfile = profileArg ? profileArg.split('=')[1] : undefined;
+  const cwd = opts.cwd ?? process.cwd();
+  const conn = resolveConnection(null, { configDir, profileName: explicitProfile, cwd });
+  const profile = conn.profileName ?? 'default';
 
   let metrics;
   try {
