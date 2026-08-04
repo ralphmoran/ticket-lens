@@ -101,6 +101,59 @@ describe('saveTriageSnapshot', () => {
       { message: /invalid profile name/i }
     );
   });
+
+  it('L-5 regression: a same-day re-run merges with the existing snapshot instead of overwriting it — a narrower run must not discard the broader one', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'save-merge-'));
+    try {
+      const morning = new Date('2026-04-14T09:00:00Z');
+      saveTriageSnapshot([makeTicket('PROJ-1'), makeTicket('PROJ-2'), makeTicket('PROJ-3')], { profile: 'p', configDir, now: morning });
+
+      // A narrower, filtered re-run later the same day only sees PROJ-1 (with updated urgency).
+      const afternoon = new Date('2026-04-14T15:00:00Z');
+      saveTriageSnapshot([makeTicket('PROJ-1', 'needs-response')], { profile: 'p', configDir, now: afternoon });
+
+      const expectedPath = join(configDir, 'triage-history', '2026-04-14', 'p.json');
+      const parsed = JSON.parse(readFileSync(expectedPath, 'utf8'));
+      const byKey = Object.fromEntries(parsed.tickets.map(t => [t.ticketKey, t]));
+      assert.equal(parsed.tickets.length, 3, 'PROJ-2 and PROJ-3 from the earlier run must be preserved, not discarded');
+      assert.equal(byKey['PROJ-1'].urgency, 'needs-response', 'the current run\'s data wins for a ticket it covers');
+      assert.ok(byKey['PROJ-2'], 'a ticket outside the narrower run\'s filter must survive');
+      assert.ok(byKey['PROJ-3'], 'a ticket outside the narrower run\'s filter must survive');
+      assert.equal(parsed.captured_at, '2026-04-14T15:00:00.000Z', 'captured_at reflects the latest write');
+    } finally {
+      rmSync(configDir, { recursive: true });
+    }
+  });
+
+  it('a different profile\'s same-day snapshot is untouched by another profile\'s save — no cross-profile bleed from the merge', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'save-merge-xprofile-'));
+    try {
+      const now = new Date('2026-04-14T09:00:00Z');
+      saveTriageSnapshot([makeTicket('PROJ-1')], { profile: 'alpha', configDir, now });
+      saveTriageSnapshot([makeTicket('PROJ-9')], { profile: 'beta', configDir, now });
+
+      const alphaPath = join(configDir, 'triage-history', '2026-04-14', 'alpha.json');
+      const parsed = JSON.parse(readFileSync(alphaPath, 'utf8'));
+      assert.equal(parsed.tickets.length, 1);
+      assert.equal(parsed.tickets[0].ticketKey, 'PROJ-1');
+    } finally {
+      rmSync(configDir, { recursive: true });
+    }
+  });
+
+  it('L-6b: envelope includes an explicit date field matching the directory it is stored under, alongside the UTC captured_at', () => {
+    const now = new Date('2026-04-14T12:00:00Z');
+    const configDir = mkdtempSync(join(tmpdir(), 'save-date-field-'));
+    try {
+      saveTriageSnapshot([makeTicket('PROJ-1')], { profile: 'p', configDir, now });
+      const expectedPath = join(configDir, 'triage-history', '2026-04-14', 'p.json');
+      const parsed = JSON.parse(readFileSync(expectedPath, 'utf8'));
+      assert.equal(parsed.date, '2026-04-14');
+      assert.equal(parsed.captured_at, '2026-04-14T12:00:00.000Z');
+    } finally {
+      rmSync(configDir, { recursive: true });
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -111,6 +111,11 @@ describe('printTriageHelp — Team tier flags', () => {
     assert.ok(out.includes('--sprint'), 'triage --help must document --sprint flag');
   });
 
+  it('L-7: documents --styled, the real working flag the main help already lists — previously omitted from this dedicated help', () => {
+    const out = captureHelp(printTriageHelp);
+    assert.match(out, /--styled/);
+  });
+
   it('main --help documents --assignee in TRIAGE OPTIONS', () => {
     const out = captureHelp(printHelp);
     assert.ok(out.includes('--assignee'), 'main --help must include --assignee in triage options');
@@ -409,6 +414,14 @@ describe('printHelp — Recall commands', () => {
     const idx = out.indexOf('ticketlens link');
     assert.ok(idx !== -1 && idx > usageIdx, '"ticketlens link" must appear in USAGE');
   });
+
+  it('L-11: the top-level comment and create one-liners mention --attach, same as their detailed --help already does', () => {
+    const out = captureHelp(printHelp);
+    const commentLine = out.split('\n').find(l => l.includes('ticketlens comment'));
+    const createLine = out.split('\n').find(l => l.includes('ticketlens create'));
+    assert.match(commentLine, /--attach/);
+    assert.match(createLine, /--attach/);
+  });
 });
 
 describe('printMcpHelp — ticket tools', () => {
@@ -439,6 +452,11 @@ describe('printMcpHelp — ticket tools', () => {
     const out = captureHelp(printMcpHelp);
     assert.match(out, /restart|reconnect/i);
     assert.match(out, /stale/i);
+  });
+
+  it('L-9: clarifies the [Pro] badge describes the exposed tools, not the server startup itself, mirroring the existing mcp install caveat', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /server itself is ungated/i);
   });
 });
 
@@ -571,6 +589,15 @@ describe('printNoteHelp', () => {
     const out = captureHelp(printNoteHelp);
     assert.match(out, /note patch/);
     assert.match(out, /--id/);
+  });
+
+  it('L-10: note patch has its own OPTIONS list, including --expect-mtime — a real flag SKILL.md relies on that was previously only in prose', () => {
+    const out = captureHelp(printNoteHelp);
+    const patchIdx = out.indexOf('note patch');
+    const deleteIdx = out.indexOf('note delete');
+    const patchSection = out.slice(patchIdx, deleteIdx);
+    assert.match(patchSection, /OPTIONS/);
+    assert.match(patchSection, /--expect-mtime/);
   });
 
   it('documents that note delete prompts for confirmation and can be skipped with --yes', () => {

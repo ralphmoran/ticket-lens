@@ -311,6 +311,9 @@ export async function runTicketComment(cmdArgs, {
  * transition options for the ticket.
  *
  * @param {string[]} cmdArgs - [ticketKey]
+ * @param {boolean} [cliHints] - true (default) prints CLI flag syntax
+ *   (--target=, --confirm) in the hint; false prints MCP-shaped named-arg
+ *   wording instead — set by mcp-server.mjs's ticket_transition call sites.
  * @returns {Promise<{ ok: boolean, options?: object[] }>}
  */
 export async function runTicketTransitionList(cmdArgs, {
@@ -319,6 +322,7 @@ export async function runTicketTransitionList(cmdArgs, {
   isLicensedFn = isLicensed,
   resolveConnectionFn = resolveConnection,
   resolveAdapterFn = resolveAdapter,
+  cliHints = true,
 } = {}) {
   const usage = 'Usage: ticketlens transition TICKET-KEY [--target="..." --confirm]\n';
   if (!requireLicense(isLicensedFn, configDir, 'ticketlens transition', stream)) return { ok: false };
@@ -338,7 +342,9 @@ export async function runTicketTransitionList(cmdArgs, {
     }
     stream.write(`  Valid transitions for ${s.brand(s.bold(ticketKey))}:\n\n`);
     for (const o of options) stream.write(`    ${s.brand('●')} ${o.name}\n`);
-    stream.write(`\n  Run again with --target="<name>" --confirm to execute.\n`);
+    stream.write(cliHints
+      ? `\n  Run again with --target="<name>" --confirm to execute.\n`
+      : `\n  Call again with target="<name>" and confirm: true to execute.\n`);
     return { ok: true, options };
   } catch (err) {
     stream.write(formatWriteFailure(ticketKey, err));
@@ -351,6 +357,7 @@ export async function runTicketTransitionList(cmdArgs, {
  * without --confirm is treated as incomplete input, never silently executed.
  *
  * @param {string[]} cmdArgs - [ticketKey, '--target=...', '--confirm']
+ * @param {boolean} [cliHints] - see runTicketTransitionList's cliHints doc
  * @returns {Promise<{ ok: boolean, reason?: string }>}
  */
 export async function runTicketTransition(cmdArgs, {
@@ -363,6 +370,7 @@ export async function runTicketTransition(cmdArgs, {
   recordActionFn = recordAction,
   logActionFn = logAction,
   actor = os.userInfo().username,
+  cliHints = true,
 } = {}) {
   const usage = 'Usage: ticketlens transition TICKET-KEY --target="..." --confirm\n';
   if (!requireLicense(isLicensedFn, configDir, 'ticketlens transition', stream)) return { ok: false };
@@ -376,7 +384,9 @@ export async function runTicketTransition(cmdArgs, {
     return { ok: false };
   }
   if (!cmdArgs.includes('--confirm')) {
-    stream.write(`  Refusing to transition ${ticketKey} to "${target}" without --confirm. Re-run with --confirm once you've reviewed the target.\n`);
+    stream.write(cliHints
+      ? `  Refusing to transition ${ticketKey} to "${target}" without --confirm. Re-run with --confirm once you've reviewed the target.\n`
+      : `  Refusing to transition ${ticketKey} to "${target}" without confirm: true. Call again with confirm: true once you've reviewed the target.\n`);
     return { ok: false };
   }
 
@@ -552,6 +562,7 @@ export async function runTicketDuplicates(cmdArgs, {
  * so that asymmetry is surfaced here before a caller ever reaches --confirm.
  *
  * @param {string[]} cmdArgs - [sourceKey, targetKey]
+ * @param {boolean} [cliHints] - see runTicketTransitionList's cliHints doc
  * @returns {Promise<{ ok: boolean, types?: string[] }>}
  */
 export async function runTicketLinkList(cmdArgs, {
@@ -560,6 +571,7 @@ export async function runTicketLinkList(cmdArgs, {
   isLicensedFn = isLicensed,
   resolveConnectionFn = resolveConnection,
   resolveAdapterFn = resolveAdapter,
+  cliHints = true,
 } = {}) {
   const usage = 'Usage: ticketlens link SOURCE-KEY TARGET-KEY [--type="..." --confirm]\n';
   if (!requireLicense(isLicensedFn, configDir, 'ticketlens link', stream)) return { ok: false };
@@ -585,7 +597,9 @@ export async function runTicketLinkList(cmdArgs, {
     if (adapter.type === 'github') {
       stream.write(`  Note: GitHub has no generic link relationship — linking will CLOSE ${sourceKey} as a duplicate of ${targetKey}.\n`);
     }
-    stream.write(`  Run again with --type="<name>" --confirm to execute — ${sourceKey} will be recorded as the one that "types" ${targetKey}.\n`);
+    stream.write(cliHints
+      ? `  Run again with --type="<name>" --confirm to execute — ${sourceKey} will be recorded as the one that "types" ${targetKey}.\n`
+      : `  Call again with type="<name>" and confirm: true to execute — ${sourceKey} will be recorded as the one that "types" ${targetKey}.\n`);
     return { ok: true, types };
   } catch (err) {
     stream.write(formatLinkListFailure(sourceKey, err));
@@ -602,6 +616,7 @@ export async function runTicketLinkList(cmdArgs, {
  * anything else) with targetKey/type carried in detail instead.
  *
  * @param {string[]} cmdArgs - [sourceKey, targetKey, '--type=...', '--confirm']
+ * @param {boolean} [cliHints] - see runTicketTransitionList's cliHints doc
  * @returns {Promise<{ ok: boolean, reason?: string }>}
  */
 export async function runTicketLink(cmdArgs, {
@@ -614,6 +629,7 @@ export async function runTicketLink(cmdArgs, {
   recordActionFn = recordAction,
   logActionFn = logAction,
   actor = os.userInfo().username,
+  cliHints = true,
 } = {}) {
   const usage = 'Usage: ticketlens link SOURCE-KEY TARGET-KEY --type="..." --confirm\n';
   if (!requireLicense(isLicensedFn, configDir, 'ticketlens link', stream)) return { ok: false };
@@ -629,7 +645,9 @@ export async function runTicketLink(cmdArgs, {
     return { ok: false };
   }
   if (!cmdArgs.includes('--confirm')) {
-    stream.write(`  Refusing to link ${sourceKey} to ${targetKey} as "${type}" without --confirm. Re-run with --confirm once you've reviewed the target.\n`);
+    stream.write(cliHints
+      ? `  Refusing to link ${sourceKey} to ${targetKey} as "${type}" without --confirm. Re-run with --confirm once you've reviewed the target.\n`
+      : `  Refusing to link ${sourceKey} to ${targetKey} as "${type}" without confirm: true. Call again with confirm: true once you've reviewed the target.\n`);
     return { ok: false };
   }
 

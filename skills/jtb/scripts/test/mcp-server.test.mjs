@@ -81,12 +81,25 @@ describe('mcp-server', () => {
       }
     });
 
+    it('L-8: ticket_update\'s description states the "at least one field required" precondition, matching the CLI help — previously only the CLI stated it', async () => {
+      const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
+      const ticketUpdate = messages[0].result.tools.find((t) => t.name === 'ticket_update');
+      assert.match(ticketUpdate.description, /at least one field is required/i);
+    });
+
     it('recall_add\'s tags property guides the caller toward content-specific tags, not generic project/category labels', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const recallAdd = messages[0].result.tools.find((t) => t.name === 'recall_add');
       const tagsDesc = recallAdd.inputSchema.properties.tags.description;
       assert.ok(tagsDesc.length > 'Optional tags.'.length, 'must be more than a bare placeholder description');
       assert.match(tagsDesc, /content|body|specific/i);
+    });
+
+    it('L-12: recall_add\'s tags property also warns against tags that just restate the title or aren\'t traceable to the body', async () => {
+      const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
+      const recallAdd = messages[0].result.tools.find((t) => t.name === 'recall_add');
+      const tagsDesc = recallAdd.inputSchema.properties.tags.description;
+      assert.match(tagsDesc, /restates? the title/i);
     });
 
     it('ticket_duplicates warns an empty result can be a false negative, not just that matches can be imprecise (M-11)', async () => {
@@ -364,6 +377,26 @@ describe('mcp-server', () => {
       );
       assert.deepEqual(seenArgs, ['PROJ-1', '--target=Done']);
     });
+
+    it('list mode passes cliHints:false so the underlying function prints MCP-shaped hints, not CLI flags', async () => {
+      let seenOpts;
+      const runTicketTransitionListFn = async (cmdArgs, opts) => { seenOpts = opts; return { ok: true, options: [] }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_transition', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runTicketTransitionListFn },
+      );
+      assert.equal(seenOpts.cliHints, false);
+    });
+
+    it('execute mode passes cliHints:false so a refusal is worded for the MCP caller, not a CLI user', async () => {
+      let seenOpts;
+      const runTicketTransitionFn = async (cmdArgs, opts) => { seenOpts = opts; return { ok: false }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_transition', arguments: { ticket: 'PROJ-1', target: 'Done' } } }],
+        { configDir, runTicketTransitionFn },
+      );
+      assert.equal(seenOpts.cliHints, false);
+    });
   });
 
   describe('tools/call ticket_assign', () => {
@@ -562,6 +595,26 @@ describe('mcp-server', () => {
         { configDir, runTicketLinkFn },
       );
       assert.deepEqual(seenArgs, ['PROJ-1', 'PROJ-2', '--type=Duplicate']);
+    });
+
+    it('list mode passes cliHints:false so the underlying function prints MCP-shaped hints, not CLI flags', async () => {
+      let seenOpts;
+      const runTicketLinkListFn = async (cmdArgs, opts) => { seenOpts = opts; return { ok: true, types: [] }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_link', arguments: { ticket: 'PROJ-1', target: 'PROJ-2' } } }],
+        { configDir, runTicketLinkListFn },
+      );
+      assert.equal(seenOpts.cliHints, false);
+    });
+
+    it('execute mode passes cliHints:false so a refusal is worded for the MCP caller, not a CLI user', async () => {
+      let seenOpts;
+      const runTicketLinkFn = async (cmdArgs, opts) => { seenOpts = opts; return { ok: false }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_link', arguments: { ticket: 'PROJ-1', target: 'PROJ-2', type: 'Duplicate' } } }],
+        { configDir, runTicketLinkFn },
+      );
+      assert.equal(seenOpts.cliHints, false);
     });
   });
 

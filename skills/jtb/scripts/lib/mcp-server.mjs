@@ -36,7 +36,7 @@ const TOOLS = [
       properties: {
         title: { type: 'string', description: 'Short one-line title.' },
         ticket: { type: 'string', description: 'Optional ticket key, e.g. PROJ-123.' },
-        tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags derived from this note\'s actual content — the specific technology, error type, root cause, or affected component (e.g. "retry-backoff", "null-pointer", "auth-middleware"). Never the project name or a generic category word like "gotcha" or "bug" — those provide no search signal to someone else looking for this note later.' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags derived from this note\'s actual content — the specific technology, error type, root cause, or affected component (e.g. "retry-backoff", "null-pointer", "auth-middleware"). Never the project name or a generic category word like "gotcha" or "bug" — those provide no search signal to someone else looking for this note later. A tag that just restates the title in different words, or one you cannot trace to a specific sentence in the body, gives that same zero signal — if you cannot point to the exact phrase that justifies it, drop it.' },
         body: { type: 'string', description: 'The note body — one or more paragraphs.' },
       },
       required: ['title', 'body'],
@@ -119,7 +119,7 @@ const TOOLS = [
   },
   {
     name: 'ticket_update',
-    description: 'Update a narrow, named field set on a ticket in its tracker (Jira/GitHub/Linear) — title, description, labels, priority. Labels are add/remove, never a wholesale replace: an unnamed existing label is left alone. No discovery step and no confirm required — these are reversible metadata edits, not workflow-state changes. GitHub has no priority field; passing `priority` for a GitHub-tracked ticket is refused. A call can partially succeed (e.g. title updates but a label does not resolve) — the result reports exactly what landed. Requires a TicketLens Pro license.',
+    description: 'Update a narrow, named field set on a ticket in its tracker (Jira/GitHub/Linear) — title, description, labels, priority. At least one field is required. Labels are add/remove, never a wholesale replace: an unnamed existing label is left alone. No discovery step and no confirm required — these are reversible metadata edits, not workflow-state changes. GitHub has no priority field; passing `priority` for a GitHub-tracked ticket is refused. A call can partially succeed (e.g. title updates but a label does not resolve) — the result reports exactly what landed. Requires a TicketLens Pro license.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -245,13 +245,13 @@ async function callTicketTransition(args, { configDir, runTicketTransitionListFn
   }
   const capture = capturingStream();
   if (!args.target) {
-    const { ok } = await runTicketTransitionListFn([args.ticket], { configDir, stream: capture });
+    const { ok } = await runTicketTransitionListFn([args.ticket], { configDir, stream: capture, cliHints: false });
     const content = [{ type: 'text', text: capture.text }];
     return ok ? { content } : { isError: true, content };
   }
   const cmdArgs = [args.ticket, `--target=${args.target}`];
   if (args.confirm === true) cmdArgs.push('--confirm');
-  const { ok } = await runTicketTransitionFn(cmdArgs, { configDir, stream: capture });
+  const { ok } = await runTicketTransitionFn(cmdArgs, { configDir, stream: capture, cliHints: false });
   const content = [{ type: 'text', text: capture.text }];
   return ok ? { content } : { isError: true, content };
 }
@@ -296,13 +296,13 @@ async function callTicketLink(args, { configDir, runTicketLinkListFn, runTicketL
   }
   const capture = capturingStream();
   if (!args.type) {
-    const { ok } = await runTicketLinkListFn([args.ticket, args.target], { configDir, stream: capture });
+    const { ok } = await runTicketLinkListFn([args.ticket, args.target], { configDir, stream: capture, cliHints: false });
     const content = [{ type: 'text', text: capture.text }];
     return ok ? { content } : { isError: true, content };
   }
   const cmdArgs = [args.ticket, args.target, `--type=${args.type}`];
   if (args.confirm === true) cmdArgs.push('--confirm');
-  const { ok } = await runTicketLinkFn(cmdArgs, { configDir, stream: capture });
+  const { ok } = await runTicketLinkFn(cmdArgs, { configDir, stream: capture, cliHints: false });
   const content = [{ type: 'text', text: capture.text }];
   return ok ? { content } : { isError: true, content };
 }

@@ -27,6 +27,12 @@ describe('SKILL.md — Recall tag-quality guidance', () => {
     assert.match(section, /content|body/i);
     assert.match(section, /(never|not|don't).*(project name|generic)/i);
   });
+
+  it('L-12: warns against tags that just restate the title or aren\'t traceable to a specific sentence in the body', () => {
+    const section = dispatchSection();
+    assert.match(section, /restates? the title/i);
+    assert.match(section, /trace|point to the exact phrase/i);
+  });
 });
 
 describe('SKILL.md — privacy: no pilot-client identifying references', () => {
@@ -61,6 +67,12 @@ describe('SKILL.md — skill version marker', () => {
     const m = SKILL_MD.match(/jtb-skill-version:\s*([\d.]+)/);
     assert.ok(m, 'expected a jtb-skill-version marker on line 1');
     assert.notEqual(m[1], '0.31.0', 'marker must move past the pre-fix version');
+  });
+
+  it('is bumped past 0.32.0 so update-skill propagates the L-12 tag-quality guidance fix', () => {
+    const m = SKILL_MD.match(/jtb-skill-version:\s*([\d.]+)/);
+    assert.ok(m, 'expected a jtb-skill-version marker on line 1');
+    assert.notEqual(m[1], '0.32.0', 'marker must move past the pre-fix version');
   });
 });
 

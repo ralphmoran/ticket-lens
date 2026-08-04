@@ -310,6 +310,7 @@ function baseDeleteDeps(overrides = {}) {
     stream: makeStream(),
     isLicensedFn: () => true,
     deleteNoteFn: () => ({ deleted: true, prefix: 'PROD' }),
+    deleteNoteAnyPrefixFn: () => ({ deleted: true, prefix: 'PROD' }),
     confirmFn: async () => true,
     rebuildIndexFn: () => {},
     ...overrides,
@@ -581,11 +582,12 @@ describe('runNoteAdd — also attempts an auto-flush of the retry queue', () => 
 });
 
 describe('runNoteDelete — license gate fires before anything else', () => {
-  test('unlicensed: never calls deleteNoteFn, shows upgrade prompt', async () => {
+  test('unlicensed: never calls either delete function, shows upgrade prompt', async () => {
     let deleteCalls = 0;
     const deps = baseDeleteDeps({
       isLicensedFn: () => false,
       deleteNoteFn: () => { deleteCalls++; return { deleted: true, prefix: 'PROD' }; },
+      deleteNoteAnyPrefixFn: () => { deleteCalls++; return { deleted: true, prefix: 'PROD' }; },
     });
     const result = await runNoteDelete(['--id=note-1.md'], deps);
     assert.equal(result.deleted, false);
@@ -613,57 +615,64 @@ describe('runNoteDelete — usage validation', () => {
   });
 });
 
-describe('runNoteDelete — delegates to deleteNoteFn with the right shape', () => {
-  test('passes external_id and tickets through', async () => {
-    let captured;
+describe('runNoteDelete — --ticket present dispatches to deleteNoteFn', () => {
+  test('passes external_id and tickets through, never calls deleteNoteAnyPrefixFn', async () => {
+    let captured, anyPrefixCalls = 0;
     const deps = baseDeleteDeps({
       deleteNoteFn: (note) => { captured = note; return { deleted: true, prefix: 'PROD' }; },
+      deleteNoteAnyPrefixFn: () => { anyPrefixCalls++; return { deleted: true, prefix: 'PROD' }; },
     });
     await runNoteDelete(['--id=note-1.md', '--ticket=PROD-1'], deps);
     assert.equal(captured.external_id, 'note-1.md');
     assert.deepEqual(captured.tickets, ['PROD-1']);
+    assert.equal(anyPrefixCalls, 0);
   });
+});
 
-  test('no --ticket means an empty tickets array', async () => {
-    let captured;
+describe('runNoteDelete — --ticket omitted dispatches to deleteNoteAnyPrefixFn (L-3: searches every vault prefix, not just _general)', () => {
+  test('passes the note id through, never calls deleteNoteFn', async () => {
+    let capturedId, deleteFnCalls = 0;
     const deps = baseDeleteDeps({
-      deleteNoteFn: (note) => { captured = note; return { deleted: true, prefix: 'PROD' }; },
+      deleteNoteFn: () => { deleteFnCalls++; return { deleted: true, prefix: 'PROD' }; },
+      deleteNoteAnyPrefixFn: (id) => { capturedId = id; return { deleted: true, prefix: 'PROD' }; },
     });
     await runNoteDelete(['--id=note-1.md'], deps);
-    assert.deepEqual(captured.tickets, []);
+    assert.equal(capturedId, 'note-1.md');
+    assert.equal(deleteFnCalls, 0);
   });
 
   test('a successful delete is reported distinctly from a no-op', async () => {
-    const deps = baseDeleteDeps({ deleteNoteFn: () => ({ deleted: true, prefix: 'PROD' }) });
+    const deps = baseDeleteDeps({ deleteNoteAnyPrefixFn: () => ({ deleted: true, prefix: 'PROD' }) });
     const result = await runNoteDelete(['--id=note-1.md'], deps);
     assert.equal(result.deleted, true);
     assert.match(deps.stream.lines.join(''), /Deleted/);
   });
 
-  test('a no-op (note not found) is reported distinctly from success', async () => {
-    const deps = baseDeleteDeps({ deleteNoteFn: () => ({ deleted: false, prefix: null }) });
+  test('a no-op (note not found in any prefix) is reported distinctly from success', async () => {
+    const deps = baseDeleteDeps({ deleteNoteAnyPrefixFn: () => ({ deleted: false, prefix: null }) });
     const result = await runNoteDelete(['--id=note-1.md'], deps);
     assert.equal(result.deleted, false);
     assert.match(deps.stream.lines.join(''), /not deleted/i);
   });
 
-  // Regression for M-6: deleteNote() returns prefix specifically so the
-  // caller can rebuild the vault index — recall-sync.mjs's tombstone-pull
-  // path already does this correctly; runNoteDelete previously discarded it.
-  test('a successful delete rebuilds the vault index for the deleted note\'s prefix', async () => {
+  // Regression for M-6: deleteNote()/deleteNoteAnyPrefix() return prefix
+  // specifically so the caller can rebuild the vault index — recall-sync.mjs's
+  // tombstone-pull path already does this correctly; runNoteDelete previously
+  // discarded it.
+  test('a successful delete rebuilds the vault index for the prefix the note was actually found in', async () => {
     let rebuiltPrefix;
     const deps = baseDeleteDeps({
-      deleteNoteFn: () => ({ deleted: true, prefix: 'PROD' }),
+      deleteNoteAnyPrefixFn: () => ({ deleted: true, prefix: 'CNV1' }),
       rebuildIndexFn: (prefix) => { rebuiltPrefix = prefix; },
     });
     await runNoteDelete(['--id=note-1.md'], deps);
-    assert.equal(rebuiltPrefix, 'PROD');
+    assert.equal(rebuiltPrefix, 'CNV1');
   });
 
   test('a no-op delete never rebuilds the index — nothing changed on disk', async () => {
     let rebuildCalls = 0;
     const deps = baseDeleteDeps({
-      deleteNoteFn: () => ({ deleted: false, prefix: null }),
+      deleteNoteAnyPrefixFn: () => ({ deleted: false, prefix: null }),
       rebuildIndexFn: () => { rebuildCalls++; },
     });
     await runNoteDelete(['--id=note-1.md'], deps);
@@ -672,11 +681,11 @@ describe('runNoteDelete — delegates to deleteNoteFn with the right shape', () 
 });
 
 describe('runNoteDelete — destructive-action confirmation gate', () => {
-  test('declining the confirmation prompt never calls deleteNoteFn', async () => {
+  test('declining the confirmation prompt never calls deleteNoteAnyPrefixFn', async () => {
     let deleteCalls = 0;
     const deps = baseDeleteDeps({
       confirmFn: async () => false,
-      deleteNoteFn: () => { deleteCalls++; return { deleted: true, prefix: 'PROD' }; },
+      deleteNoteAnyPrefixFn: () => { deleteCalls++; return { deleted: true, prefix: 'PROD' }; },
     });
     const result = await runNoteDelete(['--id=note-1.md'], deps);
     assert.equal(result.deleted, false);
@@ -684,11 +693,11 @@ describe('runNoteDelete — destructive-action confirmation gate', () => {
     assert.match(deps.stream.lines.join(''), /Aborted/);
   });
 
-  test('confirmFn is asked before deleteNoteFn runs, with the note id in the prompt', async () => {
+  test('confirmFn is asked before deleteNoteAnyPrefixFn runs, with the note id in the prompt', async () => {
     const calls = [];
     const deps = baseDeleteDeps({
       confirmFn: async (action) => { calls.push(['confirm', action]); return true; },
-      deleteNoteFn: () => { calls.push(['delete']); return { deleted: true, prefix: 'PROD' }; },
+      deleteNoteAnyPrefixFn: () => { calls.push(['delete']); return { deleted: true, prefix: 'PROD' }; },
     });
     await runNoteDelete(['--id=note-1.md'], deps);
     assert.equal(calls[0][0], 'confirm');

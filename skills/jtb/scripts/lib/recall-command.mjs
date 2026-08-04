@@ -17,7 +17,7 @@ import { listNotes } from './recall-vault.mjs';
 import { readCliToken } from './cli-auth.mjs';
 import { pullNotes } from './recall-sync.mjs';
 import { maybeAutoFlush, flushQueue, readQueue } from './recall-queue.mjs';
-import { getEffectiveRecallSettings } from './recall-settings-sync.mjs';
+import { getEffectiveRecallSettingsWithSource } from './recall-settings-sync.mjs';
 import { styleRecallResults } from './styled-assembler.mjs';
 
 /**
@@ -98,6 +98,13 @@ export async function runRecallSync(cmdArgs, {
   return { ok: true };
 }
 
+// Keyed by the `source` getEffectiveRecallSettingsWithSource reports.
+const SOURCE_LABELS = {
+  'no-token': 'platform default — log in to pick up a team override',
+  'live': 'your team manager (or platform default if unset), fetched live just now',
+  'cache-fallback': 'last known-good cached value — live fetch failed, could be stale',
+};
+
 /**
  * Implements `tl recall settings` — read-only display of the effective
  * Recall queue settings (flush cooldown, per-request timeout, max queue
@@ -114,7 +121,7 @@ export async function runRecallSettings(cmdArgs, {
   stream = process.stdout,
   isLicensedFn = isLicensed,
   readCliTokenFn = readCliToken,
-  getEffectiveRecallSettingsFn = getEffectiveRecallSettings,
+  getEffectiveRecallSettingsWithSourceFn = getEffectiveRecallSettingsWithSource,
 } = {}) {
   if (!isLicensedFn('pro', configDir)) {
     showUpgradePrompt('pro', 'ticketlens recall', { stream });
@@ -122,13 +129,12 @@ export async function runRecallSettings(cmdArgs, {
   }
 
   const cliToken = readCliTokenFn(configDir);
-  const settings = await getEffectiveRecallSettingsFn({ cliToken, configDir });
-  const source = cliToken ? 'your team manager (or platform default if unset)' : 'platform default — log in to pick up a team override';
+  const { values: settings, source } = await getEffectiveRecallSettingsWithSourceFn({ cliToken, configDir });
 
   stream.write(`  Retry cooldown:      ${settings.flush_cooldown_ms / 60_000} min\n`);
   stream.write(`  Per-request timeout: ${settings.timeout_ms / 1_000} sec\n`);
   stream.write(`  Max queued notes:    ${settings.max_queue_size}\n`);
   stream.write(`  Queued note expiry:  ${settings.max_entry_age_ms / 86_400_000} days\n`);
-  stream.write(`  Source: ${source}\n`);
+  stream.write(`  Source: ${SOURCE_LABELS[source]}\n`);
   return { ok: true };
 }

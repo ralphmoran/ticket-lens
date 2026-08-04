@@ -38,92 +38,130 @@ afterEach(() => {
 });
 
 describe('incrementFetch', () => {
-  it('increments fetch_count from zero', () => {
-    incrementFetch(tmpDir);
+  it('increments fetch_count from zero, scoped to the given profile', () => {
+    incrementFetch(tmpDir, 'myprofile');
     const data = JSON.parse(fs.readFileSync(path.join(tmpDir, 'activity.json'), 'utf8'));
-    assert.equal(data.fetch_count, 1);
+    assert.equal(data.byProfile.myprofile.fetch_count, 1);
   });
 
   it('accumulates multiple increments', () => {
-    incrementFetch(tmpDir);
-    incrementFetch(tmpDir);
-    incrementFetch(tmpDir);
+    incrementFetch(tmpDir, 'myprofile');
+    incrementFetch(tmpDir, 'myprofile');
+    incrementFetch(tmpDir, 'myprofile');
     const data = JSON.parse(fs.readFileSync(path.join(tmpDir, 'activity.json'), 'utf8'));
-    assert.equal(data.fetch_count, 3);
+    assert.equal(data.byProfile.myprofile.fetch_count, 3);
+  });
+
+  it('L-6a regression: a different profile\'s fetch_count is tracked independently, never bleeding into another profile\'s bucket', () => {
+    incrementFetch(tmpDir, 'alpha');
+    incrementFetch(tmpDir, 'alpha');
+    incrementFetch(tmpDir, 'beta');
+    const data = JSON.parse(fs.readFileSync(path.join(tmpDir, 'activity.json'), 'utf8'));
+    assert.equal(data.byProfile.alpha.fetch_count, 2);
+    assert.equal(data.byProfile.beta.fetch_count, 1);
   });
 });
 
 describe('incrementTriageRun', () => {
-  it('increments triage_run_count independently', () => {
-    incrementFetch(tmpDir);
-    incrementTriageRun(tmpDir);
-    incrementTriageRun(tmpDir);
+  it('increments triage_run_count independently of fetch_count, within the same profile bucket', () => {
+    incrementFetch(tmpDir, 'myprofile');
+    incrementTriageRun(tmpDir, 'myprofile');
+    incrementTriageRun(tmpDir, 'myprofile');
     const data = JSON.parse(fs.readFileSync(path.join(tmpDir, 'activity.json'), 'utf8'));
-    assert.equal(data.fetch_count, 1);
-    assert.equal(data.triage_run_count, 2);
+    assert.equal(data.byProfile.myprofile.fetch_count, 1);
+    assert.equal(data.byProfile.myprofile.triage_run_count, 2);
+  });
+
+  it('L-6a regression: a different profile\'s triage_run_count is tracked independently', () => {
+    incrementTriageRun(tmpDir, 'advent');
+    incrementTriageRun(tmpDir, 'advent');
+    incrementTriageRun(tmpDir, 'corenexus');
+    const data = JSON.parse(fs.readFileSync(path.join(tmpDir, 'activity.json'), 'utf8'));
+    assert.equal(data.byProfile.advent.triage_run_count, 2);
+    assert.equal(data.byProfile.corenexus.triage_run_count, 1);
   });
 });
 
 describe('incrementInvocation', () => {
-  it('increments invocations independently', () => {
+  it('increments invocations independently, without touching any profile bucket', () => {
     incrementInvocation(tmpDir);
     const data = JSON.parse(fs.readFileSync(path.join(tmpDir, 'activity.json'), 'utf8'));
     assert.equal(data.invocations, 1);
-    assert.equal(data.fetch_count, 0);
+    assert.deepEqual(data.byProfile ?? {}, {});
   });
 });
 
 describe('readAndResetActivity', () => {
   it('returns zeros when no file exists', () => {
-    const result = readAndResetActivity(tmpDir);
+    const result = readAndResetActivity(tmpDir, 'myprofile');
     assert.deepStrictEqual(result, EMPTY_SNAPSHOT);
   });
 
-  it('returns accumulated counts', () => {
-    incrementFetch(tmpDir);
-    incrementFetch(tmpDir);
-    incrementTriageRun(tmpDir);
+  it('returns accumulated counts for the given profile', () => {
+    incrementFetch(tmpDir, 'myprofile');
+    incrementFetch(tmpDir, 'myprofile');
+    incrementTriageRun(tmpDir, 'myprofile');
     incrementInvocation(tmpDir);
     incrementInvocation(tmpDir);
     incrementInvocation(tmpDir);
 
-    const result = readAndResetActivity(tmpDir);
+    const result = readAndResetActivity(tmpDir, 'myprofile');
     assert.equal(result.fetch_count, 2);
     assert.equal(result.triage_run_count, 1);
     assert.equal(result.invocations, 3);
   });
 
-  it('resets counters to zero after read', () => {
-    incrementFetch(tmpDir);
-    incrementFetch(tmpDir);
-    readAndResetActivity(tmpDir);
+  it('resets the profile\'s bucket and the global counters to zero after read', () => {
+    incrementFetch(tmpDir, 'myprofile');
+    incrementFetch(tmpDir, 'myprofile');
+    readAndResetActivity(tmpDir, 'myprofile');
 
     const data = JSON.parse(fs.readFileSync(path.join(tmpDir, 'activity.json'), 'utf8'));
-    assert.equal(data.fetch_count, 0);
-    assert.equal(data.triage_run_count, 0);
+    assert.equal(data.byProfile.myprofile, undefined);
     assert.equal(data.invocations, 0);
   });
 
   it('returns zero after reset — second call is clean', () => {
-    incrementFetch(tmpDir);
-    readAndResetActivity(tmpDir);
-    const second = readAndResetActivity(tmpDir);
+    incrementFetch(tmpDir, 'myprofile');
+    readAndResetActivity(tmpDir, 'myprofile');
+    const second = readAndResetActivity(tmpDir, 'myprofile');
     assert.deepStrictEqual(second, EMPTY_SNAPSHOT);
   });
 
   it('handles corrupt file gracefully — treats as zero', () => {
     fs.writeFileSync(path.join(tmpDir, 'activity.json'), 'not-json', 'utf8');
-    const result = readAndResetActivity(tmpDir);
+    const result = readAndResetActivity(tmpDir, 'myprofile');
     assert.deepStrictEqual(result, EMPTY_SNAPSHOT);
   });
 
   it('lock — commands snapshot returned and then reset to empty object', () => {
     incrementCommand(tmpDir, 'fetch', []);
     incrementCommand(tmpDir, 'fetch', []);
-    const result = readAndResetActivity(tmpDir);
+    const result = readAndResetActivity(tmpDir, 'myprofile');
     assert.equal(result.commands.fetch.count, 2);
-    const second = readAndResetActivity(tmpDir);
+    const second = readAndResetActivity(tmpDir, 'myprofile');
     assert.deepStrictEqual(second.commands, {});
+  });
+
+  it('L-6a regression: resetting profile A\'s counters after its push must not touch profile B\'s pending counts', () => {
+    incrementTriageRun(tmpDir, 'advent');
+    incrementFetch(tmpDir, 'advent');
+    incrementTriageRun(tmpDir, 'corenexus');
+    incrementTriageRun(tmpDir, 'corenexus');
+
+    const adventResult = readAndResetActivity(tmpDir, 'advent');
+    assert.equal(adventResult.triage_run_count, 1);
+    assert.equal(adventResult.fetch_count, 1);
+
+    // corenexus's counts must still be there, untouched by advent's push/reset —
+    // this is the exact misattribution L-6 flagged: a global counter reset by
+    // any push would have silently zeroed corenexus's pending runs too.
+    const data = JSON.parse(fs.readFileSync(path.join(tmpDir, 'activity.json'), 'utf8'));
+    assert.equal(data.byProfile.corenexus.triage_run_count, 2);
+    assert.equal(data.byProfile.advent, undefined);
+
+    const corenexusResult = readAndResetActivity(tmpDir, 'corenexus');
+    assert.equal(corenexusResult.triage_run_count, 2);
   });
 });
 
@@ -151,9 +189,9 @@ describe('recordTokensSaved', () => {
 
   it('readAndResetActivity returns tokens_saved and resets it', () => {
     recordTokensSaved(tmpDir, 'fetch', 1000);
-    const result = readAndResetActivity(tmpDir);
+    const result = readAndResetActivity(tmpDir, 'myprofile');
     assert.equal(result.commands.fetch.tokens_saved, 1000);
-    const second = readAndResetActivity(tmpDir);
+    const second = readAndResetActivity(tmpDir, 'myprofile');
     assert.deepStrictEqual(second.commands, {});
   });
 
@@ -206,12 +244,12 @@ describe('incrementCommand', () => {
 
 describe('Recall graduation counters', () => {
   it('incrementDraftKept increments drafts_kept independently of other counters', () => {
-    incrementFetch(tmpDir);
+    incrementFetch(tmpDir, 'myprofile');
     incrementDraftKept(tmpDir);
     incrementDraftKept(tmpDir);
     const data = JSON.parse(fs.readFileSync(path.join(tmpDir, 'activity.json'), 'utf8'));
     assert.equal(data.drafts_kept, 2);
-    assert.equal(data.fetch_count, 1);
+    assert.equal(data.byProfile.myprofile.fetch_count, 1);
   });
 
   it('incrementDraftDeleted increments drafts_deleted independently', () => {
@@ -233,11 +271,11 @@ describe('Recall graduation counters', () => {
     incrementDraftKept(tmpDir);
     incrementDraftDeleted(tmpDir);
     incrementBriefWithRecall(tmpDir);
-    const result = readAndResetActivity(tmpDir);
+    const result = readAndResetActivity(tmpDir, 'myprofile');
     assert.equal(result.drafts_kept, 1);
     assert.equal(result.drafts_deleted, 1);
     assert.equal(result.briefs_with_recall_injection, 1);
-    const second = readAndResetActivity(tmpDir);
+    const second = readAndResetActivity(tmpDir, 'myprofile');
     assert.deepStrictEqual(second, EMPTY_SNAPSHOT);
   });
 });
@@ -259,7 +297,7 @@ describe('recordPulseResponse — local-only, survives readAndResetActivity', ()
 
   it('is not reset by readAndResetActivity — pulses are a persistent local log, not a pushed counter', () => {
     recordPulseResponse(tmpDir, 'n');
-    readAndResetActivity(tmpDir);
+    readAndResetActivity(tmpDir, 'myprofile');
     const data = JSON.parse(fs.readFileSync(path.join(tmpDir, 'activity.json'), 'utf8'));
     assert.equal(data.pulses.length, 1);
   });

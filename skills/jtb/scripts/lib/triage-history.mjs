@@ -70,7 +70,23 @@ export function saveTriageSnapshot(tickets, {
   const dir = join(configDir, 'triage-history', dateStr);
   fsModule.mkdirSync(dir, { recursive: true });
   const filePath = snapshotPath(configDir, dateStr, profile);
-  const envelope = { captured_at: now.toISOString(), tickets };
+
+  // A same-day re-run (e.g. a narrower, filtered, or exploratory `triage`
+  // invocation after an earlier fuller one) must not silently discard
+  // tickets the earlier run already captured for today — stats/history read
+  // this file as "the" snapshot for the day. The current run's data always
+  // wins for any ticket it covers (freshest known state); a ticket only
+  // present in the earlier snapshot is carried forward untouched.
+  const earlier = loadSnapshotForDate(dateStr, profile, configDir, fsModule);
+  const earlierTickets = Array.isArray(earlier?.tickets) ? earlier.tickets : [];
+  const currentKeys = new Set(tickets.map(t => t.ticketKey));
+  const merged = [...tickets, ...earlierTickets.filter(t => !currentKeys.has(t.ticketKey))];
+
+  // `date` is the same local dateStr the file is stored under — captured_at
+  // stays UTC for precise ordering, but nothing should ever need to infer
+  // "which day" a snapshot belongs to by parsing captured_at, since that can
+  // disagree with the local-date directory name near midnight.
+  const envelope = { captured_at: now.toISOString(), date: dateStr, tickets: merged };
   fsModule.writeFileSync(filePath, JSON.stringify(envelope, null, 2), 'utf8');
 }
 

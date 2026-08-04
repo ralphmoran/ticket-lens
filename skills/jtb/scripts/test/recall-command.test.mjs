@@ -301,7 +301,7 @@ function baseSettingsDeps(overrides = {}) {
     stream: makeStream(),
     isLicensedFn: () => true,
     readCliTokenFn: () => null,
-    getEffectiveRecallSettingsFn: () => Promise.resolve(DEFAULT_RECALL_SETTINGS),
+    getEffectiveRecallSettingsWithSourceFn: () => Promise.resolve({ values: DEFAULT_RECALL_SETTINGS, source: 'no-token' }),
     ...overrides,
   };
 }
@@ -309,7 +309,7 @@ function baseSettingsDeps(overrides = {}) {
 describe('runRecallSettings — license gate', () => {
   test('unlicensed: never fetches settings, shows upgrade prompt, reports failure', async () => {
     let calls = 0;
-    const deps = baseSettingsDeps({ isLicensedFn: () => false, getEffectiveRecallSettingsFn: () => { calls++; return Promise.resolve(DEFAULT_RECALL_SETTINGS); } });
+    const deps = baseSettingsDeps({ isLicensedFn: () => false, getEffectiveRecallSettingsWithSourceFn: () => { calls++; return Promise.resolve({ values: DEFAULT_RECALL_SETTINGS, source: 'no-token' }); } });
     const result = await runRecallSettings([], deps);
     assert.equal(calls, 0);
     assert.equal(result.ok, false);
@@ -319,7 +319,10 @@ describe('runRecallSettings — license gate', () => {
 describe('runRecallSettings — output', () => {
   test('prints all four effective settings converted to human units', async () => {
     const deps = baseSettingsDeps({
-      getEffectiveRecallSettingsFn: () => Promise.resolve({ flush_cooldown_ms: 600_000, timeout_ms: 8_000, max_queue_size: 50, max_entry_age_ms: 604_800_000 }),
+      getEffectiveRecallSettingsWithSourceFn: () => Promise.resolve({
+        values: { flush_cooldown_ms: 600_000, timeout_ms: 8_000, max_queue_size: 50, max_entry_age_ms: 604_800_000 },
+        source: 'live',
+      }),
     });
     const result = await runRecallSettings([], deps);
     assert.equal(result.ok, true);
@@ -330,11 +333,11 @@ describe('runRecallSettings — output', () => {
     assert.match(out, /7 days/);
   });
 
-  test('not logged in: still fetches (getEffectiveRecallSettingsFn handles the no-token case itself), notes the source is platform default', async () => {
+  test('not logged in: still fetches (the dep handles the no-token case itself), notes the source is platform default', async () => {
     let capturedCliToken = 'unset';
     const deps = baseSettingsDeps({
       readCliTokenFn: () => null,
-      getEffectiveRecallSettingsFn: (opts) => { capturedCliToken = opts.cliToken; return Promise.resolve(DEFAULT_RECALL_SETTINGS); },
+      getEffectiveRecallSettingsWithSourceFn: (opts) => { capturedCliToken = opts.cliToken; return Promise.resolve({ values: DEFAULT_RECALL_SETTINGS, source: 'no-token' }); },
     });
     const result = await runRecallSettings([], deps);
     assert.equal(capturedCliToken, null);
@@ -342,15 +345,33 @@ describe('runRecallSettings — output', () => {
     assert.match(deps.stream.lines.join(''), /platform default/i);
   });
 
-  test('logged in: passes the cliToken through to getEffectiveRecallSettingsFn, notes the source is team manager', async () => {
+  test('logged in with a successful live fetch: notes the source was fetched live, not just "team manager" regardless of outcome', async () => {
     let capturedCliToken;
     const deps = baseSettingsDeps({
       readCliTokenFn: () => 'tl_key',
-      getEffectiveRecallSettingsFn: (opts) => { capturedCliToken = opts.cliToken; return Promise.resolve(DEFAULT_RECALL_SETTINGS); },
+      getEffectiveRecallSettingsWithSourceFn: (opts) => { capturedCliToken = opts.cliToken; return Promise.resolve({ values: DEFAULT_RECALL_SETTINGS, source: 'live' }); },
     });
     const result = await runRecallSettings([], deps);
     assert.equal(capturedCliToken, 'tl_key');
     assert.equal(result.ok, true);
     assert.match(deps.stream.lines.join(''), /team manager/i);
+    assert.match(deps.stream.lines.join(''), /live/i);
+  });
+
+  // L-4 regression: previously the "Source:" line was derived purely from
+  // whether a cliToken was present, so a logged-in user whose live fetch
+  // silently failed and fell back to cache still saw "your team manager"
+  // wording, indistinguishable from a real live fetch.
+  test('L-4 regression: logged in but the live fetch failed (cache fallback): reports the value may be stale, not "your team manager"', async () => {
+    const deps = baseSettingsDeps({
+      readCliTokenFn: () => 'tl_key',
+      getEffectiveRecallSettingsWithSourceFn: () => Promise.resolve({ values: DEFAULT_RECALL_SETTINGS, source: 'cache-fallback' }),
+    });
+    const result = await runRecallSettings([], deps);
+    assert.equal(result.ok, true);
+    const out = deps.stream.lines.join('');
+    assert.match(out, /cached/i);
+    assert.match(out, /stale/i);
+    assert.doesNotMatch(out, /your team manager/i);
   });
 });

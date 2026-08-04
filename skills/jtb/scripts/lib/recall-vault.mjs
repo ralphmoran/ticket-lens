@@ -165,6 +165,36 @@ export function deleteNote({ external_id: externalId, tickets = [] }, { configDi
 }
 
 /**
+ * Deletes a note when the caller doesn't know (or a CLI user didn't specify)
+ * which ticket-prefix folder it lives in — used only by `note delete` when
+ * --ticket is omitted. Unlike deleteNote, which resolves a single
+ * deterministic path from tickets[0] (required for tombstone processing to
+ * stay exact — a tombstone's tickets:[] genuinely means "this note has no
+ * ticket," not "unknown"), this searches every existing prefix folder, the
+ * same "no prefix given" fallback listNotes already uses below. _general is
+ * tried first since that's where a truly general note lives.
+ *
+ * @param {string} externalId
+ * @param {{ configDir?: string }} [opts]
+ * @returns {{ deleted: boolean, prefix: string|null }}
+ */
+export function deleteNoteAnyPrefix(externalId, { configDir = DEFAULT_CONFIG_DIR } = {}) {
+  if (!EXTERNAL_ID_PATTERN.test(externalId)) {
+    throw new Error(`Invalid externalId: "${externalId}"`);
+  }
+
+  const prefixes = [GENERAL_BUCKET, ...allPrefixDirs(configDir).filter(p => p !== GENERAL_BUCKET)];
+  for (const prefix of prefixes) {
+    const notePath = path.join(prefixDir(configDir, prefix), externalId);
+    if (fs.existsSync(notePath)) {
+      fs.unlinkSync(notePath);
+      return { deleted: true, prefix };
+    }
+  }
+  return { deleted: false, prefix: null };
+}
+
+/**
  * Overwrites an existing local note's body in place — used by the jtb skill's
  * generator/validator quality loop to swap in a better draft after `note add`
  * already saved the original. Patch-only: never creates a note, and every

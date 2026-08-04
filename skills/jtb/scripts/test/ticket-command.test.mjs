@@ -416,6 +416,22 @@ describe('runTicketTransitionList', () => {
     assert.equal(result.ok, true);
     assert.deepEqual(result.options, []);
   });
+
+  test('default (cliHints unset) prints CLI flag syntax in the discovery hint', async () => {
+    const deps = baseDeps();
+    await runTicketTransitionList(['PROJ-1'], deps);
+    assert.match(deps.stream.lines.join(''), /--target="<name>" --confirm/);
+  });
+
+  test('cliHints:false prints MCP-shaped hint (named args, not CLI flags) in the discovery hint', async () => {
+    const deps = baseDeps();
+    const result = await runTicketTransitionList(['PROJ-1'], { ...deps, cliHints: false });
+    assert.equal(result.ok, true);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /target="<name>" and confirm: true/);
+    assert.doesNotMatch(output, /--target=/);
+    assert.doesNotMatch(output, /--confirm\b/);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -438,6 +454,15 @@ describe('runTicketTransition — usage validation', () => {
     assert.equal(result.ok, false);
     assert.equal(transitionCalled, false);
     assert.match(deps.stream.lines.join(''), /--confirm/);
+  });
+
+  test('cliHints:false refuses with MCP-shaped wording (confirm: true, not --confirm)', async () => {
+    const deps = baseDeps();
+    const result = await runTicketTransition(['PROJ-1', '--target=Done'], { ...deps, cliHints: false });
+    assert.equal(result.ok, false);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /without confirm: true/);
+    assert.doesNotMatch(output, /--confirm/);
   });
 });
 
@@ -969,6 +994,22 @@ describe('runTicketLinkList — happy path', () => {
     assert.deepEqual(result.types, []);
     assert.match(deps.stream.lines.join(''), /No link types available/);
   });
+
+  test('default (cliHints unset) prints CLI flag syntax in the discovery hint', async () => {
+    const deps = baseDeps();
+    await runTicketLinkList(['PROJ-1', 'PROJ-2'], deps);
+    assert.match(deps.stream.lines.join(''), /--type="<name>" --confirm/);
+  });
+
+  test('cliHints:false prints MCP-shaped hint (named args, not CLI flags) in the discovery hint', async () => {
+    const deps = baseDeps();
+    const result = await runTicketLinkList(['PROJ-1', 'PROJ-2'], { ...deps, cliHints: false });
+    assert.equal(result.ok, true);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /type="<name>" and confirm: true/);
+    assert.doesNotMatch(output, /--type=/);
+    assert.doesNotMatch(output, /--confirm\b/);
+  });
 });
 
 describe('runTicketLinkList — read failure', () => {
@@ -1004,6 +1045,15 @@ describe('runTicketLink — usage validation', () => {
     assert.equal(result.ok, false);
     assert.equal(linkCalled, false);
     assert.match(deps.stream.lines.join(''), /--confirm/);
+  });
+
+  test('cliHints:false refuses with MCP-shaped wording (confirm: true, not --confirm)', async () => {
+    const deps = baseDeps();
+    const result = await runTicketLink(['PROJ-1', 'PROJ-2', '--type=duplicate'], { ...deps, cliHints: false });
+    assert.equal(result.ok, false);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /without confirm: true/);
+    assert.doesNotMatch(output, /--confirm/);
   });
 });
 

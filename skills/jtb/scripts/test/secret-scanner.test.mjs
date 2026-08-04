@@ -93,6 +93,36 @@ describe('scanForSecrets — regression: secrets split by inserted whitespace', 
     const evaded = scanForSecrets({ title: 'x', tags: [], body: `${secret.slice(0, 18)} wall ${secret.slice(18, 36)} wall ${secret.slice(36)}` });
     assert.equal(evaded.rejected, false, 'documents the known gap — see isLabelWord doc comment for why this is accepted, not fixed');
   });
+
+  test('L-2 regression: a low-entropy API-key-shaped secret, split by a space and immediately preceded by an ordinary word, is still rejected', () => {
+    // Low-entropy on purpose (heavily repeated character) so this can only be
+    // caught by the exact-shape hard-reject pattern, never by the entropy
+    // layer — isolates the word-boundary-anchor bug from the (unrelated,
+    // already-passing) entropy-based detection covered by the tests above.
+    // Before the fix: fully despacing the whole note glued "the" directly
+    // onto "sk-", killing the pattern's leading \b so it silently missed.
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'the sk- AAAAAAAAAAAAAAAAAAAAAAAA1 key' });
+    assert.equal(result.rejected, true);
+    assert.ok(result.reasons.some(r => /API key/.test(r)));
+  });
+
+  test('L-2 regression: same bug shape for the GitHub-token pattern, the other \\b-anchored hard-reject rule', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'token ghp_ AAAAAAAAAAAAAAAAAAAAAAAA1 here' });
+    assert.equal(result.rejected, true);
+    assert.ok(result.reasons.some(r => /GitHub token/.test(r)));
+  });
+
+  // Caught in code review of the L-2 fix above: bounding the rejoin to
+  // MAX_JOINED_CHUNKS (borrowed from the entropy heuristic, where an
+  // unbounded join risks false positives on prose — a concern that doesn't
+  // apply to an exact-shape hard-reject pattern) silently dropped the
+  // original unbounded coverage for a secret fragmented wider than that
+  // window. An unbounded fallback check restores it.
+  test('a hard-reject secret split into more pieces than the bounded rejoin window (one character per token) is still rejected', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'A K I A 1 2 3 4 5 6 7 8 9 0 A B C D E F G H' });
+    assert.equal(result.rejected, true);
+    assert.ok(result.reasons.some(r => /AWS access key/.test(r)));
+  });
 });
 
 describe('scanForSecrets — regression: unlabeled hex secret in backticks with no context word is rejected', () => {

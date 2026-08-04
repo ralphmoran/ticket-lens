@@ -2,6 +2,16 @@
  * Best-effort CLI activity counter — tracks fetch, triage, and invocation
  * counts between pushes. Stored in ~/.ticketlens/activity.json.
  *
+ * fetch_count/triage_run_count are tracked per profile (data.byProfile), since
+ * they're always incremented at a point where a resolved profile is known and
+ * a push (`readAndResetActivity`) reports them for one specific profile — a
+ * push under profile A must never bundle in runs that actually happened under
+ * profile B (L-6, 2026-08-01 audit). Every other field (invocations, commands,
+ * drafts_kept, drafts_deleted, briefs_with_recall_injection) stays flat/global:
+ * they're incremented from bin/ticketlens.mjs before any command has resolved a
+ * profile at all (many commands, e.g. `license`/`cache`, have no profile concept
+ * whatsoever), so there's no meaningful profile to bucket them under.
+ *
  * Intentional limitations (acceptable for a UX metric, NOT suitable for billing):
  *
  * - Not transactional: if a push succeeds server-side but the network returns
@@ -19,12 +29,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ACTIVITY_FILE = 'activity.json';
+const EMPTY_PROFILE_BUCKET = { fetch_count: 0, triage_run_count: 0 };
 
 function read(configDir) {
   try {
     return JSON.parse(fs.readFileSync(path.join(configDir, ACTIVITY_FILE), 'utf8'));
   } catch {
-    return { fetch_count: 0, triage_run_count: 0, invocations: 0, commands: {}, drafts_kept: 0, drafts_deleted: 0, briefs_with_recall_injection: 0 };
+    return { byProfile: {}, invocations: 0, commands: {}, drafts_kept: 0, drafts_deleted: 0, briefs_with_recall_injection: 0 };
   }
 }
 
@@ -48,12 +59,26 @@ function increment(configDir, field) {
   return data[field];
 }
 
-export function incrementFetch(configDir) {
-  increment(configDir, 'fetch_count');
+/**
+ * @param {string} configDir
+ * @param {string} profile
+ * @param {'fetch_count'|'triage_run_count'} field
+ */
+function incrementProfileField(configDir, profile, field) {
+  const data = read(configDir);
+  if (!data.byProfile) data.byProfile = {};
+  if (!data.byProfile[profile]) data.byProfile[profile] = { ...EMPTY_PROFILE_BUCKET };
+  const bucket = data.byProfile[profile];
+  bucket[field] = (bucket[field] ?? 0) + 1;
+  write(configDir, data);
 }
 
-export function incrementTriageRun(configDir) {
-  increment(configDir, 'triage_run_count');
+export function incrementFetch(configDir, profile) {
+  incrementProfileField(configDir, profile, 'fetch_count');
+}
+
+export function incrementTriageRun(configDir, profile) {
+  incrementProfileField(configDir, profile, 'triage_run_count');
 }
 
 export function incrementInvocation(configDir) {
@@ -147,25 +172,35 @@ export function recordTokensSaved(configDir, command, tokens) {
 }
 
 /**
- * Returns the current counters and resets them to zero.
- * Call only after a confirmed successful push.
+ * Returns the current counters and resets them to zero. Call only after a
+ * confirmed successful push, for the exact profile that push was for.
+ *
+ * fetch_count/triage_run_count are scoped to the given profile — only that
+ * profile's bucket is read and reset, so a push for profile A never bundles
+ * in (or clears) runs that happened under a different profile B. Every other
+ * field stays global, same as before: reset regardless of which profile
+ * triggered this push (see the module doc comment for why).
  *
  * @param {string} configDir
+ * @param {string} profile
  * @returns {{ fetch_count: number, triage_run_count: number, invocations: number, commands: object }}
  */
-export function readAndResetActivity(configDir) {
+export function readAndResetActivity(configDir, profile) {
   const data = read(configDir);
+  const profileBucket = data.byProfile?.[profile] ?? EMPTY_PROFILE_BUCKET;
   const snapshot = {
-    fetch_count:                  data.fetch_count                  ?? 0,
-    triage_run_count:             data.triage_run_count             ?? 0,
+    fetch_count:                  profileBucket.fetch_count         ?? 0,
+    triage_run_count:             profileBucket.triage_run_count    ?? 0,
     invocations:                  data.invocations                  ?? 0,
     commands:                     data.commands                     ?? {},
     drafts_kept:                  data.drafts_kept                  ?? 0,
     drafts_deleted:               data.drafts_deleted               ?? 0,
     briefs_with_recall_injection: data.briefs_with_recall_injection ?? 0,
   };
+  const byProfile = { ...(data.byProfile ?? {}) };
+  delete byProfile[profile];
   write(configDir, {
-    fetch_count: 0, triage_run_count: 0, invocations: 0, commands: {},
+    byProfile, invocations: 0, commands: {},
     drafts_kept: 0, drafts_deleted: 0, briefs_with_recall_injection: 0,
     ...(data.pulses ? { pulses: data.pulses } : {}),
   });

@@ -136,23 +136,29 @@ export async function fetchRecallSettings({
  * with a hash of cliToken so a later account switch never serves a stale
  * team's settings as a "fallback."
  *
+ * Also reports how the values were obtained, which `recall settings` needs
+ * for an accurate "Source:" line — cliToken presence alone can't tell those
+ * apart, since a live fetch and a silent cache fallback both had a token but
+ * only one is actually current. Callers that don't care use the values-only
+ * getEffectiveRecallSettings below.
+ *
  * @param {object} opts
  * @param {string} [opts.cliToken]
  * @param {string} [opts.configDir]
  * @param {() => number} [opts.now]
  * @param {Function} [opts.fetchRecallSettingsFn]
- * @returns {Promise<{flush_cooldown_ms: number, timeout_ms: number, max_queue_size: number, max_entry_age_ms: number}>}
+ * @returns {Promise<{values: object, source: 'no-token'|'live'|'cache-fallback'}>}
  */
-export async function getEffectiveRecallSettings({
+export async function getEffectiveRecallSettingsWithSource({
   cliToken,
   configDir = DEFAULT_CONFIG_DIR,
   now = () => Date.now(),
   fetchRecallSettingsFn = fetchRecallSettings,
 } = {}) {
-  if (!cliToken) return readEffectiveRecallSettings(configDir);
+  if (!cliToken) return { values: readEffectiveRecallSettings(configDir), source: 'no-token' };
 
   const result = await fetchRecallSettingsFn({ cliToken });
-  if (!result.ok) return readEffectiveRecallSettings(configDir, { cliToken });
+  if (!result.ok) return { values: readEffectiveRecallSettings(configDir, { cliToken }), source: 'cache-fallback' };
 
   writeFileAtomically(cachePath(configDir), JSON.stringify({
     values: result.values,
@@ -164,5 +170,17 @@ export async function getEffectiveRecallSettings({
   for (const field of Object.keys(DEFAULT_RECALL_SETTINGS)) {
     effective[field] = clamp(field, result.values[field]);
   }
-  return effective;
+  return { values: effective, source: 'live' };
+}
+
+/**
+ * Values-only view of the same resolution — the contract every caller other
+ * than `recall settings` (recall-queue.mjs) uses.
+ *
+ * @param {object} opts - same as getEffectiveRecallSettingsWithSource
+ * @returns {Promise<{flush_cooldown_ms: number, timeout_ms: number, max_queue_size: number, max_entry_age_ms: number}>}
+ */
+export async function getEffectiveRecallSettings(opts = {}) {
+  const { values } = await getEffectiveRecallSettingsWithSource(opts);
+  return values;
 }

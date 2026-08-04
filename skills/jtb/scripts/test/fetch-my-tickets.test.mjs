@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { run } from '../fetch-my-tickets.mjs';
@@ -1326,6 +1326,51 @@ describe('triage — profile label resolution (H-3)', () => {
     try {
       await run(['triage', '--plain', '--static'], {}, mockFetcher, configDir);
       assert.ok(out.stdout.includes('This week:'), `Expected inline stats footer, got: ${out.stdout}`);
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('triage — per-profile activity counters (L-6)', () => {
+  function setupTwoProfileConfig() {
+    const configDir = mkdtempSync(join(tmpdir(), 'ticketlens-'));
+    writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({
+      profiles: {
+        advent: {
+          baseUrl: 'https://test.atlassian.net',
+          auth: 'cloud',
+          email: 'john@example.com',
+          ticketPrefixes: ['ADV'],
+        },
+        corenexus: {
+          baseUrl: 'https://test.atlassian.net',
+          auth: 'cloud',
+          email: 'john@example.com',
+          ticketPrefixes: ['CNV'],
+        },
+      },
+      default: 'advent',
+    }));
+    writeFileSync(join(configDir, 'credentials.json'), JSON.stringify({
+      advent: { apiToken: 'test-token' },
+      corenexus: { apiToken: 'test-token' },
+    }));
+    return configDir;
+  }
+
+  it('L-6a regression: triage runs under two different profiles increment isolated per-profile counters in the same activity.json, not one shared global count', async () => {
+    const configDir = setupTwoProfileConfig();
+    const out = captureOutput();
+    try {
+      await run(['triage', '--profile=advent', '--plain', '--static'], {}, mockFetcher, configDir);
+      await run(['triage', '--profile=corenexus', '--plain', '--static'], {}, mockFetcher, configDir);
+      await run(['triage', '--profile=advent', '--plain', '--static'], {}, mockFetcher, configDir);
+
+      const activity = JSON.parse(readFileSync(join(configDir, 'activity.json'), 'utf8'));
+      assert.equal(activity.byProfile.advent.triage_run_count, 2, 'advent ran twice');
+      assert.equal(activity.byProfile.corenexus.triage_run_count, 1, 'corenexus ran once, unaffected by advent\'s runs');
     } finally {
       out.restore();
       rmSync(configDir, { recursive: true, force: true });

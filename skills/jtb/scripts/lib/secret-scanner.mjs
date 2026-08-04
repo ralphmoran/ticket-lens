@@ -142,19 +142,31 @@ function isLabelWord(token) {
  * Rejoins runs of adjacent whitespace-separated tokens (no separator) so a secret
  * broken up by whitespace — accidental soft-wrap, or a deliberate space/tab/
  * newline inserted to dodge the scanner — still reads as one contiguous string.
- * A run only stops at a label word (see isLabelWord), so a real context word
- * like "commit" can't glue onto an unrelated payload.
+ *
+ * `stopAtLabelWords` (the default) ends a run at a label word (see isLabelWord),
+ * so a real context word like "commit" can't glue onto an unrelated payload and
+ * trip the entropy heuristic. Pass false for the HARD_REJECT_PATTERNS pass: those
+ * match an exact literal prefix (AKIA, sk-, ghp_, eyJ, -----BEGIN) rather than
+ * guessing from shape, so ordinary prose can't turn into a false positive there —
+ * and a fixed secret prefix can itself look like an ordinary word to isLabelWord
+ * ("AKIA" is indistinguishable from an acronym by that heuristic), which would
+ * otherwise stop it from ever rejoining with a whitespace-split suffix.
+ *
+ * Either way a run only ever extends forward from its own start index, so a word
+ * standing immediately *before* a secret is never glued onto it — that's what
+ * keeps the leading \b anchor in the boundary-anchored patterns intact.
  *
  * @param {string[]} tokens
+ * @param {{ stopAtLabelWords?: boolean }} [opts]
  * @returns {string[]}
  */
-function joinedChunkRuns(tokens) {
+function joinedChunkRuns(tokens, { stopAtLabelWords = true } = {}) {
   const runs = [];
   for (let i = 0; i < tokens.length; i++) {
-    if (isLabelWord(tokens[i])) continue;
+    if (stopAtLabelWords && isLabelWord(tokens[i])) continue;
     let joined = tokens[i];
     for (let j = i + 1; j < Math.min(tokens.length, i + MAX_JOINED_CHUNKS); j++) {
-      if (isLabelWord(tokens[j])) break;
+      if (stopAtLabelWords && isLabelWord(tokens[j])) break;
       joined += tokens[j];
       runs.push(joined);
     }
@@ -171,19 +183,34 @@ export function scanForSecrets({ title = '', tags = [], body = '' } = {}) {
   const reasons = [];
   const warnings = [];
 
+  const tokens = combined.split(/\s+/).filter(Boolean);
+  const candidates = [...tokens, ...joinedChunkRuns(tokens)];
+
   // A known secret shape (AWS key, API key prefix, JWT, PEM block...) is recognized
-  // by a specific literal prefix, so it's safe to also check a fully whitespace-
-  // stripped variant of the text — a stray space/tab/newline dropped into the
-  // secret (soft-wrap or deliberate evasion) can't hide it from its own shape.
+  // by a specific literal prefix. Checked three ways, each catching what the
+  // others miss:
+  //   1. combined            — the unsplit occurrence.
+  //   2. hardRejectRuns      — each individually rejoined run (bounded to
+  //      MAX_JOINED_CHUNKS tokens), which keeps the leading \b anchor intact
+  //      for the two boundary-anchored patterns (API key, GitHub token) —
+  //      stripping whitespace from the whole note at once would instead glue
+  //      an unrelated preceding word onto the secret's first character and
+  //      kill that anchor. This is the primary, anchor-safe check.
+  //   3. despacedCombined    — the whole note with all whitespace stripped,
+  //      unbounded in length. A fallback for fragmentation wider than
+  //      MAX_JOINED_CHUNKS tokens (e.g. a secret typed one character per
+  //      token) that #2's bounded window can't reach. Reintroduces the same
+  //      anchor risk #2 was built to avoid, but only as an additional check
+  //      alongside #2, never instead of it — it can only add a detection
+  //      that #1/#2 missed, never remove one they already caught.
   const despacedCombined = combined.replace(/\s+/g, '');
+  const hardRejectRuns = joinedChunkRuns(tokens, { stopAtLabelWords: false });
   for (const { name, re } of HARD_REJECT_PATTERNS) {
-    if (re.test(combined) || re.test(despacedCombined)) {
+    if (re.test(combined) || hardRejectRuns.some(c => re.test(c)) || re.test(despacedCombined)) {
       reasons.push(`Looks like a${/^[aeiou]/i.test(name) ? 'n' : ''} ${name}.`);
     }
   }
 
-  const tokens = combined.split(/\s+/).filter(Boolean);
-  const candidates = [...tokens, ...joinedChunkRuns(tokens)];
   // A candidate containing a real email address is skipped: with ordinary words
   // now eligible to join (needed to catch e.g. "wall"-separated or base64-letter-
   // only split secrets), an email joined with an adjacent word can produce a long

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { writeNote, listNotes, rebuildIndex, resolvePrefix, upsertPulledNote, deleteNote, patchNoteBody } from '../lib/recall-vault.mjs';
+import { writeNote, listNotes, rebuildIndex, resolvePrefix, upsertPulledNote, deleteNote, deleteNoteAnyPrefix, patchNoteBody } from '../lib/recall-vault.mjs';
 import { timeAgo } from '../lib/config.mjs';
 
 let configDir;
@@ -374,6 +374,46 @@ describe('deleteNote — removes a tombstoned note without scanning the whole va
 
   test('an invalid ticket key throws rather than resolving to an unintended path', () => {
     assert.throws(() => deleteNote({ external_id: '1700000000000-abcdef.md', tickets: ['../../etc'] }, { configDir }));
+  });
+});
+
+describe('deleteNoteAnyPrefix — deletes when the caller does not know which prefix folder a note lives in', () => {
+  test('L-3 regression: finds and deletes a note under its real ticket prefix, not just _general', () => {
+    const { id, path: notePath } = writeNote({ title: 'x', ticketKeys: ['CNV1-25'], author: 'a', body: 'x' }, { configDir });
+    assert.equal(fs.existsSync(notePath), true);
+
+    const result = deleteNoteAnyPrefix(id, { configDir });
+
+    assert.equal(result.deleted, true);
+    assert.equal(result.prefix, 'CNV1');
+    assert.equal(fs.existsSync(notePath), false);
+  });
+
+  test('a genuinely general note (no ticket) is still found in _general', () => {
+    const { id, path: notePath } = writeNote({ title: 'x', ticketKeys: [], author: 'a', body: 'x' }, { configDir });
+
+    const result = deleteNoteAnyPrefix(id, { configDir });
+
+    assert.equal(result.deleted, true);
+    assert.equal(result.prefix, '_general');
+    assert.equal(fs.existsSync(notePath), false);
+  });
+
+  test('returns deleted:false when the id does not exist in any prefix folder', () => {
+    writeNote({ title: 'x', ticketKeys: ['CNV1-25'], author: 'a', body: 'x' }, { configDir });
+    const result = deleteNoteAnyPrefix('1999999999999-abcdef.md', { configDir });
+    assert.equal(result.deleted, false);
+    assert.equal(result.prefix, null);
+  });
+
+  test('rejects an externalId that does not match the generated-note-id shape, same guard as deleteNote', () => {
+    assert.throws(() => deleteNoteAnyPrefix('../../../etc/passwd', { configDir }));
+  });
+
+  test('an empty vault (no prefix directories at all) returns deleted:false without throwing', () => {
+    const result = deleteNoteAnyPrefix('1700000000000-abcdef.md', { configDir: `${configDir}/never-created` });
+    assert.equal(result.deleted, false);
+    assert.equal(result.prefix, null);
   });
 });
 
