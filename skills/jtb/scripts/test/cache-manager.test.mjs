@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { parseAge, getCacheEntries, getCacheSize, formatAge, run } from '../lib/cache-manager.mjs';
+import { parseAge, getCacheEntries, getCacheSize, formatAge, run, filterEntriesByProfile } from '../lib/cache-manager.mjs';
 
 let tmpDir;
 beforeEach(() => {
@@ -44,6 +44,27 @@ function makeProfiles(configDir, profiles) {
     JSON.stringify({ profiles }, null, 2)
   );
 }
+
+// ─── filterEntriesByProfile (exported) ─────────────────────────────────────
+
+describe('filterEntriesByProfile (exported)', () => {
+  it('returns only entries whose ticket prefix matches the profile\'s ticketPrefixes', () => {
+    const entries = [
+      { ticketKey: 'ACME-1', filename: 'a.png', size: 10 },
+      { ticketKey: 'GLBX-1', filename: 'b.png', size: 20 },
+    ];
+    const config = { profiles: { acme: { ticketPrefixes: ['ACME'] } } };
+    const result = filterEntriesByProfile(entries, 'acme', config);
+    assert.deepEqual(result.map(e => e.ticketKey), ['ACME-1']);
+  });
+
+  it('returns all entries unfiltered when the profile has no ticketPrefixes configured', () => {
+    const entries = [{ ticketKey: 'ACME-1', filename: 'a.png', size: 10 }];
+    const config = { profiles: { acme: {} } };
+    const result = filterEntriesByProfile(entries, 'acme', config);
+    assert.equal(result.length, 1);
+  });
+});
 
 // ─── parseAge ────────────────────────────────────────────────────────────────
 

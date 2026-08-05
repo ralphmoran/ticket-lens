@@ -123,7 +123,7 @@ function groupEntriesByProfile(entries, config) {
  * Filters entries to only those belonging to the given profile (by ticketPrefixes).
  * Returns all entries if the profile has no ticketPrefixes configured.
  */
-function filterEntriesByProfile(entries, profileName, config) {
+export function filterEntriesByProfile(entries, profileName, config) {
   const prefixes = config?.profiles?.[profileName]?.ticketPrefixes ?? [];
   if (prefixes.length === 0) return entries;
   return entries.filter(e => prefixes.includes(e.ticketKey.split('-')[0]));
