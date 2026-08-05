@@ -37,7 +37,7 @@ function renderPlain(checks, { fixed, skipped, stream }) {
 }
 
 async function applyFixes(rawResults, {
-  configDir, stream,
+  configDir, profileName, format, stream,
   revalidateLicenseFn, checkLicenseFreshnessFn,
   unlinkFn, checkCacheHealthFn,
   flushQueueFn, checkRecallQueueFn, readCliTokenFn,
@@ -47,18 +47,18 @@ async function applyFixes(rawResults, {
   const byId = Object.fromEntries(rawResults.map(r => [r.id, r]));
 
   if (byId['license-freshness'] && !byId['license-freshness'].ok && byId['license-freshness'].fixable) {
-    stream.write('Revalidating license...\n');
+    if (format === 'plain') stream.write('Revalidating license...\n');
     await revalidateLicenseFn({ configDir });
     const recheck = checkLicenseFreshnessFn({ configDir });
     if (recheck.ok) { fixed.push('license-freshness'); byId['license-freshness'] = recheck; }
   }
 
   if (byId['cache-health'] && !byId['cache-health'].ok && byId['cache-health'].fixable) {
-    stream.write('Clearing corrupt cache entries...\n');
+    if (format === 'plain') stream.write('Clearing corrupt cache entries...\n');
     for (const entry of byId['cache-health'].corruptEntries) {
       try { unlinkFn(entry.localPath); } catch { /* already gone */ }
     }
-    const recheck = checkCacheHealthFn({ configDir });
+    const recheck = checkCacheHealthFn({ configDir, profileName });
     if (recheck.ok) { fixed.push('cache-health'); byId['cache-health'] = recheck; }
   }
 
@@ -67,7 +67,7 @@ async function applyFixes(rawResults, {
     if (!cliToken) {
       skipped.push({ id: 'recall-queue', reason: 'Not logged in — run `ticketlens login` first.' });
     } else {
-      stream.write('Flushing recall queue...\n');
+      if (format === 'plain') stream.write('Flushing recall queue...\n');
       await flushQueueFn({ cliToken, configDir });
       const recheck = checkRecallQueueFn({ configDir });
       if (recheck.ok) { fixed.push('recall-queue'); byId['recall-queue'] = recheck; }
@@ -118,7 +118,7 @@ export async function runDoctor(args, {
   let finalResults = rawResults;
   if (shouldFix) {
     const applied = await applyFixes(rawResults, {
-      configDir, stream,
+      configDir, profileName, format, stream,
       revalidateLicenseFn, checkLicenseFreshnessFn,
       unlinkFn, checkCacheHealthFn,
       flushQueueFn, checkRecallQueueFn, readCliTokenFn,

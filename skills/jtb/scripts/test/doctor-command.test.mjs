@@ -191,4 +191,35 @@ describe('runDoctor — --fix mode', () => {
     assert.deepEqual(parsed.skipped, []);
     assert.equal(result.ok, false);
   });
+
+  it('--fix --profile=X reports cache-health in fixed[] when X has corrupt entries that are fixed, even if an unrelated profile has unrelated corruption', async () => {
+    const stream = fakeStream();
+    const deleted = [];
+    const unlinkFn = (p) => deleted.push(p);
+    let checkCacheHealthCallCount = 0;
+    let seenProfileNames = [];
+    const checkCacheHealthFn = (opts) => {
+      checkCacheHealthCallCount++;
+      seenProfileNames.push(opts.profileName);
+      // First call (initial check) for profile='acme': has 1 corrupt entry
+      if (checkCacheHealthCallCount === 1) {
+        return { id: 'cache-health', label: 'Attachment cache', ok: false, message: '1 corrupt', hint: null, fixable: true, corruptEntries: [{ ticketKey: 'ACME-1', filename: 'bad.png', localPath: '/cache/acme/bad.png', size: 0 }] };
+      }
+      // Recheck for profile='acme' after deletion: should be clean (the one corrupt entry was deleted)
+      if (checkCacheHealthCallCount === 2 && opts.profileName === 'acme') {
+        return { id: 'cache-health', label: 'Attachment cache', ok: true, message: 'clean', hint: null, fixable: false, corruptEntries: [] };
+      }
+      // Fallback (shouldn't be called in this test)
+      return { id: 'cache-health', label: 'Attachment cache', ok: true, message: 'ok', hint: null, fixable: false, corruptEntries: [] };
+    };
+    const result = await runDoctor(['--fix', '--profile=acme', '--format=json'], {
+      stream, unlinkFn,
+      ...allOkChecks({ checkCacheHealthFn }),
+    });
+    assert.deepEqual(deleted, ['/cache/acme/bad.png']);
+    assert.deepEqual(seenProfileNames, ['acme', 'acme']);
+    const parsed = JSON.parse(stream.text);
+    assert.deepEqual(parsed.fixed, ['cache-health']);
+    assert.equal(result.ok, true);
+  });
 });
