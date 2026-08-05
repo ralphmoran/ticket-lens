@@ -8,11 +8,13 @@
  */
 
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
-import { resolveProfile, loadCredentials } from './profile-resolver.mjs';
+import { resolveProfile, loadCredentials, loadProfiles } from './profile-resolver.mjs';
 import { checkLicense, GRACE_DAYS } from './license.mjs';
 import { resolveAdapter } from './resolve-adapter.mjs';
 import { classifyError } from './error-classifier.mjs';
 import { testConnections } from './connection-tester.mjs';
+import { formatSize } from './attachment-downloader.mjs';
+import { getCacheEntries, filterEntriesByProfile } from './cache-manager.mjs';
 
 const NOOP_STREAM = { write: () => true };
 
@@ -154,5 +156,35 @@ export async function checkConnectivity({
       : `${failedCount}/${results.length} profile(s) failed to connect.`,
     hint: failedCount === 0 ? null : summary,
     fixable: false,
+  };
+}
+
+export function checkCacheHealth({
+  configDir = DEFAULT_CONFIG_DIR,
+  profileName = null,
+  getCacheEntriesFn = getCacheEntries,
+  loadProfilesFn = loadProfiles,
+  filterEntriesByProfileFn = filterEntriesByProfile,
+} = {}) {
+  let entries = getCacheEntriesFn(configDir);
+  if (profileName) {
+    entries = filterEntriesByProfileFn(entries, profileName, loadProfilesFn(configDir));
+  }
+
+  const corrupt = entries.filter(e => e.size === 0);
+  if (corrupt.length === 0) {
+    const totalSize = entries.reduce((sum, e) => sum + e.size, 0);
+    return {
+      id: 'cache-health', label: 'Attachment cache', ok: true,
+      message: `${entries.length} cached file(s), ${formatSize(totalSize)}, none corrupt.`,
+      hint: null, fixable: false, corruptEntries: [],
+    };
+  }
+
+  return {
+    id: 'cache-health', label: 'Attachment cache', ok: false,
+    message: `${corrupt.length} corrupt (0-byte) cached file(s) found.`,
+    hint: 'Run `ticketlens doctor --fix` to remove them.',
+    fixable: true, corruptEntries: corrupt,
   };
 }

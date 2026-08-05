@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { checkProfileConfig, checkLicenseFreshness, checkConnectivity } from '../lib/doctor-checks.mjs';
+import { checkProfileConfig, checkLicenseFreshness, checkConnectivity, checkCacheHealth } from '../lib/doctor-checks.mjs';
 
 let configDir;
 
@@ -178,5 +178,49 @@ describe('checkConnectivity', () => {
     const result = await checkConnectivity({ configDir, profileName: 'acme', resolveAdapterFn });
     assert.equal(result.ok, false);
     assert.match(result.message, /Authentication failed/);
+  });
+});
+
+describe('checkCacheHealth', () => {
+  it('passes with a summary when there are no cached files', () => {
+    const getCacheEntriesFn = () => [];
+    const result = checkCacheHealth({ configDir, getCacheEntriesFn });
+    assert.equal(result.id, 'cache-health');
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.corruptEntries, []);
+  });
+
+  it('passes when all cached entries have non-zero size', () => {
+    const getCacheEntriesFn = () => [
+      { ticketKey: 'ACME-1', filename: 'a.png', localPath: '/x/a.png', size: 1024, mtimeMs: Date.now() },
+    ];
+    const result = checkCacheHealth({ configDir, getCacheEntriesFn });
+    assert.equal(result.ok, true);
+    assert.match(result.message, /1 cached file/);
+  });
+
+  it('fails and is fixable when a cached entry is 0 bytes, listing it in corruptEntries', () => {
+    const getCacheEntriesFn = () => [
+      { ticketKey: 'ACME-1', filename: 'good.png', localPath: '/x/good.png', size: 512, mtimeMs: Date.now() },
+      { ticketKey: 'ACME-1', filename: 'bad.png', localPath: '/x/bad.png', size: 0, mtimeMs: Date.now() },
+    ];
+    const result = checkCacheHealth({ configDir, getCacheEntriesFn });
+    assert.equal(result.ok, false);
+    assert.equal(result.fixable, true);
+    assert.equal(result.corruptEntries.length, 1);
+    assert.equal(result.corruptEntries[0].filename, 'bad.png');
+  });
+
+  it('scopes entries to one profile when profileName is given', () => {
+    const getCacheEntriesFn = () => [
+      { ticketKey: 'ACME-1', filename: 'a.png', localPath: '/x/a.png', size: 100, mtimeMs: Date.now() },
+      { ticketKey: 'GLBX-1', filename: 'b.png', localPath: '/x/b.png', size: 0, mtimeMs: Date.now() },
+    ];
+    const loadProfilesFn = () => ({ profiles: { acme: { ticketPrefixes: ['ACME'] } } });
+    const filterEntriesByProfileFn = (entries, name) =>
+      entries.filter(e => e.ticketKey.startsWith('ACME'));
+    const result = checkCacheHealth({ configDir, profileName: 'acme', getCacheEntriesFn, loadProfilesFn, filterEntriesByProfileFn });
+    // GLBX-1's 0-byte entry is filtered out by profile scope — only ACME-1 (healthy) remains.
+    assert.equal(result.ok, true);
   });
 });
