@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { checkProfileConfig, checkLicenseFreshness, checkConnectivity, checkCacheHealth } from '../lib/doctor-checks.mjs';
+import { checkProfileConfig, checkLicenseFreshness, checkConnectivity, checkCacheHealth, checkRecallQueue } from '../lib/doctor-checks.mjs';
 
 let configDir;
 
@@ -222,5 +222,24 @@ describe('checkCacheHealth', () => {
     const result = checkCacheHealth({ configDir, profileName: 'acme', getCacheEntriesFn, loadProfilesFn, filterEntriesByProfileFn });
     // GLBX-1's 0-byte entry is filtered out by profile scope — only ACME-1 (healthy) remains.
     assert.equal(result.ok, true);
+  });
+});
+
+describe('checkRecallQueue', () => {
+  it('passes when the queue is empty', () => {
+    const readQueueFn = () => [];
+    const result = checkRecallQueue({ configDir, readQueueFn });
+    assert.equal(result.id, 'recall-queue');
+    assert.equal(result.ok, true);
+    assert.match(result.message, /No notes pending/);
+    assert.equal(result.fixable, false);
+  });
+
+  it('fails and is fixable when the queue has any pending entries', () => {
+    const readQueueFn = () => [{ id: 'n1' }, { id: 'n2' }];
+    const result = checkRecallQueue({ configDir, readQueueFn });
+    assert.equal(result.ok, false);
+    assert.equal(result.fixable, true);
+    assert.match(result.message, /2 note/);
   });
 });

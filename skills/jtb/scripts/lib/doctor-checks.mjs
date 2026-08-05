@@ -15,6 +15,7 @@ import { classifyError } from './error-classifier.mjs';
 import { testConnections } from './connection-tester.mjs';
 import { formatSize } from './attachment-downloader.mjs';
 import { getCacheEntries, filterEntriesByProfile } from './cache-manager.mjs';
+import { readQueue } from './recall-queue.mjs';
 
 const NOOP_STREAM = { write: () => true };
 
@@ -186,5 +187,24 @@ export function checkCacheHealth({
     message: `${corrupt.length} corrupt (0-byte) cached file(s) found.`,
     hint: 'Run `ticketlens doctor --fix` to remove them.',
     fixable: true, corruptEntries: corrupt,
+  };
+}
+
+export function checkRecallQueue({
+  configDir = DEFAULT_CONFIG_DIR,
+  readQueueFn = readQueue,
+} = {}) {
+  const entries = readQueueFn(configDir);
+  if (entries.length === 0) {
+    return {
+      id: 'recall-queue', label: 'Recall sync queue', ok: true,
+      message: 'No notes pending sync.', hint: null, fixable: false,
+    };
+  }
+  return {
+    id: 'recall-queue', label: 'Recall sync queue', ok: false,
+    message: `${entries.length} note(s) pending sync.`,
+    hint: 'Run `ticketlens doctor --fix` to retry now, or `ticketlens recall sync`.',
+    fixable: true,
   };
 }
