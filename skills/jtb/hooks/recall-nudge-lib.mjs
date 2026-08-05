@@ -12,6 +12,10 @@ import path from 'node:path';
 export const TICKET_KEY_RE = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/;
 export const RECALL_FLAG_RE = /🔖\s*Recall-flag:/;
 export const NOTE_ADD_RE = /\bticketlens\s+note\s+add\b|\/jtb\s+note\b/;
+// Matches the MCP tool_use name Claude Code gives an MCP server's tool call
+// (mcp__<server-alias>__<tool-name>) — the server alias is whatever the user
+// named it in their own .mcp.json, so only the tool-name suffix is fixed.
+export const NOTE_ADD_MCP_RE = /^mcp__.+__recall_add$/;
 
 export function readStdinJson() {
   const raw = fs.readFileSync(0, 'utf8');
@@ -54,7 +58,11 @@ export function writeState(sessionId, state) {
  * Claude just flagged something every time) and sawNoteAdd gets stuck true
  * (silently disabling the Stop-hook check, since it thinks a note was
  * already added). Only count a real assistant-authored text block for the
- * flag, and only a real executed Bash command for note-add.
+ * flag, and only a real executed note-add — either the CLI (`ticketlens
+ * note add`/`/jtb note` via Bash) or the ticketlens MCP server's recall_add
+ * tool — for note-add. Missing the MCP path here was a real bug: it made
+ * the Stop hook nudge even after a note was genuinely captured via MCP,
+ * since only the Bash/CLI form was ever recognized.
  */
 export function scanTranscript(transcriptPath) {
   const result = { sawTicketKey: false, sawRecallFlag: false, sawNoteAdd: false };
@@ -86,8 +94,10 @@ export function scanTranscript(transcriptPath) {
       if (block.type === 'text' && RECALL_FLAG_RE.test(block.text ?? '')) {
         result.sawRecallFlag = true;
       }
-      if (block.type === 'tool_use' && block.name === 'Bash' && NOTE_ADD_RE.test(block.input?.command ?? '')) {
-        result.sawNoteAdd = true;
+      if (block.type === 'tool_use') {
+        const isCliNoteAdd = block.name === 'Bash' && NOTE_ADD_RE.test(block.input?.command ?? '');
+        const isMcpNoteAdd = NOTE_ADD_MCP_RE.test(block.name ?? '');
+        if (isCliNoteAdd || isMcpNoteAdd) result.sawNoteAdd = true;
       }
     }
   }
