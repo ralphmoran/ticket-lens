@@ -9,6 +9,7 @@
 
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { resolveProfile, loadCredentials } from './profile-resolver.mjs';
+import { checkLicense, GRACE_DAYS } from './license.mjs';
 
 export function checkProfileConfig({
   configDir = DEFAULT_CONFIG_DIR,
@@ -50,6 +51,46 @@ export function checkProfileConfig({
   return {
     id: 'profile-config', label: 'Profile configuration', ok: true,
     message: `Profile "${profile.name}" resolves with a baseUrl and stored credentials.`,
+    hint: null, fixable: false,
+  };
+}
+
+export function checkLicenseFreshness({
+  configDir = DEFAULT_CONFIG_DIR,
+  checkLicenseFn = checkLicense,
+} = {}) {
+  const status = checkLicenseFn(configDir);
+
+  if (!status.key) {
+    return {
+      id: 'license-freshness', label: 'License freshness', ok: true,
+      message: 'Free tier — no license to validate.', hint: null, fixable: false,
+    };
+  }
+
+  if (status.expired) {
+    return {
+      id: 'license-freshness', label: 'License freshness', ok: false,
+      message: 'License expired.',
+      hint: 'Run `ticketlens activate <KEY>` to renew.', fixable: true,
+    };
+  }
+
+  const daysSinceVal = status.validatedAt
+    ? (Date.now() - new Date(status.validatedAt).getTime()) / 86400000
+    : Infinity;
+
+  if (daysSinceVal > GRACE_DAYS) {
+    return {
+      id: 'license-freshness', label: 'License freshness', ok: false,
+      message: `Not revalidated in over ${GRACE_DAYS} days.`,
+      hint: 'Run `ticketlens doctor --fix` to revalidate now.', fixable: true,
+    };
+  }
+
+  return {
+    id: 'license-freshness', label: 'License freshness', ok: true,
+    message: `${status.tier} license active, last validated ${Math.floor(daysSinceVal)} day(s) ago.`,
     hint: null, fixable: false,
   };
 }

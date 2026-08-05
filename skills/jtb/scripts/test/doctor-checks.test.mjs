@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { checkProfileConfig } from '../lib/doctor-checks.mjs';
+import { checkProfileConfig, checkLicenseFreshness } from '../lib/doctor-checks.mjs';
 
 let configDir;
 
@@ -81,5 +81,41 @@ describe('checkProfileConfig', () => {
     const result = checkProfileConfig({ configDir, profileName: 'globex' });
     assert.equal(result.ok, true);
     assert.match(result.message, /"globex"/);
+  });
+});
+
+describe('checkLicenseFreshness', () => {
+  it('passes with "Free tier" when no license key exists', () => {
+    const checkLicenseFn = () => ({ tier: 'free', active: false });
+    const result = checkLicenseFreshness({ checkLicenseFn });
+    assert.equal(result.id, 'license-freshness');
+    assert.equal(result.ok, true);
+    assert.match(result.message, /Free tier/);
+    assert.equal(result.fixable, false);
+  });
+
+  it('fails and is fixable when the license is hard-expired', () => {
+    const checkLicenseFn = () => ({ tier: 'pro', expired: true, key: 'TL-1', validatedAt: new Date().toISOString() });
+    const result = checkLicenseFreshness({ checkLicenseFn });
+    assert.equal(result.ok, false);
+    assert.equal(result.fixable, true);
+    assert.match(result.message, /expired/);
+  });
+
+  it('fails and is fixable when validatedAt is older than GRACE_DAYS', () => {
+    const staleDate = new Date(Date.now() - 31 * 86400000).toISOString();
+    const checkLicenseFn = () => ({ tier: 'pro', expired: false, key: 'TL-1', validatedAt: staleDate });
+    const result = checkLicenseFreshness({ checkLicenseFn });
+    assert.equal(result.ok, false);
+    assert.equal(result.fixable, true);
+    assert.match(result.message, /30 days/);
+  });
+
+  it('passes when validatedAt is within GRACE_DAYS', () => {
+    const freshDate = new Date(Date.now() - 2 * 86400000).toISOString();
+    const checkLicenseFn = () => ({ tier: 'pro', expired: false, key: 'TL-1', validatedAt: freshDate });
+    const result = checkLicenseFreshness({ checkLicenseFn });
+    assert.equal(result.ok, true);
+    assert.match(result.message, /pro/);
   });
 });
