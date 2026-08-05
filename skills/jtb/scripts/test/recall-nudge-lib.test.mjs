@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scanTranscript } from '../../hooks/recall-nudge-lib.mjs';
+import { scanTranscript, lastCapturePath, readLastCaptureAt, writeLastCaptureAt, hasRecentCapture, CAPTURE_FRESHNESS_MS } from '../../hooks/recall-nudge-lib.mjs';
 
 function assistantEntry(blocks) {
   return JSON.stringify({ type: 'assistant', message: { content: blocks } });
@@ -16,6 +16,43 @@ function toolUse(name, input = {}) {
 function text(t) {
   return { type: 'text', text: t };
 }
+
+describe('lastCapture marker (cross-session, survives a session_id rollover)', () => {
+  const cwd = '/fake/test/cwd-for-recall-nudge-lib-tests';
+
+  afterEach(() => {
+    try { rmSync(lastCapturePath(cwd)); } catch { /* not written this test — fine */ }
+  });
+
+  it('hasRecentCapture is false when nothing was ever recorded for this cwd', () => {
+    assert.equal(hasRecentCapture(cwd), false);
+  });
+
+  it('readLastCaptureAt is 0 when nothing was ever recorded', () => {
+    assert.equal(readLastCaptureAt(cwd), 0);
+  });
+
+  it('writeLastCaptureAt then hasRecentCapture is true within the freshness window', () => {
+    const now = Date.now();
+    writeLastCaptureAt(cwd, now);
+    assert.equal(hasRecentCapture(cwd, now + 1000), true);
+  });
+
+  it('hasRecentCapture is false once the freshness window has fully elapsed', () => {
+    const now = Date.now();
+    writeLastCaptureAt(cwd, now);
+    assert.equal(hasRecentCapture(cwd, now + CAPTURE_FRESHNESS_MS + 1), false);
+  });
+
+  it('different cwds get independent markers — one directory\'s capture never masks another\'s', () => {
+    writeLastCaptureAt(cwd, Date.now());
+    assert.equal(hasRecentCapture('/a/totally/different/cwd-never-written'), false);
+  });
+
+  it('CAPTURE_FRESHNESS_MS is 2 hours, per the user-set window', () => {
+    assert.equal(CAPTURE_FRESHNESS_MS, 2 * 60 * 60 * 1000);
+  });
+});
 
 describe('scanTranscript', () => {
   let dir;

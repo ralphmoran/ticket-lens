@@ -1,13 +1,15 @@
 /**
- * Shared helpers for the Recall nudge hooks (recall-nudge-post-tool.mjs,
- * recall-nudge-stop.mjs). Both read the same Claude Code hook stdin JSON
- * and the same session transcript — kept in one place so the detection
- * logic can't drift between the two hooks.
+ * Shared helpers for the Recall nudge Stop hook (recall-nudge-stop.mjs).
+ * The retired PostToolUse mid-session nudge (recall-nudge-post-tool.mjs)
+ * used to share this module too — removed because it only ever matched
+ * Bash tool calls and went silently inert once ticket work moved to MCP
+ * tools, which SKILL.md tells Claude to prefer over Bash whenever available.
  */
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 export const TICKET_KEY_RE = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/;
 export const RECALL_FLAG_RE = /🔖\s*Recall-flag:/;
@@ -42,6 +44,59 @@ export function writeState(sessionId, state) {
   try {
     fs.writeFileSync(statePath(sessionId), JSON.stringify(state));
   } catch { /* best-effort — a lost nudge counter is not worth failing the hook over */ }
+}
+
+// Two hours — how long a real capture in one directory counts as "recent
+// enough" to skip the Stop hook's nag, even from a brand-new session_id.
+export const CAPTURE_FRESHNESS_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Cross-session capture marker, keyed by a hash of `cwd` rather than
+ * `session_id`. The per-session_id state file (readState/writeState above)
+ * cannot answer "was something captured recently" once a compaction/resume
+ * event rolls the session_id over — that starts both a blank dedup state
+ * AND a blank transcript file, so a genuine earlier capture becomes
+ * invisible to scanTranscript(). This marker survives that boundary because
+ * it's keyed by the (stable) working directory instead.
+ *
+ * Lives in a user-private, mode-0700 subdirectory rather than directly in
+ * (often world-writable, on Linux) os.tmpdir() — unlike statePath()'s
+ * session_id (an unguessable UUID), a hash of `cwd` is derived from a much
+ * smaller, guessable input space (common project directory names), so a
+ * predictable path directly in shared tmp could be pre-planted by another
+ * local user on a shared box.
+ */
+function privateTmpDir() {
+  const owner = typeof process.getuid === 'function' ? process.getuid() : os.userInfo().username;
+  const dir = path.join(os.tmpdir(), `ticketlens-recall-nudge-${owner}`);
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch { /* best-effort — a write into it below will just fail safely too */ }
+  return dir;
+}
+
+export function lastCapturePath(cwd) {
+  const hash = crypto.createHash('sha256').update(cwd || 'unknown').digest('hex').slice(0, 16);
+  return path.join(privateTmpDir(), `lastcapture-${hash}.json`);
+}
+
+export function readLastCaptureAt(cwd) {
+  try {
+    return JSON.parse(fs.readFileSync(lastCapturePath(cwd), 'utf8')).lastCaptureAt ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function writeLastCaptureAt(cwd, timestamp) {
+  try {
+    fs.writeFileSync(lastCapturePath(cwd), JSON.stringify({ lastCaptureAt: timestamp }));
+  } catch { /* best-effort — losing this marker only costs one extra nag next rollover */ }
+}
+
+export function hasRecentCapture(cwd, now = Date.now()) {
+  const lastCaptureAt = readLastCaptureAt(cwd);
+  return lastCaptureAt > 0 && (now - lastCaptureAt) < CAPTURE_FRESHNESS_MS;
 }
 
 /**
