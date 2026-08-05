@@ -10,6 +10,11 @@
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { resolveProfile, loadCredentials } from './profile-resolver.mjs';
 import { checkLicense, GRACE_DAYS } from './license.mjs';
+import { resolveAdapter } from './resolve-adapter.mjs';
+import { classifyError } from './error-classifier.mjs';
+import { testConnections } from './connection-tester.mjs';
+
+const NOOP_STREAM = { write: () => true };
 
 export function checkProfileConfig({
   configDir = DEFAULT_CONFIG_DIR,
@@ -92,5 +97,62 @@ export function checkLicenseFreshness({
     id: 'license-freshness', label: 'License freshness', ok: true,
     message: `${status.tier} license active, last validated ${Math.floor(daysSinceVal)} day(s) ago.`,
     hint: null, fixable: false,
+  };
+}
+
+export async function checkConnectivity({
+  configDir = DEFAULT_CONFIG_DIR,
+  profileName = null,
+  cwd = process.cwd(),
+  resolveProfileFn = resolveProfile,
+  loadCredentialsFn = loadCredentials,
+  resolveAdapterFn = resolveAdapter,
+  classifyErrorFn = classifyError,
+  testConnectionsFn = testConnections,
+} = {}) {
+  if (profileName) {
+    const profile = resolveProfileFn(null, { profileName, configDir, cwd });
+    if (!profile) {
+      return {
+        id: 'connectivity', label: 'Tracker connectivity', ok: false,
+        message: `Profile "${profileName}" not found.`, hint: null, fixable: false,
+      };
+    }
+    const creds = loadCredentialsFn(configDir)[profile.name] || {};
+    const conn = {
+      baseUrl: profile.baseUrl, auth: profile.auth, email: profile.email,
+      apiToken: creds.apiToken, pat: creds.pat, allowPrivateIp: profile.allowPrivateIp,
+    };
+    try {
+      await resolveAdapterFn(conn).fetchCurrentUser();
+      return {
+        id: 'connectivity', label: 'Tracker connectivity', ok: true,
+        message: `Profile "${profile.name}" connected successfully.`, hint: null, fixable: false,
+      };
+    } catch (err) {
+      const classified = classifyErrorFn(err, { baseUrl: conn.baseUrl, profileName: profile.name });
+      return {
+        id: 'connectivity', label: 'Tracker connectivity', ok: false,
+        message: classified.message, hint: classified.hint, fixable: false,
+      };
+    }
+  }
+
+  const { results, failedCount } = await testConnectionsFn({ configDir, stream: NOOP_STREAM });
+  if (results.length === 0) {
+    return {
+      id: 'connectivity', label: 'Tracker connectivity', ok: true,
+      message: 'No profiles configured — nothing to test.', hint: null, fixable: false,
+    };
+  }
+  const summary = results.map(r => r.ok ? `${r.name}: ok` : `${r.name}: ${r.error}`).join('; ');
+  return {
+    id: 'connectivity', label: 'Tracker connectivity',
+    ok: failedCount === 0,
+    message: failedCount === 0
+      ? `All ${results.length} profile(s) connected successfully.`
+      : `${failedCount}/${results.length} profile(s) failed to connect.`,
+    hint: failedCount === 0 ? null : summary,
+    fixable: false,
   };
 }

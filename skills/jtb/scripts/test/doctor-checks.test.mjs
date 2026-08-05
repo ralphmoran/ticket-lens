@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { checkProfileConfig, checkLicenseFreshness } from '../lib/doctor-checks.mjs';
+import { checkProfileConfig, checkLicenseFreshness, checkConnectivity } from '../lib/doctor-checks.mjs';
 
 let configDir;
 
@@ -117,5 +117,66 @@ describe('checkLicenseFreshness', () => {
     const result = checkLicenseFreshness({ checkLicenseFn });
     assert.equal(result.ok, true);
     assert.match(result.message, /pro/);
+  });
+});
+
+describe('checkConnectivity', () => {
+  it('passes with "nothing to test" when no profiles are configured (full sweep)', async () => {
+    const testConnectionsFn = async () => ({ results: [], failedCount: 0 });
+    const result = await checkConnectivity({ configDir, testConnectionsFn });
+    assert.equal(result.id, 'connectivity');
+    assert.equal(result.ok, true);
+    assert.match(result.message, /nothing to test/i);
+  });
+
+  it('passes when every profile in the full sweep connects', async () => {
+    const testConnectionsFn = async () => ({
+      results: [{ name: 'acme', ok: true }, { name: 'globex', ok: true }],
+      failedCount: 0,
+    });
+    const result = await checkConnectivity({ configDir, testConnectionsFn });
+    assert.equal(result.ok, true);
+    assert.match(result.message, /2 profile/);
+  });
+
+  it('fails when at least one profile in the full sweep fails to connect', async () => {
+    const testConnectionsFn = async () => ({
+      results: [{ name: 'acme', ok: false, error: 'Authentication failed for acme' }, { name: 'globex', ok: true }],
+      failedCount: 1,
+    });
+    const result = await checkConnectivity({ configDir, testConnectionsFn });
+    assert.equal(result.ok, false);
+    assert.match(result.message, /1\/2/);
+    assert.match(result.hint, /Authentication failed for acme/);
+  });
+
+  it('--profile= fast path fails with "not found" for an unknown profile, without calling testConnections', async () => {
+    let sweepCalled = false;
+    const testConnectionsFn = async () => { sweepCalled = true; return { results: [], failedCount: 0 }; };
+    const result = await checkConnectivity({ configDir, profileName: 'nope', testConnectionsFn });
+    assert.equal(result.ok, false);
+    assert.match(result.message, /"nope" not found/);
+    assert.equal(sweepCalled, false);
+  });
+
+  it('--profile= fast path connects directly via resolveAdapter, bypassing the all-profiles sweep', async () => {
+    writeProfiles(configDir, { profiles: { acme: { baseUrl: 'https://acme.atlassian.net' } } });
+    writeCredentials(configDir, { acme: { apiToken: 'tok' } });
+    let sweepCalled = false;
+    const testConnectionsFn = async () => { sweepCalled = true; return { results: [], failedCount: 0 }; };
+    const resolveAdapterFn = () => ({ fetchCurrentUser: async () => ({ displayName: 'Dev' }) });
+    const result = await checkConnectivity({ configDir, profileName: 'acme', testConnectionsFn, resolveAdapterFn });
+    assert.equal(result.ok, true);
+    assert.match(result.message, /"acme"/);
+    assert.equal(sweepCalled, false);
+  });
+
+  it('--profile= fast path classifies a thrown fetchCurrentUser error via classifyError', async () => {
+    writeProfiles(configDir, { profiles: { acme: { baseUrl: 'https://acme.atlassian.net' } } });
+    writeCredentials(configDir, { acme: { apiToken: 'bad' } });
+    const resolveAdapterFn = () => ({ fetchCurrentUser: async () => { const e = new Error('unauthorized'); e.status = 401; throw e; } });
+    const result = await checkConnectivity({ configDir, profileName: 'acme', resolveAdapterFn });
+    assert.equal(result.ok, false);
+    assert.match(result.message, /Authentication failed/);
   });
 });
