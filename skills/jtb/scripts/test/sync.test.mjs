@@ -7,6 +7,7 @@ import { Writable } from 'node:stream';
 
 import { syncProfiles, serverToCliProfile, profileNeedsCredentials, getApiBase, reportSyncResult } from '../lib/sync.mjs';
 import { saveCliToken } from '../lib/cli-auth.mjs';
+import { loadTeams } from '../lib/profile-resolver.mjs';
 
 function mockStream() {
   const chunks = [];
@@ -310,6 +311,30 @@ describe('syncProfiles', () => {
       },
     });
     assert.ok(capturedAuth?.startsWith('Bearer tl_'));
+  });
+
+  it('persists the teams array from the response to profiles.json as a side effect', async () => {
+    await syncProfiles({
+      configDir: dir,
+      fetcher: async () => fakeRes(200, { profiles: [], teams: [{ id: 1, name: "Team Manager's Team", role: 'member' }] }),
+    });
+    assert.deepEqual(loadTeams(dir), [{ id: 1, name: "Team Manager's Team", role: 'member' }]);
+  });
+
+  it('does not change the returned result shape when teams are present (side effect only)', async () => {
+    const result = await syncProfiles({
+      configDir: dir,
+      fetcher: async () => fakeRes(200, { profiles: [], teams: [{ id: 1, name: 'X', role: 'owner' }] }),
+    });
+    assert.deepEqual(result, { added: [], updated: [], unchanged: [], needsCredentials: [] });
+  });
+
+  it('persists an empty teams array when the response omits teams', async () => {
+    await syncProfiles({
+      configDir: dir,
+      fetcher: async () => fakeRes(200, { profiles: [] }),
+    });
+    assert.deepEqual(loadTeams(dir), []);
   });
 
   it('getApiBase returns TICKETLENS_API_URL when set', () => {

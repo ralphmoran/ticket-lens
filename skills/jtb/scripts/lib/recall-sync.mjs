@@ -78,6 +78,20 @@ function writeEntitlementCheckedAt(configDir, isoTimestamp, cliToken) {
   }
 }
 
+// Shared by pushNote's and pullNotes' 422 handling — a profile's configured
+// recallTeam that doesn't match any of this account's Console teams
+// (renamed/removed/typo) must never silently drop a note or return zero
+// pull results; both retry once against the account's default team instead.
+async function isUnknownTeamRejection(res) {
+  let reason;
+  try { reason = (await res.json())?.error; } catch { /* not this case — fall through */ }
+  return reason === 'Unknown team';
+}
+
+function warnUnknownTeam(warn, groupName, fallbackAction) {
+  warn(`  ${yellow('⚠')} "${groupName}" isn't a team on your account — ${fallbackAction} instead.\n  ${dim('→ Run')} ${cyan('ticketlens profiles set-team')} ${dim('to fix this profile\'s team mapping.')}\n`);
+}
+
 /**
  * POSTs one locally-authored note to the team backend.
  *
@@ -116,23 +130,25 @@ export async function pushNote(note, {
 
   warnIfInsecure(apiBase(), warn);
 
+  const post = (payload) => fetcher(`${apiBase()}${PUSH_PATH}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${cliToken}`,
+    },
+    body: JSON.stringify(payload),
+    // Without Accept: application/json, a Laravel validation failure 302-redirects
+    // instead of returning JSON, and fetch's default redirect:'follow' silently
+    // turns that into a followed 200 — a false "pushed" the user never sees fail.
+    // 'manual' makes any unexpected redirect surface as a non-ok response instead.
+    redirect: 'manual',
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+
   let res;
   try {
-    res = await fetcher(`${apiBase()}${PUSH_PATH}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${cliToken}`,
-      },
-      body: JSON.stringify(note),
-      // Without Accept: application/json, a Laravel validation failure 302-redirects
-      // instead of returning JSON, and fetch's default redirect:'follow' silently
-      // turns that into a followed 200 — a false "pushed" the user never sees fail.
-      // 'manual' makes any unexpected redirect surface as a non-ok response instead.
-      redirect: 'manual',
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    res = await post(note);
   } catch {
     warn(`  ${yellow('⚠')} Could not sync note to your team (network error) — saved locally and queued to retry automatically.\n`);
     return { ok: false };
@@ -166,6 +182,19 @@ export async function pushNote(note, {
     return { ok: false, status: res.status };
   }
 
+  if (res.status === 422 && note.group !== undefined && await isUnknownTeamRejection(res)) {
+    warnUnknownTeam(warn, note.group, 'saved to your default team');
+    const { group: _omit, ...withoutGroup } = note;
+    let retryRes;
+    try {
+      retryRes = await post(withoutGroup);
+    } catch {
+      warn(`  ${yellow('⚠')} Could not sync note to your team (network error) — saved locally and queued to retry automatically.\n`);
+      return { ok: false };
+    }
+    return retryRes.ok ? { ok: true, status: retryRes.status } : { ok: false, status: retryRes.status };
+  }
+
   warn(`  ${yellow('⚠')} Could not sync note to your team (${res.status}) — saved locally only.\n`);
   return { ok: false, status: res.status };
 }
@@ -183,7 +212,9 @@ export async function pushNote(note, {
  * @param {string}   [opts.configDir]
  * @param {number}   [opts.ttlMs] - skip the network call if the last pull is more recent than this
  * @param {number}   [opts.timeoutMs] - request timeout; short for a passive/background pull, long for an explicit one
+ * @param {string}   [opts.group] - explicit target team name, for accounts on more than one team
  * @param {Function} [opts.fetcher]
+ * @param {Function} [opts.warn] - failure output (default: process.stderr.write)
  * @param {Function} [opts.upsertPulledNoteFn]
  * @param {Function} [opts.rebuildIndexFn]
  * @param {() => number} [opts.now]
@@ -194,7 +225,9 @@ export async function pullNotes({
   configDir = DEFAULT_CONFIG_DIR,
   ttlMs = RECALL_PULL_TTL_MS,
   timeoutMs = 15_000,
+  group,
   fetcher = globalThis.fetch,
+  warn = (s) => process.stderr.write(s),
   upsertPulledNoteFn = upsertPulledNote,
   rebuildIndexFn = rebuildIndex,
   deleteNoteFn = deleteNote,
@@ -209,18 +242,32 @@ export async function pullNotes({
     return { ok: true, skipped: true, count: 0 };
   }
 
-  const url = new URL(`${apiBase()}${PULL_PATH}`);
-  if (lastPulledAt) url.searchParams.set('since', lastPulledAt);
+  const buildUrl = (targetGroup) => {
+    const url = new URL(`${apiBase()}${PULL_PATH}`);
+    if (lastPulledAt) url.searchParams.set('since', lastPulledAt);
+    if (targetGroup) url.searchParams.set('group', targetGroup);
+    return url.toString();
+  };
+  const get = (targetGroup) => fetcher(buildUrl(targetGroup), {
+    headers: { 'Authorization': `Bearer ${cliToken}`, 'Accept': 'application/json' },
+    redirect: 'manual',
+    signal: AbortSignal.timeout(timeoutMs),
+  });
 
   let res;
   try {
-    res = await fetcher(url.toString(), {
-      headers: { 'Authorization': `Bearer ${cliToken}`, 'Accept': 'application/json' },
-      redirect: 'manual',
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    res = await get(group);
   } catch {
     return { ok: false, count: 0 };
+  }
+
+  if (!res.ok && res.status === 422 && group !== undefined && await isUnknownTeamRejection(res)) {
+    warnUnknownTeam(warn, group, 'pulling from your default team');
+    try {
+      res = await get(undefined);
+    } catch {
+      return { ok: false, count: 0 };
+    }
   }
 
   if (!res.ok) {

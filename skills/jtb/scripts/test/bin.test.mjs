@@ -150,6 +150,20 @@ describe('bin/ticketlens.mjs', () => {
     );
   });
 
+  it('profiles set-team without a team name prints usage and exits 1', () => {
+    const result = spawnSync('node', [binPath, 'profiles', 'set-team', 'advent'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
+    });
+    assert.equal(result.status, 1, `Expected exit 1, got ${result.status}`);
+    assert.ok(
+      result.stderr.includes('Usage: ticketlens profiles set-team'),
+      `Expected usage message in stderr. Got: ${result.stderr.slice(0, 200)}`
+    );
+  });
+
   it('delete --yes with nonexistent profile exits 1', () => {
     const result = spawnSync('node', [binPath, 'delete', 'nonexistent-profile', '--yes'], {
       encoding: 'utf8',

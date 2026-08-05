@@ -240,6 +240,52 @@ describe('runRecall — team sync (pull before search)', () => {
   });
 });
 
+describe('runRecall — explicit team targeting via the active profile\'s recallTeam', () => {
+  test('pulls with group when the resolved profile has a recallTeam', async () => {
+    let capturedGroup;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pullNotesFn: (opts) => { capturedGroup = opts.group; return Promise.resolve({ ok: true, count: 0 }); },
+      resolveProfileFn: () => ({ name: 'advent', recallTeam: "Team Manager's Team" }),
+    });
+    await runRecall(['PROD-1'], deps);
+    assert.equal(capturedGroup, "Team Manager's Team");
+  });
+
+  test('omits group when the resolved profile has no recallTeam', async () => {
+    let capturedGroup = 'unset';
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pullNotesFn: (opts) => { capturedGroup = opts.group; return Promise.resolve({ ok: true, count: 0 }); },
+      resolveProfileFn: () => ({ name: 'advent' }),
+    });
+    await runRecall(['PROD-1'], deps);
+    assert.equal(capturedGroup, undefined);
+  });
+
+  test('resolves the profile using the ticket key when the argument looks like one', async () => {
+    let capturedTicketKey;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pullNotesFn: () => Promise.resolve({ ok: true, count: 0 }),
+      resolveProfileFn: (ticketKey) => { capturedTicketKey = ticketKey; return null; },
+    });
+    await runRecall(['PROD-1'], deps);
+    assert.equal(capturedTicketKey, 'PROD-1');
+  });
+
+  test('resolves the profile with a null ticket key when the argument is a free-text query', async () => {
+    let capturedTicketKey = 'unset';
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pullNotesFn: () => Promise.resolve({ ok: true, count: 0 }),
+      resolveProfileFn: (ticketKey) => { capturedTicketKey = ticketKey; return null; },
+    });
+    await runRecall(['retry backoff'], deps);
+    assert.equal(capturedTicketKey, null);
+  });
+});
+
 describe('runRecallSync — license gate', () => {
   test('unlicensed: never reads the queue, shows upgrade prompt, reports failure', async () => {
     let calls = 0;

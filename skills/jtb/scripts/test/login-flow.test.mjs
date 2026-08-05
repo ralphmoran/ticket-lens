@@ -42,6 +42,7 @@ describe('runLogin — manual flow', () => {
       promptSecretFn: async () => 'tl_abc123',
       fetchFn: async () => okResponse(),
       saveCliTokenFn: token => { saved = token; },
+      saveTeamsFn: () => {},
       applyTeamConfigOnLoginFn: async () => null,
     });
 
@@ -58,6 +59,7 @@ describe('runLogin — manual flow', () => {
       promptSecretFn: async () => 'tl_abc123',
       fetchFn: async () => okResponse(),
       saveCliTokenFn: () => {},
+      saveTeamsFn: () => {},
       applyTeamConfigOnLoginFn: async () => null,
     });
 
@@ -73,6 +75,7 @@ describe('runLogin — manual flow', () => {
       promptSecretFn: async () => 'tl_abc123',
       fetchFn: async () => okResponse(),
       saveCliTokenFn: () => {},
+      saveTeamsFn: () => {},
       applyTeamConfigOnLoginFn: async () => null,
     });
 
@@ -123,6 +126,7 @@ describe('runLogin — browser flow', () => {
       browserLoginFn: async () => 'tl_fromBrowser',
       fetchFn: async () => okResponse(),
       saveCliTokenFn: token => { saved = token; },
+      saveTeamsFn: () => {},
       applyTeamConfigOnLoginFn: async () => null,
     });
 
@@ -194,6 +198,7 @@ describe('runLogin — token verification (both flows)', () => {
       browserLoginFn: async () => 'tl_abc',
       fetchFn: async () => okResponse(),
       saveCliTokenFn: () => {},
+      saveTeamsFn: () => {},
       applyTeamConfigOnLoginFn: async () => ({ ok: true, groupName: 'Acme Team' }),
     });
 
@@ -211,8 +216,47 @@ describe('runLogin — token verification (both flows)', () => {
       browserLoginFn: async () => 'tl_abc',
       fetchFn: async () => okResponse(),
       saveCliTokenFn: () => {},
+      saveTeamsFn: () => {},
       applyTeamConfigOnLoginFn: async () => { throw new Error('boom'); },
     }));
+    process.exitCode = originalExitCode;
+  });
+
+  it('persists the teams array from the verification response', async () => {
+    const stream = fakeStream();
+    const originalExitCode = process.exitCode;
+    let savedTeams;
+
+    await runLogin({
+      manual: false,
+      stream,
+      browserLoginFn: async () => 'tl_abc',
+      fetchFn: async () => ({ ok: true, status: 200, json: async () => ({ tier: 'pro', teams: [{ id: 1, name: 'Acme Team', role: 'owner' }] }) }),
+      saveCliTokenFn: () => {},
+      saveTeamsFn: teams => { savedTeams = teams; },
+      applyTeamConfigOnLoginFn: async () => ({ ok: false }),
+    });
+
+    assert.deepEqual(savedTeams, [{ id: 1, name: 'Acme Team', role: 'owner' }]);
+    process.exitCode = originalExitCode;
+  });
+
+  it('persists an empty teams array when the verification response omits teams', async () => {
+    const stream = fakeStream();
+    const originalExitCode = process.exitCode;
+    let savedTeams;
+
+    await runLogin({
+      manual: false,
+      stream,
+      browserLoginFn: async () => 'tl_abc',
+      fetchFn: async () => okResponse(),
+      saveCliTokenFn: () => {},
+      saveTeamsFn: teams => { savedTeams = teams; },
+      applyTeamConfigOnLoginFn: async () => ({ ok: false }),
+    });
+
+    assert.deepEqual(savedTeams, []);
     process.exitCode = originalExitCode;
   });
 });

@@ -479,6 +479,54 @@ describe('runNoteAdd — team sync (push after local write)', () => {
   });
 });
 
+describe('runNoteAdd — explicit team targeting via the active profile\'s recallTeam', () => {
+  test('includes group when the resolved profile has a recallTeam', async () => {
+    let capturedNote;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: (note) => { capturedNote = note; return Promise.resolve({ ok: true }); },
+      resolveProfileFn: () => ({ name: 'advent', recallTeam: "Team Manager's Team" }),
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.equal(capturedNote.group, "Team Manager's Team");
+  });
+
+  test('omits group when the resolved profile has no recallTeam', async () => {
+    let capturedNote;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: (note) => { capturedNote = note; return Promise.resolve({ ok: true }); },
+      resolveProfileFn: () => ({ name: 'advent' }),
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.ok(!('group' in capturedNote));
+  });
+
+  test('omits group when no profile resolves at all', async () => {
+    let capturedNote;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: (note) => { capturedNote = note; return Promise.resolve({ ok: true }); },
+      resolveProfileFn: () => null,
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.ok(!('group' in capturedNote));
+  });
+
+  test('resolves the profile using the --ticket key and configDir', async () => {
+    let capturedArgs;
+    const deps = baseDeps({
+      configDir: '/fake/config',
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: () => Promise.resolve({ ok: true }),
+      resolveProfileFn: (ticketKey, opts) => { capturedArgs = { ticketKey, opts }; return null; },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.equal(capturedArgs.ticketKey, 'PROD-1');
+    assert.equal(capturedArgs.opts.configDir, '/fake/config');
+  });
+});
+
 describe('runNoteAdd — queues the note for retry after a transient push failure', () => {
   test('a network-error push failure (no status) enqueues the note for later retry', async () => {
     let enqueued;

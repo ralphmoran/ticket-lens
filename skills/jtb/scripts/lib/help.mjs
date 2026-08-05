@@ -469,6 +469,13 @@ export function printProfilesHelp({ stream = process.stdout } = {}) {
     `  List all locally configured Jira profiles and their active status.`,
     `  Also available as ${s.cyan('ticketlens ls')}.`,
     '',
+    `  ${s.bold('SUBCOMMANDS')}`,
+    '',
+    `    ${s.brand('set-team')} ${s.dim('<profile> <team name>')}`,
+    `        Route this profile's Recall notes to a specific Console team —`,
+    `        for accounts that belong to more than one team. Validated against`,
+    `        teams synced by ${s.cyan('ticketlens login')}/${s.cyan('ticketlens sync')}, but never blocked by a stale list.`,
+    '',
     `  ${s.bold('OPTIONS')}`,
     '',
     `    ${s.brand('--plain')}          Tab-separated output ${s.dim('(for scripting)')}`,
@@ -479,6 +486,7 @@ export function printProfilesHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('$')} ticketlens profiles`,
     `    ${s.dim('$')} ticketlens ls`,
     `    ${s.dim('$')} ticketlens profiles --plain`,
+    `    ${s.dim('$')} ticketlens profiles set-team advent "Team Manager's Team"`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

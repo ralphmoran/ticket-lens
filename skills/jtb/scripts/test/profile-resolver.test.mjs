@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveConnection, resolveProfile, resolveProfileByPath, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache } from '../lib/profile-resolver.mjs';
+import { resolveConnection, resolveProfile, resolveProfileByPath, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams } from '../lib/profile-resolver.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 
 const sampleProfiles = {
@@ -363,6 +363,49 @@ describe('profile-resolver', () => {
       saveProfile('sec-test', { baseUrl: 'https://s.atlassian.net', auth: 'cloud', email: 'sec@s.com' }, {}, configDir);
       const mode = statSync(join(configDir, 'profiles.json')).mode & 0o777;
       assert.equal(mode, 0o600, `profiles.json must be chmod 600, got ${mode.toString(8)}`);
+    });
+  });
+
+  describe('saveTeams / loadTeams', () => {
+    it('writes the team list to profiles.json', () => {
+      writeConfig();
+      saveTeams([{ id: 1, name: "Team Manager's Team", role: 'member' }], configDir);
+      assert.deepEqual(loadTeams(configDir), [{ id: 1, name: "Team Manager's Team", role: 'member' }]);
+    });
+
+    it('preserves existing profiles and default when writing teams', () => {
+      writeConfig();
+      saveTeams([{ id: 11, name: "Rafael's Team", role: 'owner' }], configDir);
+      const config = loadProfiles(configDir);
+      assert.ok(config.profiles['corenexus']);
+      assert.equal(config.default, 'corenexus');
+    });
+
+    it('creates profiles.json if it does not exist', () => {
+      saveTeams([{ id: 1, name: 'Solo', role: 'owner' }], configDir);
+      assert.deepEqual(loadTeams(configDir), [{ id: 1, name: 'Solo', role: 'owner' }]);
+    });
+
+    it('writes profiles.json with mode 0o600', () => {
+      saveTeams([], configDir);
+      const mode = statSync(join(configDir, 'profiles.json')).mode & 0o777;
+      assert.equal(mode, 0o600);
+    });
+
+    it('loadTeams returns an empty array when profiles.json has no teams key', () => {
+      writeConfig();
+      assert.deepEqual(loadTeams(configDir), []);
+    });
+
+    it('loadTeams returns an empty array when profiles.json does not exist', () => {
+      assert.deepEqual(loadTeams(configDir), []);
+    });
+
+    it('overwrites a previously saved team list rather than appending', () => {
+      writeConfig();
+      saveTeams([{ id: 1, name: 'Old', role: 'owner' }], configDir);
+      saveTeams([{ id: 2, name: 'New', role: 'member' }], configDir);
+      assert.deepEqual(loadTeams(configDir), [{ id: 2, name: 'New', role: 'member' }]);
     });
   });
 

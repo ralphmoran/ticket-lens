@@ -10,6 +10,7 @@ import { browserLogin } from './browser-login.mjs';
 import { saveCliToken } from './cli-auth.mjs';
 import { getApiBase, getConsoleBase } from './sync.mjs';
 import { applyTeamConfigOnLogin } from './team-jira-sync.mjs';
+import { saveTeams } from './profile-resolver.mjs';
 
 export async function runLogin({
   manual = false,
@@ -19,6 +20,7 @@ export async function runLogin({
   fetchFn = globalThis.fetch,
   promptSecretFn = promptSecret,
   saveCliTokenFn = saveCliToken,
+  saveTeamsFn = saveTeams,
   applyTeamConfigOnLoginFn = applyTeamConfigOnLogin,
 } = {}) {
   const s = createStyler({ isTTY: stream.isTTY });
@@ -83,12 +85,15 @@ export async function runLogin({
     return;
   }
 
-  let tier;
+  let tier, teams;
   try {
-    tier = (await res.json())?.tier;
-  } catch { /* tier is best-effort — token is still valid */ }
+    const body = await res.json();
+    tier = body?.tier;
+    teams = body?.teams;
+  } catch { /* tier/teams are best-effort — token is still valid */ }
 
   saveCliTokenFn(token, undefined, tier);
+  saveTeamsFn(Array.isArray(teams) ? teams : []);
   stream.write(`\x1b[A\r\x1b[2K  ${s.green('✔')} Logged in.\n`);
 
   // Flow 1: pull team Jira config for Pro/Team members (silently skipped for Free)

@@ -55,6 +55,21 @@ export function saveDefault(name, configDir = DEFAULT_CONFIG_DIR) {
   invalidateProfilesCache(configDir);
 }
 
+// Team list synced from /v1/profiles — used to validate `recallTeam` on a
+// profile without a live network call at push/pull time. Not credentials.
+export function saveTeams(teams, configDir = DEFAULT_CONFIG_DIR) {
+  mkdirSync(configDir, { recursive: true });
+  const profilesPath = join(configDir, 'profiles.json');
+  const config = loadProfiles(configDir) || { profiles: {} };
+  config.teams = teams;
+  writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
+  invalidateProfilesCache(configDir);
+}
+
+export function loadTeams(configDir = DEFAULT_CONFIG_DIR) {
+  return loadProfiles(configDir)?.teams ?? [];
+}
+
 export function saveProfile(name, profileData, credData, configDir = DEFAULT_CONFIG_DIR) {
   mkdirSync(configDir, { recursive: true });
   const profilesPath = join(configDir, 'profiles.json');

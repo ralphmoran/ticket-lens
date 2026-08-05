@@ -13,6 +13,7 @@ import { scanForSecrets } from './secret-scanner.mjs';
 import { checkNoteStructure } from './note-structural-check.mjs';
 import { writeNote, patchNoteBody, deleteNote, deleteNoteAnyPrefix, rebuildIndex } from './recall-vault.mjs';
 import { readCliToken } from './cli-auth.mjs';
+import { resolveProfile } from './profile-resolver.mjs';
 import { pushNote } from './recall-sync.mjs';
 import { enqueueNote, isRetryableFailure, maybeAutoFlush } from './recall-queue.mjs';
 import { incrementDraftKept, incrementDraftDeleted } from './activity-counter.mjs';
@@ -73,6 +74,7 @@ export async function runNoteAdd(cmdArgs, {
   scanForSecretsFn = scanForSecrets,
   writeNoteFn = writeNote,
   readCliTokenFn = readCliToken,
+  resolveProfileFn = resolveProfile,
   pushNoteFn = pushNote,
   enqueueNoteFn = enqueueNote,
   isRetryableFailureFn = isRetryableFailure,
@@ -139,7 +141,9 @@ export async function runNoteAdd(cmdArgs, {
     const warn = (s) => stream.write(s);
     // Field names match PushRequest's validation rules (external_id, tickets) —
     // the backend wire contract, not the local vault's internal camelCase shape.
+    const profile = resolveProfileFn(ticketKey || null, { configDir, cwd: process.cwd() });
     const payload = { external_id: id, title, tickets: ticketKeys, tags, author, sources: [], body };
+    if (profile?.recallTeam) payload.group = profile.recallTeam;
     const result = await pushNoteFn(payload, { cliToken, configDir, warn });
     if (isRetryableFailureFn(result)) {
       await enqueueNoteFn(payload, { cliToken, configDir, warn });

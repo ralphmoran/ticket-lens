@@ -15,6 +15,7 @@ import { TICKET_KEY_PATTERN } from './cli.mjs';
 import { isLicensed, showUpgradePrompt } from './license.mjs';
 import { listNotes } from './recall-vault.mjs';
 import { readCliToken } from './cli-auth.mjs';
+import { resolveProfile } from './profile-resolver.mjs';
 import { pullNotes } from './recall-sync.mjs';
 import { maybeAutoFlush, flushQueue, readQueue } from './recall-queue.mjs';
 import { getEffectiveRecallSettingsWithSource } from './recall-settings-sync.mjs';
@@ -31,6 +32,7 @@ export async function runRecall(cmdArgs, {
   isLicensedFn = isLicensed,
   listNotesFn = listNotes,
   readCliTokenFn = readCliToken,
+  resolveProfileFn = resolveProfile,
   pullNotesFn = pullNotes,
   maybeAutoFlushFn = maybeAutoFlush,
 } = {}) {
@@ -45,13 +47,16 @@ export async function runRecall(cmdArgs, {
     return { ok: false };
   }
 
+  const isTicketKey = TICKET_KEY_PATTERN.test(arg);
+
   const cliToken = readCliTokenFn(configDir);
   if (cliToken) {
-    await pullNotesFn({ cliToken, configDir, ttlMs: 0 });
+    const profile = resolveProfileFn(isTicketKey ? arg : null, { configDir, cwd: process.cwd() });
+    await pullNotesFn({ cliToken, configDir, ttlMs: 0, group: profile?.recallTeam });
     await maybeAutoFlushFn({ cliToken, configDir });
   }
 
-  const filter = TICKET_KEY_PATTERN.test(arg) ? { ticketKey: arg } : { query: arg };
+  const filter = isTicketKey ? { ticketKey: arg } : { query: arg };
   const results = listNotesFn(filter, { configDir });
 
   const styled = !cmdArgs.includes('--plain') && !!stream.isTTY;

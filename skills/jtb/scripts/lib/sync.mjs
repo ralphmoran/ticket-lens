@@ -10,6 +10,7 @@ import {
   loadProfiles,
   loadCredentials,
   saveProfile,
+  saveTeams,
   invalidateProfilesCache,
 } from './profile-resolver.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
@@ -89,6 +90,7 @@ export async function syncProfiles({
   try { json = await res.json(); } catch { return { error: 'invalid-json' }; }
 
   if (typeof json?.tier === 'string') saveCliTokenTier(json.tier, configDir);
+  saveTeams(Array.isArray(json?.teams) ? json.teams : [], configDir);
 
   const remoteProfiles = Array.isArray(json?.profiles) ? json.profiles : [];
   const localConfig  = loadProfiles(configDir) || { profiles: {} };

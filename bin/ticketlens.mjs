@@ -13,6 +13,7 @@ import { run as runFetch } from '../skills/jtb/scripts/fetch-ticket.mjs';
 import { run as runTriage } from '../skills/jtb/scripts/fetch-my-tickets.mjs';
 import { run as runInit } from '../skills/jtb/scripts/lib/init-wizard.mjs';
 import { runSwitch } from '../skills/jtb/scripts/lib/profile-switcher.mjs';
+import { runProfilesSetTeam } from '../skills/jtb/scripts/lib/profile-set-team.mjs';
 import { run as runConfig } from '../skills/jtb/scripts/lib/config-wizard.mjs';
 import { activateLicense, checkLicense, revalidateIfStale, isLicensed, showUpgradePrompt, readLicense } from '../skills/jtb/scripts/lib/license.mjs';
 import { deleteProfile, loadProfiles, saveCredentialKey } from '../skills/jtb/scripts/lib/profile-resolver.mjs';
@@ -360,6 +361,19 @@ switch (command) {
 
   case 'profiles': {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printProfilesHelp(); break; }
+
+    if (cmdArgs[0] === 'set-team') {
+      const [, profileName, ...teamNameParts] = cmdArgs;
+      const teamName = teamNameParts.join(' ');
+      if (!profileName || !teamName) {
+        process.stderr.write('Usage: ticketlens profiles set-team <profile> <team name>\n');
+        process.exitCode = 1;
+        break;
+      }
+      runProfilesSetTeam(profileName, teamName);
+      break;
+    }
+
     const plain = cmdArgs.includes('--plain');
     const config = loadProfiles();
     printProfiles({ config, plain });
