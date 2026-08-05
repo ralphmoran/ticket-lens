@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import { readLicense, writeLicense, isLicensed, activateLicense, revalidateLicense, checkLicense, revalidateIfStale, showUpgradePrompt, LICENSE_TIERS, LICENSE_HMAC_SALT } from '../lib/license.mjs';
+import { readLicense, writeLicense, isLicensed, activateLicense, revalidateLicense, checkLicense, revalidateIfStale, showUpgradePrompt, LICENSE_TIERS, LICENSE_HMAC_SALT, GRACE_DAYS } from '../lib/license.mjs';
 
 let tmpDir;
 
@@ -113,6 +113,12 @@ describe('LICENSE_TIERS', () => {
   it('defines tier hierarchy: free < pro < team', () => {
     assert.ok(LICENSE_TIERS.free < LICENSE_TIERS.pro);
     assert.ok(LICENSE_TIERS.pro < LICENSE_TIERS.team);
+  });
+});
+
+describe('GRACE_DAYS (exported)', () => {
+  it('is the 30-day offline grace window used by the license-active check', () => {
+    assert.equal(GRACE_DAYS, 30);
   });
 });
 

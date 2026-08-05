@@ -14,7 +14,7 @@ export const LICENSE_TIERS = { free: 0, pro: 1, team: 2 };
 const LICENSE_FILE = 'license.json';
 const LICENSE_SECRET_FILE = 'license-hmac-secret.json';
 const REVALIDATION_DAYS = 7;   // attempt background revalidation after this many days
-const GRACE_DAYS = 30;          // treat license as invalid if not revalidated within this window
+export const GRACE_DAYS = 30;   // treat license as invalid if not revalidated within this window
 const MS_PER_DAY = 86400000;
 const upgradeUrl = () => `${siteBase()}/#pricing`;
 
