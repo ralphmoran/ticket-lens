@@ -156,6 +156,15 @@ describe('runTicketComment — connection resolution', () => {
     assert.equal(result.ok, true);
     assert.match(deps.stream.lines.join(''), /Prefix "PROJ" matches multiple profiles: corenexus, advent/);
   });
+
+  test('passes cwd to the connection resolver, so folder-based profile matching applies to ticket-write commands too', async () => {
+    let capturedOpts;
+    const deps = baseDeps({
+      resolveConnectionFn: (ticketKey, opts) => { capturedOpts = opts; return { baseUrl: 'https://jira.example.com' }; },
+    });
+    await runTicketComment(['PROJ-1', '--body=hi'], deps);
+    assert.equal(capturedOpts.cwd, process.cwd());
+  });
 });
 
 describe('runTicketComment — happy path', () => {
@@ -1494,6 +1503,81 @@ describe('runTicketCreate — connection resolution', () => {
     assert.equal(adapterResolved, false);
     assert.match(deps.stream.lines.join(''), /No connection configured\. Run/);
     assert.doesNotMatch(deps.stream.lines.join(''), /for undefined/);
+  });
+
+  test('passes cwd to the connection resolver — create has no ticket key to prefix-match, so folder-based fallback is its main resolution path', async () => {
+    let capturedOpts;
+    const deps = baseDeps({
+      resolveConnectionFn: (ticketKey, opts) => { capturedOpts = opts; return { baseUrl: 'https://jira.example.com' }; },
+    });
+    await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(capturedOpts.cwd, process.cwd());
+  });
+});
+
+describe('runTicketCreate — profile/project mismatch safety net', () => {
+  test('refuses and suggests the right profile when the resolved profile does not own the project prefix', async () => {
+    let created = false;
+    const deps = baseDeps({
+      resolveConnectionFn: () => ({ baseUrl: 'https://corenexus.atlassian.net', profileName: 'corenexus' }),
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => { created = true; return { key: 'ADV-1' }; } }),
+      findProfilesByPrefixFn: (prefix) => (prefix === 'ADV' ? ['advent'] : []),
+    });
+    const result = await runTicketCreate(['--project=ADV', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(created, false, 'must refuse before ever calling createTicket against the wrong tracker');
+    assert.match(deps.stream.lines.join(''), /--profile=advent/);
+  });
+
+  test('proceeds when the resolved profile does own the project prefix', async () => {
+    let created = false;
+    const deps = baseDeps({
+      resolveConnectionFn: () => ({ baseUrl: 'https://advent.atlassian.net', profileName: 'advent' }),
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => { created = true; return { key: 'ADV-1' }; } }),
+      findProfilesByPrefixFn: (prefix) => (prefix === 'ADV' ? ['advent'] : []),
+    });
+    const result = await runTicketCreate(['--project=ADV', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(created, true);
+  });
+
+  test('proceeds when no profile is registered for the project prefix at all — a genuinely new project, nothing to suggest', async () => {
+    let created = false;
+    const deps = baseDeps({
+      resolveConnectionFn: () => ({ baseUrl: 'https://corenexus.atlassian.net', profileName: 'corenexus' }),
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => { created = true; return { key: 'NEW-1' }; } }),
+      findProfilesByPrefixFn: () => [],
+    });
+    const result = await runTicketCreate(['--project=NEWPROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(created, true);
+  });
+
+  test('an explicit --profile is trusted and skips the guard, even when it does not own the project prefix — never a dead end', async () => {
+    let created = false;
+    const deps = baseDeps({
+      resolveConnectionFn: (ticketKey, opts) => {
+        assert.equal(opts.profileName, 'corenexus');
+        return { baseUrl: 'https://corenexus.atlassian.net', profileName: 'corenexus' };
+      },
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => { created = true; return { key: 'ADV-1' }; } }),
+      findProfilesByPrefixFn: (prefix) => (prefix === 'ADV' ? ['advent'] : []),
+    });
+    const result = await runTicketCreate(['--project=ADV', '--type=Task', '--summary=New', '--profile=corenexus'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(created, true);
+  });
+
+  test('skipped entirely on GitHub, where project is ignored', async () => {
+    let created = false;
+    const deps = baseDeps({
+      resolveConnectionFn: () => ({ baseUrl: 'https://github.example', profileName: 'gh-profile' }),
+      resolveAdapterFn: () => fakeAdapter({ type: 'github', createTicket: async () => { created = true; return { key: '1' }; } }),
+      findProfilesByPrefixFn: () => { throw new Error('must not be called for GitHub — project is ignored there'); },
+    });
+    const result = await runTicketCreate(['--summary=New'], deps);
+    assert.equal(result.ok, true);
+    assert.equal(created, true);
   });
 });
 

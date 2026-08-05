@@ -262,6 +262,22 @@ export function resolveProfile(ticketKey, opts = {}) {
   return null;
 }
 
+/**
+ * Names of every profile whose ticketPrefixes includes `prefix` — used to
+ * cross-check a resolved connection against the project/team key the caller
+ * actually asked for. `ticket_create` has no ticket key to prefix-match
+ * against (unlike every other ticket-write command), so this checks the raw
+ * project/team key directly instead, as a safety net against silently
+ * creating a ticket on the wrong tracker.
+ */
+export function findProfilesByPrefix(prefix, configDir = DEFAULT_CONFIG_DIR) {
+  const config = loadProfiles(configDir);
+  if (!config) return [];
+  return Object.entries(config.profiles)
+    .filter(([, profile]) => profile.ticketPrefixes?.includes(prefix))
+    .map(([name]) => name);
+}
+
 export function resolveConnection(ticketKey, opts = {}) {
   const { env = process.env, configDir = DEFAULT_CONFIG_DIR, profileName, onWarning, onProfileNotFound, cwd } = opts;
 

@@ -12,7 +12,7 @@
 import os from 'node:os';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { isLicensed, showUpgradePrompt } from './license.mjs';
-import { resolveConnection } from './profile-resolver.mjs';
+import { resolveConnection, findProfilesByPrefix } from './profile-resolver.mjs';
 import { resolveAdapter } from './resolve-adapter.mjs';
 import { checkCooldown, recordAction } from './ticket-action-cooldown.mjs';
 import { logAction } from './ticket-action-log.mjs';
@@ -218,15 +218,24 @@ function requireTicketKey(cmdArgs, usage, stream) {
 
 /**
  * `ticketKey` is undefined for ticket_create — there is no existing ticket to
- * prefix-match a connection from, so resolution falls through to --profile
- * or the default profile (resolveConnectionFn already handles a falsy
- * ticketKey by skipping prefix matching, see profile-resolver.mjs).
+ * prefix-match a connection from, so resolution falls through to --profile,
+ * the folder-based `cwd` match, or the default profile (resolveConnectionFn
+ * already handles a falsy ticketKey by skipping prefix matching, see
+ * profile-resolver.mjs). `cwd` is always the running process's own — every
+ * ticket-write command runs synchronously within a single CLI/MCP-server
+ * invocation, so there is never a separate "caller's cwd" to thread through.
+ *
+ * Returns `{ adapter, conn }` (not just the adapter) so callers that need to
+ * cross-check the resolved connection's identity — currently only
+ * `runTicketCreate`'s profile/project mismatch safety net — have it without
+ * re-resolving.
  */
 function resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream }) {
   const profileName = parseFlag(cmdArgs, 'profile');
   const conn = resolveConnectionFn(ticketKey, {
     configDir,
     profileName,
+    cwd: process.cwd(),
     onWarning: (msg) => stream.write(`  ⚠ ${msg}\n`),
   });
   if (!conn.baseUrl) {
@@ -235,7 +244,7 @@ function resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnection
       : `  No connection configured. Run \`ticketlens init\` or pass --profile=NAME.\n`);
     return null;
   }
-  return resolveAdapterFn(conn);
+  return { adapter: resolveAdapterFn(conn), conn };
 }
 
 /**
@@ -272,8 +281,9 @@ export async function runTicketComment(cmdArgs, {
     return { ok: false };
   }
 
-  const adapter = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-  if (!adapter) return { ok: false };
+  const resolved = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!resolved) return { ok: false };
+  const { adapter } = resolved;
   const s = createStyler({ isTTY: stream.isTTY });
 
   // Uploaded BEFORE the comment write so a tracker capable of inline
@@ -330,8 +340,9 @@ export async function runTicketTransitionList(cmdArgs, {
   const ticketKey = requireTicketKey(cmdArgs, usage, stream);
   if (!ticketKey) return { ok: false };
 
-  const adapter = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-  if (!adapter) return { ok: false };
+  const resolved = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!resolved) return { ok: false };
+  const { adapter } = resolved;
 
   try {
     const options = await adapter.getTransitions(ticketKey);
@@ -396,8 +407,9 @@ export async function runTicketTransition(cmdArgs, {
     return { ok: false };
   }
 
-  const adapter = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-  if (!adapter) return { ok: false };
+  const resolved = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!resolved) return { ok: false };
+  const { adapter } = resolved;
 
   try {
     const result = await adapter.transition(ticketKey, target);
@@ -456,8 +468,9 @@ export async function runTicketAssign(cmdArgs, {
     return { ok: false };
   }
 
-  const adapter = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-  if (!adapter) return { ok: false };
+  const resolved = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!resolved) return { ok: false };
+  const { adapter } = resolved;
 
   try {
     const result = await adapter.assignToSelf(ticketKey);
@@ -502,8 +515,9 @@ export async function runTicketDuplicates(cmdArgs, {
     }
   }
 
-  const adapter = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-  if (!adapter) return { ok: false };
+  const resolved = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!resolved) return { ok: false };
+  const { adapter } = resolved;
 
   try {
     // depth: 0 — only the shallow linkedIssues list is needed (for explicit
@@ -581,8 +595,9 @@ export async function runTicketLinkList(cmdArgs, {
   const targetKey = requireTicketKey(cmdArgs.slice(1), usage, stream);
   if (!targetKey) return { ok: false };
 
-  const adapter = resolveTicketAdapter(sourceKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-  if (!adapter) return { ok: false };
+  const resolved = resolveTicketAdapter(sourceKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!resolved) return { ok: false };
+  const { adapter } = resolved;
 
   try {
     const types = await adapter.getLinkTypes();
@@ -658,8 +673,9 @@ export async function runTicketLink(cmdArgs, {
     return { ok: false };
   }
 
-  const adapter = resolveTicketAdapter(sourceKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-  if (!adapter) return { ok: false };
+  const resolved = resolveTicketAdapter(sourceKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!resolved) return { ok: false };
+  const { adapter } = resolved;
 
   if (adapter.type === 'github' && type.toLowerCase() !== 'duplicate') {
     stream.write(`  GitHub only supports linking as a duplicate — no generic link types. Got type "${type}".\n`);
@@ -748,8 +764,9 @@ export async function runTicketUpdate(cmdArgs, {
     return { ok: false };
   }
 
-  const adapter = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-  if (!adapter) return { ok: false };
+  const resolved = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!resolved) return { ok: false };
+  const { adapter } = resolved;
 
   if (adapter.type === 'github' && priority !== undefined) {
     stream.write(`  GitHub Issues have no native priority field — cannot update priority on ${ticketKey}. Remove --priority and retry.\n`);
@@ -808,6 +825,7 @@ export async function runTicketCreate(cmdArgs, {
   logActionFn = logAction,
   readMetadataCacheFn = readMetadataCache,
   writeMetadataCacheFn = writeMetadataCache,
+  findProfilesByPrefixFn = findProfilesByPrefix,
   actor = os.userInfo().username,
 } = {}) {
   const usage = 'Usage: ticketlens create --project=KEY --type="Task" --summary="..." [--description="..."] [--profile=NAME]\n';
@@ -824,8 +842,9 @@ export async function runTicketCreate(cmdArgs, {
   const description = parseFlag(cmdArgs, 'description');
   const attachPaths = parseAttachPaths(cmdArgs);
 
-  const adapter = resolveTicketAdapter(undefined, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-  if (!adapter) return { ok: false };
+  const resolved = resolveTicketAdapter(undefined, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!resolved) return { ok: false };
+  const { adapter, conn } = resolved;
   const s = createStyler({ isTTY: stream.isTTY });
   const attachRefused = refuseGithubAttachments(adapter, attachPaths, stream);
 
@@ -839,6 +858,28 @@ export async function runTicketCreate(cmdArgs, {
   }
   if (adapter.type !== 'jira' && type !== undefined) {
     stream.write(`  Note: --type is ignored by ${adapter.type} — issue created without it.\n`);
+  }
+
+  // Highest-blast-radius write in the family: no ticket key exists yet to
+  // prefix-match against, so a resolution that quietly lands on the wrong
+  // profile (e.g. an unconfigured cwd falling to the default) fabricates a
+  // real ticket on the wrong tracker before anyone notices. Only refuses
+  // when a DIFFERENT profile is a known, better owner of this exact project
+  // key — a genuinely new, not-yet-registered project proceeds untouched.
+  // Skipped when the caller explicitly passed --profile=NAME: that is
+  // deliberate, informed intent (the same trust resolveProfile() itself
+  // already gives an explicit flag over every other signal), and this guard
+  // must never be a dead end with no way to force a legitimate create through.
+  if (adapter.type !== 'github' && project && conn.profileName && !parseFlag(cmdArgs, 'profile')) {
+    const owningProfiles = findProfilesByPrefixFn(project, configDir);
+    if (owningProfiles.length > 0 && !owningProfiles.includes(conn.profileName)) {
+      stream.write(
+        `  Project "${project}" is registered under profile "${owningProfiles[0]}", not the resolved profile ` +
+        `"${conn.profileName}". Pass --profile=${owningProfiles[0]} to target the right tracker, or ` +
+        `--profile=${conn.profileName} to confirm this is intentional.\n`,
+      );
+      return { ok: false };
+    }
   }
 
   // JSON-encoded, not naively colon-joined — project/type/summary are free

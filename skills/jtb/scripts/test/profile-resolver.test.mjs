@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveConnection, resolveProfile, resolveProfileByPath, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams, saveProfileRecallTeamId, loadProfileRecallTeamId } from '../lib/profile-resolver.mjs';
+import { resolveConnection, resolveProfile, resolveProfileByPath, findProfilesByPrefix, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams, saveProfileRecallTeamId, loadProfileRecallTeamId } from '../lib/profile-resolver.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 
 const sampleProfiles = {
@@ -216,6 +216,33 @@ describe('profile-resolver', () => {
       writeConfig();
       const result = resolveProfile('OPS-42', { configDir });
       assert.equal(result.name, 'acme');
+    });
+  });
+
+  describe('findProfilesByPrefix', () => {
+    it('returns the single profile whose ticketPrefixes includes the prefix', () => {
+      writeConfig();
+      assert.deepEqual(findProfilesByPrefix('PROD', configDir), ['forge']);
+    });
+
+    it('returns an empty array when no profile is registered for the prefix — a genuinely new project', () => {
+      writeConfig();
+      assert.deepEqual(findProfilesByPrefix('UNKNOWN', configDir), []);
+    });
+
+    it('returns every matching profile when more than one owns the same prefix', () => {
+      const profiles = {
+        profiles: {
+          a: { baseUrl: 'https://a.atlassian.net', ticketPrefixes: ['SHARED'] },
+          b: { baseUrl: 'https://b.atlassian.net', ticketPrefixes: ['SHARED'] },
+        },
+      };
+      writeConfig(profiles, { a: { apiToken: 'x' }, b: { apiToken: 'y' } });
+      assert.deepEqual(findProfilesByPrefix('SHARED', configDir).sort(), ['a', 'b']);
+    });
+
+    it('returns an empty array when no config exists', () => {
+      assert.deepEqual(findProfilesByPrefix('ANY', '/tmp/nonexistent'), []);
     });
   });
 
