@@ -15,7 +15,7 @@ import { TICKET_KEY_PATTERN } from './cli.mjs';
 import { isLicensed, showUpgradePrompt } from './license.mjs';
 import { listNotes } from './recall-vault.mjs';
 import { readCliToken } from './cli-auth.mjs';
-import { resolveProfile } from './profile-resolver.mjs';
+import { resolveProfile, loadProfileRecallTeamId } from './profile-resolver.mjs';
 import { pullNotes } from './recall-sync.mjs';
 import { maybeAutoFlush, flushQueue, readQueue } from './recall-queue.mjs';
 import { getEffectiveRecallSettingsWithSource } from './recall-settings-sync.mjs';
@@ -33,6 +33,7 @@ export async function runRecall(cmdArgs, {
   listNotesFn = listNotes,
   readCliTokenFn = readCliToken,
   resolveProfileFn = resolveProfile,
+  loadProfileRecallTeamIdFn = loadProfileRecallTeamId,
   pullNotesFn = pullNotes,
   maybeAutoFlushFn = maybeAutoFlush,
 } = {}) {
@@ -52,7 +53,8 @@ export async function runRecall(cmdArgs, {
   const cliToken = readCliTokenFn(configDir);
   if (cliToken) {
     const profile = resolveProfileFn(isTicketKey ? arg : null, { configDir, cwd: process.cwd() });
-    await pullNotesFn({ cliToken, configDir, ttlMs: 0, group: profile?.recallTeam });
+    const recallTeamId = profile ? loadProfileRecallTeamIdFn(profile.name, configDir) : null;
+    await pullNotesFn({ cliToken, configDir, ttlMs: 0, groupId: recallTeamId ?? undefined });
     await maybeAutoFlushFn({ cliToken, configDir });
   }
 

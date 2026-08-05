@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveConnection, resolveProfile, resolveProfileByPath, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams } from '../lib/profile-resolver.mjs';
+import { resolveConnection, resolveProfile, resolveProfileByPath, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams, saveProfileRecallTeamId, loadProfileRecallTeamId } from '../lib/profile-resolver.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 
 const sampleProfiles = {
@@ -406,6 +406,78 @@ describe('profile-resolver', () => {
       saveTeams([{ id: 1, name: 'Old', role: 'owner' }], configDir);
       saveTeams([{ id: 2, name: 'New', role: 'member' }], configDir);
       assert.deepEqual(loadTeams(configDir), [{ id: 2, name: 'New', role: 'member' }]);
+    });
+
+    it('sanitizes a team name containing terminal escape sequences before persisting — team names are server-controlled, attacker-influenceable data', () => {
+      saveTeams([{ id: 1, name: 'Evil\x1b[2J\x1b]0;pwned\x07Team', role: 'member' }], configDir);
+      const saved = loadTeams(configDir)[0];
+      assert.ok(!saved.name.includes('\x1b'));
+      assert.ok(!saved.name.includes('\x07'));
+    });
+  });
+
+  describe('saveProfileRecallTeamId / loadProfileRecallTeamId', () => {
+    it('writes recallTeamId to credentials.json under the profile, not profiles.json', () => {
+      writeConfig();
+      saveProfileRecallTeamId('corenexus', 1, configDir);
+      assert.equal(loadProfileRecallTeamId('corenexus', configDir), 1);
+      const profilesOnDisk = loadProfiles(configDir);
+      assert.equal(profilesOnDisk.profiles.corenexus.recallTeamId, undefined, 'must not leak into profiles.json');
+    });
+
+    it('preserves existing apiToken/pat on the same profile when setting recallTeamId', () => {
+      writeConfig();
+      saveProfileRecallTeamId('corenexus', 1, configDir);
+      const creds = loadCredentials(configDir);
+      assert.equal(creds.corenexus.apiToken, 'token-corenexus');
+      assert.equal(creds.corenexus.recallTeamId, 1);
+    });
+
+    it('preserves recallTeamId when a later saveProfile call updates the same profile', () => {
+      writeConfig();
+      saveProfileRecallTeamId('corenexus', 1, configDir);
+      saveProfile('corenexus', sampleProfiles.profiles.corenexus, { apiToken: 'token-corenexus' }, configDir);
+      assert.equal(loadProfileRecallTeamId('corenexus', configDir), 1);
+    });
+
+    it('switching a profile from apiToken auth to pat auth clears the stale apiToken, but still preserves recallTeamId', () => {
+      writeConfig();
+      saveProfileRecallTeamId('corenexus', 1, configDir);
+      saveProfile('corenexus', { ...sampleProfiles.profiles.corenexus, auth: 'pat' }, { pat: 'new-pat-token' }, configDir);
+
+      const creds = loadCredentials(configDir);
+      assert.equal(creds.corenexus.pat, 'new-pat-token');
+      assert.equal(creds.corenexus.apiToken, undefined, 'the stale apiToken must not survive an auth-type switch to pat');
+      assert.equal(loadProfileRecallTeamId('corenexus', configDir), 1);
+    });
+
+    it('switching a profile from pat auth back to apiToken auth clears the stale pat', () => {
+      saveProfile('work', { baseUrl: 'https://a.example.com', auth: 'pat' }, { pat: 'old-pat' }, configDir);
+      saveProfile('work', { baseUrl: 'https://a.example.com', auth: 'cloud' }, { apiToken: 'new-token' }, configDir);
+
+      const creds = loadCredentials(configDir);
+      assert.equal(creds.work.apiToken, 'new-token');
+      assert.equal(creds.work.pat, undefined, 'the stale pat must not survive an auth-type switch to apiToken');
+    });
+
+    it('creates credentials.json if it does not exist', () => {
+      saveProfileRecallTeamId('newprofile', 5, configDir);
+      assert.equal(loadProfileRecallTeamId('newprofile', configDir), 5);
+    });
+
+    it('writes credentials.json with mode 0o600', () => {
+      saveProfileRecallTeamId('secure', 1, configDir);
+      const mode = statSync(join(configDir, 'credentials.json')).mode & 0o777;
+      assert.equal(mode, 0o600);
+    });
+
+    it('loadProfileRecallTeamId returns null when unset', () => {
+      writeConfig();
+      assert.equal(loadProfileRecallTeamId('corenexus', configDir), null);
+    });
+
+    it('loadProfileRecallTeamId returns null for an unknown profile', () => {
+      assert.equal(loadProfileRecallTeamId('nonexistent', configDir), null);
     });
   });
 

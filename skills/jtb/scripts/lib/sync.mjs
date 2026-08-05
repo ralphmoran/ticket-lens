@@ -11,11 +11,12 @@ import {
   loadCredentials,
   saveProfile,
   saveTeams,
+  loadTeams,
   invalidateProfilesCache,
 } from './profile-resolver.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { apiBase } from './api-utils.mjs';
-import { createStyler } from './ansi.mjs';
+import { createStyler, sanitizeUntrustedText } from './ansi.mjs';
 
 export const getApiBase     = () => apiBase();
 // Strip the api. subdomain to get the console base URL (e.g. api.ticketlens.app → ticketlens.app)
@@ -125,6 +126,69 @@ export async function syncProfiles({
   }
 
   return { added, updated, unchanged, needsCredentials };
+}
+
+/**
+ * Fire-and-forget check for team membership drift (invited to a new team,
+ * removed from one) — same shape as team-jira-sync.mjs's
+ * checkTeamJiraConfigUpdate, reusing the same /v1/profiles endpoint
+ * syncProfiles() already calls rather than a live-diff-only 403/404 branch.
+ * Never blocks or throws — a background check must never break the actual
+ * command it's riding alongside.
+ *
+ * @param {object} [opts]
+ * @param {string}   [opts.configDir]
+ * @param {Function} [opts.fetcher]
+ * @returns {Promise<{updated: boolean, banner?: string}>}
+ */
+export async function checkTeamMembershipUpdate({ configDir = DEFAULT_CONFIG_DIR, fetcher = globalThis.fetch } = {}) {
+  const token = readCliToken(configDir);
+  if (!token) return { updated: false };
+
+  let res;
+  try {
+    res = await fetcher(`${getApiBase()}/v1/profiles`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    return { updated: false };
+  }
+  if (!res.ok) return { updated: false };
+
+  let json;
+  try { json = await res.json(); } catch { return { updated: false }; }
+
+  // Sanitized immediately on receipt — remoteTeams feeds both the banner
+  // text below (built before saveTeams' own sanitization would ever run)
+  // and the persisted cache, so both must see the cleaned name.
+  const remoteTeams = (Array.isArray(json?.teams) ? json.teams : [])
+    .map(t => ({ ...t, name: sanitizeUntrustedText(t.name) }));
+  const localTeams  = loadTeams(configDir);
+  const localIds    = new Set(localTeams.map(t => t.id));
+  const remoteIds   = new Set(remoteTeams.map(t => t.id));
+
+  const added   = remoteTeams.filter(t => !localIds.has(t.id));
+  const removed = localTeams.filter(t => !remoteIds.has(t.id));
+  // A rename or role change (same id, different name/role) is neither an
+  // add nor a remove, but the stale local copy must not be left behind.
+  const changed = remoteTeams.some(t => {
+    const local = localTeams.find(l => l.id === t.id);
+    return local && (local.name !== t.name || local.role !== t.role);
+  });
+
+  if (added.length === 0 && removed.length === 0 && !changed) return { updated: false };
+
+  saveTeams(remoteTeams, configDir);
+
+  if (added.length === 0 && removed.length === 0) return { updated: false };
+
+  const lines = [
+    ...added.map(t => `You now have access to "${t.name}" — link a profile with: ticketlens profiles set-team <profile> "${t.name}"`),
+    ...removed.map(t => `You no longer have access to "${t.name}".`),
+  ];
+
+  return { updated: true, banner: lines.join('\n  ') };
 }
 
 /**

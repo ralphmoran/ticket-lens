@@ -101,6 +101,17 @@ describe('config-wizard picker wiring', () => {
     }
   });
 
+  it('a profile edit that switches auth type always writes the new credential field, even if the typed token text is unchanged', () => {
+    // Reproduces a real gap found in security review: a Jira Server/DC PAT
+    // can also authenticate as a Basic-auth password, so `basic` -> `pat`
+    // (same secret string) is a real migration, not a contrived one. If
+    // credData only gated on token !== existingToken, this case wrote
+    // nothing, leaving a stale apiToken in credentials.json indefinitely
+    // (resolveConnection() then reads a null `pat` and auth silently fails).
+    assert.match(configSrc, /const credData = \(token !== existingToken \|\| auth !== profile\.auth\)/,
+      'credData must also be written on an auth-type switch, not just a changed token value');
+  });
+
   it('init-wizard uses pickers with the free-text fallback preserved', () => {
     assert.ok(initSrc.includes("from './wizard-pickers.mjs'"), 'must import wizard-pickers');
     assert.ok(initSrc.includes('ticketPrefixes === null'), 'prefix fallback branch required');

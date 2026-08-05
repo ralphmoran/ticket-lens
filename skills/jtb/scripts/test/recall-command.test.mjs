@@ -240,27 +240,41 @@ describe('runRecall — team sync (pull before search)', () => {
   });
 });
 
-describe('runRecall — explicit team targeting via the active profile\'s recallTeam', () => {
-  test('pulls with group when the resolved profile has a recallTeam', async () => {
-    let capturedGroup;
+describe('runRecall — explicit team targeting via the active profile\'s recallTeamId', () => {
+  test('pulls with groupId when the resolved profile has a recallTeamId in credentials.json', async () => {
+    let capturedGroupId;
     const deps = baseDeps({
       readCliTokenFn: () => 'tl_key',
-      pullNotesFn: (opts) => { capturedGroup = opts.group; return Promise.resolve({ ok: true, count: 0 }); },
-      resolveProfileFn: () => ({ name: 'advent', recallTeam: "Team Manager's Team" }),
+      pullNotesFn: (opts) => { capturedGroupId = opts.groupId; return Promise.resolve({ ok: true, count: 0 }); },
+      resolveProfileFn: () => ({ name: 'advent' }),
+      loadProfileRecallTeamIdFn: () => 1,
     });
     await runRecall(['PROD-1'], deps);
-    assert.equal(capturedGroup, "Team Manager's Team");
+    assert.equal(capturedGroupId, 1);
   });
 
-  test('omits group when the resolved profile has no recallTeam', async () => {
-    let capturedGroup = 'unset';
+  test('omits groupId when the resolved profile has no recallTeamId set', async () => {
+    let capturedGroupId = 'unset';
     const deps = baseDeps({
       readCliTokenFn: () => 'tl_key',
-      pullNotesFn: (opts) => { capturedGroup = opts.group; return Promise.resolve({ ok: true, count: 0 }); },
+      pullNotesFn: (opts) => { capturedGroupId = opts.groupId; return Promise.resolve({ ok: true, count: 0 }); },
       resolveProfileFn: () => ({ name: 'advent' }),
+      loadProfileRecallTeamIdFn: () => null,
     });
     await runRecall(['PROD-1'], deps);
-    assert.equal(capturedGroup, undefined);
+    assert.equal(capturedGroupId, undefined);
+  });
+
+  test('never looks up a team id when no profile resolves at all', async () => {
+    let lookupCalls = 0;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pullNotesFn: () => Promise.resolve({ ok: true, count: 0 }),
+      resolveProfileFn: () => null,
+      loadProfileRecallTeamIdFn: () => { lookupCalls++; return 1; },
+    });
+    await runRecall(['PROD-1'], deps);
+    assert.equal(lookupCalls, 0);
   });
 
   test('resolves the profile using the ticket key when the argument looks like one', async () => {

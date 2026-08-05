@@ -449,7 +449,14 @@ export async function run({ configDir = DEFAULT_CONFIG_DIR, profileName } = {}) 
   if (isTrustedForCurrentUrl()) updated.allowPrivateIp = true;
   else delete updated.allowPrivateIp;
 
-  const credData = (token !== existingToken)
+  // Also write on an auth-type switch even when the typed token text is
+  // unchanged — a Server/DC PAT can double as a Basic-auth password, so
+  // `basic` -> `pat` with the same secret is a real flow, not contrived.
+  // Gating on token identity alone left the stale old-type field (apiToken
+  // or pat) sitting in credentials.json indefinitely; saveProfile()'s merge
+  // only clears the opposite field when the corresponding new key is
+  // actually present in credData.
+  const credData = (token !== existingToken || auth !== profile.auth)
     ? (auth === 'pat' ? { pat: token } : { apiToken: token })
     : {};
 

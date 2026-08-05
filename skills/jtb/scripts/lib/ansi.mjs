@@ -86,5 +86,19 @@ export const brightCyan   = defaultStyler.brightCyan;
 export const brand        = defaultStyler.brand;
 export const isStyled     = () => defaultStyler.enabled;
 
-export const ANSI_RE = /\[[0-9;]*m/g;
+export const ANSI_RE = /\x1b\[[0-9;]*m/g;
 export function stripAnsi(s) { return s.replace(ANSI_RE, ''); }
+
+// Strips ALL C0/C1 control characters and DEL — not just this app's own SGR
+// color codes (stripAnsi above only covers ESC [ ... m, not the broader
+// escape grammar: OSC, cursor movement, etc.). Apply to any server-supplied
+// string before it ever reaches a terminal write — e.g. a Console team name,
+// which is attacker-controlled (any self-registered user's account name)
+// and unfiltered server-side beyond a bare length check.
+export function sanitizeUntrustedText(s) {
+  if (typeof s !== 'string') return '';
+  return Array.from(s).filter((ch) => {
+    const code = ch.codePointAt(0);
+    return !((code >= 0x00 && code <= 0x1f) || (code >= 0x7f && code <= 0x9f));
+  }).join('');
+}

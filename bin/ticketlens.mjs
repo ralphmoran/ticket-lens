@@ -35,7 +35,7 @@ import { runStats } from '../skills/jtb/scripts/lib/run-stats.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
 import { readCliToken, deleteCliToken } from '../skills/jtb/scripts/lib/cli-auth.mjs';
 import { runLogin } from '../skills/jtb/scripts/lib/login-flow.mjs';
-import { syncProfiles, reportSyncResult, getApiBase } from '../skills/jtb/scripts/lib/sync.mjs';
+import { syncProfiles, reportSyncResult, getApiBase, checkTeamMembershipUpdate } from '../skills/jtb/scripts/lib/sync.mjs';
 import { checkForUpdate, getUpdateHint } from '../skills/jtb/scripts/lib/update-check.mjs';
 import { incrementInvocation, incrementCommand } from '../skills/jtb/scripts/lib/activity-counter.mjs';
 import { DEFAULT_CONFIG_DIR } from '../skills/jtb/scripts/lib/config.mjs';
@@ -101,6 +101,7 @@ switch (command) {
   case 'fetch': {
     // Flow 2: fire team config check concurrently; banner shown after brief output
     const _teamCheck = checkTeamJiraConfigUpdate().catch(() => null);
+    const _membershipCheck = checkTeamMembershipUpdate().catch(() => null);
     runFetch(cmdArgs).then(async () => {
       const tcResult = await _teamCheck;
       if (tcResult?.banner) {
@@ -109,6 +110,11 @@ switch (command) {
       } else if (tcResult?.deleted) {
         const s = createStyler({ isTTY: process.stderr.isTTY });
         process.stderr.write(`\n  ${s.yellow('!')} Team Jira config removed by manager — using local credentials.\n`);
+      }
+      const membershipResult = await _membershipCheck;
+      if (membershipResult?.banner) {
+        const s = createStyler({ isTTY: process.stderr.isTTY });
+        process.stderr.write(`\n  ${s.yellow('!')} ${membershipResult.banner}\n`);
       }
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
@@ -364,13 +370,16 @@ switch (command) {
 
     if (cmdArgs[0] === 'set-team') {
       const [, profileName, ...teamNameParts] = cmdArgs;
-      const teamName = teamNameParts.join(' ');
-      if (!profileName || !teamName) {
-        process.stderr.write('Usage: ticketlens profiles set-team <profile> <team name>\n');
+      const teamName = teamNameParts.length > 0 ? teamNameParts.join(' ') : undefined;
+      if (!profileName) {
+        process.stderr.write('Usage: ticketlens profiles set-team <profile> [team name]\n');
         process.exitCode = 1;
         break;
       }
-      runProfilesSetTeam(profileName, teamName);
+      runProfilesSetTeam(profileName, teamName).catch(err => {
+        process.stderr.write(`Error: ${err.message}\n`);
+        process.exitCode = 1;
+      });
       break;
     }
 

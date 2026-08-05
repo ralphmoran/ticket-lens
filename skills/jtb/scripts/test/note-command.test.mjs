@@ -479,51 +479,60 @@ describe('runNoteAdd — team sync (push after local write)', () => {
   });
 });
 
-describe('runNoteAdd — explicit team targeting via the active profile\'s recallTeam', () => {
-  test('includes group when the resolved profile has a recallTeam', async () => {
-    let capturedNote;
-    const deps = baseDeps({
-      readCliTokenFn: () => 'tl_key',
-      pushNoteFn: (note) => { capturedNote = note; return Promise.resolve({ ok: true }); },
-      resolveProfileFn: () => ({ name: 'advent', recallTeam: "Team Manager's Team" }),
-    });
-    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
-    assert.equal(capturedNote.group, "Team Manager's Team");
-  });
-
-  test('omits group when the resolved profile has no recallTeam', async () => {
+describe('runNoteAdd — explicit team targeting via the active profile\'s recallTeamId', () => {
+  test('includes group_id when the resolved profile has a recallTeamId in credentials.json', async () => {
     let capturedNote;
     const deps = baseDeps({
       readCliTokenFn: () => 'tl_key',
       pushNoteFn: (note) => { capturedNote = note; return Promise.resolve({ ok: true }); },
       resolveProfileFn: () => ({ name: 'advent' }),
+      loadProfileRecallTeamIdFn: () => 1,
     });
     await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
-    assert.ok(!('group' in capturedNote));
+    assert.equal(capturedNote.group_id, 1);
   });
 
-  test('omits group when no profile resolves at all', async () => {
+  test('omits group_id when the resolved profile has no recallTeamId set', async () => {
     let capturedNote;
     const deps = baseDeps({
       readCliTokenFn: () => 'tl_key',
       pushNoteFn: (note) => { capturedNote = note; return Promise.resolve({ ok: true }); },
-      resolveProfileFn: () => null,
+      resolveProfileFn: () => ({ name: 'advent' }),
+      loadProfileRecallTeamIdFn: () => null,
     });
     await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
-    assert.ok(!('group' in capturedNote));
+    assert.ok(!('group_id' in capturedNote));
   });
 
-  test('resolves the profile using the --ticket key and configDir', async () => {
+  test('omits group_id when no profile resolves at all (never looks up a team id for an unknown profile)', async () => {
+    let capturedNote;
+    let lookupCalls = 0;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: (note) => { capturedNote = note; return Promise.resolve({ ok: true }); },
+      resolveProfileFn: () => null,
+      loadProfileRecallTeamIdFn: () => { lookupCalls++; return 1; },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.ok(!('group_id' in capturedNote));
+    assert.equal(lookupCalls, 0);
+  });
+
+  test('resolves the profile using the --ticket key and configDir, then looks up recallTeamId by the resolved profile name', async () => {
     let capturedArgs;
+    let capturedTeamIdLookup;
     const deps = baseDeps({
       configDir: '/fake/config',
       readCliTokenFn: () => 'tl_key',
       pushNoteFn: () => Promise.resolve({ ok: true }),
-      resolveProfileFn: (ticketKey, opts) => { capturedArgs = { ticketKey, opts }; return null; },
+      resolveProfileFn: (ticketKey, opts) => { capturedArgs = { ticketKey, opts }; return { name: 'advent' }; },
+      loadProfileRecallTeamIdFn: (profileName, configDir) => { capturedTeamIdLookup = { profileName, configDir }; return null; },
     });
     await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
     assert.equal(capturedArgs.ticketKey, 'PROD-1');
     assert.equal(capturedArgs.opts.configDir, '/fake/config');
+    assert.equal(capturedTeamIdLookup.profileName, 'advent');
+    assert.equal(capturedTeamIdLookup.configDir, '/fake/config');
   });
 });
 

@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Writable } from 'node:stream';
 
-import { syncProfiles, serverToCliProfile, profileNeedsCredentials, getApiBase, reportSyncResult } from '../lib/sync.mjs';
+import { syncProfiles, serverToCliProfile, profileNeedsCredentials, getApiBase, reportSyncResult, checkTeamMembershipUpdate } from '../lib/sync.mjs';
 import { saveCliToken } from '../lib/cli-auth.mjs';
-import { loadTeams } from '../lib/profile-resolver.mjs';
+import { loadTeams, saveTeams } from '../lib/profile-resolver.mjs';
 
 function mockStream() {
   const chunks = [];
@@ -343,6 +343,98 @@ describe('syncProfiles', () => {
     assert.equal(getApiBase(), 'http://ticketlens.test');
     if (orig === undefined) delete process.env.TICKETLENS_API_URL;
     else process.env.TICKETLENS_API_URL = orig;
+  });
+});
+
+describe('checkTeamMembershipUpdate', () => {
+  let dir;
+  beforeEach(() => {
+    dir = makeTmpDir('membership');
+    saveCliToken('tl_' + 'x'.repeat(40), dir);
+  });
+  after(() => { try { rmSync(dir, { recursive: true }); } catch {} });
+
+  it('returns updated:false when there is no cliToken', async () => {
+    const emptyDir = makeTmpDir('no-token-membership');
+    try {
+      const result = await checkTeamMembershipUpdate({ configDir: emptyDir });
+      assert.equal(result.updated, false);
+    } finally {
+      rmSync(emptyDir, { recursive: true });
+    }
+  });
+
+  it('returns updated:false and does not write when the remote list matches the local one', async () => {
+    saveTeams([{ id: 1, name: 'Existing Team', role: 'member' }], dir);
+    const result = await checkTeamMembershipUpdate({
+      configDir: dir,
+      fetcher: async () => fakeRes(200, { teams: [{ id: 1, name: 'Existing Team', role: 'member' }] }),
+    });
+    assert.equal(result.updated, false);
+  });
+
+  it('a rename-only change (same id, new name) refreshes the local cache even though it is not a membership add/remove', async () => {
+    saveTeams([{ id: 1, name: 'Old Name', role: 'member' }], dir);
+    const result = await checkTeamMembershipUpdate({
+      configDir: dir,
+      fetcher: async () => fakeRes(200, { teams: [{ id: 1, name: 'New Name', role: 'member' }] }),
+    });
+
+    assert.equal(result.updated, false, 'a rename is not a membership add/remove, so no banner');
+    assert.deepEqual(loadTeams(dir), [{ id: 1, name: 'New Name', role: 'member' }], 'but the stale name must not be left behind');
+  });
+
+  it('detects a newly added team, saves it locally, and returns a banner naming it', async () => {
+    saveTeams([{ id: 11, name: "Rafael's Team", role: 'owner' }], dir);
+    const result = await checkTeamMembershipUpdate({
+      configDir: dir,
+      fetcher: async () => fakeRes(200, {
+        teams: [{ id: 11, name: "Rafael's Team", role: 'owner' }, { id: 1, name: "Team Manager's Team", role: 'member' }],
+      }),
+    });
+
+    assert.equal(result.updated, true);
+    assert.match(result.banner, /Team Manager's Team/);
+    assert.match(result.banner, /set-team/);
+    assert.deepEqual(loadTeams(dir), [{ id: 11, name: "Rafael's Team", role: 'owner' }, { id: 1, name: "Team Manager's Team", role: 'member' }]);
+  });
+
+  it('detects a removed team, saves the new list, and returns a banner naming it', async () => {
+    saveTeams([{ id: 11, name: "Rafael's Team", role: 'owner' }, { id: 1, name: "Team Manager's Team", role: 'member' }], dir);
+    const result = await checkTeamMembershipUpdate({
+      configDir: dir,
+      fetcher: async () => fakeRes(200, { teams: [{ id: 11, name: "Rafael's Team", role: 'owner' }] }),
+    });
+
+    assert.equal(result.updated, true);
+    assert.match(result.banner, /Team Manager's Team/);
+    assert.deepEqual(loadTeams(dir), [{ id: 11, name: "Rafael's Team", role: 'owner' }]);
+  });
+
+  it('returns updated:false on a network error, never throws', async () => {
+    const result = await checkTeamMembershipUpdate({
+      configDir: dir,
+      fetcher: async () => { throw new Error('down'); },
+    });
+    assert.equal(result.updated, false);
+  });
+
+  it('returns updated:false on a non-ok response', async () => {
+    const result = await checkTeamMembershipUpdate({
+      configDir: dir,
+      fetcher: async () => fakeRes(401, {}),
+    });
+    assert.equal(result.updated, false);
+  });
+
+  it('sanitizes a malicious team name before it ever reaches the banner text, not just before it is persisted', async () => {
+    const result = await checkTeamMembershipUpdate({
+      configDir: dir,
+      fetcher: async () => fakeRes(200, { teams: [{ id: 1, name: 'Evil\x1b[2J\x1b]0;pwned\x07Team', role: 'member' }] }),
+    });
+    assert.equal(result.updated, true);
+    assert.ok(!result.banner.includes('\x1b'));
+    assert.ok(!result.banner.includes('\x07'));
   });
 });
 

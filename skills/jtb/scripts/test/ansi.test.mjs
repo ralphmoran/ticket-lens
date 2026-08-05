@@ -1,6 +1,45 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { bold, dim, red, green, cyan, yellow, isStyled, createStyler } from '../lib/ansi.mjs';
+import { bold, dim, red, green, cyan, yellow, isStyled, createStyler, sanitizeUntrustedText } from '../lib/ansi.mjs';
+
+describe('sanitizeUntrustedText', () => {
+  it('strips ESC so an SGR sequence becomes inert literal text', () => {
+    const malicious = 'Evil\x1b[2J\x1b[31mTeam';
+    const result = sanitizeUntrustedText(malicious);
+    assert.ok(!result.includes('\x1b'));
+    assert.equal(result, 'Evil[2J[31mTeam');
+  });
+
+  it('strips OSC sequences (e.g. terminal title / hyperlink injection)', () => {
+    const malicious = 'Team\x1b]0;pwned\x07Name';
+    const result = sanitizeUntrustedText(malicious);
+    assert.ok(!result.includes('\x1b'));
+    assert.ok(!result.includes('\x07'));
+  });
+
+  it('strips raw C0 control characters (CR, LF, BEL, NUL)', () => {
+    const malicious = 'Line1\r\nLine2\x00\x07';
+    const result = sanitizeUntrustedText(malicious);
+    assert.equal(result, 'Line1Line2');
+  });
+
+  it('strips C1 control characters and DEL', () => {
+    const malicious = 'A\x7FB\x9FC';
+    const result = sanitizeUntrustedText(malicious);
+    assert.equal(result, 'ABC');
+  });
+
+  it('leaves ordinary printable text, including punctuation and unicode, untouched', () => {
+    assert.equal(sanitizeUntrustedText("Team Manager's Team"), "Team Manager's Team");
+    assert.equal(sanitizeUntrustedText('Café Team 🚀'), 'Café Team 🚀');
+  });
+
+  it('returns an empty string for non-string input rather than throwing', () => {
+    assert.equal(sanitizeUntrustedText(null), '');
+    assert.equal(sanitizeUntrustedText(undefined), '');
+    assert.equal(sanitizeUntrustedText(42), '');
+  });
+});
 
 describe('ansi styling', () => {
   it('wraps text in ANSI codes when styling is enabled', () => {

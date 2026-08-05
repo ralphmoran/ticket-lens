@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync } from 'no
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
+import { sanitizeUntrustedText } from './ansi.mjs';
 
 /** Simple Levenshtein distance for "did you mean" suggestions. */
 function levenshtein(a, b) {
@@ -24,7 +25,7 @@ function levenshtein(a, b) {
   return dp[m];
 }
 
-function findClosest(input, candidates) {
+export function findClosest(input, candidates) {
   if (candidates.length === 0) return null;
   const lower = input.toLowerCase();
   let best = null;
@@ -55,13 +56,18 @@ export function saveDefault(name, configDir = DEFAULT_CONFIG_DIR) {
   invalidateProfilesCache(configDir);
 }
 
-// Team list synced from /v1/profiles — used to validate `recallTeam` on a
-// profile without a live network call at push/pull time. Not credentials.
+// Team list synced from /v1/profiles — used to resolve a typed team name to
+// its id in `ticketlens profiles set-team` without a live network call.
+// Not credentials (the resulting recallTeamId is — see saveProfileRecallTeamId).
 export function saveTeams(teams, configDir = DEFAULT_CONFIG_DIR) {
   mkdirSync(configDir, { recursive: true });
   const profilesPath = join(configDir, 'profiles.json');
   const config = loadProfiles(configDir) || { profiles: {} };
-  config.teams = teams;
+  // A team's name is server-supplied and traces back to another user's own
+  // account name (Group::createForOwner) — unfiltered, attacker-influenceable
+  // text. Sanitized here, at the single write path, so every consumer
+  // (picker, banners, set-team messages) is safe without having to remember to.
+  config.teams = teams.map(t => ({ ...t, name: sanitizeUntrustedText(t.name) }));
   writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
   invalidateProfilesCache(configDir);
 }
@@ -79,10 +85,36 @@ export function saveProfile(name, profileData, credData, configDir = DEFAULT_CON
   if (credData && Object.keys(credData).length > 0) {
     const credPath = join(configDir, 'credentials.json');
     const creds = loadCredentials(configDir);
-    creds[name] = credData;
+    // Merge, not replace — a caller re-saving apiToken/pat must never silently
+    // drop an unrelated field already stored on this profile (e.g. recallTeamId).
+    // But apiToken and pat are mutually exclusive auth methods, never both
+    // active at once — setting one must clear a stale copy of the other, or
+    // switching auth type would leave a rotated/revoked credential sitting
+    // in the sensitive-tier file indefinitely.
+    const merged = { ...(creds[name] || {}), ...credData };
+    if ('apiToken' in credData) delete merged.pat;
+    if ('pat' in credData) delete merged.apiToken;
+    creds[name] = merged;
     writeFileSync(credPath, JSON.stringify(creds, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
   }
   invalidateProfilesCache(configDir);
+}
+
+// recallTeamId lives in credentials.json (not profiles.json) — it's a
+// sensitive association (which specific Console team a specific local
+// profile/folder routes Recall notes to), not the non-secret profile shape
+// that credentials.json's sibling fields (baseUrl, prefixes) already are.
+export function saveProfileRecallTeamId(name, teamId, configDir = DEFAULT_CONFIG_DIR) {
+  mkdirSync(configDir, { recursive: true });
+  const credPath = join(configDir, 'credentials.json');
+  const creds = loadCredentials(configDir);
+  creds[name] = { ...(creds[name] || {}), recallTeamId: teamId };
+  writeFileSync(credPath, JSON.stringify(creds, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
+  invalidateProfilesCache(configDir);
+}
+
+export function loadProfileRecallTeamId(name, configDir = DEFAULT_CONFIG_DIR) {
+  return loadCredentials(configDir)[name]?.recallTeamId ?? null;
 }
 
 export function deleteProfile(name, configDir = DEFAULT_CONFIG_DIR) {

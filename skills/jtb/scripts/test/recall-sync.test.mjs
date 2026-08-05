@@ -122,16 +122,16 @@ describe('pushNote — HTTP outcomes', () => {
 // ---------------------------------------------------------------------------
 
 describe('pushNote — explicit team targeting', () => {
-  const noteWithGroup = { ...sampleNote, group: "Team Manager's Team" };
+  const noteWithGroup = { ...sampleNote, group_id: 1 };
 
-  it('sends the group field when present', async () => {
+  it('sends the group_id field when present', async () => {
     let capturedBody;
     const fetcher = async (url, opts) => { capturedBody = JSON.parse(opts.body); return { ok: true, status: 200, json: async () => ({}) }; };
     await pushNote(noteWithGroup, { cliToken: 'tl_key', configDir: freshConfigDir(), fetcher, warn: () => {} });
-    assert.equal(capturedBody.group, "Team Manager's Team");
+    assert.equal(capturedBody.group_id, 1);
   });
 
-  it('on 422 Unknown team, warns and retries once without the group field, succeeding on the retry', async () => {
+  it('on 422 Unknown team, warns and retries once without the group_id field, succeeding on the retry', async () => {
     const warnings = [];
     const bodies = [];
     let call = 0;
@@ -145,19 +145,19 @@ describe('pushNote — explicit team targeting', () => {
     const result = await pushNote(noteWithGroup, { cliToken: 'tl_key', configDir: freshConfigDir(), fetcher, warn: (s) => warnings.push(s) });
 
     assert.equal(call, 2, 'must retry exactly once');
-    assert.ok('group' in bodies[0], 'first attempt includes the group field');
-    assert.ok(!('group' in bodies[1]), 'retry must omit the group field');
+    assert.ok('group_id' in bodies[0], 'first attempt includes the group_id field');
+    assert.ok(!('group_id' in bodies[1]), 'retry must omit the group_id field');
     assert.equal(result.ok, true, 'the note must still be saved on the retry, not lost');
     assert.ok(warnings.some(w => /isn't a team on your account/i.test(w) && /set-team/.test(w)), 'must warn the user their configured team was not recognized and point at the fix');
   });
 
-  it('on 422 Unknown team, if the retry without group also fails, reports that final failure', async () => {
+  it('on 422 Unknown team, if the retry without group_id also fails, reports that final failure', async () => {
     const fetcher = async () => ({ ok: false, status: 422, json: async () => ({ error: 'Unknown team' }) });
     const result = await pushNote(noteWithGroup, { cliToken: 'tl_key', configDir: freshConfigDir(), fetcher, warn: () => {} });
     assert.equal(result.ok, false);
   });
 
-  it('never retries when there is no group field to begin with (a 422 for another reason is reported as-is)', async () => {
+  it('never retries when there is no group_id field to begin with (a 422 for another reason is reported as-is)', async () => {
     let calls = 0;
     const fetcher = async () => { calls++; return { ok: false, status: 422, json: async () => ({ error: 'The title field is required.' }) }; };
     const result = await pushNote(sampleNote, { cliToken: 'tl_key', configDir: freshConfigDir(), fetcher, warn: () => {} });
@@ -484,21 +484,21 @@ describe('pullNotes — HTTP errors and timeout are non-fatal', () => {
 // ---------------------------------------------------------------------------
 
 describe('pullNotes — explicit team targeting', () => {
-  it('sends the group as a query param when present', async () => {
+  it('sends group_id as a query param when present', async () => {
     let capturedUrl;
     const fetcher = async (url) => { capturedUrl = url; return { ok: true, status: 200, json: async () => ({ notes: [] }) }; };
-    await pullNotes({ cliToken: 'tl_key', configDir: freshConfigDir(), fetcher, group: "Team Manager's Team" });
-    assert.equal(new URL(capturedUrl).searchParams.get('group'), "Team Manager's Team");
+    await pullNotes({ cliToken: 'tl_key', configDir: freshConfigDir(), fetcher, groupId: 1 });
+    assert.equal(new URL(capturedUrl).searchParams.get('group_id'), '1');
   });
 
-  it('omits the group query param when not present', async () => {
+  it('omits the group_id query param when not present', async () => {
     let capturedUrl;
     const fetcher = async (url) => { capturedUrl = url; return { ok: true, status: 200, json: async () => ({ notes: [] }) }; };
     await pullNotes({ cliToken: 'tl_key', configDir: freshConfigDir(), fetcher });
-    assert.ok(!capturedUrl.includes('group='));
+    assert.ok(!capturedUrl.includes('group_id='));
   });
 
-  it('on 422 Unknown team, warns and retries once without the group param, succeeding on the retry', async () => {
+  it('on 422 Unknown team, warns and retries once without the group_id param, succeeding on the retry', async () => {
     const warnings = [];
     const urls = [];
     let call = 0;
@@ -509,16 +509,16 @@ describe('pullNotes — explicit team targeting', () => {
       return { ok: true, status: 200, json: async () => ({ notes: [] }) };
     };
 
-    const result = await pullNotes({ cliToken: 'tl_key', configDir: freshConfigDir(), fetcher, group: "Team Manager's Team", warn: (s) => warnings.push(s) });
+    const result = await pullNotes({ cliToken: 'tl_key', configDir: freshConfigDir(), fetcher, groupId: 1, warn: (s) => warnings.push(s) });
 
     assert.equal(call, 2, 'must retry exactly once');
-    assert.ok(urls[0].includes('group='));
-    assert.ok(!urls[1].includes('group='), 'retry must omit the group param');
+    assert.ok(urls[0].includes('group_id='));
+    assert.ok(!urls[1].includes('group_id='), 'retry must omit the group_id param');
     assert.equal(result.ok, true, 'the pull must still succeed on the retry');
     assert.ok(warnings.some(w => /isn't a team on your account/i.test(w)), 'must warn the user their configured team was not recognized');
   });
 
-  it('never retries a 422 when there is no group param to begin with', async () => {
+  it('never retries a 422 when there is no group_id param to begin with', async () => {
     let calls = 0;
     const fetcher = async () => { calls++; return { ok: false, status: 422, json: async () => ({ error: 'The since field must be a valid date.' }) }; };
     const result = await pullNotes({ cliToken: 'tl_key', configDir: freshConfigDir(), fetcher });
