@@ -82,3 +82,113 @@ describe('runDoctor — checks-only mode', () => {
     assert.equal(seen.queue, false);
   });
 });
+
+describe('runDoctor — --fix mode', () => {
+  it('revalidates a stale license, re-checks it, and reports it in fixed[] when now green', async () => {
+    const stream = fakeStream();
+    let revalidated = false;
+    let recheckCount = 0;
+    const checkLicenseFreshnessFn = () => {
+      recheckCount++;
+      return recheckCount === 1
+        ? { id: 'license-freshness', label: 'License freshness', ok: false, message: 'stale', hint: null, fixable: true }
+        : { id: 'license-freshness', label: 'License freshness', ok: true, message: 'fresh', hint: null, fixable: false };
+    };
+    const revalidateLicenseFn = async () => { revalidated = true; return { success: true }; };
+    const result = await runDoctor(['--fix'], {
+      stream, revalidateLicenseFn,
+      ...allOkChecks({ checkLicenseFreshnessFn }),
+    });
+    assert.equal(revalidated, true);
+    assert.equal(result.ok, true);
+    assert.match(stream.text, /Fixed:.*license-freshness/s);
+  });
+
+  it('deletes exactly the corrupt cache entries reported by checkCacheHealth, nothing else', async () => {
+    const stream = fakeStream();
+    const deleted = [];
+    const unlinkFn = (p) => deleted.push(p);
+    let recheckCount = 0;
+    const corruptEntry = { ticketKey: 'ACME-1', filename: 'bad.png', localPath: '/x/bad.png', size: 0 };
+    const checkCacheHealthFn = () => {
+      recheckCount++;
+      return recheckCount === 1
+        ? { id: 'cache-health', label: 'Attachment cache', ok: false, message: '1 corrupt', hint: null, fixable: true, corruptEntries: [corruptEntry] }
+        : { id: 'cache-health', label: 'Attachment cache', ok: true, message: 'clean', hint: null, fixable: false, corruptEntries: [] };
+    };
+    const result = await runDoctor(['--fix'], {
+      stream, unlinkFn,
+      ...allOkChecks({ checkCacheHealthFn }),
+    });
+    assert.deepEqual(deleted, ['/x/bad.png']);
+    assert.equal(result.ok, true);
+  });
+
+  it('flushes a pending recall queue when logged in, re-checks it, and reports it fixed', async () => {
+    const stream = fakeStream();
+    let flushed = false;
+    let recheckCount = 0;
+    const checkRecallQueueFn = () => {
+      recheckCount++;
+      return recheckCount === 1
+        ? { id: 'recall-queue', label: 'Recall sync queue', ok: false, message: '2 pending', hint: null, fixable: true }
+        : { id: 'recall-queue', label: 'Recall sync queue', ok: true, message: 'clear', hint: null, fixable: false };
+    };
+    const flushQueueFn = async () => { flushed = true; return { flushed: 2, remaining: 0 }; };
+    const readCliTokenFn = () => 'a-real-token';
+    const result = await runDoctor(['--fix'], {
+      stream, flushQueueFn, readCliTokenFn,
+      ...allOkChecks({ checkRecallQueueFn }),
+    });
+    assert.equal(flushed, true);
+    assert.equal(result.ok, true);
+    assert.match(stream.text, /Fixed:.*recall-queue/s);
+  });
+
+  it('skips the queue flush (does not call flushQueue) when not logged in, and reports it in skipped[]', async () => {
+    const stream = fakeStream();
+    let flushed = false;
+    const checkRecallQueueFn = () => ({ id: 'recall-queue', label: 'Recall sync queue', ok: false, message: '2 pending', hint: null, fixable: true });
+    const flushQueueFn = async () => { flushed = true; return { flushed: 2, remaining: 0 }; };
+    const readCliTokenFn = () => null;
+    const result = await runDoctor(['--fix', '--format=json'], {
+      stream, flushQueueFn, readCliTokenFn,
+      ...allOkChecks({ checkRecallQueueFn }),
+    });
+    assert.equal(flushed, false);
+    assert.equal(result.ok, false);
+    const parsed = JSON.parse(stream.text);
+    assert.deepEqual(parsed.skipped, [{ id: 'recall-queue', reason: 'Not logged in — run `ticketlens login` first.' }]);
+  });
+
+  it('applies fixes in license → cache → queue order', async () => {
+    const stream = fakeStream();
+    const order = [];
+    const revalidateLicenseFn = async () => { order.push('license'); return { success: true }; };
+    const unlinkFn = () => { order.push('cache'); };
+    const flushQueueFn = async () => { order.push('queue'); return { flushed: 1, remaining: 0 }; };
+    const failing = (id, label) => () => ({ id, label, ok: false, message: 'x', hint: null, fixable: true, corruptEntries: id === 'cache-health' ? [{ localPath: '/x' }] : undefined });
+    await runDoctor(['--fix'], {
+      stream, revalidateLicenseFn, unlinkFn, flushQueueFn,
+      readCliTokenFn: () => 'tok',
+      ...allOkChecks({
+        checkLicenseFreshnessFn: failing('license-freshness', 'License freshness'),
+        checkCacheHealthFn: failing('cache-health', 'Attachment cache'),
+        checkRecallQueueFn: failing('recall-queue', 'Recall sync queue'),
+      }),
+    });
+    assert.deepEqual(order, ['license', 'cache', 'queue']);
+  });
+
+  it('does not attempt a fix for a check that is failing but not fixable (e.g. connectivity)', async () => {
+    const stream = fakeStream();
+    const checkConnectivityFn = async () => ({ id: 'connectivity', label: 'Tracker connectivity', ok: false, message: 'down', hint: null, fixable: false });
+    const result = await runDoctor(['--fix', '--format=json'], {
+      stream, ...allOkChecks({ checkConnectivityFn }),
+    });
+    const parsed = JSON.parse(stream.text);
+    assert.deepEqual(parsed.fixed, []);
+    assert.deepEqual(parsed.skipped, []);
+    assert.equal(result.ok, false);
+  });
+});
