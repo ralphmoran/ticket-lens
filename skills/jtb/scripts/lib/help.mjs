@@ -1225,6 +1225,35 @@ export function printCollisionsHelp({ stream = process.stdout } = {}) {
   stream.write(lines.join('\n') + '\n');
 }
 
+export function printDoctorHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('doctor')} ${s.dim('[--fix] [--format=plain|json] [--profile=NAME]')}`,
+    '',
+    `  Diagnose common TicketLens problems: profile configuration, license`,
+    `  freshness, tracker connectivity, attachment cache health, and the Recall`,
+    `  sync queue. Free tier, fully unrestricted.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--fix')}              Attempt safe, non-destructive repairs for failing checks`,
+    `    ${s.brand('--format')}=${s.dim('plain')}    Human-readable output  ${s.dim('(default)')}`,
+    `    ${s.brand('--format')}=${s.dim('json')}     JSON output for scripting/piping`,
+    `    ${s.brand('--profile')}=${s.dim('NAME')}    Scope profile/connectivity/cache checks to one profile`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}         Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens doctor`,
+    `    ${s.dim('$')} ticketlens doctor --fix`,
+    `    ${s.dim('$')} ticketlens doctor --profile=work`,
+    `    ${s.dim('$')} ticketlens doctor --format=json`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
 export function printStatsHelp({ stream = process.stdout } = {}) {
   const s = createStyler({ isTTY: stream.isTTY });
   const lines = [
