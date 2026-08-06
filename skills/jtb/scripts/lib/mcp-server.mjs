@@ -188,7 +188,13 @@ function buildDoctorArgs({ fix, profile }) {
 
 async function callDoctor(args, { configDir, runDoctorFn }) {
   const capture = capturingStream();
-  await runDoctorFn(buildDoctorArgs(args), { configDir, stream: capture });
+  // runDoctor writes its final report to `out` (stdout by default) and only
+  // uses `stream` for --fix progress chatter — since this call always forces
+  // --format=json (see buildDoctorArgs), the report is what we need here.
+  // Both must be captured, not left to default: an uncaptured `out` would
+  // write the JSON report straight to this process's real stdout, which is
+  // the MCP JSON-RPC channel itself.
+  await runDoctorFn(buildDoctorArgs(args), { configDir, stream: capture, out: capture });
   return { content: [{ type: 'text', text: capture.text }] };
 }
 

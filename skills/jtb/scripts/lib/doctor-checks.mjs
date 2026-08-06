@@ -5,6 +5,11 @@
  *   { id, label, ok, message, hint, fixable }
  * No stdout/stdin, no arg parsing — independently unit-testable in
  * isolation from CLI/MCP concerns.
+ *
+ * checkCacheHealth returns a 7th, internal-only field beyond the six
+ * above — `corruptEntries` — consumed only by doctor-command.mjs's
+ * `--fix` step to know which local files to delete. It is stripped
+ * before any public (CLI plain/JSON or MCP) output.
  */
 
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
@@ -141,7 +146,7 @@ export async function checkConnectivity({
     }
   }
 
-  const { results, failedCount } = await testConnectionsFn({ configDir, stream: NOOP_STREAM });
+  const { results, failedCount } = await testConnectionsFn({ configDir, stream: NOOP_STREAM, resolveAdapterFn });
   if (results.length === 0) {
     return {
       id: 'connectivity', label: 'Tracker connectivity', ok: true,
@@ -177,7 +182,9 @@ export function checkCacheHealth({
     const totalSize = entries.reduce((sum, e) => sum + e.size, 0);
     return {
       id: 'cache-health', label: 'Attachment cache', ok: true,
-      message: `${entries.length} cached file(s), ${formatSize(totalSize)}, none corrupt.`,
+      message: entries.length === 0
+        ? 'No cached files.'
+        : `${entries.length} cached file(s), ${formatSize(totalSize)}, none corrupt.`,
       hint: null, fixable: false, corruptEntries: [],
     };
   }

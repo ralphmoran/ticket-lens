@@ -237,6 +237,22 @@ describe('mcp-server', () => {
       );
       assert.equal(messages[0].result.isError, undefined);
     });
+
+    it('with the REAL runDoctor (no stub), the report is fully captured as tool text content — nothing leaks past the capture and corrupts the JSON-RPC stdout channel', async () => {
+      // runDoctor writes its final report to an `out` dependency (defaulting to
+      // process.stdout) separately from `stream` (defaulting to process.stderr,
+      // used only for --fix progress chatter). callDoctor MUST capture both into
+      // the same buffer, or the real report would bypass the capture entirely —
+      // this exercises the actual doctor-command.mjs, not a stub, to prove it.
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'doctor', arguments: {} } }],
+        { configDir }, // no runDoctorFn override — uses the real runDoctor
+      );
+      assert.equal(messages.length, 1, 'exactly one JSON-RPC message on stdout — no leaked doctor output alongside it');
+      const parsed = JSON.parse(messages[0].result.content[0].text);
+      assert.equal(parsed.schemaVersion, 1);
+      assert.equal(typeof parsed.ok, 'boolean');
+    });
   });
 
   describe('tools/call recall_search', () => {

@@ -179,14 +179,26 @@ describe('checkConnectivity', () => {
     assert.equal(result.ok, false);
     assert.match(result.message, /Authentication failed/);
   });
+
+  it('full sweep forwards resolveAdapterFn to testConnections — a stubbed resolveAdapterFn must not fall through to a real network call', async () => {
+    let seenResolveAdapterFn;
+    const testConnectionsFn = async (opts) => {
+      seenResolveAdapterFn = opts.resolveAdapterFn;
+      return { results: [], failedCount: 0 };
+    };
+    const resolveAdapterFn = () => ({ fetchCurrentUser: async () => ({ displayName: 'Dev' }) });
+    await checkConnectivity({ configDir, testConnectionsFn, resolveAdapterFn });
+    assert.equal(seenResolveAdapterFn, resolveAdapterFn);
+  });
 });
 
 describe('checkCacheHealth', () => {
-  it('passes with a summary when there are no cached files', () => {
+  it('passes with a clear "No cached files." message when there are no cached files — never the bare formatSize(0) "?"', () => {
     const getCacheEntriesFn = () => [];
     const result = checkCacheHealth({ configDir, getCacheEntriesFn });
     assert.equal(result.id, 'cache-health');
     assert.equal(result.ok, true);
+    assert.equal(result.message, 'No cached files.');
     assert.deepEqual(result.corruptEntries, []);
   });
 

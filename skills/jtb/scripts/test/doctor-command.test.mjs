@@ -21,30 +21,33 @@ function allOkChecks(overrides = {}) {
 describe('runDoctor — checks-only mode', () => {
   it('returns ok:true and renders a checkmark line per check in plain format when everything passes', async () => {
     const stream = fakeStream();
-    const result = await runDoctor([], { stream, ...allOkChecks() });
+    const out = fakeStream();
+    const result = await runDoctor([], { stream, out, ...allOkChecks() });
     assert.equal(result.ok, true);
-    assert.match(stream.text, /Profile configuration/);
-    assert.match(stream.text, /License freshness/);
-    assert.match(stream.text, /Tracker connectivity/);
-    assert.match(stream.text, /Attachment cache/);
-    assert.match(stream.text, /Recall sync queue/);
+    assert.match(out.text, /Profile configuration/);
+    assert.match(out.text, /License freshness/);
+    assert.match(out.text, /Tracker connectivity/);
+    assert.match(out.text, /Attachment cache/);
+    assert.match(out.text, /Recall sync queue/);
   });
 
   it('returns ok:false when any check fails, and prints its hint', async () => {
     const stream = fakeStream();
+    const out = fakeStream();
     const overrides = allOkChecks({
       checkProfileConfigFn: () => ({ id: 'profile-config', label: 'Profile configuration', ok: false, message: 'No profile configured.', hint: 'Run `ticketlens init`.', fixable: false }),
     });
-    const result = await runDoctor([], { stream, ...overrides });
+    const result = await runDoctor([], { stream, out, ...overrides });
     assert.equal(result.ok, false);
-    assert.match(stream.text, /No profile configured/);
-    assert.match(stream.text, /Run `ticketlens init`/);
+    assert.match(out.text, /No profile configured/);
+    assert.match(out.text, /Run `ticketlens init`/);
   });
 
   it('--format=json prints the exact schemaVersion 1 shape and never includes corruptEntries', async () => {
     const stream = fakeStream();
-    await runDoctor(['--format=json'], { stream, ...allOkChecks() });
-    const parsed = JSON.parse(stream.text);
+    const out = fakeStream();
+    await runDoctor(['--format=json'], { stream, out, ...allOkChecks() });
+    const parsed = JSON.parse(out.text);
     assert.equal(parsed.schemaVersion, 1);
     assert.equal(parsed.ok, true);
     assert.equal(parsed.checks.length, 5);
@@ -53,6 +56,14 @@ describe('runDoctor — checks-only mode', () => {
     }
     assert.deepEqual(parsed.fixed, []);
     assert.deepEqual(parsed.skipped, []);
+  });
+
+  it('writes the report to `out` (stdout), never to `stream` (stderr) — the JSON output must be pipeable', async () => {
+    const stream = fakeStream();
+    const out = fakeStream();
+    await runDoctor(['--format=json'], { stream, out, ...allOkChecks() });
+    assert.equal(stream.text, '', 'no report bytes should land on the stderr-style stream');
+    assert.doesNotThrow(() => JSON.parse(out.text), 'the full report must parse cleanly from out alone');
   });
 
   it('rejects an invalid --format value without running any checks', async () => {
@@ -74,7 +85,7 @@ describe('runDoctor — checks-only mode', () => {
       checkLicenseFreshnessFn: (opts) => { seen.license = 'profileName' in opts; return { id: 'license-freshness', label: '', ok: true, message: '', hint: null, fixable: false }; },
       checkRecallQueueFn: (opts) => { seen.queue = 'profileName' in opts; return { id: 'recall-queue', label: '', ok: true, message: '', hint: null, fixable: false }; },
     });
-    await runDoctor(['--profile=acme'], { stream: fakeStream(), ...overrides });
+    await runDoctor(['--profile=acme'], { stream: fakeStream(), out: fakeStream(), ...overrides });
     assert.equal(seen.profileConfig, 'acme');
     assert.equal(seen.connectivity, 'acme');
     assert.equal(seen.cache, 'acme');
@@ -86,6 +97,7 @@ describe('runDoctor — checks-only mode', () => {
 describe('runDoctor — --fix mode', () => {
   it('revalidates a stale license, re-checks it, and reports it in fixed[] when now green', async () => {
     const stream = fakeStream();
+    const out = fakeStream();
     let revalidated = false;
     let recheckCount = 0;
     const checkLicenseFreshnessFn = () => {
@@ -96,16 +108,17 @@ describe('runDoctor — --fix mode', () => {
     };
     const revalidateLicenseFn = async () => { revalidated = true; return { success: true }; };
     const result = await runDoctor(['--fix'], {
-      stream, revalidateLicenseFn,
+      stream, out, revalidateLicenseFn,
       ...allOkChecks({ checkLicenseFreshnessFn }),
     });
     assert.equal(revalidated, true);
     assert.equal(result.ok, true);
-    assert.match(stream.text, /Fixed:.*license-freshness/s);
+    assert.match(out.text, /Fixed:.*license-freshness/s);
   });
 
   it('deletes exactly the corrupt cache entries reported by checkCacheHealth, nothing else', async () => {
     const stream = fakeStream();
+    const out = fakeStream();
     const deleted = [];
     const unlinkFn = (p) => deleted.push(p);
     let recheckCount = 0;
@@ -117,7 +130,7 @@ describe('runDoctor — --fix mode', () => {
         : { id: 'cache-health', label: 'Attachment cache', ok: true, message: 'clean', hint: null, fixable: false, corruptEntries: [] };
     };
     const result = await runDoctor(['--fix'], {
-      stream, unlinkFn,
+      stream, out, unlinkFn,
       ...allOkChecks({ checkCacheHealthFn }),
     });
     assert.deepEqual(deleted, ['/x/bad.png']);
@@ -126,6 +139,7 @@ describe('runDoctor — --fix mode', () => {
 
   it('flushes a pending recall queue when logged in, re-checks it, and reports it fixed', async () => {
     const stream = fakeStream();
+    const out = fakeStream();
     let flushed = false;
     let recheckCount = 0;
     const checkRecallQueueFn = () => {
@@ -137,39 +151,41 @@ describe('runDoctor — --fix mode', () => {
     const flushQueueFn = async () => { flushed = true; return { flushed: 2, remaining: 0 }; };
     const readCliTokenFn = () => 'a-real-token';
     const result = await runDoctor(['--fix'], {
-      stream, flushQueueFn, readCliTokenFn,
+      stream, out, flushQueueFn, readCliTokenFn,
       ...allOkChecks({ checkRecallQueueFn }),
     });
     assert.equal(flushed, true);
     assert.equal(result.ok, true);
-    assert.match(stream.text, /Fixed:.*recall-queue/s);
+    assert.match(out.text, /Fixed:.*recall-queue/s);
   });
 
   it('skips the queue flush (does not call flushQueue) when not logged in, and reports it in skipped[]', async () => {
     const stream = fakeStream();
+    const out = fakeStream();
     let flushed = false;
     const checkRecallQueueFn = () => ({ id: 'recall-queue', label: 'Recall sync queue', ok: false, message: '2 pending', hint: null, fixable: true });
     const flushQueueFn = async () => { flushed = true; return { flushed: 2, remaining: 0 }; };
     const readCliTokenFn = () => null;
     const result = await runDoctor(['--fix', '--format=json'], {
-      stream, flushQueueFn, readCliTokenFn,
+      stream, out, flushQueueFn, readCliTokenFn,
       ...allOkChecks({ checkRecallQueueFn }),
     });
     assert.equal(flushed, false);
     assert.equal(result.ok, false);
-    const parsed = JSON.parse(stream.text);
+    const parsed = JSON.parse(out.text);
     assert.deepEqual(parsed.skipped, [{ id: 'recall-queue', reason: 'Not logged in — run `ticketlens login` first.' }]);
   });
 
   it('applies fixes in license → cache → queue order', async () => {
     const stream = fakeStream();
+    const out = fakeStream();
     const order = [];
     const revalidateLicenseFn = async () => { order.push('license'); return { success: true }; };
     const unlinkFn = () => { order.push('cache'); };
     const flushQueueFn = async () => { order.push('queue'); return { flushed: 1, remaining: 0 }; };
     const failing = (id, label) => () => ({ id, label, ok: false, message: 'x', hint: null, fixable: true, corruptEntries: id === 'cache-health' ? [{ localPath: '/x' }] : undefined });
     await runDoctor(['--fix'], {
-      stream, revalidateLicenseFn, unlinkFn, flushQueueFn,
+      stream, out, revalidateLicenseFn, unlinkFn, flushQueueFn,
       readCliTokenFn: () => 'tok',
       ...allOkChecks({
         checkLicenseFreshnessFn: failing('license-freshness', 'License freshness'),
@@ -182,11 +198,12 @@ describe('runDoctor — --fix mode', () => {
 
   it('does not attempt a fix for a check that is failing but not fixable (e.g. connectivity)', async () => {
     const stream = fakeStream();
+    const out = fakeStream();
     const checkConnectivityFn = async () => ({ id: 'connectivity', label: 'Tracker connectivity', ok: false, message: 'down', hint: null, fixable: false });
     const result = await runDoctor(['--fix', '--format=json'], {
-      stream, ...allOkChecks({ checkConnectivityFn }),
+      stream, out, ...allOkChecks({ checkConnectivityFn }),
     });
-    const parsed = JSON.parse(stream.text);
+    const parsed = JSON.parse(out.text);
     assert.deepEqual(parsed.fixed, []);
     assert.deepEqual(parsed.skipped, []);
     assert.equal(result.ok, false);
@@ -194,6 +211,7 @@ describe('runDoctor — --fix mode', () => {
 
   it('--fix --profile=X reports cache-health in fixed[] when X has corrupt entries that are fixed, even if an unrelated profile has unrelated corruption', async () => {
     const stream = fakeStream();
+    const out = fakeStream();
     const deleted = [];
     const unlinkFn = (p) => deleted.push(p);
     let checkCacheHealthCallCount = 0;
@@ -213,18 +231,19 @@ describe('runDoctor — --fix mode', () => {
       return { id: 'cache-health', label: 'Attachment cache', ok: true, message: 'ok', hint: null, fixable: false, corruptEntries: [] };
     };
     const result = await runDoctor(['--fix', '--profile=acme', '--format=json'], {
-      stream, unlinkFn,
+      stream, out, unlinkFn,
       ...allOkChecks({ checkCacheHealthFn }),
     });
     assert.deepEqual(deleted, ['/cache/acme/bad.png']);
     assert.deepEqual(seenProfileNames, ['acme', 'acme']);
-    const parsed = JSON.parse(stream.text);
+    const parsed = JSON.parse(out.text);
     assert.deepEqual(parsed.fixed, ['cache-health']);
     assert.equal(result.ok, true);
   });
 
   it('--fix --format=json with a failing fixable license-freshness check produces valid JSON without interleaved status messages', async () => {
     const stream = fakeStream();
+    const out = fakeStream();
     let recheckCount = 0;
     const checkLicenseFreshnessFn = () => {
       recheckCount++;
@@ -234,17 +253,21 @@ describe('runDoctor — --fix mode', () => {
     };
     const revalidateLicenseFn = async () => ({ success: true });
     const result = await runDoctor(['--fix', '--format=json'], {
-      stream, revalidateLicenseFn,
+      stream, out, revalidateLicenseFn,
       ...allOkChecks({ checkLicenseFreshnessFn }),
     });
-    // Should be able to parse the entire stream as JSON without error (no interleaved "Revalidating license..." text)
-    const parsed = JSON.parse(stream.text);
+    // In --format=json mode, progress chatter ("Revalidating license...") is
+    // suppressed entirely (it's gated on format === 'plain'), so `stream`
+    // stays empty and the report on `out` is never at risk of interleaving.
+    const parsed = JSON.parse(out.text);
     assert.deepEqual(parsed.fixed, ['license-freshness']);
     assert.equal(result.ok, true);
+    assert.equal(stream.text, '');
   });
 
   it('--fix --format=json with a failing fixable recall-queue check produces valid JSON without interleaved status messages', async () => {
     const stream = fakeStream();
+    const out = fakeStream();
     let recheckCount = 0;
     const checkRecallQueueFn = () => {
       recheckCount++;
@@ -255,12 +278,39 @@ describe('runDoctor — --fix mode', () => {
     const flushQueueFn = async () => ({ flushed: 3, remaining: 0 });
     const readCliTokenFn = () => 'auth-token';
     const result = await runDoctor(['--fix', '--format=json'], {
-      stream, flushQueueFn, readCliTokenFn,
+      stream, out, flushQueueFn, readCliTokenFn,
       ...allOkChecks({ checkRecallQueueFn }),
     });
-    // Should be able to parse the entire stream as JSON without error (no interleaved "Flushing recall queue..." text)
-    const parsed = JSON.parse(stream.text);
+    // Same isolation guarantee as above, for the queue-flush progress message.
+    const parsed = JSON.parse(out.text);
     assert.deepEqual(parsed.fixed, ['recall-queue']);
     assert.equal(result.ok, true);
+    assert.equal(stream.text, '');
+  });
+
+  it('a partial-success fix (recheck still ok:false, but improved) updates the reported state without adding it to fixed[]', async () => {
+    const stream = fakeStream();
+    const out = fakeStream();
+    // Queue starts with 5 pending notes; flushQueue pushes 3, leaving 2 —
+    // a real partial success. The recheck after the flush must be what gets
+    // rendered, not the stale pre-fix "5 note(s) pending sync." message.
+    let recheckCount = 0;
+    const checkRecallQueueFn = () => {
+      recheckCount++;
+      return recheckCount === 1
+        ? { id: 'recall-queue', label: 'Recall sync queue', ok: false, message: '5 note(s) pending sync.', hint: 'retry', fixable: true }
+        : { id: 'recall-queue', label: 'Recall sync queue', ok: false, message: '2 note(s) pending sync.', hint: 'retry', fixable: true };
+    };
+    const flushQueueFn = async () => ({ flushed: 3, remaining: 2 });
+    const readCliTokenFn = () => 'a-real-token';
+    const result = await runDoctor(['--fix', '--format=json'], {
+      stream, out, flushQueueFn, readCliTokenFn,
+      ...allOkChecks({ checkRecallQueueFn }),
+    });
+    const parsed = JSON.parse(out.text);
+    const queueCheck = parsed.checks.find(c => c.id === 'recall-queue');
+    assert.equal(queueCheck.message, '2 note(s) pending sync.', 'must reflect the post-fix recheck, not the stale pre-fix count');
+    assert.deepEqual(parsed.fixed, [], 'a still-failing recheck must never land in fixed[]');
+    assert.equal(result.ok, false);
   });
 });
