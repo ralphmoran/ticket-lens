@@ -21,6 +21,7 @@
 
 import readline from 'node:readline';
 import { DEFAULT_CONFIG_DIR, getVersion } from './config.mjs';
+import { runDoctor } from './doctor-command.mjs';
 import { runNoteAdd } from './note-command.mjs';
 import { runRecall } from './recall-command.mjs';
 import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate, runTicketCreate } from './ticket-command.mjs';
@@ -28,6 +29,17 @@ import { runTicketComment, runTicketTransitionList, runTicketTransition, runTick
 const PROTOCOL_VERSION = '2025-11-25';
 
 const TOOLS = [
+  {
+    name: 'doctor',
+    description: 'Diagnose common TicketLens problems: profile configuration, license freshness, tracker connectivity, attachment cache health, and the Recall sync queue. Always returns structured JSON. Free tier, fully unrestricted — including fix.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fix: { type: 'boolean', description: 'Attempt safe, non-destructive repairs for failing checks.' },
+        profile: { type: 'string', description: 'Scope profile/connectivity/cache checks to one profile.' },
+      },
+    },
+  },
   {
     name: 'recall_add',
     description: 'Save a Recall note — a gotcha, root cause, or non-obvious decision learned this session. Requires a TicketLens Pro license.',
@@ -165,6 +177,19 @@ function capturingStream() {
     write(s) { parts.push(s); return true; },
     get text() { return parts.join(''); },
   };
+}
+
+function buildDoctorArgs({ fix, profile }) {
+  const args = ['--format=json'];
+  if (fix === true) args.push('--fix');
+  if (profile) args.push(`--profile=${profile}`);
+  return args;
+}
+
+async function callDoctor(args, { configDir, runDoctorFn }) {
+  const capture = capturingStream();
+  await runDoctorFn(buildDoctorArgs(args), { configDir, stream: capture });
+  return { content: [{ type: 'text', text: capture.text }] };
 }
 
 /**
@@ -370,6 +395,7 @@ async function callTicketCreate(args, { configDir, runTicketCreateFn }) {
 
 async function handleToolsCall(params, deps) {
   const { name, arguments: args = {} } = params ?? {};
+  if (name === 'doctor') return callDoctor(args, deps);
   if (name === 'recall_add') return callRecallAdd(args, deps);
   if (name === 'recall_search') return callRecallSearch(args, deps);
   if (name === 'ticket_comment') return callTicketComment(args, deps);
@@ -382,7 +408,7 @@ async function handleToolsCall(params, deps) {
   return { isError: true, content: [{ type: 'text', text: `Unknown tool: ${name}` }] };
 }
 
-async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn }) {
+async function handleMessage(raw, { configDir, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn }) {
   let msg;
   try {
     msg = JSON.parse(raw);
@@ -412,7 +438,7 @@ async function handleMessage(raw, { configDir, runNoteAddFn, runRecallFn, runTic
 
   if (method === 'tools/call') {
     try {
-      const result = await handleToolsCall(params, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
+      const result = await handleToolsCall(params, { configDir, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
       return jsonRpcResult(id, result);
     } catch (err) {
       return jsonRpcError(id ?? null, -32603, `Internal error: ${err.message}`);
@@ -433,6 +459,7 @@ export function runMcpServer({
   configDir = DEFAULT_CONFIG_DIR,
   stdin = process.stdin,
   stdout = process.stdout,
+  runDoctorFn = runDoctor,
   runNoteAddFn = runNoteAdd,
   runRecallFn = runRecall,
   runTicketCommentFn = runTicketComment,
@@ -463,7 +490,7 @@ export function runMcpServer({
     // never resolving (a dropped rejection isn't a resolution) — the
     // server would hang on shutdown instead of exiting.
     queue = queue.then(async () => {
-      const response = await handleMessage(line, { configDir, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
+      const response = await handleMessage(line, { configDir, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
       if (response) stdout.write(response);
     }).catch(() => {});
   });
