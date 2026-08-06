@@ -18,6 +18,7 @@ import { run as runConfig } from '../skills/jtb/scripts/lib/config-wizard.mjs';
 import { activateLicense, checkLicense, revalidateIfStale, isLicensed, showUpgradePrompt, readLicense } from '../skills/jtb/scripts/lib/license.mjs';
 import { deleteProfile, loadProfiles, saveCredentialKey } from '../skills/jtb/scripts/lib/profile-resolver.mjs';
 import { run as runCache } from '../skills/jtb/scripts/lib/cache-manager.mjs';
+import { runDoctor } from '../skills/jtb/scripts/lib/doctor-command.mjs';
 import {
   printHelp, printProfiles, printHistoryHelp,
   printLoginHelp, printLogoutHelp, printSyncHelp,
@@ -26,7 +27,7 @@ import {
   printInitHelp, printSwitchHelp, printConfigHelp,
   printReviewHelp, printStandupHelp, printUpdateSkillHelp,
   printComplianceHelp, printLedgerHelp, printPrHelp, printInstallHooksHelp,
-  printCollisionsHelp, printStatsHelp,
+  printCollisionsHelp, printStatsHelp, printDoctorHelp,
   printCloudKeysHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
   printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
@@ -169,6 +170,17 @@ switch (command) {
   case 'stats': {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printStatsHelp(); break; }
     runStats(cmdArgs).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+  }
+
+  case 'doctor': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printDoctorHelp(); break; }
+    runDoctor(cmdArgs).then(({ ok }) => {
+      if (!ok) process.exitCode = 1;
+    }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
     });
