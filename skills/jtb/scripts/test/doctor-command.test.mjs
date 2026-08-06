@@ -222,4 +222,45 @@ describe('runDoctor — --fix mode', () => {
     assert.deepEqual(parsed.fixed, ['cache-health']);
     assert.equal(result.ok, true);
   });
+
+  it('--fix --format=json with a failing fixable license-freshness check produces valid JSON without interleaved status messages', async () => {
+    const stream = fakeStream();
+    let recheckCount = 0;
+    const checkLicenseFreshnessFn = () => {
+      recheckCount++;
+      return recheckCount === 1
+        ? { id: 'license-freshness', label: 'License freshness', ok: false, message: 'stale', hint: null, fixable: true }
+        : { id: 'license-freshness', label: 'License freshness', ok: true, message: 'fresh', hint: null, fixable: false };
+    };
+    const revalidateLicenseFn = async () => ({ success: true });
+    const result = await runDoctor(['--fix', '--format=json'], {
+      stream, revalidateLicenseFn,
+      ...allOkChecks({ checkLicenseFreshnessFn }),
+    });
+    // Should be able to parse the entire stream as JSON without error (no interleaved "Revalidating license..." text)
+    const parsed = JSON.parse(stream.text);
+    assert.deepEqual(parsed.fixed, ['license-freshness']);
+    assert.equal(result.ok, true);
+  });
+
+  it('--fix --format=json with a failing fixable recall-queue check produces valid JSON without interleaved status messages', async () => {
+    const stream = fakeStream();
+    let recheckCount = 0;
+    const checkRecallQueueFn = () => {
+      recheckCount++;
+      return recheckCount === 1
+        ? { id: 'recall-queue', label: 'Recall sync queue', ok: false, message: '3 pending', hint: null, fixable: true }
+        : { id: 'recall-queue', label: 'Recall sync queue', ok: true, message: 'clear', hint: null, fixable: false };
+    };
+    const flushQueueFn = async () => ({ flushed: 3, remaining: 0 });
+    const readCliTokenFn = () => 'auth-token';
+    const result = await runDoctor(['--fix', '--format=json'], {
+      stream, flushQueueFn, readCliTokenFn,
+      ...allOkChecks({ checkRecallQueueFn }),
+    });
+    // Should be able to parse the entire stream as JSON without error (no interleaved "Flushing recall queue..." text)
+    const parsed = JSON.parse(stream.text);
+    assert.deepEqual(parsed.fixed, ['recall-queue']);
+    assert.equal(result.ok, true);
+  });
 });
