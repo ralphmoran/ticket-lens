@@ -50,16 +50,18 @@ async function applyFixes(rawResults, {
     if (format === 'plain') stream.write('Revalidating license...\n');
     await revalidateLicenseFn({ configDir });
     const recheck = checkLicenseFreshnessFn({ configDir });
-    if (recheck.ok) { fixed.push('license-freshness'); byId['license-freshness'] = recheck; }
+    byId['license-freshness'] = recheck;
+    if (recheck.ok) fixed.push('license-freshness');
   }
 
   if (byId['cache-health'] && !byId['cache-health'].ok && byId['cache-health'].fixable) {
     if (format === 'plain') stream.write('Clearing corrupt cache entries...\n');
-    for (const entry of byId['cache-health'].corruptEntries) {
+    for (const entry of byId['cache-health'].corruptEntries ?? []) {
       try { unlinkFn(entry.localPath); } catch { /* already gone */ }
     }
     const recheck = checkCacheHealthFn({ configDir, profileName });
-    if (recheck.ok) { fixed.push('cache-health'); byId['cache-health'] = recheck; }
+    byId['cache-health'] = recheck;
+    if (recheck.ok) fixed.push('cache-health');
   }
 
   if (byId['recall-queue'] && !byId['recall-queue'].ok && byId['recall-queue'].fixable) {
@@ -70,7 +72,8 @@ async function applyFixes(rawResults, {
       if (format === 'plain') stream.write('Flushing recall queue...\n');
       await flushQueueFn({ cliToken, configDir });
       const recheck = checkRecallQueueFn({ configDir });
-      if (recheck.ok) { fixed.push('recall-queue'); byId['recall-queue'] = recheck; }
+      byId['recall-queue'] = recheck;
+      if (recheck.ok) fixed.push('recall-queue');
     }
   }
 
@@ -80,6 +83,7 @@ async function applyFixes(rawResults, {
 export async function runDoctor(args, {
   configDir = DEFAULT_CONFIG_DIR,
   stream = process.stderr,
+  out = process.stdout,
   cwd = process.cwd(),
   checkProfileConfigFn = checkProfileConfig,
   checkLicenseFreshnessFn = checkLicenseFreshness,
@@ -132,10 +136,10 @@ export async function runDoctor(args, {
   const ok = checks.every(c => c.ok);
 
   if (format === 'json') {
-    stream.write(JSON.stringify({ schemaVersion: 1, ok, checks, fixed, skipped }, null, 2) + '\n');
+    out.write(JSON.stringify({ schemaVersion: 1, ok, checks, fixed, skipped }, null, 2) + '\n');
     return { ok };
   }
 
-  renderPlain(checks, { fixed, skipped, stream });
+  renderPlain(checks, { fixed, skipped, stream: out });
   return { ok };
 }

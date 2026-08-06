@@ -44,6 +44,7 @@
   - [Recall](#recall)
   - [Comment, Transition, Assign, Duplicates, Link, Update & Create](#comment-transition-assign-duplicates-link-update--create)
   - [Response-Time Stats](#response-time-stats)
+  - [Doctor](#doctor)
   - [Custom Attention Rules](#custom-attention-rules)
   - [Login](#login)
   - [License](#license)
@@ -525,6 +526,20 @@ A one-line summary footer is also appended automatically to `ticketlens triage` 
 
 ---
 
+### Doctor
+
+```bash
+ticketlens doctor                        # Diagnose profile/license/connectivity/cache/queue problems
+ticketlens doctor --fix                  # Attempt safe automatic fixes (license revalidation, corrupt cache cleanup, queue flush)
+ticketlens doctor --profile=acme         # Scope checks to a single profile
+ticketlens doctor --format=json          # JSON output for scripting/piping
+ticketlens doctor --format=json | jq '.ok'
+```
+
+Runs five checks — profile configuration, license freshness, tracker connectivity, attachment cache health, and the Recall sync queue — and reports pass/fail with an actionable hint per failure, instead of a raw stack trace. Free tier, fully unrestricted; no license required.
+
+---
+
 ### Custom Attention Rules
 
 Add an `attentionRules` array to any profile in `~/.ticketlens/profiles.json` to override how `ticketlens triage` scores specific tickets:
@@ -800,6 +815,12 @@ ticketlens stats                              # Response-time metrics from local
 ticketlens stats --profile=acme              # Metrics for a specific profile
 ticketlens stats --days=14                   # Extend lookback window (Pro, max 30)
 ticketlens stats --format=json               # JSON output for scripting
+
+# ── Doctor ────────────────────────────────────────────────────────────────────
+ticketlens doctor                             # Diagnose profile/license/connectivity/cache/queue problems
+ticketlens doctor --fix                       # Attempt safe automatic fixes
+ticketlens doctor --profile=acme             # Scope checks to a single profile
+ticketlens doctor --format=json               # JSON output for scripting/piping
 
 # ── Compliance ────────────────────────────────────────────────────────────────
 ticketlens compliance <TICKET-KEY>            # Check ticket requirements against local diff [Pro/Free 3/mo]

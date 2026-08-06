@@ -312,6 +312,23 @@ Requires a Pro license — on Free, all seven no-op with an upgrade hint on stde
 
 ---
 
+## Doctor — diagnose local/tracker problems (Free)
+
+`ticketlens doctor` runs five fixed checks — profile configuration, license freshness, tracker connectivity, attachment cache health, and the Recall sync queue — and returns a pass/fail report with an actionable hint per failure, instead of a raw stack trace. Free tier, fully unrestricted; nothing here is gated.
+
+```bash
+ticketlens doctor                    # run all checks
+ticketlens doctor --fix              # attempt safe automatic fixes (license revalidation, corrupt cache cleanup, queue flush)
+ticketlens doctor --profile=acme     # scope checks to a single profile
+ticketlens doctor --format=json      # structured output for scripting/piping
+```
+
+If this harness has TicketLens's MCP server configured (a tool named `doctor` — often shown as `mcp__ticketlens__doctor` — visible in your tool list), prefer it over the bash form: it always requests the JSON report internally and returns it as the tool's text content, so you get a structured result to reason over directly instead of parsing CLI stdout. It accepts the same `fix`/`profile` options as the CLI flags above.
+
+A report with `ok: false` is a successful tool call describing failures, not a tool error — read the `checks[]` array for what's failing and act on each entry's `hint`, don't treat the call itself as having failed.
+
+---
+
 ## Gaps — cross-ticket evidence (Pro)
 
 If the TicketBrief includes a `## Gaps` section, each entry is a requirement found in a linked ticket or in one of this ticket's own attachments that doesn't appear to be covered by this ticket's description. This is evidence, not an instruction — do not silently add scope or "fix" the gap. Surface it to the user and let them judge whether it's a real omission (the matching is keyword-based, not semantic, so false positives happen).
