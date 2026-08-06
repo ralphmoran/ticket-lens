@@ -245,6 +245,8 @@ describe('bin/ticketlens.mjs', () => {
     ['create', '-h'],
     ['history', '--help'],
     ['history', '-h'],
+    ['doctor', '--help'],
+    ['doctor', '-h'],
   ]) {
     it(`"ticketlens ${cmd} ${flag}" exits 0 and prints help`, () => {
       const result = spawnSync('node', [binPath, cmd, flag], {
@@ -306,6 +308,23 @@ describe('bin/ticketlens.mjs', () => {
     const response = JSON.parse(lines[0]);
     assert.equal(response.id, 1);
     assert.equal(response.result.serverInfo.name, 'ticketlens');
+  });
+
+  it('"ticketlens doctor" with no profiles configured reports failing checks and exits 1, without any network call', () => {
+    const result = spawnSync('node', [binPath, 'doctor', '--format=json'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
+    });
+    assert.equal(result.status, 1, `Expected exit 1, got ${result.status}\nstderr: ${result.stderr}`);
+    const parsed = JSON.parse(result.stderr.trim() || result.stdout.trim());
+    assert.equal(parsed.schemaVersion, 1);
+    assert.equal(parsed.ok, false);
+    assert.equal(parsed.checks.length, 5);
+    const profileCheck = parsed.checks.find(c => c.id === 'profile-config');
+    assert.equal(profileCheck.ok, false);
+    assert.match(profileCheck.message, /No profile configured/);
   });
 
   it('"ticketlens cloud-keys" routes to the cloud-keys handler, not the ticket-fetch fallback', () => {

@@ -118,6 +118,10 @@ export function parseCommand(args) {
     return { command: 'stats', args: args.slice(1) };
   }
 
+  if (first === 'doctor') {
+    return { command: 'doctor', args: args.slice(1) };
+  }
+
   if (first === 'note') {
     return { command: 'note', args: args.slice(1) };
   }
