@@ -74,7 +74,7 @@ describe('mcp-server', () => {
     it('returns exactly recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const names = messages[0].result.tools.map((t) => t.name).sort();
-      assert.deepEqual(names, ['recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update']);
+      assert.deepEqual(names, ['doctor', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update']);
       for (const tool of messages[0].result.tools) {
         assert.equal(tool.inputSchema.type, 'object');
         assert.ok(tool.inputSchema.properties, `${tool.name} must declare input properties`);
@@ -178,6 +178,64 @@ describe('mcp-server', () => {
       );
       assert.equal(seenArgs.length, 1, 'the forged flag must not become a second array element');
       assert.equal(seenArgs[0], '--title=--ticket=EVIL-999');
+    });
+  });
+
+  describe('tools/call doctor', () => {
+    it('always requests JSON internally and returns the parsed report as text content', async () => {
+      const runDoctorFn = async (args, opts) => {
+        assert.ok(args.includes('--format=json'));
+        opts.stream.write(JSON.stringify({ schemaVersion: 1, ok: true, checks: [], fixed: [], skipped: [] }));
+        return { ok: true };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'doctor', arguments: {} } }],
+        { configDir, runDoctorFn },
+      );
+      const result = messages[0].result;
+      assert.equal(result.isError, undefined);
+      const parsed = JSON.parse(result.content[0].text);
+      assert.equal(parsed.ok, true);
+    });
+
+    it('passes fix:true through as --fix', async () => {
+      let capturedArgs;
+      const runDoctorFn = async (args, opts) => {
+        capturedArgs = args;
+        opts.stream.write('{}');
+        return { ok: true };
+      };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'doctor', arguments: { fix: true } } }],
+        { configDir, runDoctorFn },
+      );
+      assert.ok(capturedArgs.includes('--fix'));
+    });
+
+    it('passes profile through as --profile=NAME', async () => {
+      let capturedArgs;
+      const runDoctorFn = async (args, opts) => {
+        capturedArgs = args;
+        opts.stream.write('{}');
+        return { ok: true };
+      };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'doctor', arguments: { profile: 'acme' } } }],
+        { configDir, runDoctorFn },
+      );
+      assert.ok(capturedArgs.includes('--profile=acme'));
+    });
+
+    it('returns isError:false even when the report itself has ok:false — a diagnostic report is not a tool-call failure', async () => {
+      const runDoctorFn = async (args, opts) => {
+        opts.stream.write(JSON.stringify({ schemaVersion: 1, ok: false, checks: [], fixed: [], skipped: [] }));
+        return { ok: false };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'doctor', arguments: {} } }],
+        { configDir, runDoctorFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
     });
   });
 
@@ -758,7 +816,7 @@ describe('mcp-server', () => {
       assert.equal(messages.length, 2, 'both the parse-error response and the valid tools/list response must appear');
       assert.ok(messages[0].error, 'first message must be a JSON-RPC error for the malformed line');
       assert.equal(messages[1].id, 2);
-      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update']);
+      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['doctor', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update']);
     });
 
     it('a syntactically-valid-but-non-object JSON line (e.g. bare "null") does not crash the server or drop later messages', async () => {
