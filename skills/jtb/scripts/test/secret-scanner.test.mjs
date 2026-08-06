@@ -238,3 +238,76 @@ describe('scanForSecrets — multiple issues', () => {
     assert.equal(result.reasons.length >= 2, true);
   });
 });
+
+describe('scanForSecrets — regression: colon-suffixed label word must stop a joined-chunk run', () => {
+  test('a colon-labeled sentence opener next to a ticket key is not falsely joined into a rejection', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'Generalizes: PROD-123456 and any sibling ticket touching this path should check it first.' });
+    assert.equal(result.rejected, false);
+  });
+
+  test('a colon-labeled sentence opener next to ordinary prose is not falsely joined into a rejection', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'Generalizes: any future ticket that touches this path should check the same thing first.' });
+    assert.equal(result.rejected, false);
+  });
+});
+
+describe('scanForSecrets — regression: fields are scanned independently for the entropy/random-string check', () => {
+  test('two tags that individually echo phrases repeated in the body do not falsely combine into a rejection', () => {
+    const result = scanForSecrets({
+      title: 'x',
+      tags: ['credit-application', 'add-finance-source'],
+      body: 'Credit Application flow now calls Add Finance Source correctly after the fix.',
+    });
+    assert.equal(result.rejected, false);
+  });
+
+  test('a secret split across the body by whitespace is still caught — per-field joining still works within one field', () => {
+    const result = scanForSecrets({ title: 'x', tags: ['clean'], body: 'AKIA IOSFODNN7EXAMPLE' });
+    assert.equal(result.rejected, true);
+  });
+});
+
+describe('scanForSecrets — regression: bare code-identifier filenames are not secrets', () => {
+  test('a PascalCase class-name-as-filename with a recognized source extension is not rejected, but does warn', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'RouteOneAutoEcontracting.php handles the integration.' });
+    assert.equal(result.rejected, false);
+    assert.match(result.warnings.join(' '), /code-filename-shaped/);
+  });
+
+  test('positive control: digits in the stem are NOT exempted — still a hard reject, not even a warning', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'Base64EncoderForV2Payloads123456789.php handles this.' });
+    assert.equal(result.rejected, true);
+  });
+
+  test('known accepted gap: a bare camelCase method name with no file extension is still misread as random — same shape as a base64 secret fragment, documented not silently fixed', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'The fix calls generateDealJacketForTekionSubmission after validation succeeds every time.' });
+    assert.equal(result.rejected, true, 'documents the known gap — see looksRandom doc comment for why a bare identifier without an extension cannot be safely distinguished from a base64 secret fragment');
+  });
+
+  test('security regression: a genuinely random letters-only secret disguised with a fake extension is downgraded to a warning, never silently exempted', () => {
+    // Real secret shape (no digits, so HARD_REJECT_PATTERNS don't apply), just
+    // wearing a ".php" suffix to probe the filename carve-out. Before the fix
+    // this returned rejected:false with NO warning at all — a silent bypass.
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'XqZkTmWpLbNvRcYsHjFgAbCd.php was mentioned once.' });
+    assert.equal(result.rejected, false);
+    assert.match(result.warnings.join(' '), /code-filename-shaped/, 'must never pass through with zero trace, even though it is not hard-blocked');
+  });
+
+  test('security regression: a random letters-only token with NO internal case switch plus a fake extension gets no special treatment at all — full reject, not even a warning', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'xqzktmwplbnvrcyshjfgabcd.php was mentioned once.' });
+    assert.equal(result.rejected, true);
+  });
+});
+
+describe('scanForSecrets — documented accepted gap: entropy join no longer spans a field boundary', () => {
+  test('a secret split exactly across a tag and the body is not caught by the entropy join — hard-reject shapes still are, this is entropy-only and deliberate', () => {
+    // Trade-off accepted alongside the Trigger-3 field-boundary fix above:
+    // splitting a generic (non-hard-reject-shaped) high-entropy secret across
+    // two different fields no longer reassembles for the entropy check, only
+    // within one field. See the per-field tokenization comment in
+    // scanForSecrets. Pinned down here so it can't silently regress further
+    // (or silently get "fixed" back) without this test being touched.
+    const result = scanForSecrets({ title: 'x', tags: ['XqZkTmWpLbNv'], body: 'RcYsHjFgAbCdEfGh' });
+    assert.equal(result.rejected, false);
+  });
+});

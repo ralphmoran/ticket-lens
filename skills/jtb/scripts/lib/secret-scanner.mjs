@@ -13,7 +13,7 @@ const GIT_SHA_RE = /^[0-9a-f]{7,64}$/i;
 const TICKET_KEY_RE = /^[A-Z][A-Z0-9]+-\d+$/;
 const GIT_REFERENCE_WORD_RE = /\b(commit|sha\d*|revision|rev|digest|checksum|md5(sum)?|hash|fingerprint)\b/i;
 const HASH_LABEL_PREFIX_RE = /^[a-z0-9]+:/i;
-const EDGE_PUNCTUATION_RE = /^[`'"(),.]+|[`'"(),.]+$/g;
+const EDGE_PUNCTUATION_RE = /^[`'"(),.:]+|[`'"(),.:]+$/g;
 const MIN_RANDOM_TOKEN_LENGTH = 20;
 // Hex-alphabet strings (16 symbols) top out near 4.0 bits/char by definition, so a
 // threshold of 4.0 makes it nearly impossible to ever flag a hex-shaped secret.
@@ -36,6 +36,32 @@ const HARD_REJECT_PATTERNS = [
 ];
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+
+// A letters-only token ending in a recognized source-file extension reads as
+// high-entropy the same way a real secret does — a class name doubling as its
+// filename is the common case, but a deliberately-renamed or accidentally
+// letters-only secret (no digits, so the hard-reject patterns above don't
+// apply either) would match this shape too and MUST NOT be silently waved
+// through: security review confirmed a full-exemption version of this check
+// was a deterministic bypass (append ".php" to any 20+ char letters-only
+// secret and it passed clean). So this only ever downgrades a match to a
+// warning, never removes it from the reject reasons — see the two
+// independent checks against looksRandomCandidates in scanForSecrets below,
+// not a shortcut inside looksRandom itself. A bare identifier with no
+// extension (a method name, not a filename) isn't covered by this at all —
+// that shape is indistinguishable from a base64 secret fragment either way.
+const CODE_FILENAME_RE = /^[A-Za-z]+\.(php|m?js|tsx?|jsx|py|rb|java|go|rs|vue|s?css|md|json|ya?ml|sh)$/i;
+
+function looksLikeCodeFilename(rawToken) {
+  const stripped = stripEdgePunctuation(rawToken);
+  const match = stripped.match(CODE_FILENAME_RE);
+  // Requiring an internal case switch in the stem (the same signal used to
+  // detect base64 content elsewhere in this file) means a genuinely random
+  // single-case letter run plus a fake extension gets no special treatment
+  // at all — only tokens that already look like a real PascalCase/camelCase
+  // identifier reach the softer warning path below.
+  return match !== null && hasInternalCaseSwitch(match[0]);
+}
 
 function shannonEntropy(token) {
   const counts = new Map();
@@ -183,8 +209,19 @@ export function scanForSecrets({ title = '', tags = [], body = '' } = {}) {
   const reasons = [];
   const warnings = [];
 
-  const tokens = combined.split(/\s+/).filter(Boolean);
-  const candidates = [...tokens, ...joinedChunkRuns(tokens)];
+  // Each field is tokenized on its own, and joinedChunkRuns runs separately
+  // per field, so a trailing tag word can never glue onto the next tag or
+  // onto the body's first word (see Trigger 3 in
+  // recall-secret-scanner-false-positives.md — tags echoing a phrase already
+  // repeated in the body were false-positiving via exactly this cross-field
+  // join). The hard-reject pass below intentionally keeps using the flat,
+  // cross-field `tokens`/`combined`/`despacedCombined`: those patterns match
+  // an exact literal prefix (AKIA, sk-, ghp_, eyJ, -----BEGIN), so joining
+  // across a field boundary can't turn them into a false positive the way
+  // entropy can.
+  const fieldTokenGroups = [title, ...tags, body].map(field => field.split(/\s+/).filter(Boolean));
+  const tokens = fieldTokenGroups.flat();
+  const candidates = [...tokens, ...fieldTokenGroups.flatMap(group => joinedChunkRuns(group))];
 
   // A known secret shape (AWS key, API key prefix, JWT, PEM block...) is recognized
   // by a specific literal prefix. Checked three ways, each catching what the
@@ -216,8 +253,19 @@ export function scanForSecrets({ title = '', tags = [], body = '' } = {}) {
   // only split secrets), an email joined with an adjacent word can produce a long
   // mixed string with incidentally high entropy. Emails get their own warning
   // below — they're not secrets, so they shouldn't feed the random-string check.
-  if (candidates.some(token => !EMAIL_RE.test(token) && looksRandom(token, combined))) {
+  //
+  // A code-filename-shaped candidate (looksLikeCodeFilename) is split out into
+  // its own warning instead of a reject reason: security review found that
+  // fully exempting this shape from the entropy check was a deterministic
+  // bypass (append ".php" to any letters-only secret and it passed clean).
+  // Downgrading to a warning — never silently dropping the signal — matches
+  // how an email address is already handled below.
+  const randomCandidates = candidates.filter(token => !EMAIL_RE.test(token) && looksRandom(token, combined));
+  if (randomCandidates.some(token => !looksLikeCodeFilename(token))) {
     reasons.push('Contains a long, random-looking string that could be a secret.');
+  }
+  if (randomCandidates.some(token => looksLikeCodeFilename(token))) {
+    warnings.push('Contains a code-filename-shaped token that also reads as high-entropy — double-check it is not a credential.');
   }
 
   if (EMAIL_RE.test(combined)) {
