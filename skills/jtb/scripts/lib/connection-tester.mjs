@@ -46,7 +46,7 @@ export async function testConnections({
       session.failed();
       const classified = classifyError(err, { baseUrl: conn.baseUrl, profileName: name });
       session.footer(classified.message, 'error', classified.hint);
-      results.push({ name, ok: false, error: classified.message });
+      results.push({ name, ok: false, error: classified.message, hint: classified.hint });
     }
   }
 

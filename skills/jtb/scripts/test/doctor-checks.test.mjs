@@ -150,6 +150,20 @@ describe('checkConnectivity', () => {
     assert.match(result.hint, /Authentication failed for acme/);
   });
 
+  it('includes each failed profile\'s classified hint (next step), not just its error, in the full-sweep summary', async () => {
+    const testConnectionsFn = async () => ({
+      results: [
+        { name: 'acme', ok: false, error: 'DNS lookup failed for acme.atlassian.net', hint: 'Check your internet connection.' },
+        { name: 'globex', ok: true },
+      ],
+      failedCount: 1,
+    });
+    const result = await checkConnectivity({ configDir, testConnectionsFn });
+    assert.equal(result.ok, false);
+    assert.match(result.hint, /DNS lookup failed for acme\.atlassian\.net/);
+    assert.match(result.hint, /Check your internet connection\./);
+  });
+
   it('--profile= fast path fails with "not found" for an unknown profile, without calling testConnections', async () => {
     let sweepCalled = false;
     const testConnectionsFn = async () => { sweepCalled = true; return { results: [], failedCount: 0 }; };

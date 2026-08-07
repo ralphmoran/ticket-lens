@@ -7,6 +7,11 @@ function fakeStream() {
   return { write: (s) => { lines.push(s); return true; }, isTTY: false, get text() { return lines.join(''); } };
 }
 
+function fakeTTYStream() {
+  const lines = [];
+  return { write: (s) => { lines.push(s); return true; }, isTTY: true, get text() { return lines.join(''); } };
+}
+
 function allOkChecks(overrides = {}) {
   return {
     checkProfileConfigFn: () => ({ id: 'profile-config', label: 'Profile configuration', ok: true, message: 'ok', hint: null, fixable: false }),
@@ -91,6 +96,48 @@ describe('runDoctor — checks-only mode', () => {
     assert.equal(seen.cache, 'acme');
     assert.equal(seen.license, false);
     assert.equal(seen.queue, false);
+  });
+});
+
+describe('runDoctor — progress indicator (ROADMAP 49f)', () => {
+  it('writes a "Checking <label>…" line per check, then erases it, when stream is a TTY and format is plain', async () => {
+    const stream = fakeTTYStream();
+    const out = fakeStream();
+    await runDoctor([], { stream, out, ...allOkChecks() });
+    assert.match(stream.text, /Checking profile configuration…/);
+    assert.match(stream.text, /Checking license freshness…/);
+    assert.match(stream.text, /Checking tracker connectivity…/);
+    assert.match(stream.text, /Checking attachment cache…/);
+    assert.match(stream.text, /Checking recall sync queue…/);
+    // Every running line is followed by its own erase sequence (cursor up, clear line).
+    const eraseCount = (stream.text.match(/\x1b\[A\r\x1b\[2K/g) || []).length;
+    assert.equal(eraseCount, 5);
+  });
+
+  it('writes no progress bytes to stream when stream is not a TTY (piped)', async () => {
+    const stream = fakeStream();
+    const out = fakeStream();
+    await runDoctor([], { stream, out, ...allOkChecks() });
+    assert.equal(stream.text, '');
+  });
+
+  it('writes no progress bytes to stream for --format=json even when stream is a TTY', async () => {
+    const stream = fakeTTYStream();
+    const out = fakeStream();
+    await runDoctor(['--format=json'], { stream, out, ...allOkChecks() });
+    assert.equal(stream.text, '');
+  });
+
+  it('progress lines never reach `out` — the report stream stays byte-identical to non-progress runs', async () => {
+    const ttyStream = fakeTTYStream();
+    const ttyOut = fakeStream();
+    await runDoctor([], { stream: ttyStream, out: ttyOut, ...allOkChecks() });
+
+    const plainStream = fakeStream();
+    const plainOut = fakeStream();
+    await runDoctor([], { stream: plainStream, out: plainOut, ...allOkChecks() });
+
+    assert.equal(ttyOut.text, plainOut.text);
   });
 });
 
