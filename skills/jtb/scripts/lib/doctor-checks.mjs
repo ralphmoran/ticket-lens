@@ -155,7 +155,7 @@ export async function checkConnectivity({
   }
   const summary = results
     .map(r => r.ok ? `${r.name}: ok` : `${r.name}: ${r.error}${r.hint ? ` → ${r.hint}` : ''}`)
-    .join('; ');
+    .join('\n');
   return {
     id: 'connectivity', label: 'Tracker connectivity',
     ok: failedCount === 0,
