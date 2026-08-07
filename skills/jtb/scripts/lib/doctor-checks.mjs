@@ -153,7 +153,9 @@ export async function checkConnectivity({
       message: 'No profiles configured — nothing to test.', hint: null, fixable: false,
     };
   }
-  const summary = results.map(r => r.ok ? `${r.name}: ok` : `${r.name}: ${r.error}`).join('; ');
+  const summary = results
+    .map(r => r.ok ? `${r.name}: ok` : `${r.name}: ${r.error}${r.hint ? ` → ${r.hint}` : ''}`)
+    .join('; ');
   return {
     id: 'connectivity', label: 'Tracker connectivity',
     ok: failedCount === 0,

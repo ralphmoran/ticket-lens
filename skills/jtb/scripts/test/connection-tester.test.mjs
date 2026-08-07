@@ -67,6 +67,19 @@ describe('testConnections', () => {
     assert.ok(result.results[0].error);
   });
 
+  it('carries the classified hint alongside the error on a failed profile', async () => {
+    writeProfiles(configDir, {
+      profiles: { acme: { baseUrl: 'https://acme.atlassian.net', auth: 'cloud', email: 'dev@acme.com' } },
+    });
+    writeCredentials(configDir, { acme: { apiToken: 'bad-token' } });
+
+    const resolveAdapterFn = () => ({ fetchCurrentUser: async () => { const e = new Error('unauthorized'); e.status = 401; throw e; } });
+
+    const result = await testConnections({ configDir, stream: fakeStream(), resolveAdapterFn });
+    assert.equal(result.results[0].ok, false);
+    assert.match(result.results[0].hint, /credentials may have expired/);
+  });
+
   it('tests every profile independently — one failure does not stop the others', async () => {
     writeProfiles(configDir, {
       profiles: {

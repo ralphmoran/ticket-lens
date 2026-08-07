@@ -18,6 +18,8 @@ import { readCliToken } from './cli-auth.mjs';
 
 const KNOWN_FLAGS = ['--format=', '--fix', '--profile=', '--help', '-h'];
 
+const lowerFirst = (str) => str.charAt(0).toLowerCase() + str.slice(1);
+
 function renderPlain(checks, { fixed, skipped, stream }) {
   const s = createStyler({ isTTY: stream.isTTY });
   stream.write('\n');
@@ -109,13 +111,25 @@ export async function runDoctor(args, {
   const profileName = profileArg ? profileArg.split('=')[1] : null;
   const shouldFix = validated.includes('--fix');
 
-  const rawResults = [
-    checkProfileConfigFn({ configDir, profileName, cwd }),
-    checkLicenseFreshnessFn({ configDir }),
-    await checkConnectivityFn({ configDir, profileName, cwd }),
-    checkCacheHealthFn({ configDir, profileName }),
-    checkRecallQueueFn({ configDir }),
+  const checkList = [
+    { label: 'Profile configuration', run: () => checkProfileConfigFn({ configDir, profileName, cwd }) },
+    { label: 'License freshness', run: () => checkLicenseFreshnessFn({ configDir }) },
+    { label: 'Tracker connectivity', run: () => checkConnectivityFn({ configDir, profileName, cwd }) },
+    { label: 'Attachment cache', run: () => checkCacheHealthFn({ configDir, profileName }) },
+    { label: 'Recall sync queue', run: () => checkRecallQueueFn({ configDir }) },
   ];
+
+  const showProgress = format === 'plain' && stream.isTTY;
+  const s = createStyler({ isTTY: stream.isTTY });
+  const rawResults = [];
+  for (const { label, run } of checkList) {
+    if (showProgress) stream.write(`  ${s.dim(`○ Checking ${lowerFirst(label)}…`)}\n`);
+    try {
+      rawResults.push(await run());
+    } finally {
+      if (showProgress) stream.write('\x1b[A\r\x1b[2K');
+    }
+  }
 
   let fixed = [];
   let skipped = [];
