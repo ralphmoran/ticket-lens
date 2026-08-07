@@ -330,6 +330,20 @@
           '<span style="color:#404958">$ echo "..." | ticketlens note add --title="..." --ticket=PROJ-123</span>',
         ]
       },
+      {
+        label: 'ticketlens doctor',
+        lines: [
+          '<span style="color:#4A9CC5">✔</span> <span style="color:#e1e8f4">Profile configuration</span>  <span style="color:#404958">myteam resolves ok</span>',
+          '<span style="color:#4A9CC5">✔</span> <span style="color:#e1e8f4">License freshness</span>      <span style="color:#404958">Pro, validated 3d ago</span>',
+          '<span style="color:#f85149">✖</span> <span style="color:#e1e8f4">Tracker connectivity</span>   <span style="color:#404958">1/2 profile(s) failed</span>',
+          '<span style="color:#7b8aa0">    myteam: ok</span>',
+          '<span style="color:#7b8aa0">    advent: timed out → no response from server. Check your VPN.</span>',
+          '<span style="color:#4A9CC5">✔</span> <span style="color:#e1e8f4">Attachment cache</span>       <span style="color:#404958">42 files, 12.4MB, none corrupt</span>',
+          '<span style="color:#4A9CC5">✔</span> <span style="color:#e1e8f4">Recall sync queue</span>      <span style="color:#404958">nothing pending</span>',
+          '',
+          '<span style="color:#404958">$ ticketlens doctor --fix</span>',
+        ]
+      },
     ];
 
     var featActive = 0;
