@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { runDoctor } from '../lib/doctor-command.mjs';
+import { checkConnectivity } from '../lib/doctor-checks.mjs';
 
 function fakeStream() {
   const lines = [];
@@ -96,6 +97,66 @@ describe('runDoctor — checks-only mode', () => {
     assert.equal(seen.cache, 'acme');
     assert.equal(seen.license, false);
     assert.equal(seen.queue, false);
+  });
+
+  it('renders a multi-line hint (one row per profile) as separate indented lines, not one run-on line', async () => {
+    const stream = fakeStream();
+    const out = fakeStream();
+    const multiLineHint = "corenexus: ok\nadvent: Connection timed out → Check your VPN.\nTeam: Authentication failed → Check your token.";
+    const overrides = allOkChecks({
+      checkConnectivityFn: async () => ({
+        id: 'connectivity', label: 'Tracker connectivity', ok: false,
+        message: '2/3 profile(s) failed to connect.', hint: multiLineHint, fixable: false,
+      }),
+    });
+    await runDoctor([], { stream, out, ...overrides });
+    assert.match(out.text, /      corenexus: ok\n/);
+    assert.match(out.text, /      advent: Connection timed out → Check your VPN\.\n/);
+    assert.match(out.text, /      Team: Authentication failed → Check your token\.\n/);
+  });
+
+  it('end-to-end: the real checkConnectivity join(\'\\n\') output renders as ordered, separately-indented rows through the real renderPlain', async () => {
+    const stream = fakeStream();
+    const out = fakeStream();
+    const testConnectionsFn = async () => ({
+      results: [
+        { name: 'corenexus', ok: true },
+        { name: 'advent', ok: false, error: 'Connection timed out', hint: 'Check your VPN.' },
+        { name: 'teammanager', ok: false, error: 'Authentication failed', hint: 'Check your token.' },
+      ],
+      failedCount: 2,
+    });
+    const overrides = allOkChecks({
+      checkConnectivityFn: (opts) => checkConnectivity({ ...opts, testConnectionsFn }),
+    });
+    await runDoctor([], { stream, out, ...overrides });
+
+    const start = out.text.indexOf('Tracker connectivity');
+    const rows = out.text.slice(start).split('\n').filter(l => l.trim());
+    assert.equal(rows[1].trim(), 'corenexus: ok');
+    assert.equal(rows[2].trim(), 'advent: Connection timed out → Check your VPN.');
+    assert.equal(rows[3].trim(), 'teammanager: Authentication failed → Check your token.');
+  });
+
+  it('--format=json preserves an embedded multi-line hint losslessly (real checkConnectivity, multi-profile failure)', async () => {
+    const stream = fakeStream();
+    const out = fakeStream();
+    const testConnectionsFn = async () => ({
+      results: [
+        { name: 'corenexus', ok: true },
+        { name: 'advent', ok: false, error: 'Connection timed out', hint: 'Check your VPN.' },
+      ],
+      failedCount: 1,
+    });
+    const overrides = allOkChecks({
+      checkConnectivityFn: (opts) => checkConnectivity({ ...opts, testConnectionsFn }),
+    });
+    await runDoctor(['--format=json'], { stream, out, ...overrides });
+
+    const parsed = JSON.parse(out.text);
+    const connectivity = parsed.checks.find(c => c.id === 'connectivity');
+    assert.equal(connectivity.hint, 'corenexus: ok\nadvent: Connection timed out → Check your VPN.');
+    assert.equal(connectivity.hint.split('\n').length, 2);
   });
 });
 

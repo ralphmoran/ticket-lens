@@ -164,6 +164,23 @@ describe('checkConnectivity', () => {
     assert.match(result.hint, /Check your internet connection\./);
   });
 
+  it('puts each profile on its own line in the full-sweep summary — not crammed onto one semicolon-joined line', async () => {
+    const testConnectionsFn = async () => ({
+      results: [
+        { name: 'corenexus', ok: true },
+        { name: 'advent', ok: false, error: 'Connection timed out', hint: 'Check your VPN.' },
+        { name: "Team Manager's Team", ok: false, error: 'Authentication failed', hint: 'Check your token.' },
+      ],
+      failedCount: 2,
+    });
+    const result = await checkConnectivity({ configDir, testConnectionsFn });
+    const lines = result.hint.split('\n');
+    assert.equal(lines.length, 3);
+    assert.equal(lines[0], 'corenexus: ok');
+    assert.equal(lines[1], 'advent: Connection timed out → Check your VPN.');
+    assert.equal(lines[2], "Team Manager's Team: Authentication failed → Check your token.");
+  });
+
   it('--profile= fast path fails with "not found" for an unknown profile, without calling testConnections', async () => {
     let sweepCalled = false;
     const testConnectionsFn = async () => { sweepCalled = true; return { results: [], failedCount: 0 }; };

@@ -26,7 +26,9 @@ function renderPlain(checks, { fixed, skipped, stream }) {
   for (const check of checks) {
     const icon = check.ok ? s.green('✔') : s.red('✖');
     stream.write(`  ${icon} ${check.label}: ${check.message}\n`);
-    if (!check.ok && check.hint) stream.write(`      ${s.dim(check.hint)}\n`);
+    if (!check.ok && check.hint) {
+      for (const line of check.hint.split('\n')) stream.write(`      ${s.dim(line)}\n`);
+    }
   }
   if (fixed.length > 0) {
     stream.write(`\n  ${s.green('Fixed:')} ${fixed.join(', ')}\n`);
