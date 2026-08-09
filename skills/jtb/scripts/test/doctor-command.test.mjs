@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { runDoctor } from '../lib/doctor-command.mjs';
 import { checkConnectivity } from '../lib/doctor-checks.mjs';
+import { SPINNER_FRAMES } from '../lib/banner.mjs';
 
 function fakeStream() {
   const lines = [];
@@ -196,8 +197,8 @@ describe('runDoctor — --mcp flag (MCP registration + handshake checks)', () =>
   });
 });
 
-describe('runDoctor — progress indicator (ROADMAP 49f)', () => {
-  it('writes a "Checking <label>…" line per check, then erases it, when stream is a TTY and format is plain', async () => {
+describe('runDoctor — progressive checklist loader', () => {
+  it('shows an animated spinner + "Checking <label>…" line per check on stream, then writes that check\'s final row to out, in TTY plain mode', async () => {
     const stream = fakeTTYStream();
     const out = fakeStream();
     await runDoctor([], { stream, out, ...allOkChecks() });
@@ -207,9 +208,18 @@ describe('runDoctor — progress indicator (ROADMAP 49f)', () => {
     assert.match(stream.text, /Checking attachment cache…/);
     assert.match(stream.text, /Checking recall sync queue…/);
     assert.match(stream.text, /Checking MCP registration…/);
-    // Every running line is followed by its own erase sequence (cursor up, clear line).
+    assert.ok(stream.text.includes(SPINNER_FRAMES[0]), 'should draw the first spinner frame');
+    // Fast (synchronous) mock checks resolve before any spinner tick fires —
+    // exactly one erase per check.
     const eraseCount = (stream.text.match(/\x1b\[A\r\x1b\[2K/g) || []).length;
     assert.equal(eraseCount, 6);
+    // Each check's final row lands on `out`, not `stream` — appended, never erased.
+    assert.match(out.text, /✔ Profile configuration: ok/);
+    assert.match(out.text, /✔ License freshness: ok/);
+    assert.match(out.text, /✔ Tracker connectivity: ok/);
+    assert.match(out.text, /✔ Attachment cache: ok/);
+    assert.match(out.text, /✔ Recall sync queue: ok/);
+    assert.match(out.text, /✔ MCP registration: ok/);
   });
 
   it('renders "Checking MCP registration…" and "Checking MCP server handshake…" correctly — lowerFirst must not mangle a leading acronym', async () => {
@@ -220,6 +230,84 @@ describe('runDoctor — progress indicator (ROADMAP 49f)', () => {
     assert.match(stream.text, /Checking MCP registration…/);
     assert.match(stream.text, /Checking MCP server handshake…/);
     assert.doesNotMatch(stream.text, /Checking mCP/);
+  });
+
+  it('hides the cursor before the first check and restores it after the last', async () => {
+    const stream = fakeTTYStream();
+    const out = fakeStream();
+    await runDoctor([], { stream, out, ...allOkChecks() });
+    assert.ok(stream.text.includes('\x1b[?25l'), 'should hide the cursor');
+    assert.ok(stream.text.includes('\x1b[?25h'), 'should restore the cursor');
+    assert.ok(stream.text.indexOf('\x1b[?25l') < stream.text.indexOf('\x1b[?25h'), 'hide must come before restore');
+  });
+
+  it('registers a SIGINT listener while progress is showing, and removes it afterward — Ctrl+C mid-check must not leave the cursor permanently hidden', async () => {
+    const stream = fakeTTYStream();
+    const out = fakeStream();
+    const listenersBefore = process.listenerCount('SIGINT');
+    let listenersDuringCheck;
+    const checkConnectivityFn = async () => {
+      listenersDuringCheck = process.listenerCount('SIGINT');
+      return { id: 'connectivity', label: 'Tracker connectivity', ok: true, message: 'ok', hint: null, fixable: false };
+    };
+    await runDoctor([], { stream, out, ...allOkChecks({ checkConnectivityFn }) });
+    assert.equal(listenersDuringCheck, listenersBefore + 1, 'a SIGINT listener should be registered while checks are running');
+    assert.equal(process.listenerCount('SIGINT'), listenersBefore, 'the SIGINT listener must be removed once checks finish');
+  });
+
+  it('does not register a SIGINT listener when progress is not shown (non-TTY)', async () => {
+    const stream = fakeStream();
+    const out = fakeStream();
+    const listenersBefore = process.listenerCount('SIGINT');
+    await runDoctor([], { stream, out, ...allOkChecks() });
+    assert.equal(process.listenerCount('SIGINT'), listenersBefore);
+  });
+
+  it('cycles through multiple distinct spinner frames while a slow check is still running', async () => {
+    const stream = fakeTTYStream();
+    const out = fakeStream();
+    const checkConnectivityFn = async () => {
+      await new Promise((r) => setTimeout(r, 250));
+      return { id: 'connectivity', label: 'Tracker connectivity', ok: true, message: 'ok', hint: null, fixable: false };
+    };
+    await runDoctor([], { stream, out, ...allOkChecks({ checkConnectivityFn }) });
+    const framesSeen = SPINNER_FRAMES.filter((frame) => stream.text.includes(frame));
+    assert.ok(framesSeen.length >= 2, `expected multiple distinct spinner frames while the slow check ran, saw ${framesSeen.length}`);
+  });
+
+  it("reveals each check's row on `out` incrementally — a later check can already see earlier checks' rows before it itself resolves", async () => {
+    const stream = fakeTTYStream();
+    const out = fakeStream();
+    let snapshotWhenConnectivityStarts;
+    const checkConnectivityFn = async () => {
+      snapshotWhenConnectivityStarts = out.text;
+      return { id: 'connectivity', label: 'Tracker connectivity', ok: true, message: 'ok', hint: null, fixable: false };
+    };
+    await runDoctor([], { stream, out, ...allOkChecks({ checkConnectivityFn }) });
+    assert.match(snapshotWhenConnectivityStarts, /Profile configuration/);
+    assert.match(snapshotWhenConnectivityStarts, /License freshness/);
+    assert.doesNotMatch(snapshotWhenConnectivityStarts, /Tracker connectivity/, 'the running check\'s own row must not exist yet');
+    assert.doesNotMatch(snapshotWhenConnectivityStarts, /Attachment cache/, 'later checks must not have run yet');
+  });
+
+  it('Option B: a check that gets fixed keeps its raw pre-fix row on out — only the trailing Fixed: line signals the repair, no row is rewritten', async () => {
+    const stream = fakeTTYStream();
+    const out = fakeStream();
+    let recheckCount = 0;
+    const checkLicenseFreshnessFn = () => {
+      recheckCount++;
+      return recheckCount === 1
+        ? { id: 'license-freshness', label: 'License freshness', ok: false, message: 'Not revalidated in over 30 days.', hint: null, fixable: true }
+        : { id: 'license-freshness', label: 'License freshness', ok: true, message: 'fresh', hint: null, fixable: false };
+    };
+    const revalidateLicenseFn = async () => ({ success: true });
+    await runDoctor(['--fix'], {
+      stream, out, revalidateLicenseFn,
+      ...allOkChecks({ checkLicenseFreshnessFn }),
+    });
+    assert.match(out.text, /✖ License freshness: Not revalidated in over 30 days\./, 'the progressively-shown row must keep its raw pre-fix message');
+    assert.doesNotMatch(out.text, /✔ License freshness: fresh/, 'the row must never be rewritten to the post-fix state');
+    assert.match(out.text, /Fixed:.*license-freshness/s);
   });
 
   it('writes no progress bytes to stream when stream is not a TTY (piped)', async () => {
@@ -236,7 +324,7 @@ describe('runDoctor — progress indicator (ROADMAP 49f)', () => {
     assert.equal(stream.text, '');
   });
 
-  it('progress lines never reach `out` — the report stream stays byte-identical to non-progress runs', async () => {
+  it('progress lines never reach `out` — the fully-assembled report is byte-identical whether delivered progressively (TTY stream, non-TTY out) or as a single batch (non-TTY both)', async () => {
     const ttyStream = fakeTTYStream();
     const ttyOut = fakeStream();
     await runDoctor([], { stream: ttyStream, out: ttyOut, ...allOkChecks() });

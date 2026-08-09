@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { handleUnknownFlags } from './arg-validator.mjs';
 import { createStyler } from './ansi.mjs';
+import { SPINNER_FRAMES, SPINNER_INTERVAL } from './banner.mjs';
 import {
   checkProfileConfig, checkLicenseFreshness, checkConnectivity,
   checkCacheHealth, checkRecallQueue, checkMcpRegistration, checkMcpHandshake,
@@ -25,23 +26,32 @@ const NOOP_STREAM = { write: () => true };
 // (e.g. "Profile configuration") gets folded to start a sentence mid-line.
 const lowerFirst = (str) => (/^[A-Z]{2,}/.test(str) ? str : str.charAt(0).toLowerCase() + str.slice(1));
 
+function renderCheckRow(check, s) {
+  const icon = check.ok ? s.green('✔') : s.red('✖');
+  let text = `  ${icon} ${check.label}: ${check.message}\n`;
+  if (!check.ok && check.hint) {
+    for (const line of check.hint.split('\n')) text += `      ${s.dim(line)}\n`;
+  }
+  return text;
+}
+
+function renderTrailer({ fixed, skipped }, s) {
+  let text = '';
+  if (fixed.length > 0) {
+    text += `\n  ${s.green('Fixed:')} ${fixed.join(', ')}\n`;
+  }
+  if (skipped.length > 0) {
+    text += `\n  ${s.yellow('Skipped:')}\n`;
+    for (const sk of skipped) text += `    ${sk.id}: ${sk.reason}\n`;
+  }
+  return text;
+}
+
 function renderPlain(checks, { fixed, skipped, stream }) {
   const s = createStyler({ isTTY: stream.isTTY });
   stream.write('\n');
-  for (const check of checks) {
-    const icon = check.ok ? s.green('✔') : s.red('✖');
-    stream.write(`  ${icon} ${check.label}: ${check.message}\n`);
-    if (!check.ok && check.hint) {
-      for (const line of check.hint.split('\n')) stream.write(`      ${s.dim(line)}\n`);
-    }
-  }
-  if (fixed.length > 0) {
-    stream.write(`\n  ${s.green('Fixed:')} ${fixed.join(', ')}\n`);
-  }
-  if (skipped.length > 0) {
-    stream.write(`\n  ${s.yellow('Skipped:')}\n`);
-    for (const sk of skipped) stream.write(`    ${sk.id}: ${sk.reason}\n`);
-  }
+  for (const check of checks) stream.write(renderCheckRow(check, s));
+  stream.write(renderTrailer({ fixed, skipped }, s));
   stream.write('\n');
 }
 
@@ -142,14 +152,52 @@ export async function runDoctor(args, {
   ];
 
   const showProgress = format === 'plain' && stream.isTTY;
-  const s = createStyler({ isTTY: stream.isTTY });
+  const loaderStyler = createStyler({ isTTY: stream.isTTY });
+  const outStyler = createStyler({ isTTY: out.isTTY });
   const rawResults = [];
-  for (const { label, run } of checkList) {
-    if (showProgress) stream.write(`  ${s.dim(`○ Checking ${lowerFirst(label)}…`)}\n`);
-    try {
-      rawResults.push(await run());
-    } finally {
-      if (showProgress) stream.write('\x1b[A\r\x1b[2K');
+
+  const writeSpinnerLine = (label, frame) => {
+    stream.write(`  ${loaderStyler.brand(SPINNER_FRAMES[frame])} ${loaderStyler.dim(`Checking ${lowerFirst(label)}…`)}\n`);
+  };
+
+  // Ctrl+C during a slow check (e.g. tracker connectivity) must not leave the
+  // user's real terminal cursor permanently hidden — Node's default SIGINT
+  // handling terminates before pending finally blocks on an in-flight await
+  // run, so this needs its own listener. Same pattern as init-wizard.mjs.
+  const onSigint = () => { stream.write('\x1b[?25h'); process.exit(130); };
+  if (showProgress) {
+    out.write('\n');
+    stream.write('\x1b[?25l'); // hide cursor for the whole check-running phase
+    process.on('SIGINT', onSigint);
+  }
+  try {
+    for (const { label, run } of checkList) {
+      let frame = 0;
+      let timer;
+      if (showProgress) {
+        writeSpinnerLine(label, frame);
+        timer = setInterval(() => {
+          frame = (frame + 1) % SPINNER_FRAMES.length;
+          stream.write('\x1b[A\r\x1b[2K');
+          writeSpinnerLine(label, frame);
+        }, SPINNER_INTERVAL);
+      }
+      let result;
+      try {
+        result = await run();
+      } finally {
+        if (showProgress) {
+          clearInterval(timer);
+          stream.write('\x1b[A\r\x1b[2K');
+        }
+      }
+      rawResults.push(result);
+      if (showProgress) out.write(renderCheckRow(result, outStyler));
+    }
+  } finally {
+    if (showProgress) {
+      stream.write('\x1b[?25h'); // restore cursor
+      process.removeListener('SIGINT', onSigint);
     }
   }
 
@@ -177,6 +225,15 @@ export async function runDoctor(args, {
     return { ok };
   }
 
-  renderPlain(checks, { fixed, skipped, stream: out });
+  if (showProgress) {
+    // Rows already streamed to `out` progressively during the check loop
+    // (each check's raw, first-observed state — a later `--fix` never
+    // rewrites an already-shown row; the trailing Fixed:/Skipped: block
+    // below is the sole signal of what got repaired).
+    out.write(renderTrailer({ fixed, skipped }, outStyler));
+    out.write('\n');
+  } else {
+    renderPlain(checks, { fixed, skipped, stream: out });
+  }
   return { ok };
 }

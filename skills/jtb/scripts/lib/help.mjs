@@ -1240,6 +1240,7 @@ export function printDoctorHelp({ stream = process.stdout } = {}) {
     `  ${s.bold('OPTIONS')}`,
     '',
     `    ${s.brand('--fix')}              Attempt safe, non-destructive repairs for failing checks`,
+    `                       ${s.dim('(rows show pre-fix status; see the Fixed: summary for what was repaired)')}`,
     `    ${s.brand('--format')}=${s.dim('plain')}    Human-readable output  ${s.dim('(default)')}`,
     `    ${s.brand('--format')}=${s.dim('json')}     JSON output for scripting/piping`,
     `    ${s.brand('--profile')}=${s.dim('NAME')}    Scope profile/connectivity/cache checks to one profile`,

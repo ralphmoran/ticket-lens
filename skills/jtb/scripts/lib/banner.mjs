@@ -10,8 +10,8 @@ import { getVersion } from './config.mjs';
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 const visibleLength = (str) => str.replace(ANSI_RE, '').length;
 
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const SPINNER_INTERVAL = 80;
+export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+export const SPINNER_INTERVAL = 80;
 
 
 function buildBox(lines, { s, borderColor = 'cyan' }) {
