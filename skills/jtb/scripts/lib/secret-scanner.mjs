@@ -34,7 +34,16 @@ const HYPHENATED_COMPOUND_RE = /^[A-Za-z]+(-[A-Za-z]+)+$/;
 
 const HARD_REJECT_PATTERNS = [
   { name: 'AWS access key', re: /AKIA[0-9A-Z]{16}/ },
-  { name: 'private key block', re: /-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/ },
+  // \s* (not a literal space) between segments: this is the only entry with
+  // required internal spacing, and hardRejectRuns (no-separator rejoin) and
+  // despacedCombined (whitespace stripped) both destroy a literal space the
+  // same way they correctly neutralize whitespace-splitting on every other
+  // pattern here — so a tab, extra spaces, a newline, or no separator at all
+  // used to bypass this entry completely (backlog 1d). \s* closes all of
+  // those in one change since it's tested against combined, hardRejectRuns,
+  // and despacedCombined identically. JS's \s is already Unicode-aware
+  // (including U+FEFF), so no separate handling is needed here.
+  { name: 'private key block', re: /-----BEGIN\s*(RSA\s*|EC\s*|OPENSSH\s*|DSA\s*)?PRIVATE\s*KEY-----/ },
   { name: 'JSON Web Token (JWT)', re: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/ },
   { name: 'API key', re: /\b(sk-|gsk_)[A-Za-z0-9]{20,}\b/ },
   { name: 'GitHub token', re: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/ },
@@ -192,8 +201,13 @@ function isHyphenatedWordCompound(token) {
  * text into false-positive "random" strings (verified empirically — see the
  * regression test for "PROD-123456 for background"). Entropy-based detection
  * is a safety net, not a cryptographic guarantee; the well-known secret
- * shapes in HARD_REJECT_PATTERNS are the layer that's fully whitespace- and
- * word-insertion-proof, since they match a specific literal prefix.
+ * shapes in HARD_REJECT_PATTERNS are the layer that's whitespace-proof,
+ * since they match a specific literal prefix — with one exception: the
+ * private-key-block entry has two internal separator points (around the
+ * optional algorithm word and before KEY), and a word inserted at either
+ * one still defeats it, exactly as it did before backlog 1d's whitespace
+ * fix (that fix closed whitespace-substitution/removal, not word
+ * insertion — the same accepted-gap class as the possessive case above).
  */
 function isLabelWord(token) {
   const stripped = stripEdgePunctuation(token);

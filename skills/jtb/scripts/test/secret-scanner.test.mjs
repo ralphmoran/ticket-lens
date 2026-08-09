@@ -219,6 +219,44 @@ describe('scanForSecrets — hard-reject shapes', () => {
     assert.match(result.reasons.join(' '), /private key/i);
   });
 
+  // ---- backlog 1d: PEM's literal-space pattern is bypassable by embedded whitespace ----
+
+  test('a PEM header with a tab substituted for a space is still rejected', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: '-----BEGIN\tRSA PRIVATE KEY-----' });
+    assert.equal(result.rejected, true);
+    assert.match(result.reasons.join(' '), /private key/i);
+  });
+
+  test('a PEM header with irregular multiple spaces is still rejected', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: '-----BEGIN  RSA  PRIVATE  KEY-----' });
+    assert.equal(result.rejected, true);
+  });
+
+  test('a PEM header split by newlines is still rejected', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: '-----BEGIN\nRSA\nPRIVATE\nKEY-----' });
+    assert.equal(result.rejected, true);
+  });
+
+  test('a PEM header with all whitespace removed is still rejected', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: '-----BEGINRSAPRIVATEKEY-----' });
+    assert.equal(result.rejected, true);
+  });
+
+  test('a PEM header with no algorithm word and a tab is still rejected', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: '-----BEGIN\tPRIVATE KEY-----' });
+    assert.equal(result.rejected, true);
+  });
+
+  test('a PEM header split by a BOM is still rejected', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: '-----BEGIN﻿RSA PRIVATE KEY-----' });
+    assert.equal(result.rejected, true);
+  });
+
+  test('a PEM header split by a Unicode non-breaking space is still rejected', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: '-----BEGIN RSA PRIVATE KEY-----' });
+    assert.equal(result.rejected, true);
+  });
+
   test('an OpenAI/Anthropic-style API key is rejected', () => {
     const result = scanForSecrets({ title: 'x', tags: [], body: 'export key sk-abcdefghijklmnopqrstuvwxyz123456' });
     assert.equal(result.rejected, true);
