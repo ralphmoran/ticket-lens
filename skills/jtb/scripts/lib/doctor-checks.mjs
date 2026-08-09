@@ -131,6 +131,14 @@ export async function checkConnectivity({
       };
     }
     const creds = loadCredentialsFn(configDir)[profile.name] || {};
+    if (!creds.apiToken && !creds.pat) {
+      return {
+        id: 'connectivity', label: 'Tracker connectivity', ok: false,
+        message: `Profile "${profile.name}" has no credentials stored.`,
+        hint: `Run \`ticketlens config --profile=${profile.name}\` to add an API token or PAT.`,
+        fixable: false,
+      };
+    }
     const conn = {
       baseUrl: profile.baseUrl, auth: profile.auth, email: profile.email,
       apiToken: creds.apiToken, pat: creds.pat, allowPrivateIp: profile.allowPrivateIp,

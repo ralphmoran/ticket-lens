@@ -23,6 +23,22 @@ export async function testConnections({
   for (const name of names) {
     const profile = config.profiles[name];
     const profileCreds = creds[name] || {};
+
+    if (!profileCreds.apiToken && !profileCreds.pat) {
+      // No point attempting a network call with no credentials — but still
+      // drive the session through spin()/failed()/footer() so callers that
+      // render `stream` live (e.g. onboarding.mjs's "Test connections" menu
+      // item, which discards this function's return value and relies
+      // entirely on stream output for user feedback) don't go silent.
+      const session = createSession({ baseUrl: profile.baseUrl, profileName: name, email: profile.email || undefined }, { stream });
+      const hint = `Run \`ticketlens config --profile=${name}\` to add an API token or PAT.`;
+      session.spin('Testing connection...');
+      session.failed();
+      session.footer('No credentials stored.', 'error', hint);
+      results.push({ name, ok: false, error: 'No credentials stored.', hint });
+      continue;
+    }
+
     const conn = {
       baseUrl: profile.baseUrl,
       auth: profile.auth,

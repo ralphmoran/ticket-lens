@@ -211,6 +211,34 @@ describe('checkConnectivity', () => {
     assert.match(result.message, /Authentication failed/);
   });
 
+  it('--profile= fast path reports "no credentials stored" for a profile with none, without attempting a network call', async () => {
+    writeProfiles(configDir, { profiles: { acme: { baseUrl: 'https://acme.atlassian.net' } } });
+    writeCredentials(configDir, {}); // no entry for acme at all
+    let resolveAdapterCalled = false;
+    const resolveAdapterFn = () => { resolveAdapterCalled = true; return { fetchCurrentUser: async () => ({ displayName: 'Dev' }) }; };
+    const result = await checkConnectivity({ configDir, profileName: 'acme', resolveAdapterFn });
+    assert.equal(result.ok, false);
+    assert.equal(resolveAdapterCalled, false, 'must not attempt a network call when there are no credentials to try');
+    assert.match(result.message, /Profile "acme" has no credentials stored\./);
+    assert.match(result.hint, /ticketlens config --profile=acme/);
+  });
+
+  it('full sweep (real testConnections, not stubbed): a no-credentials profile is reported correctly alongside a credentialed one', async () => {
+    writeProfiles(configDir, {
+      profiles: {
+        acme: { baseUrl: 'https://acme.atlassian.net', auth: 'cloud' },
+        globex: { baseUrl: 'https://globex.atlassian.net', auth: 'cloud' },
+      },
+    });
+    writeCredentials(configDir, { acme: { apiToken: 'tok' } }); // globex has no entry at all
+    const resolveAdapterFn = () => ({ fetchCurrentUser: async () => ({ displayName: 'Dev' }) });
+    const result = await checkConnectivity({ configDir, resolveAdapterFn });
+    assert.equal(result.ok, false);
+    assert.match(result.message, /1\/2/);
+    assert.match(result.hint, /acme: ok/);
+    assert.match(result.hint, /globex: No credentials stored\. → Run `ticketlens config --profile=globex`/);
+  });
+
   it('full sweep forwards resolveAdapterFn to testConnections — a stubbed resolveAdapterFn must not fall through to a real network call', async () => {
     let seenResolveAdapterFn;
     const testConnectionsFn = async (opts) => {
