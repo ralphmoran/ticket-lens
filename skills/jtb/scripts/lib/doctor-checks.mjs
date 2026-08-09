@@ -12,6 +12,8 @@
  * before any public (CLI plain/JSON or MCP) output.
  */
 
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { resolveProfile, loadCredentials, loadProfiles } from './profile-resolver.mjs';
 import { checkLicense, GRACE_DAYS } from './license.mjs';
@@ -21,6 +23,8 @@ import { testConnections } from './connection-tester.mjs';
 import { formatSize } from './attachment-downloader.mjs';
 import { getCacheEntries, filterEntriesByProfile } from './cache-manager.mjs';
 import { readQueue } from './recall-queue.mjs';
+import { readMcpConfig, ENTRY_NAME, DESIRED_MCP_ENTRY } from './mcp-install.mjs';
+import { testMcpHandshake, DEFAULT_HANDSHAKE_TIMEOUT_MS } from './mcp-handshake-checker.mjs';
 
 const NOOP_STREAM = { write: () => true };
 
@@ -215,5 +219,85 @@ export function checkRecallQueue({
     message: `${entries.length} note(s) pending sync.`,
     hint: 'Run `ticketlens doctor --fix` to retry now, or `ticketlens recall sync`.',
     fixable: true,
+  };
+}
+
+export function checkMcpRegistration({
+  cwd = process.cwd(),
+  existsSyncFn = existsSync,
+  readMcpConfigFn = readMcpConfig,
+} = {}) {
+  const configPath = join(cwd, '.mcp.json');
+  const read = readMcpConfigFn(configPath);
+
+  if (!read.ok) {
+    return {
+      id: 'mcp-registration', label: 'MCP registration', ok: false,
+      message: read.reason, hint: null, fixable: false,
+    };
+  }
+
+  const existing = read.config.mcpServers?.[ENTRY_NAME];
+  const registered = existing !== undefined && JSON.stringify(existing) === JSON.stringify(DESIRED_MCP_ENTRY);
+
+  if (registered) {
+    return {
+      id: 'mcp-registration', label: 'MCP registration', ok: true,
+      message: '"ticketlens" is registered in .mcp.json with the correct command and args.',
+      hint: null, fixable: false,
+    };
+  }
+
+  if (!existsSyncFn(configPath)) {
+    return {
+      id: 'mcp-registration', label: 'MCP registration', ok: false,
+      message: 'No .mcp.json file found in the current directory.',
+      hint: 'Run `ticketlens mcp install` to create it and register "ticketlens".',
+      fixable: true,
+    };
+  }
+
+  return {
+    id: 'mcp-registration', label: 'MCP registration', ok: false,
+    message: '"ticketlens" is not registered in .mcp.json.',
+    hint: 'Run `ticketlens mcp install` to register it.',
+    fixable: true,
+  };
+}
+
+// 'timeout' is handled separately below (its message embeds the actual
+// timeoutMs), so it has no entry here.
+const MCP_HANDSHAKE_MESSAGES = {
+  'spawn-error': 'Could not start "ticketlens mcp" — command not found or failed to launch.',
+  'invalid-response': '"ticketlens mcp" responded, but not with a valid initialize result.',
+};
+
+const MCP_HANDSHAKE_HINTS = {
+  'spawn-error': 'Confirm `ticketlens` is installed and on PATH, then run `ticketlens doctor --mcp` again.',
+  'timeout': 'Run `ticketlens doctor --mcp` again — if it keeps timing out, check for a hung `ticketlens mcp` process.',
+  'invalid-response': 'Run `ticketlens --version` to check the installed build; reinstall if the response looks corrupted.',
+};
+
+export async function checkMcpHandshake({
+  timeoutMs = DEFAULT_HANDSHAKE_TIMEOUT_MS,
+  testMcpHandshakeFn = testMcpHandshake,
+} = {}) {
+  const result = await testMcpHandshakeFn({ timeoutMs });
+
+  if (result.ok) {
+    return {
+      id: 'mcp-handshake', label: 'MCP server handshake', ok: true,
+      message: `MCP server handshake succeeded, protocol version ${result.protocolVersion}.`,
+      hint: null, fixable: false,
+    };
+  }
+
+  const message = result.reason === 'timeout'
+    ? `No response from "ticketlens mcp" within ${timeoutMs}ms.`
+    : MCP_HANDSHAKE_MESSAGES[result.reason] ?? 'MCP server handshake failed.';
+
+  return {
+    id: 'mcp-handshake', label: 'MCP server handshake', ok: false,
+    message, hint: MCP_HANDSHAKE_HINTS[result.reason] ?? null, fixable: false,
   };
 }

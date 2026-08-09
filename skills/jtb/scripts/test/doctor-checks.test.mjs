@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { checkProfileConfig, checkLicenseFreshness, checkConnectivity, checkCacheHealth, checkRecallQueue } from '../lib/doctor-checks.mjs';
+import { checkProfileConfig, checkLicenseFreshness, checkConnectivity, checkCacheHealth, checkRecallQueue, checkMcpRegistration, checkMcpHandshake } from '../lib/doctor-checks.mjs';
 
 let configDir;
 
@@ -284,5 +284,92 @@ describe('checkRecallQueue', () => {
     assert.equal(result.ok, false);
     assert.equal(result.fixable, true);
     assert.match(result.message, /2 note/);
+  });
+});
+
+describe('checkMcpRegistration', () => {
+  const cwd = '/fake/project';
+  const configPath = join(cwd, '.mcp.json');
+  const desired = { command: 'ticketlens', args: ['mcp'] };
+
+  it('is fixable and reports no file found when .mcp.json does not exist', () => {
+    const existsSyncFn = () => false;
+    const readMcpConfigFn = () => ({ ok: true, config: {} });
+    const result = checkMcpRegistration({ cwd, existsSyncFn, readMcpConfigFn });
+    assert.equal(result.id, 'mcp-registration');
+    assert.equal(result.ok, false);
+    assert.match(result.message, /No \.mcp\.json file found/);
+    assert.equal(result.fixable, true);
+  });
+
+  it('is not fixable when .mcp.json exists but is malformed', () => {
+    const existsSyncFn = () => true;
+    const readMcpConfigFn = () => ({ ok: false, reason: `${configPath} is not valid JSON — left untouched. Fix or remove it, then retry.` });
+    const result = checkMcpRegistration({ cwd, existsSyncFn, readMcpConfigFn });
+    assert.equal(result.ok, false);
+    assert.equal(result.fixable, false);
+    assert.match(result.message, /not valid JSON/);
+  });
+
+  it('is fixable and reports not registered when .mcp.json exists but has no ticketlens entry', () => {
+    const existsSyncFn = () => true;
+    const readMcpConfigFn = () => ({ ok: true, config: { mcpServers: {} } });
+    const result = checkMcpRegistration({ cwd, existsSyncFn, readMcpConfigFn });
+    assert.equal(result.ok, false);
+    assert.equal(result.fixable, true);
+    assert.match(result.message, /not registered/);
+  });
+
+  it('is fixable and reports not registered when the existing entry does not match the desired command/args', () => {
+    const existsSyncFn = () => true;
+    const readMcpConfigFn = () => ({ ok: true, config: { mcpServers: { ticketlens: { command: 'node', args: ['old.mjs'] } } } });
+    const result = checkMcpRegistration({ cwd, existsSyncFn, readMcpConfigFn });
+    assert.equal(result.ok, false);
+    assert.equal(result.fixable, true);
+  });
+
+  it('passes when .mcp.json registers ticketlens with the correct command and args', () => {
+    const existsSyncFn = () => true;
+    const readMcpConfigFn = () => ({ ok: true, config: { mcpServers: { ticketlens: desired } } });
+    const result = checkMcpRegistration({ cwd, existsSyncFn, readMcpConfigFn });
+    assert.equal(result.ok, true);
+    assert.equal(result.fixable, false);
+    assert.equal(result.hint, null);
+  });
+});
+
+describe('checkMcpHandshake', () => {
+  it('passes and reports the protocol version on a successful handshake', async () => {
+    const testMcpHandshakeFn = async () => ({ ok: true, protocolVersion: '2025-11-25' });
+    const result = await checkMcpHandshake({ testMcpHandshakeFn });
+    assert.equal(result.id, 'mcp-handshake');
+    assert.equal(result.ok, true);
+    assert.match(result.message, /2025-11-25/);
+    assert.equal(result.fixable, false);
+  });
+
+  it('fails with a not-on-PATH hint when the child process could not be spawned', async () => {
+    const testMcpHandshakeFn = async () => ({ ok: false, reason: 'spawn-error', error: new Error('ENOENT') });
+    const result = await checkMcpHandshake({ testMcpHandshakeFn });
+    assert.equal(result.ok, false);
+    assert.equal(result.fixable, false);
+    assert.match(result.hint, /PATH/);
+  });
+
+  it('fails with a timeout message including the configured timeout', async () => {
+    const testMcpHandshakeFn = async (opts) => {
+      assert.equal(opts.timeoutMs, 1234);
+      return { ok: false, reason: 'timeout' };
+    };
+    const result = await checkMcpHandshake({ timeoutMs: 1234, testMcpHandshakeFn });
+    assert.equal(result.ok, false);
+    assert.match(result.message, /1234ms/);
+  });
+
+  it('fails with an invalid-response message when the server replied but not validly', async () => {
+    const testMcpHandshakeFn = async () => ({ ok: false, reason: 'invalid-response' });
+    const result = await checkMcpHandshake({ testMcpHandshakeFn });
+    assert.equal(result.ok, false);
+    assert.match(result.message, /not.*valid initialize result/);
   });
 });

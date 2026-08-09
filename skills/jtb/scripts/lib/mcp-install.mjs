@@ -20,9 +20,10 @@ import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { isLicensed } from './license.mjs';
 import { createStyler } from './ansi.mjs';
 
-const ENTRY_NAME = 'ticketlens';
+export const ENTRY_NAME = 'ticketlens';
+export const DESIRED_MCP_ENTRY = { command: ENTRY_NAME, args: ['mcp'] };
 
-function readConfig(configPath) {
+export function readMcpConfig(configPath) {
   if (!existsSync(configPath)) return { ok: true, config: {} };
   let parsed;
   try {
@@ -55,7 +56,7 @@ export function mcpInstall({
   const configPath = join(cwd, '.mcp.json');
   const s = createStyler({ isTTY: stream.isTTY });
 
-  const read = readConfig(configPath);
+  const read = readMcpConfig(configPath);
   if (!read.ok) {
     stream.write(`  ${s.dim('✗')} ${read.reason}\n`);
     return { written: false, dryRun, path: configPath, reason: read.reason };
@@ -63,7 +64,7 @@ export function mcpInstall({
 
   const config = read.config;
   config.mcpServers ??= {};
-  const desired = { command: ENTRY_NAME, args: ['mcp'] };
+  const desired = DESIRED_MCP_ENTRY;
   const existing = config.mcpServers[ENTRY_NAME];
   const alreadyCorrect = existing !== undefined && JSON.stringify(existing) === JSON.stringify(desired);
   config.mcpServers[ENTRY_NAME] = desired;

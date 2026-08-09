@@ -31,7 +31,7 @@ const PROTOCOL_VERSION = '2025-11-25';
 const TOOLS = [
   {
     name: 'doctor',
-    description: 'Diagnose common TicketLens problems: profile configuration, license freshness, tracker connectivity, attachment cache health, and the Recall sync queue. Always returns structured JSON. Free tier, fully unrestricted — including fix.',
+    description: 'Diagnose common TicketLens problems: profile configuration, license freshness, tracker connectivity, attachment cache health, MCP registration, and the Recall sync queue. Always returns structured JSON. Free tier, fully unrestricted — including fix.',
     inputSchema: {
       type: 'object',
       properties: {

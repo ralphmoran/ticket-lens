@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, mkdtempSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -311,20 +311,71 @@ describe('bin/ticketlens.mjs', () => {
   });
 
   it('"ticketlens doctor" with no profiles configured reports failing checks and exits 1, without any network call', () => {
-    const result = spawnSync('node', [binPath, 'doctor', '--format=json'], {
-      encoding: 'utf8',
-      timeout: 5000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
-    });
-    assert.equal(result.status, 1, `Expected exit 1, got ${result.status}\nstderr: ${result.stderr}`);
-    const parsed = JSON.parse(result.stderr.trim() || result.stdout.trim());
-    assert.equal(parsed.schemaVersion, 1);
-    assert.equal(parsed.ok, false);
-    assert.equal(parsed.checks.length, 5);
-    const profileCheck = parsed.checks.find(c => c.id === 'profile-config');
-    assert.equal(profileCheck.ok, false);
-    assert.match(profileCheck.message, /No profile configured/);
+    // cwd is an isolated fresh tmpdir (no .mcp.json) so the new mcp-registration
+    // check has deterministic input — without this, it would silently read this
+    // repo's own real, already-registered .mcp.json instead.
+    const freshCwd = mkdtempSync(join(tmpdir(), 'ticketlens-doctor-no-profiles-'));
+    try {
+      const result = spawnSync('node', [binPath, 'doctor', '--format=json'], {
+        encoding: 'utf8',
+        timeout: 5000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: freshCwd,
+        env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
+      });
+      assert.equal(result.status, 1, `Expected exit 1, got ${result.status}\nstderr: ${result.stderr}`);
+      const parsed = JSON.parse(result.stderr.trim() || result.stdout.trim());
+      assert.equal(parsed.schemaVersion, 1);
+      assert.equal(parsed.ok, false);
+      assert.equal(parsed.checks.length, 6);
+      const profileCheck = parsed.checks.find(c => c.id === 'profile-config');
+      assert.equal(profileCheck.ok, false);
+      assert.match(profileCheck.message, /No profile configured/);
+      const mcpRegistrationCheck = parsed.checks.find(c => c.id === 'mcp-registration');
+      assert.equal(mcpRegistrationCheck.ok, false);
+      assert.match(mcpRegistrationCheck.message, /No \.mcp\.json file found/);
+    } finally {
+      rmSync(freshCwd, { recursive: true, force: true });
+    }
+  });
+
+  it('"ticketlens doctor --mcp" with a real fake ticketlens shim on PATH reports a successful MCP handshake — real spawn, real JSON-RPC round trip, no mocked spawnFn', { skip: process.platform === 'win32' ? 'shebang-based fake executables need a .cmd shim to resolve on Windows' : false }, () => {
+    // Fully hermetic: builds a fake `ticketlens` executable that answers the
+    // real JSON-RPC `initialize` handshake, so this test never depends on
+    // this machine's actual global install being on PATH.
+    const freshCwd = mkdtempSync(join(tmpdir(), 'ticketlens-doctor-mcp-shim-'));
+    const shimDir = mkdtempSync(join(tmpdir(), 'ticketlens-doctor-mcp-shim-bin-'));
+    const shimPath = join(shimDir, 'ticketlens');
+    try {
+      writeFileSync(shimPath, [
+        '#!/usr/bin/env node',
+        'const readline = require("node:readline");',
+        'const rl = readline.createInterface({ input: process.stdin, terminal: false });',
+        'rl.on("line", (line) => {',
+        '  const msg = JSON.parse(line);',
+        '  if (msg.method === "initialize") {',
+        '    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "ticketlens", version: "0.0.0-fake" } } }) + "\\n");',
+        '  }',
+        '});',
+      ].join('\n'), 'utf8');
+      chmodSync(shimPath, 0o755);
+
+      const result = spawnSync('node', [binPath, 'doctor', '--mcp', '--format=json'], {
+        encoding: 'utf8',
+        timeout: 10000, // headroom over the 5000ms default handshake timeout inside doctor
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: freshCwd,
+        env: { ...process.env, HOME: '/tmp/ticketlens-no-home', PATH: `${shimDir}:${process.env.PATH}` },
+      });
+      const parsed = JSON.parse(result.stderr.trim() || result.stdout.trim());
+      const handshakeCheck = parsed.checks.find(c => c.id === 'mcp-handshake');
+      assert.ok(handshakeCheck, 'mcp-handshake check must be present when --mcp is passed');
+      assert.equal(handshakeCheck.ok, true, `Expected handshake to succeed: ${JSON.stringify(handshakeCheck)}`);
+      assert.match(handshakeCheck.message, /2025-11-25/);
+    } finally {
+      rmSync(freshCwd, { recursive: true, force: true });
+      rmSync(shimDir, { recursive: true, force: true });
+    }
   });
 
   it('"ticketlens cloud-keys" routes to the cloud-keys handler, not the ticket-fetch fallback', () => {

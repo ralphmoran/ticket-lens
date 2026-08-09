@@ -20,6 +20,7 @@ function allOkChecks(overrides = {}) {
     checkConnectivityFn: async () => ({ id: 'connectivity', label: 'Tracker connectivity', ok: true, message: 'ok', hint: null, fixable: false }),
     checkCacheHealthFn: () => ({ id: 'cache-health', label: 'Attachment cache', ok: true, message: 'ok', hint: null, fixable: false, corruptEntries: [] }),
     checkRecallQueueFn: () => ({ id: 'recall-queue', label: 'Recall sync queue', ok: true, message: 'ok', hint: null, fixable: false }),
+    checkMcpRegistrationFn: () => ({ id: 'mcp-registration', label: 'MCP registration', ok: true, message: 'ok', hint: null, fixable: false }),
     ...overrides,
   };
 }
@@ -35,6 +36,7 @@ describe('runDoctor — checks-only mode', () => {
     assert.match(out.text, /Tracker connectivity/);
     assert.match(out.text, /Attachment cache/);
     assert.match(out.text, /Recall sync queue/);
+    assert.match(out.text, /MCP registration/);
   });
 
   it('returns ok:false when any check fails, and prints its hint', async () => {
@@ -56,7 +58,7 @@ describe('runDoctor — checks-only mode', () => {
     const parsed = JSON.parse(out.text);
     assert.equal(parsed.schemaVersion, 1);
     assert.equal(parsed.ok, true);
-    assert.equal(parsed.checks.length, 5);
+    assert.equal(parsed.checks.length, 6);
     for (const check of parsed.checks) {
       assert.deepEqual(Object.keys(check).sort(), ['fixable', 'hint', 'id', 'label', 'message', 'ok']);
     }
@@ -160,6 +162,40 @@ describe('runDoctor — checks-only mode', () => {
   });
 });
 
+describe('runDoctor — --mcp flag (MCP registration + handshake checks)', () => {
+  it('always includes mcp-registration, even without --mcp', async () => {
+    const stream = fakeStream();
+    const out = fakeStream();
+    await runDoctor(['--format=json'], { stream, out, ...allOkChecks() });
+    const parsed = JSON.parse(out.text);
+    assert.ok(parsed.checks.find(c => c.id === 'mcp-registration'));
+  });
+
+  it('never calls checkMcpHandshakeFn when --mcp is not passed', async () => {
+    const stream = fakeStream();
+    const out = fakeStream();
+    let called = false;
+    const checkMcpHandshakeFn = () => { called = true; return { id: 'mcp-handshake', label: 'MCP server handshake', ok: true, message: 'ok', hint: null, fixable: false }; };
+    await runDoctor(['--format=json'], { stream, out, ...allOkChecks(), checkMcpHandshakeFn });
+    assert.equal(called, false, 'the handshake check must never spawn a subprocess unless --mcp is explicitly passed');
+    const parsed = JSON.parse(out.text);
+    assert.equal(parsed.checks.find(c => c.id === 'mcp-handshake'), undefined);
+    assert.equal(parsed.checks.length, 6);
+  });
+
+  it('includes mcp-handshake, calling checkMcpHandshakeFn, when --mcp is passed', async () => {
+    const stream = fakeStream();
+    const out = fakeStream();
+    let called = false;
+    const checkMcpHandshakeFn = () => { called = true; return { id: 'mcp-handshake', label: 'MCP server handshake', ok: true, message: 'handshake ok', hint: null, fixable: false }; };
+    await runDoctor(['--mcp', '--format=json'], { stream, out, ...allOkChecks(), checkMcpHandshakeFn });
+    assert.equal(called, true);
+    const parsed = JSON.parse(out.text);
+    assert.ok(parsed.checks.find(c => c.id === 'mcp-handshake'));
+    assert.equal(parsed.checks.length, 7);
+  });
+});
+
 describe('runDoctor — progress indicator (ROADMAP 49f)', () => {
   it('writes a "Checking <label>…" line per check, then erases it, when stream is a TTY and format is plain', async () => {
     const stream = fakeTTYStream();
@@ -170,9 +206,20 @@ describe('runDoctor — progress indicator (ROADMAP 49f)', () => {
     assert.match(stream.text, /Checking tracker connectivity…/);
     assert.match(stream.text, /Checking attachment cache…/);
     assert.match(stream.text, /Checking recall sync queue…/);
+    assert.match(stream.text, /Checking MCP registration…/);
     // Every running line is followed by its own erase sequence (cursor up, clear line).
     const eraseCount = (stream.text.match(/\x1b\[A\r\x1b\[2K/g) || []).length;
-    assert.equal(eraseCount, 5);
+    assert.equal(eraseCount, 6);
+  });
+
+  it('renders "Checking MCP registration…" and "Checking MCP server handshake…" correctly — lowerFirst must not mangle a leading acronym', async () => {
+    const stream = fakeTTYStream();
+    const out = fakeStream();
+    const checkMcpHandshakeFn = () => ({ id: 'mcp-handshake', label: 'MCP server handshake', ok: true, message: 'ok', hint: null, fixable: false });
+    await runDoctor(['--mcp'], { stream, out, ...allOkChecks(), checkMcpHandshakeFn });
+    assert.match(stream.text, /Checking MCP registration…/);
+    assert.match(stream.text, /Checking MCP server handshake…/);
+    assert.doesNotMatch(stream.text, /Checking mCP/);
   });
 
   it('writes no progress bytes to stream when stream is not a TTY (piped)', async () => {
@@ -302,6 +349,45 @@ describe('runDoctor — --fix mode', () => {
       }),
     });
     assert.deepEqual(order, ['license', 'cache', 'queue']);
+  });
+
+  it('registers ticketlens via mcpInstallFn when mcp-registration is failing and fixable, re-checks, and reports it fixed', async () => {
+    const stream = fakeStream();
+    const out = fakeStream();
+    let installed = false;
+    let installedCwd;
+    let recheckCount = 0;
+    const mcpInstallFn = (opts) => { installed = true; installedCwd = opts.cwd; };
+    const checkMcpRegistrationFn = () => {
+      recheckCount++;
+      return recheckCount === 1
+        ? { id: 'mcp-registration', label: 'MCP registration', ok: false, message: 'not registered', hint: null, fixable: true }
+        : { id: 'mcp-registration', label: 'MCP registration', ok: true, message: 'registered', hint: null, fixable: false };
+    };
+    const result = await runDoctor(['--fix'], {
+      stream, out, cwd: '/fake/project', mcpInstallFn,
+      ...allOkChecks({ checkMcpRegistrationFn }),
+    });
+    assert.equal(installed, true);
+    assert.equal(installedCwd, '/fake/project');
+    assert.equal(result.ok, true);
+    assert.match(out.text, /Fixed:.*mcp-registration/s);
+  });
+
+  it('does not attempt a fix for mcp-registration when it is failing but not fixable (malformed .mcp.json)', async () => {
+    const stream = fakeStream();
+    const out = fakeStream();
+    let installed = false;
+    const mcpInstallFn = () => { installed = true; };
+    const checkMcpRegistrationFn = () => ({ id: 'mcp-registration', label: 'MCP registration', ok: false, message: 'malformed', hint: null, fixable: false });
+    const result = await runDoctor(['--fix', '--format=json'], {
+      stream, out, mcpInstallFn,
+      ...allOkChecks({ checkMcpRegistrationFn }),
+    });
+    assert.equal(installed, false);
+    const parsed = JSON.parse(out.text);
+    assert.deepEqual(parsed.fixed, []);
+    assert.equal(result.ok, false);
   });
 
   it('does not attempt a fix for a check that is failing but not fixable (e.g. connectivity)', async () => {

@@ -1230,11 +1230,12 @@ export function printDoctorHelp({ stream = process.stdout } = {}) {
   const s = createStyler({ isTTY: stream.isTTY });
   const lines = [
     '',
-    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('doctor')} ${s.dim('[--fix] [--format=plain|json] [--profile=NAME]')}`,
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('doctor')} ${s.dim('[--fix] [--format=plain|json] [--profile=NAME] [--mcp]')}`,
     '',
     `  Diagnose common TicketLens problems: profile configuration, license`,
-    `  freshness, tracker connectivity, attachment cache health, and the Recall`,
-    `  sync queue. Free tier, fully unrestricted.`,
+    `  freshness, tracker connectivity, attachment cache health, MCP`,
+    `  registration, and the Recall sync queue. Pass --mcp to also check the`,
+    `  MCP server handshake. Free tier, fully unrestricted.`,
     '',
     `  ${s.bold('OPTIONS')}`,
     '',
@@ -1242,6 +1243,7 @@ export function printDoctorHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('--format')}=${s.dim('plain')}    Human-readable output  ${s.dim('(default)')}`,
     `    ${s.brand('--format')}=${s.dim('json')}     JSON output for scripting/piping`,
     `    ${s.brand('--profile')}=${s.dim('NAME')}    Scope profile/connectivity/cache checks to one profile`,
+    `    ${s.brand('--mcp')}              Also run the MCP server handshake check (spawns a subprocess)`,
     `    ${s.brand('-h')}, ${s.brand('--help')}         Show this help`,
     '',
     `  ${s.bold('EXAMPLES')}`,
@@ -1250,6 +1252,7 @@ export function printDoctorHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('$')} ticketlens doctor --fix`,
     `    ${s.dim('$')} ticketlens doctor --profile=work`,
     `    ${s.dim('$')} ticketlens doctor --format=json`,
+    `    ${s.dim('$')} ticketlens doctor --mcp`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

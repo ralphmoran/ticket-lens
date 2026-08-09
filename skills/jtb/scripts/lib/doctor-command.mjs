@@ -10,15 +10,20 @@ import { handleUnknownFlags } from './arg-validator.mjs';
 import { createStyler } from './ansi.mjs';
 import {
   checkProfileConfig, checkLicenseFreshness, checkConnectivity,
-  checkCacheHealth, checkRecallQueue,
+  checkCacheHealth, checkRecallQueue, checkMcpRegistration, checkMcpHandshake,
 } from './doctor-checks.mjs';
 import { revalidateLicense } from './license.mjs';
 import { flushQueue } from './recall-queue.mjs';
 import { readCliToken } from './cli-auth.mjs';
+import { mcpInstall } from './mcp-install.mjs';
 
-const KNOWN_FLAGS = ['--format=', '--fix', '--profile=', '--help', '-h'];
+const KNOWN_FLAGS = ['--format=', '--fix', '--profile=', '--mcp', '--help', '-h'];
+const NOOP_STREAM = { write: () => true };
 
-const lowerFirst = (str) => str.charAt(0).toLowerCase() + str.slice(1);
+// A leading run of 2+ capitals is an acronym (e.g. "MCP registration") and
+// must not be partially lowercased — only a genuine single leading capital
+// (e.g. "Profile configuration") gets folded to start a sentence mid-line.
+const lowerFirst = (str) => (/^[A-Z]{2,}/.test(str) ? str : str.charAt(0).toLowerCase() + str.slice(1));
 
 function renderPlain(checks, { fixed, skipped, stream }) {
   const s = createStyler({ isTTY: stream.isTTY });
@@ -41,10 +46,11 @@ function renderPlain(checks, { fixed, skipped, stream }) {
 }
 
 async function applyFixes(rawResults, {
-  configDir, profileName, format, stream,
+  configDir, profileName, cwd, format, stream,
   revalidateLicenseFn, checkLicenseFreshnessFn,
   unlinkFn, checkCacheHealthFn,
   flushQueueFn, checkRecallQueueFn, readCliTokenFn,
+  mcpInstallFn, checkMcpRegistrationFn,
 }) {
   const fixed = [];
   const skipped = [];
@@ -81,6 +87,14 @@ async function applyFixes(rawResults, {
     }
   }
 
+  if (byId['mcp-registration'] && !byId['mcp-registration'].ok && byId['mcp-registration'].fixable) {
+    if (format === 'plain') stream.write('Registering ticketlens as an MCP server...\n');
+    mcpInstallFn({ cwd, stream: NOOP_STREAM, dryRun: false });
+    const recheck = checkMcpRegistrationFn({ cwd });
+    byId['mcp-registration'] = recheck;
+    if (recheck.ok) fixed.push('mcp-registration');
+  }
+
   return { results: Object.values(byId), fixed, skipped };
 }
 
@@ -94,10 +108,13 @@ export async function runDoctor(args, {
   checkConnectivityFn = checkConnectivity,
   checkCacheHealthFn = checkCacheHealth,
   checkRecallQueueFn = checkRecallQueue,
+  checkMcpRegistrationFn = checkMcpRegistration,
+  checkMcpHandshakeFn = checkMcpHandshake,
   revalidateLicenseFn = revalidateLicense,
   unlinkFn = (p) => fs.unlinkSync(p),
   flushQueueFn = flushQueue,
   readCliTokenFn = readCliToken,
+  mcpInstallFn = mcpInstall,
 } = {}) {
   const validated = await handleUnknownFlags(args, KNOWN_FLAGS, { stream });
   if (validated === null) return { ok: false };
@@ -112,6 +129,7 @@ export async function runDoctor(args, {
   const profileArg = validated.find(a => a.startsWith('--profile='));
   const profileName = profileArg ? profileArg.split('=')[1] : null;
   const shouldFix = validated.includes('--fix');
+  const shouldCheckMcpHandshake = validated.includes('--mcp');
 
   const checkList = [
     { label: 'Profile configuration', run: () => checkProfileConfigFn({ configDir, profileName, cwd }) },
@@ -119,6 +137,8 @@ export async function runDoctor(args, {
     { label: 'Tracker connectivity', run: () => checkConnectivityFn({ configDir, profileName, cwd }) },
     { label: 'Attachment cache', run: () => checkCacheHealthFn({ configDir, profileName }) },
     { label: 'Recall sync queue', run: () => checkRecallQueueFn({ configDir }) },
+    { label: 'MCP registration', run: () => checkMcpRegistrationFn({ cwd }) },
+    ...(shouldCheckMcpHandshake ? [{ label: 'MCP server handshake', run: () => checkMcpHandshakeFn({}) }] : []),
   ];
 
   const showProgress = format === 'plain' && stream.isTTY;
@@ -138,10 +158,11 @@ export async function runDoctor(args, {
   let finalResults = rawResults;
   if (shouldFix) {
     const applied = await applyFixes(rawResults, {
-      configDir, profileName, format, stream,
+      configDir, profileName, cwd, format, stream,
       revalidateLicenseFn, checkLicenseFreshnessFn,
       unlinkFn, checkCacheHealthFn,
       flushQueueFn, checkRecallQueueFn, readCliTokenFn,
+      mcpInstallFn, checkMcpRegistrationFn,
     });
     finalResults = applied.results;
     fixed = applied.fixed;

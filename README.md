@@ -529,11 +529,12 @@ A one-line summary footer is also appended automatically to `ticketlens triage` 
 ### Doctor
 
 ```bash
-ticketlens doctor                        # Diagnose profile/license/connectivity/cache/queue problems
-ticketlens doctor --fix                  # Attempt safe automatic fixes (license revalidation, corrupt cache cleanup, queue flush)
+ticketlens doctor                        # Diagnose profile/license/connectivity/cache/MCP-registration/queue problems
+ticketlens doctor --fix                  # Attempt safe automatic fixes (license revalidation, corrupt cache cleanup, MCP registration, queue flush)
 ticketlens doctor --profile=acme         # Scope checks to a single profile
 ticketlens doctor --format=json          # JSON output for scripting/piping
 ticketlens doctor --format=json | jq '.ok'
+ticketlens doctor --mcp                  # Also check the MCP server handshake (spawns a subprocess)
 ```
 
 Runs five checks — profile configuration, license freshness, tracker connectivity, attachment cache health, and the Recall sync queue — and reports pass/fail with an actionable hint per failure, instead of a raw stack trace. Free tier, fully unrestricted; no license required.
@@ -817,10 +818,11 @@ ticketlens stats --days=14                   # Extend lookback window (Pro, max 
 ticketlens stats --format=json               # JSON output for scripting
 
 # ── Doctor ────────────────────────────────────────────────────────────────────
-ticketlens doctor                             # Diagnose profile/license/connectivity/cache/queue problems
+ticketlens doctor                             # Diagnose profile/license/connectivity/cache/MCP-registration/queue problems
 ticketlens doctor --fix                       # Attempt safe automatic fixes
 ticketlens doctor --profile=acme             # Scope checks to a single profile
 ticketlens doctor --format=json               # JSON output for scripting/piping
+ticketlens doctor --mcp                       # Also check the MCP server handshake (spawns a subprocess)
 
 # ── Compliance ────────────────────────────────────────────────────────────────
 ticketlens compliance <TICKET-KEY>            # Check ticket requirements against local diff [Pro/Free 3/mo]
