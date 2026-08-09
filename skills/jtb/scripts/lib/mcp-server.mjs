@@ -156,6 +156,7 @@ const TOOLS = [
         summary: { type: 'string', description: 'Ticket title/summary.' },
         description: { type: 'string', description: 'Ticket description. Omit for none.' },
         attachments: { type: 'array', items: { type: 'string' }, description: 'Local file paths to attach, uploaded after the ticket is created. On Linear the image is automatically linked into the description. On Jira it becomes a real, visible attachment on the issue, but is not embedded inline in the initial description (use ticket_comment afterward for an inline thumbnail). Not supported on GitHub.' },
+        profile: { type: 'string', description: 'Connection profile to target, overriding folder-based inference and the default profile. Use this when `project` belongs to a profile other than the one auto-resolved from the current working directory.' },
       },
       required: ['summary'],
     },
@@ -386,6 +387,7 @@ function buildTicketCreateArgs(args) {
   cmdArgs.push(`--summary=${args.summary}`);
   if (args.description !== undefined) cmdArgs.push(`--description=${args.description}`);
   if (args.attachments?.length) cmdArgs.push(`--attach=${args.attachments.join(',')}`);
+  if (args.profile !== undefined) cmdArgs.push(`--profile=${args.profile}`);
   return cmdArgs;
 }
 

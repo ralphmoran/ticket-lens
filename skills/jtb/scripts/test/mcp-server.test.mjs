@@ -790,6 +790,26 @@ describe('mcp-server', () => {
       assert.deepEqual(seenArgs, ['--project=PROJ', '--type=Task', '--summary=New']);
     });
 
+    it('passes profile through as --profile=NAME, appended last', async () => {
+      let seenArgs;
+      const runTicketCreateFn = async (cmdArgs) => { seenArgs = cmdArgs; return { ok: true, key: 'PROJ-99' }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_create', arguments: { project: 'PROJ', type: 'Task', summary: 'New', profile: 'acme' } } }],
+        { configDir, runTicketCreateFn },
+      );
+      assert.deepEqual(seenArgs, ['--project=PROJ', '--type=Task', '--summary=New', '--profile=acme']);
+    });
+
+    it('omits --profile entirely when not given — byte-identical to before this feature', async () => {
+      let seenArgs;
+      const runTicketCreateFn = async (cmdArgs) => { seenArgs = cmdArgs; return { ok: true, key: 'PROJ-99' }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_create', arguments: { project: 'PROJ', type: 'Task', summary: 'New' } } }],
+        { configDir, runTicketCreateFn },
+      );
+      assert.deepEqual(seenArgs, ['--project=PROJ', '--type=Task', '--summary=New']);
+    });
+
     it('missing summary returns a JSON-RPC tool error without calling runTicketCreateFn', async () => {
       let called = false;
       const runTicketCreateFn = async () => { called = true; return { ok: true }; };
