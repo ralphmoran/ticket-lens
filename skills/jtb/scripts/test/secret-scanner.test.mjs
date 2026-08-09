@@ -154,6 +154,27 @@ describe('scanForSecrets — regression: possessive next to a hyphenated compoun
   });
 });
 
+describe('scanForSecrets — regression: two adjacent hyphenated compounds are not a secret (Trigger 5)', () => {
+  test('exact live repro: "REDIS-vs-PG dual-store" false-positived (PROD-5554 triage, 2026-08-07)', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'the known REDIS-vs-PG dual-store gotcha strikes again' });
+    assert.equal(result.rejected, false);
+  });
+
+  test('two ordinary lowercase compounds adjacent, no abbreviation involved (general case, not just the exact repro)', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'we hit a well-known edge-case yesterday' });
+    assert.equal(result.rejected, false);
+  });
+
+  test('a hyphenated token with one oversized segment does not qualify as a compound, so a generic (non-hard-reject-shaped) secret split next to it is still caught by the entropy join', () => {
+    // Neither half is 20+ chars alone, and neither matches any HARD_REJECT_PATTERNS
+    // prefix — this isolates the entropy join specifically. "ab-cdefghijklmnopqr"
+    // has a 17-char second segment, over MAX_COMPOUND_SEGMENT_LENGTH (15), so it
+    // stays joinable instead of being misread as a compound word.
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'the ab-cdefghijklmnopqr Xy9zAb value leaked' });
+    assert.equal(result.rejected, true);
+  });
+});
+
 describe('scanForSecrets — checksum/digest label vocabulary (usability, not security)', () => {
   test('a sha256 Docker image digest (word:hex, no space) is allowed through', () => {
     const result = scanForSecrets({ title: 'x', tags: [], body: 'Image digest sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85' });

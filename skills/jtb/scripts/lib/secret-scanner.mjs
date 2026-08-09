@@ -26,6 +26,11 @@ const REFERENCE_CONTEXT_WINDOW = 20;
 // rejoined before checking. See isLabelWord for what stops a run — and the
 // documented gap in inserting genuine dictionary words as separators.
 const MAX_JOINED_CHUNKS = 4;
+// Real compound-word segments ("dual-store", "not-yet-configured") run short —
+// capping segment length keeps a long random letters-only run from masquerading
+// as one "segment" of a fake compound. See isHyphenatedWordCompound.
+const MAX_COMPOUND_SEGMENT_LENGTH = 15;
+const HYPHENATED_COMPOUND_RE = /^[A-Za-z]+(-[A-Za-z]+)+$/;
 
 const HARD_REJECT_PATTERNS = [
   { name: 'AWS access key', re: /AKIA[0-9A-Z]{16}/ },
@@ -125,28 +130,49 @@ function hasInternalCaseSwitch(token) {
 }
 
 /**
+ * True for a letters-only, hyphen-delimited token whose segments are all
+ * short enough to read as a real compound word ("dual-store", "REDIS-vs-PG",
+ * "not-yet-configured") rather than a whitespace-split secret fragment. Only
+ * consulted from isLabelWord, i.e. only affects the stopAtLabelWords:true
+ * (generic-secret entropy) pass — joinedChunkRuns's stopAtLabelWords:false
+ * pass, which is what HARD_REJECT_PATTERNS relies on to catch a whitespace-
+ * split sk-/gsk_/AKIA/gh*_/eyJ/PEM-prefixed secret, never calls isLabelWord
+ * at all, so this cannot weaken that protection (see the regression test
+ * for exactly that shape, still passing after this change).
+ */
+function isHyphenatedWordCompound(token) {
+  if (!HYPHENATED_COMPOUND_RE.test(token)) return false;
+  return token.split('-').every(segment => segment.length <= MAX_COMPOUND_SEGMENT_LENGTH);
+}
+
+/**
  * True for a token that stops a joined-chunk run: either a recognized git/
- * checksum label word ("commit", "sha256", "md5sum", ...), or an ordinary
- * English word (letters only, optionally with an internal possessive/
- * contraction apostrophe — "relay's", "doesn't" — but no base64-style case
- * switching). Anything else — a fragment containing a digit or other symbol,
- * a hyphenated compound, or an all-letter chunk that still reads as random
- * content — stays eligible to join, so a secret split by whitespace can still
- * be reassembled for the entropy check.
+ * checksum label word ("commit", "sha256", "md5sum", ...), a hyphenated
+ * compound word (see isHyphenatedWordCompound), or an ordinary English word
+ * (letters only, optionally with an internal possessive/contraction
+ * apostrophe — "relay's", "doesn't" — but no base64-style case switching).
+ * Anything else — a fragment containing a digit or other symbol, or an
+ * all-letter chunk that still reads as random content — stays eligible to
+ * join, so a secret split by whitespace can still be reassembled for the
+ * entropy check.
  *
  * The apostrophe allowance matters because without it, an ordinary possessive
  * next to another non-label token (e.g. a hyphenated compound: "relay's
  * decision-lookup") never gets a chance to stop the run — both fail to
  * qualify, so they concatenate into one artificial blob whose mixed
  * punctuation trips the entropy threshold. A real false positive, not a
- * hypothetical one (see the regression test below). Hyphenated tokens are
- * deliberately NOT given the same allowance: a short prefix + hyphen + long
- * letter-run is indistinguishable from a real compound word by shape alone
- * (e.g. "sk-abcdefghijklmnop", the letters-only half of a whitespace-split
- * API key) — see the adjacent regression test for exactly this shape. Once
- * the apostrophe fix lets "relay's" stop the run on its own, an adjacent
- * hyphenated compound is short enough on its own to fall under
- * MIN_RANDOM_TOKEN_LENGTH anyway, so it never needed the same allowance.
+ * hypothetical one (see the regression test below).
+ *
+ * Hyphenated compounds get the narrower isHyphenatedWordCompound allowance
+ * rather than the full apostrophe treatment: a short prefix + hyphen + one
+ * long unstructured letter-run (e.g. "sk-abcdefghijklmnop") still fails it —
+ * one segment exceeds MAX_COMPOUND_SEGMENT_LENGTH — so it stays eligible to
+ * join. This is belt-and-suspenders on top of the fact noted above that the
+ * hard-reject pass doesn't consult isLabelWord in the first place. Accepted
+ * trade-off: a hypothetical generic (non-hard-reject-shaped) secret that is
+ * itself letters-only, hyphen-delimited, and short-segmented would no longer
+ * bridge across a whitespace split via this path — no known real secret
+ * generator produces that shape (base32/64/hex alphabets are digit-inclusive).
  *
  * Known accepted gap: this can't tell a genuine possessive from one an
  * attacker deliberately chose as a separator to defeat the scanner (e.g.
@@ -161,6 +187,7 @@ function hasInternalCaseSwitch(token) {
 function isLabelWord(token) {
   const stripped = stripEdgePunctuation(token);
   if (GIT_REFERENCE_WORD_RE.test(stripped)) return true;
+  if (isHyphenatedWordCompound(stripped)) return true;
   return /^[A-Za-z]+(?:'[A-Za-z]+)*$/.test(stripped) && !hasInternalCaseSwitch(stripped);
 }
 
