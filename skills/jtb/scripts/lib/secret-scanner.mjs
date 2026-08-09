@@ -139,9 +139,20 @@ function hasInternalCaseSwitch(token) {
  * split sk-/gsk_/AKIA/gh*_/eyJ/PEM-prefixed secret, never calls isLabelWord
  * at all, so this cannot weaken that protection (see the regression test
  * for exactly that shape, still passing after this change).
+ *
+ * The hasInternalCaseSwitch check matters the same way it does everywhere
+ * else in this file that distinguishes base64 content from prose (see
+ * isLabelWord's plain-word branch and looksLikeCodeFilename): without it, a
+ * base64-shaped fragment like "zqXvbNmKl-PoIuYtR" reads as a "compound word"
+ * purely because it happens to contain a hyphen, which would let it stop a
+ * run the same way a real compound does — the same category of shape-based
+ * exemption that made the code-filename bypass CRITICAL. Every real compound
+ * tested (dual-store, REDIS-vs-PG, well-known, not-yet-configured, PROD-DB,
+ * end-to-end, ...) has no internal case switch, so this costs nothing.
  */
 function isHyphenatedWordCompound(token) {
   if (!HYPHENATED_COMPOUND_RE.test(token)) return false;
+  if (hasInternalCaseSwitch(token)) return false;
   return token.split('-').every(segment => segment.length <= MAX_COMPOUND_SEGMENT_LENGTH);
 }
 

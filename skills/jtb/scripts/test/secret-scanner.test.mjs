@@ -173,6 +173,17 @@ describe('scanForSecrets — regression: two adjacent hyphenated compounds are n
     const result = scanForSecrets({ title: 'x', tags: [], body: 'the ab-cdefghijklmnopqr Xy9zAb value leaked' });
     assert.equal(result.rejected, true);
   });
+
+  test('security regression: a base64-shaped hyphenated fragment does not qualify as a compound word just because it contains a hyphen', () => {
+    // Found by adversarial security review: without a case-switch guard, a
+    // mixed-case fragment like "zqXvbNmKl-PoIuYtR" would read as a "compound
+    // word" purely by shape (letters + hyphen + short segments) and stop the
+    // entropy join — the same category of shape-based exemption that made
+    // the code-filename bypass CRITICAL. No real compound word has an
+    // internal case switch, so this costs nothing legitimate.
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'zqXvbNmKl-PoIuYtR eWqAsDfG-hJkLzXcV' });
+    assert.equal(result.rejected, true);
+  });
 });
 
 describe('scanForSecrets — checksum/digest label vocabulary (usability, not security)', () => {
