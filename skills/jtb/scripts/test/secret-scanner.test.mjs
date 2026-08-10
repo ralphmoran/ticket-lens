@@ -257,6 +257,51 @@ describe('scanForSecrets — hard-reject shapes', () => {
     assert.equal(result.rejected, true);
   });
 
+  // ---- backlog 1e: U+200B (zero-width space) is not in JS's native \s ----
+  //
+  // U+200B is Unicode category Cf (format), not Zs (space separator) — the
+  // Unicode White_Space property excludes it despite the name, so it was
+  // never covered by ECMA-262's \s (unlike U+FEFF, which backlog 1c/1d
+  // already relied on \s to catch). A secret split by it stays one unsplit
+  // token, invisible to combined/hardRejectRuns/despacedCombined alike.
+
+  test('an AWS access key split by a zero-width space is still rejected', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'AKIA​IOSFODNN7EXAMPLE' });
+    assert.equal(result.rejected, true);
+    assert.match(result.reasons.join(' '), /AWS access key/i);
+  });
+
+  test('a PEM header split by a zero-width space is still rejected', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: '-----BEGIN​RSA PRIVATE KEY-----' });
+    assert.equal(result.rejected, true);
+    assert.match(result.reasons.join(' '), /private key/i);
+  });
+
+  test('a JWT split by a zero-width space is still rejected', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U';
+    const split = jwt.slice(0, 5) + '​' + jwt.slice(5);
+    const result = scanForSecrets({ title: 'x', tags: [], body: `token=${split}` });
+    assert.equal(result.rejected, true);
+    assert.match(result.reasons.join(' '), /JWT|token/i);
+  });
+
+  test('an API key split by a zero-width space is still rejected', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'sk-​abcdefghijklmnopqrstuvwxyz123456' });
+    assert.equal(result.rejected, true);
+    assert.match(result.reasons.join(' '), /API key/i);
+  });
+
+  test('a GitHub token split by a zero-width space is still rejected', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: `ghp_​${'a1B2c3'.repeat(4)}` });
+    assert.equal(result.rejected, true);
+    assert.match(result.reasons.join(' '), /GitHub token/i);
+  });
+
+  test('a clean note containing a stray zero-width space is not falsely rejected', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'international​ization and responsibility are long but ordinary words.' });
+    assert.equal(result.rejected, false);
+  });
+
   test('an OpenAI/Anthropic-style API key is rejected', () => {
     const result = scanForSecrets({ title: 'x', tags: [], body: 'export key sk-abcdefghijklmnopqrstuvwxyz123456' });
     assert.equal(result.rejected, true);

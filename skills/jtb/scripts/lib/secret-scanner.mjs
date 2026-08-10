@@ -32,18 +32,40 @@ const MAX_JOINED_CHUNKS = 4;
 const MAX_COMPOUND_SEGMENT_LENGTH = 15;
 const HYPHENATED_COMPOUND_RE = /^[A-Za-z]+(-[A-Za-z]+)+$/;
 
+// U+200B (ZERO WIDTH SPACE) is added explicitly: despite the name, it does
+// NOT carry the Unicode White_Space property (General_Category=Cf, not Zs),
+// so it's excluded from JS's native \s (ECMA-262 WhiteSpace production) —
+// the one gap backlog 1c/1d's U+FEFF handling didn't already cover for free,
+// since \s does include U+FEFF. Without this, a secret split by U+200B stays
+// as one unsplit token, invisible to the direct match, hardRejectRuns
+// (nothing to rejoin), and despacedCombined (not stripped) alike — only
+// entropy would catch it, and only by chance (backlog 1e). Shared as a
+// fragment (not just inside the tokenize/despace regexes below) so the PEM
+// entry in HARD_REJECT_PATTERNS stays in sync with it automatically —
+// mirrors RecallSecretScanner.php's WHITESPACE_CLASS.
+const WHITESPACE_CLASS = '[\\s\\u200B]';
+const WHITESPACE_SPLIT_RE = new RegExp(WHITESPACE_CLASS + '+');
+const WHITESPACE_STRIP_RE = new RegExp(WHITESPACE_CLASS + '+', 'g');
+
 const HARD_REJECT_PATTERNS = [
   { name: 'AWS access key', re: /AKIA[0-9A-Z]{16}/ },
-  // \s* (not a literal space) between segments: this is the only entry with
-  // required internal spacing, and hardRejectRuns (no-separator rejoin) and
-  // despacedCombined (whitespace stripped) both destroy a literal space the
-  // same way they correctly neutralize whitespace-splitting on every other
-  // pattern here — so a tab, extra spaces, a newline, or no separator at all
-  // used to bypass this entry completely (backlog 1d). \s* closes all of
-  // those in one change since it's tested against combined, hardRejectRuns,
-  // and despacedCombined identically. JS's \s is already Unicode-aware
-  // (including U+FEFF), so no separate handling is needed here.
-  { name: 'private key block', re: /-----BEGIN\s*(RSA\s*|EC\s*|OPENSSH\s*|DSA\s*)?PRIVATE\s*KEY-----/ },
+  // WHITESPACE_CLASS* (not a literal space) between segments: this is the
+  // only entry with required internal spacing, and hardRejectRuns
+  // (no-separator rejoin) and despacedCombined (whitespace stripped) both
+  // destroy a literal space the same way they correctly neutralize
+  // whitespace-splitting on every other pattern here — so a tab, extra
+  // spaces, a newline, Unicode whitespace, or no separator at all bypassed
+  // this entry until backlog 1d closed it, and U+200B specifically until
+  // backlog 1e (see WHITESPACE_CLASS above). Built with `new RegExp` instead
+  // of a literal so it reuses the exact same class as
+  // WHITESPACE_SPLIT_RE/WHITESPACE_STRIP_RE — a literal duplicate here is
+  // exactly how the /u flag itself drifted out of sync in backlog 1c.
+  {
+    name: 'private key block',
+    re: new RegExp(
+      `-----BEGIN${WHITESPACE_CLASS}*(RSA${WHITESPACE_CLASS}*|EC${WHITESPACE_CLASS}*|OPENSSH${WHITESPACE_CLASS}*|DSA${WHITESPACE_CLASS}*)?PRIVATE${WHITESPACE_CLASS}*KEY-----`,
+    ),
+  },
   { name: 'JSON Web Token (JWT)', re: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/ },
   { name: 'API key', re: /\b(sk-|gsk_)[A-Za-z0-9]{20,}\b/ },
   { name: 'GitHub token', re: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/ },
@@ -271,7 +293,7 @@ export function scanForSecrets({ title = '', tags = [], body = '' } = {}) {
   // an exact literal prefix (AKIA, sk-, ghp_, eyJ, -----BEGIN), so joining
   // across a field boundary can't turn them into a false positive the way
   // entropy can.
-  const fieldTokenGroups = [title, ...tags, body].map(field => field.split(/\s+/).filter(Boolean));
+  const fieldTokenGroups = [title, ...tags, body].map(field => field.split(WHITESPACE_SPLIT_RE).filter(Boolean));
   const tokens = fieldTokenGroups.flat();
   const candidates = [...tokens, ...fieldTokenGroups.flatMap(group => joinedChunkRuns(group))];
 
@@ -292,7 +314,7 @@ export function scanForSecrets({ title = '', tags = [], body = '' } = {}) {
   //      anchor risk #2 was built to avoid, but only as an additional check
   //      alongside #2, never instead of it — it can only add a detection
   //      that #1/#2 missed, never remove one they already caught.
-  const despacedCombined = combined.replace(/\s+/g, '');
+  const despacedCombined = combined.replace(WHITESPACE_STRIP_RE, '');
   const hardRejectRuns = joinedChunkRuns(tokens, { stopAtLabelWords: false });
   for (const { name, re } of HARD_REJECT_PATTERNS) {
     if (re.test(combined) || hardRejectRuns.some(c => re.test(c)) || re.test(despacedCombined)) {
