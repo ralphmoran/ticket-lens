@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from 'no
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { run } from '../fetch-my-tickets.mjs';
+import { writeLicense } from '../lib/license.mjs';
 
 const myselfResponse = {
   accountId: 'user-123',
@@ -157,7 +158,7 @@ describe('fetch-my-tickets integration', () => {
 
   it('--project=PROJ appends project JQL clause (Team gate)', async () => {
     const configDir = setupConfig();
-    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    writeLicense({ tier: 'team', key: 'test-key' }, configDir);
     let capturedJql = '';
     const mockFetch = async (url) => {
       if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
@@ -180,7 +181,7 @@ describe('fetch-my-tickets integration', () => {
 
   it('--project does NOT switch the connection profile', async () => {
     const configDir = setupConfig();
-    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    writeLicense({ tier: 'team', key: 'test-key' }, configDir);
     let capturedJql = '';
     const mockFetch = async (url) => {
       if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
@@ -203,7 +204,7 @@ describe('fetch-my-tickets integration', () => {
 
   it('--project blocks for non-Team user and shows upgrade prompt', async () => {
     const configDir = setupConfig();
-    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'pro', key: 'test-key' }));
+    writeLicense({ tier: 'pro', key: 'test-key' }, configDir);
     const out = captureOutput();
     try {
       await run(['--project=MYPROJ'], {}, undefined, configDir);
@@ -216,7 +217,7 @@ describe('fetch-my-tickets integration', () => {
 
   it('--label=Bug appends single label JQL clause', async () => {
     const configDir = setupConfig();
-    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    writeLicense({ tier: 'team', key: 'test-key' }, configDir);
     let capturedJql = '';
     const mockFetch = async (url) => {
       if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
@@ -238,7 +239,7 @@ describe('fetch-my-tickets integration', () => {
 
   it('--label=Bug,Feature appends labels IN (...) JQL clause', async () => {
     const configDir = setupConfig();
-    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    writeLicense({ tier: 'team', key: 'test-key' }, configDir);
     let capturedJql = '';
     const mockFetch = async (url) => {
       if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
@@ -262,7 +263,7 @@ describe('fetch-my-tickets integration', () => {
 
   it('--priority=High appends priority JQL clause', async () => {
     const configDir = setupConfig();
-    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    writeLicense({ tier: 'team', key: 'test-key' }, configDir);
     let capturedJql = '';
     const mockFetch = async (url) => {
       if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
@@ -284,7 +285,7 @@ describe('fetch-my-tickets integration', () => {
 
   it('--project, --label, --priority together produce combined JQL', async () => {
     const configDir = setupConfig();
-    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    writeLicense({ tier: 'team', key: 'test-key' }, configDir);
     let capturedJql = '';
     const mockFetch = async (url) => {
       if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
@@ -308,7 +309,7 @@ describe('fetch-my-tickets integration', () => {
 
   it('--label blocks for non-Team user and shows upgrade prompt', async () => {
     const configDir = setupConfig();
-    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'pro', key: 'test-key' }));
+    writeLicense({ tier: 'pro', key: 'test-key' }, configDir);
     const out = captureOutput();
     try {
       await run(['--label=Bug'], {}, undefined, configDir);
@@ -321,7 +322,7 @@ describe('fetch-my-tickets integration', () => {
 
   it('--project special chars are JQL-escaped', async () => {
     const configDir = setupConfig();
-    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    writeLicense({ tier: 'team', key: 'test-key' }, configDir);
     let capturedJql = '';
     const mockFetch = async (url) => {
       if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
@@ -427,7 +428,7 @@ describe('fetch-my-tickets integration', () => {
   it('--assignee flag uses assignee name in JQL instead of currentUser()', async () => {
     const configDir = setupConfig();
     // Write a team license so the flag is not gated
-    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    writeLicense({ tier: 'team', key: 'test-key' }, configDir);
     let capturedJql = '';
 
     const mockFetch = async (url) => {
@@ -452,7 +453,7 @@ describe('fetch-my-tickets integration', () => {
 
   it('--sprint flag appends sprint clause to JQL', async () => {
     const configDir = setupConfig();
-    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    writeLicense({ tier: 'team', key: 'test-key' }, configDir);
     let capturedJql = '';
 
     const mockFetch = async (url) => {
@@ -477,7 +478,7 @@ describe('fetch-my-tickets integration', () => {
 
   it('--assignee and --sprint together produce correct combined JQL', async () => {
     const configDir = setupConfig();
-    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    writeLicense({ tier: 'team', key: 'test-key' }, configDir);
     let capturedJql = '';
 
     const mockFetch = async (url) => {
@@ -533,7 +534,7 @@ describe('fetch-my-tickets integration', () => {
 
   it('--assignee escapes embedded double-quotes for JQL safety', async () => {
     const configDir = setupConfig();
-    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    writeLicense({ tier: 'team', key: 'test-key' }, configDir);
     let capturedJql = '';
 
     const mockFetch = async (url) => {
@@ -558,7 +559,7 @@ describe('fetch-my-tickets integration', () => {
 
   it('--assignee and --sprint are recognized as valid flags (no unknown flag warning)', async () => {
     const configDir = setupConfig();
-    writeFileSync(join(configDir, 'license.json'), JSON.stringify({ tier: 'team', key: 'test-key' }));
+    writeLicense({ tier: 'team', key: 'test-key' }, configDir);
     const mockFetch = async (url) => {
       if (url.includes('/myself')) return { ok: true, json: async () => myselfResponse };
       if (url.includes('/search')) return { ok: true, json: async () => makeSearchResult([]) };

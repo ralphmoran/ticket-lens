@@ -1,18 +1,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import crypto from 'node:crypto';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { createStyler } from './ansi.mjs';
 import { siteBase } from './api-utils.mjs';
 import { readCliTokenTier } from './cli-auth.mjs';
+import {
+  readOrCreateMachineSecret as readOrCreateHmacSecret,
+  signHmac,
+  verifyHmac as verifyLicenseHmac,
+} from './machine-secret.mjs';
 
 // Mixed into the HMAC key so that knowing the license key alone is not sufficient
 // to forge a valid signature — an attacker also needs this constant from the source.
 export const LICENSE_HMAC_SALT = 'tl-lic-v1';
 export const LICENSE_TIERS = { free: 0, pro: 1, team: 2 };
 const LICENSE_FILE = 'license.json';
-const LICENSE_SECRET_FILE = 'license-hmac-secret.json';
 const REVALIDATION_DAYS = 7;   // attempt background revalidation after this many days
 export const GRACE_DAYS = 30;   // treat license as invalid if not revalidated within this window
 const MS_PER_DAY = 86400000;
@@ -24,62 +27,23 @@ function padInner(str, width) {
   return str + ' '.repeat(Math.max(0, width - visLen(str)));
 }
 
-function readHmacSecret(configDir) {
-  try {
-    const data = JSON.parse(fs.readFileSync(path.join(configDir, LICENSE_SECRET_FILE), 'utf8'));
-    return typeof data.secret === 'string' && data.secret.length === 64 ? data.secret : null;
-  } catch {
-    return null;
-  }
-}
-
-function readOrCreateHmacSecret(configDir) {
-  const existing = readHmacSecret(configDir);
-  if (existing) return existing;
-  fs.mkdirSync(configDir, { recursive: true });
-  const secret = crypto.randomBytes(32).toString('hex');
-  const secretPath = path.join(configDir, LICENSE_SECRET_FILE);
-  const tmp = `${secretPath}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({ secret }), { encoding: 'utf8', mode: 0o600 });
-  try {
-    // Atomic on POSIX — if we lost a concurrent race, the winner's file stays
-    fs.renameSync(tmp, secretPath);
-  } catch {
-    try { fs.unlinkSync(tmp); } catch { /* ignore cleanup failure */ }
-  }
-  // Read back: we may have lost the race; use whatever secret is on disk
-  return readHmacSecret(configDir) ?? secret;
-}
-
-function verifyLicenseHmac(sig, payload, sigKey) {
-  const expected = crypto.createHmac('sha256', sigKey)
-    .update(JSON.stringify(payload)).digest('hex');
-  const sigBuf = Buffer.from(sig, 'hex');
-  const expBuf = Buffer.from(expected, 'hex');
-  if (sigBuf.length !== expBuf.length) return false;
-  return crypto.timingSafeEqual(sigBuf, expBuf);
-}
-
 export function readLicense(configDir = DEFAULT_CONFIG_DIR) {
   const filePath = path.join(configDir, LICENSE_FILE);
   try {
     const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     const { sig, ...payload } = data;
-    // Legacy unsigned files are trusted; will be re-signed on next write
-    if (!sig) return payload;
+    // No signature means no verifiable authenticity — trusting it would let
+    // anyone fabricate a license.json from scratch with no sig field at all.
+    if (!sig) return null;
 
-    const machineSecret = readHmacSecret(configDir);
-    if (machineSecret) {
-      // Machine secret present — only accept signatures made with it
-      return verifyLicenseHmac(sig, payload, `${LICENSE_HMAC_SALT}:${machineSecret}`)
-        ? payload : null;
-    }
-
-    // No secret file yet — fall back to legacy key-based HMAC (backward compat).
-    // If valid, immediately re-sign with a machine secret to close the migration window.
-    if (!verifyLicenseHmac(sig, payload, `${LICENSE_HMAC_SALT}:${payload.key || ''}`)) return null;
-    try { writeLicense(payload, configDir); } catch { /* non-fatal — next call will retry */ }
-    return payload;
+    // Always verify against the machine secret (created here if this is the
+    // first read ever, e.g. fresh install). There is deliberately no fallback
+    // to a "legacy key-based HMAC" scheme — a signature derived from a key
+    // that lives inside the same payload it signs proves nothing; anyone can
+    // compute it themselves without ever owning a real license.
+    const machineSecret = readOrCreateHmacSecret(configDir);
+    return verifyLicenseHmac(sig, payload, `${LICENSE_HMAC_SALT}:${machineSecret}`)
+      ? payload : null;
   } catch {
     return null;
   }
@@ -90,8 +54,7 @@ export function writeLicense(data, configDir = DEFAULT_CONFIG_DIR) {
   const filePath = path.join(configDir, LICENSE_FILE);
   const { sig: _, ...payload } = data; // strip any existing sig before re-signing
   const secret = readOrCreateHmacSecret(configDir);
-  const mac = crypto.createHmac('sha256', `${LICENSE_HMAC_SALT}:${secret}`)
-    .update(JSON.stringify(payload)).digest('hex');
+  const mac = signHmac(payload, `${LICENSE_HMAC_SALT}:${secret}`);
   fs.writeFileSync(filePath, JSON.stringify({ ...payload, sig: mac }), { encoding: 'utf8', mode: 0o600 });
   fs.chmodSync(filePath, 0o600);
 }

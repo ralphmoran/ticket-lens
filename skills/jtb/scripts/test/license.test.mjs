@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { readLicense, writeLicense, isLicensed, activateLicense, revalidateLicense, checkLicense, revalidateIfStale, showUpgradePrompt, LICENSE_TIERS, LICENSE_HMAC_SALT, GRACE_DAYS } from '../lib/license.mjs';
+import { saveCliToken } from '../lib/cli-auth.mjs';
 
 let tmpDir;
 
@@ -32,7 +33,7 @@ describe('readLicense', () => {
   });
 
   it('reads a valid license file', () => {
-    fs.writeFileSync(path.join(tmpDir, 'license.json'), JSON.stringify(validLicense));
+    writeLicense(validLicense, tmpDir);
     const result = readLicense(tmpDir);
     assert.equal(result.key, 'AAAA-BBBB-CCCC-DDDD');
     assert.equal(result.tier, 'pro');
@@ -315,10 +316,25 @@ describe('readLicense — HMAC verification', () => {
     assert.equal(readLicense(tmpDir), null);
   });
 
-  it('trusts unsigned legacy files (no sig field)', () => {
+  it('rejects unsigned files (no sig field) — closes forge-from-scratch bypass', () => {
+    // A file with no sig field is indistinguishable from an attacker who
+    // fabricated license.json from scratch without ever activating a key.
     fs.writeFileSync(path.join(tmpDir, 'license.json'), JSON.stringify(validLicense));
-    const result = readLicense(tmpDir);
-    assert.equal(result?.tier, 'pro');
+    assert.equal(readLicense(tmpDir), null);
+  });
+
+  it('rejects a real cli-token.json tierSig replayed as sig — distinct salts prevent cross-file reuse', () => {
+    // Same machine secret backs both files — the salt is what must keep them apart.
+    saveCliToken('tok-abc123', tmpDir, 'team');
+    const tierSig = JSON.parse(fs.readFileSync(path.join(tmpDir, 'cli-token.json'), 'utf8')).tierSig;
+
+    writeLicense(validLicense, tmpDir);
+    const filePath = path.join(tmpDir, 'license.json');
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    raw.sig = tierSig; // replay a valid signature from the other file
+    fs.writeFileSync(filePath, JSON.stringify(raw));
+
+    assert.equal(readLicense(tmpDir), null);
   });
 });
 
@@ -523,16 +539,30 @@ describe('writeLicense — HMAC machine secret (item 1)', () => {
     );
   });
 
-  it('falls back to key-based HMAC when no secret file exists (backward compat)', () => {
-    // Legacy install: only license.json, signed with old key-based scheme, no secret file
+  it('rejects key-based HMAC on a fresh install (no secret file yet) — closes self-signed forgery', () => {
+    // A signature derived from `key`, a field inside the same payload it signs,
+    // proves nothing: anyone can compute it themselves without owning a real
+    // license. This must be rejected even before any machine secret exists —
+    // readLicense creates one and verifies against it, not the payload's own key.
     const payload = { ...validLicense };
     const mac = crypto
       .createHmac('sha256', `${LICENSE_HMAC_SALT}:${payload.key}`)
       .update(JSON.stringify(payload))
       .digest('hex');
     fs.writeFileSync(path.join(tmpDir, 'license.json'), JSON.stringify({ ...payload, sig: mac }));
-    // No secret file written — backward-compat path
-    const result = readLicense(tmpDir);
-    assert.equal(result?.tier, 'pro', 'key-based HMAC must still be accepted when no secret file');
+    assert.equal(readLicense(tmpDir), null, 'key-derived HMAC must never be trusted, with or without a secret file');
+  });
+
+  it('rejects a fully self-forged license.json on a fresh install with no purchase or activation', () => {
+    // Attacker who has never run any real ticketlens command (no machine
+    // secret file exists) fabricates both the payload and its "signature"
+    // using only the public LICENSE_HMAC_SALT constant and their own chosen key.
+    const forged = { key: 'FORGED-BY-ATTACKER-NO-PURCHASE', tier: 'team', validatedAt: new Date().toISOString() };
+    const forgedSig = crypto
+      .createHmac('sha256', `${LICENSE_HMAC_SALT}:${forged.key}`)
+      .update(JSON.stringify(forged))
+      .digest('hex');
+    fs.writeFileSync(path.join(tmpDir, 'license.json'), JSON.stringify({ ...forged, sig: forgedSig }));
+    assert.equal(isLicensed('team', tmpDir), false, 'fresh-install self-forged license must not grant entitlement');
   });
 });
