@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveConnection, resolveProfile, resolveProfileByPath, findProfilesByPrefix, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams, saveProfileRecallTeamId, loadProfileRecallTeamId } from '../lib/profile-resolver.mjs';
+import { resolveConnection, resolveProfile, resolveProfileByPath, findProfilesByPrefix, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams, saveProfileRecallTeamId, loadProfileRecallTeamId, normalizeRecallStrictness, RECALL_STRICTNESS_LEVELS, DEFAULT_RECALL_STRICTNESS } from '../lib/profile-resolver.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 
 const sampleProfiles = {
@@ -505,6 +505,31 @@ describe('profile-resolver', () => {
 
     it('loadProfileRecallTeamId returns null for an unknown profile', () => {
       assert.equal(loadProfileRecallTeamId('nonexistent', configDir), null);
+    });
+  });
+
+  describe('normalizeRecallStrictness', () => {
+    it('passes through each valid level unchanged', () => {
+      for (const level of RECALL_STRICTNESS_LEVELS) {
+        assert.equal(normalizeRecallStrictness(level), level);
+      }
+    });
+
+    it('defaults to balanced for undefined', () => {
+      assert.equal(normalizeRecallStrictness(undefined), DEFAULT_RECALL_STRICTNESS);
+    });
+
+    it('defaults to balanced for an unrecognized string', () => {
+      assert.equal(normalizeRecallStrictness('aggressive'), DEFAULT_RECALL_STRICTNESS);
+    });
+
+    it('defaults to balanced for non-string garbage', () => {
+      assert.equal(normalizeRecallStrictness(42), DEFAULT_RECALL_STRICTNESS);
+      assert.equal(normalizeRecallStrictness(null), DEFAULT_RECALL_STRICTNESS);
+    });
+
+    it('RECALL_STRICTNESS_LEVELS is exactly the three named levels', () => {
+      assert.deepEqual(RECALL_STRICTNESS_LEVELS, ['loose', 'balanced', 'strict']);
     });
   });
 

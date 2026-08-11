@@ -100,6 +100,13 @@ export function saveProfile(name, profileData, credData, configDir = DEFAULT_CON
   invalidateProfilesCache(configDir);
 }
 
+export const RECALL_STRICTNESS_LEVELS = ['loose', 'balanced', 'strict'];
+export const DEFAULT_RECALL_STRICTNESS = 'balanced';
+
+export function normalizeRecallStrictness(value) {
+  return RECALL_STRICTNESS_LEVELS.includes(value) ? value : DEFAULT_RECALL_STRICTNESS;
+}
+
 // recallTeamId lives in credentials.json (not profiles.json) — it's a
 // sensitive association (which specific Console team a specific local
 // profile/folder routes Recall notes to), not the non-secret profile shape
