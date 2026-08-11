@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { Writable } from 'node:stream';
 
 import { syncProfiles, serverToCliProfile, profileNeedsCredentials, getApiBase, reportSyncResult, checkTeamMembershipUpdate } from '../lib/sync.mjs';
-import { saveCliToken } from '../lib/cli-auth.mjs';
+import { saveCliToken, saveCliTokenTier, readCliTokenTier } from '../lib/cli-auth.mjs';
 import { loadTeams, saveTeams } from '../lib/profile-resolver.mjs';
 
 function mockStream() {
@@ -337,6 +337,37 @@ describe('syncProfiles', () => {
     assert.deepEqual(loadTeams(dir), []);
   });
 
+  it('saves the server-asserted tier locally so readCliTokenTier reflects it', async () => {
+    await syncProfiles({
+      configDir: dir,
+      fetcher: async () => fakeRes(200, { profiles: [], tier: 'team' }),
+    });
+    assert.equal(readCliTokenTier(dir), 'team');
+  });
+
+  it('downgrades a stale locally-elevated tier to free when the response omits tier — server wins, no exception for entitlement', async () => {
+    saveCliTokenTier('team', dir);
+    assert.equal(readCliTokenTier(dir), 'team', 'sanity: tier was elevated before sync');
+
+    await syncProfiles({
+      configDir: dir,
+      fetcher: async () => fakeRes(200, { profiles: [] }),
+    });
+
+    assert.equal(readCliTokenTier(dir), 'free');
+  });
+
+  it('downgrades a stale locally-elevated tier to free when tier is present but not a string', async () => {
+    saveCliTokenTier('team', dir);
+
+    await syncProfiles({
+      configDir: dir,
+      fetcher: async () => fakeRes(200, { profiles: [], tier: null }),
+    });
+
+    assert.equal(readCliTokenTier(dir), 'free');
+  });
+
   it('getApiBase returns TICKETLENS_API_URL when set', () => {
     const orig = process.env.TICKETLENS_API_URL;
     process.env.TICKETLENS_API_URL = 'http://ticketlens.test';
@@ -435,6 +466,26 @@ describe('checkTeamMembershipUpdate', () => {
     assert.equal(result.updated, true);
     assert.ok(!result.banner.includes('\x1b'));
     assert.ok(!result.banner.includes('\x07'));
+  });
+
+  it('refreshes the signed tier from the same payload it already fetches — shrinks exposure below the grace period for anyone who ever runs fetch', async () => {
+    const result = await checkTeamMembershipUpdate({
+      configDir: dir,
+      fetcher: async () => fakeRes(200, { teams: [], tier: 'team' }),
+    });
+    assert.equal(result.updated, false, 'no membership drift — tier refresh is a side effect, not a banner-worthy change');
+    assert.equal(readCliTokenTier(dir), 'team');
+  });
+
+  it('downgrades a stale locally-elevated tier to free when the response omits tier', async () => {
+    saveCliTokenTier('team', dir);
+
+    await checkTeamMembershipUpdate({
+      configDir: dir,
+      fetcher: async () => fakeRes(200, { teams: [] }),
+    });
+
+    assert.equal(readCliTokenTier(dir), 'free');
   });
 });
 

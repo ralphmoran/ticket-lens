@@ -23,6 +23,16 @@ export const getApiBase     = () => apiBase();
 export const getConsoleBase = () => getApiBase().replace('://api.', '://');
 
 /**
+ * Server wins on tier same as every other field this file syncs — a missing or
+ * non-string `tier` in the response must clear a stale locally-elevated tier
+ * rather than leave it untouched, so a downgrade (or a malformed response) can
+ * never be silently ignored.
+ */
+function resolveTierFromResponse(json) {
+  return typeof json?.tier === 'string' ? json.tier : 'free';
+}
+
+/**
  * Convert a server profile (snake_case) to the CLI profile shape (camelCase).
  * Returns { name, profileData } — no credential fields.
  */
@@ -90,7 +100,7 @@ export async function syncProfiles({
   let json;
   try { json = await res.json(); } catch { return { error: 'invalid-json' }; }
 
-  if (typeof json?.tier === 'string') saveCliTokenTier(json.tier, configDir);
+  saveCliTokenTier(resolveTierFromResponse(json), configDir);
   saveTeams(Array.isArray(json?.teams) ? json.teams : [], configDir);
 
   const remoteProfiles = Array.isArray(json?.profiles) ? json.profiles : [];
@@ -158,6 +168,14 @@ export async function checkTeamMembershipUpdate({ configDir = DEFAULT_CONFIG_DIR
 
   let json;
   try { json = await res.json(); } catch { return { updated: false }; }
+
+  // Refresh the signed tier from the same payload this check already fetches —
+  // this fires on every `ticketlens TICKET-123` fetch, so it shrinks the real-world
+  // exposure window down from the grace period (cli-auth.mjs's TEAM_TIER_GRACE_DAYS)
+  // to "next fetch" for anyone who ever runs one. The grace period remains the
+  // backstop for local-only commands (history, schedule --local, review) that never
+  // reach this function at all.
+  saveCliTokenTier(resolveTierFromResponse(json), configDir);
 
   // Sanitized immediately on receipt — remoteTeams feeds both the banner
   // text below (built before saveTeams' own sanitization would ever run)

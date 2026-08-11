@@ -3,8 +3,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { readCliToken, saveCliToken, saveCliTokenTier, readCliTokenTier, deleteCliToken } from '../lib/cli-auth.mjs';
+import { readCliToken, saveCliToken, saveCliTokenTier, readCliTokenTier, deleteCliToken, CLI_TOKEN_HMAC_SALT } from '../lib/cli-auth.mjs';
 import { writeLicense } from '../lib/license.mjs';
+import { readOrCreateMachineSecret, signHmac } from '../lib/machine-secret.mjs';
+
+const DAY_MS = 86400000;
+function signedTierFixture(dir, { tier, syncedAt, tierSig }) {
+  fs.mkdirSync(dir, { recursive: true });
+  const secret = readOrCreateMachineSecret(dir);
+  const sig = tierSig ?? signHmac({ tier, syncedAt }, `${CLI_TOKEN_HMAC_SALT}:${secret}`);
+  fs.writeFileSync(
+    path.join(dir, 'cli-token.json'),
+    JSON.stringify({ token: 'tok-abc123', tier, syncedAt, tierSig: sig })
+  );
+}
 
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'tl-cli-auth-'));
@@ -123,7 +135,26 @@ describe('readCliTokenTier', () => {
     const dir = tmpDir();
     try {
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, 'cli-token.json'), JSON.stringify({ token: 'tok-abc123', tier: 'team' }));
+      fs.writeFileSync(
+        path.join(dir, 'cli-token.json'),
+        JSON.stringify({ token: 'tok-abc123', tier: 'team', syncedAt: new Date().toISOString() })
+      );
+      assert.equal(readCliTokenTier(dir), null);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a pre-grace-period file with tier+tierSig but no syncedAt — self-heals via next login/sync', () => {
+    const dir = tmpDir();
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const secret = readOrCreateMachineSecret(dir);
+      const tierSig = signHmac({ tier: 'team' }, `${CLI_TOKEN_HMAC_SALT}:${secret}`);
+      fs.writeFileSync(
+        path.join(dir, 'cli-token.json'),
+        JSON.stringify({ token: 'tok-abc123', tier: 'team', tierSig })
+      );
       assert.equal(readCliTokenTier(dir), null);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -136,8 +167,56 @@ describe('readCliTokenTier', () => {
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(
         path.join(dir, 'cli-token.json'),
-        JSON.stringify({ token: 'tok-abc123', tier: 'team', tierSig: 'a'.repeat(64) })
+        JSON.stringify({ token: 'tok-abc123', tier: 'team', syncedAt: new Date().toISOString(), tierSig: 'a'.repeat(64) })
       );
+      assert.equal(readCliTokenTier(dir), null);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stays valid just inside the grace period (6 days since sync)', () => {
+    const dir = tmpDir();
+    try {
+      signedTierFixture(dir, { tier: 'team', syncedAt: new Date(Date.now() - 6 * DAY_MS).toISOString() });
+      assert.equal(readCliTokenTier(dir), 'team');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stays valid just inside the grace-period boundary (a few seconds short of 7 days)', () => {
+    // Deliberately not exactly `7 * DAY_MS` — readCliTokenTier compares against a
+    // live Date.now() at read time, so an exact boundary would be flaky (the few ms
+    // between fixture creation and the read would tip it over 7.0 days).
+    const dir = tmpDir();
+    try {
+      signedTierFixture(dir, { tier: 'team', syncedAt: new Date(Date.now() - 7 * DAY_MS + 5000).toISOString() });
+      assert.equal(readCliTokenTier(dir), 'team');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('degrades to null once the grace period has elapsed (8 days since sync)', () => {
+    const dir = tmpDir();
+    try {
+      signedTierFixture(dir, { tier: 'team', syncedAt: new Date(Date.now() - 8 * DAY_MS).toISOString() });
+      assert.equal(readCliTokenTier(dir), null);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a syncedAt tampered forward to fake freshness — signature covers both fields', () => {
+    const dir = tmpDir();
+    try {
+      const staleSyncedAt = new Date(Date.now() - 8 * DAY_MS).toISOString();
+      signedTierFixture(dir, { tier: 'team', syncedAt: staleSyncedAt });
+      const filePath = path.join(dir, 'cli-token.json');
+      const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      raw.syncedAt = new Date().toISOString(); // tamper: backdate the file forward without re-signing
+      fs.writeFileSync(filePath, JSON.stringify(raw));
       assert.equal(readCliTokenTier(dir), null);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
