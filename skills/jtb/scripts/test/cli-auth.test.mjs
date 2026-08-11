@@ -8,13 +8,16 @@ import { writeLicense } from '../lib/license.mjs';
 import { readOrCreateMachineSecret, signHmac } from '../lib/machine-secret.mjs';
 
 const DAY_MS = 86400000;
-function signedTierFixture(dir, { tier, syncedAt, tierSig }) {
+// freshMark defaults to syncedAt so existing grace-period-focused fixtures keep
+// exercising exactly what they did before freshMark existed (Date.now() is always
+// >= a syncedAt that's in the past, so the rollback check never fires for them).
+function signedTierFixture(dir, { tier, syncedAt, freshMark = syncedAt, tierSig }) {
   fs.mkdirSync(dir, { recursive: true });
   const secret = readOrCreateMachineSecret(dir);
-  const sig = tierSig ?? signHmac({ tier, syncedAt }, `${CLI_TOKEN_HMAC_SALT}:${secret}`);
+  const sig = tierSig ?? signHmac({ tier, syncedAt, freshMark }, `${CLI_TOKEN_HMAC_SALT}:${secret}`);
   fs.writeFileSync(
     path.join(dir, 'cli-token.json'),
-    JSON.stringify({ token: 'tok-abc123', tier, syncedAt, tierSig: sig })
+    JSON.stringify({ token: 'tok-abc123', tier, syncedAt, freshMark, tierSig: sig })
   );
 }
 
@@ -39,6 +42,17 @@ describe('saveCliToken', () => {
     try {
       saveCliToken('tok-xyz', dir);
       assert.ok(fs.existsSync(path.join(dir, 'cli-token.json')));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('writes freshMark equal to syncedAt when a tier is given — every real sync is a trusted checkpoint', () => {
+    const dir = tmpDir();
+    try {
+      saveCliToken('tok-abc123', dir, 'team');
+      const raw = JSON.parse(fs.readFileSync(path.join(dir, 'cli-token.json'), 'utf8'));
+      assert.equal(raw.freshMark, raw.syncedAt);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -165,11 +179,70 @@ describe('readCliTokenTier', () => {
     const dir = tmpDir();
     try {
       fs.mkdirSync(dir, { recursive: true });
+      const now = new Date().toISOString();
       fs.writeFileSync(
         path.join(dir, 'cli-token.json'),
-        JSON.stringify({ token: 'tok-abc123', tier: 'team', syncedAt: new Date().toISOString(), tierSig: 'a'.repeat(64) })
+        JSON.stringify({ token: 'tok-abc123', tier: 'team', syncedAt: now, freshMark: now, tierSig: 'a'.repeat(64) })
       );
       assert.equal(readCliTokenTier(dir), null);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a pre-freshMark file with tier+syncedAt+tierSig but no freshMark — self-heals via next login/sync', () => {
+    const dir = tmpDir();
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const secret = readOrCreateMachineSecret(dir);
+      const syncedAt = new Date().toISOString();
+      const tierSig = signHmac({ tier: 'team', syncedAt }, `${CLI_TOKEN_HMAC_SALT}:${secret}`);
+      fs.writeFileSync(
+        path.join(dir, 'cli-token.json'),
+        JSON.stringify({ token: 'tok-abc123', tier: 'team', syncedAt, tierSig })
+      );
+      assert.equal(readCliTokenTier(dir), null);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a read where the clock is behind the persisted freshMark — clock rollback detected', () => {
+    const dir = tmpDir();
+    try {
+      // A freshMark set ahead of "now" is what a real system-clock rollback looks
+      // like from readCliTokenTier's point of view: the last honestly-observed
+      // wall-clock time is later than what the clock reports right now.
+      signedTierFixture(dir, {
+        tier: 'team',
+        syncedAt: new Date().toISOString(),
+        freshMark: new Date(Date.now() + DAY_MS).toISOString(),
+      });
+      assert.equal(readCliTokenTier(dir), null);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('ratchets freshMark forward on an honest read without disturbing tier or syncedAt', () => {
+    const dir = tmpDir();
+    try {
+      const syncedAt = new Date().toISOString();
+      const staleFreshMark = new Date(Date.now() - 3600000).toISOString(); // 1 hour behind "now"
+      signedTierFixture(dir, { tier: 'team', syncedAt, freshMark: staleFreshMark });
+
+      assert.equal(readCliTokenTier(dir), 'team');
+
+      const raw = JSON.parse(fs.readFileSync(path.join(dir, 'cli-token.json'), 'utf8'));
+      assert.ok(
+        new Date(raw.freshMark).getTime() > new Date(staleFreshMark).getTime(),
+        'freshMark must move forward to the read time, not stay pinned to its old value'
+      );
+      assert.equal(raw.tier, 'team');
+      assert.equal(raw.syncedAt, syncedAt, 'ratcheting freshMark must never touch syncedAt — that stays tied to real server contact');
+
+      // The re-signed file must still verify on a subsequent read.
+      assert.equal(readCliTokenTier(dir), 'team');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
