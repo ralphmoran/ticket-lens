@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveConnection, resolveProfile, resolveProfileByPath, findProfilesByPrefix, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams, saveProfileRecallTeamId, loadProfileRecallTeamId, saveProfileRecallStrictness, normalizeRecallStrictness, RECALL_STRICTNESS_LEVELS, DEFAULT_RECALL_STRICTNESS } from '../lib/profile-resolver.mjs';
+import { resolveConnection, resolveProfile, resolveProfileByPath, findProfilesByPrefix, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams, saveProfileRecallTeamId, loadProfileRecallTeamId, saveProfileRecallStrictness, normalizeRecallStrictness, RECALL_STRICTNESS_LEVELS, DEFAULT_RECALL_STRICTNESS, resolveRecallStrictnessTarget } from '../lib/profile-resolver.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 
 const sampleProfiles = {
@@ -610,6 +610,56 @@ describe('profile-resolver', () => {
       saveProfileRecallStrictness('corenexus', 'strict', configDir);
       const reloaded = loadProfiles(configDir);
       assert.equal(reloaded.profiles.corenexus.recallStrictness, 'strict');
+    });
+  });
+
+  describe('resolveRecallStrictnessTarget', () => {
+    let configDir;
+
+    beforeEach(() => {
+      configDir = mkdtempSync(join(tmpdir(), 'ticketlens-'));
+      writeFileSync(join(configDir, 'profiles.json'), JSON.stringify(sampleProfiles, null, 2));
+    });
+
+    afterEach(() => {
+      rmSync(configDir, { recursive: true, force: true });
+    });
+
+    it('resolves to the explicit --profile when given and valid', () => {
+      const result = resolveRecallStrictnessTarget({ value: 'strict', explicitProfileName: 'acme', configDir });
+      assert.deepEqual(result, { ok: true, profileName: 'acme', value: 'strict' });
+    });
+
+    it('falls back to the default profile when no explicit profile is given', () => {
+      const result = resolveRecallStrictnessTarget({ value: 'loose', configDir });
+      assert.deepEqual(result, { ok: true, profileName: 'corenexus', value: 'loose' });
+    });
+
+    it('fails with missing-value when no level is given', () => {
+      const result = resolveRecallStrictnessTarget({ value: undefined, configDir });
+      assert.deepEqual(result, { ok: false, reason: 'missing-value' });
+    });
+
+    it('fails with invalid-level for an unrecognized level', () => {
+      const result = resolveRecallStrictnessTarget({ value: 'aggressive', configDir });
+      assert.deepEqual(result, { ok: false, reason: 'invalid-level', value: 'aggressive' });
+    });
+
+    it('fails with no-profile when the explicit profile does not exist', () => {
+      const result = resolveRecallStrictnessTarget({ value: 'strict', explicitProfileName: 'ghost', configDir });
+      assert.deepEqual(result, { ok: false, reason: 'no-profile' });
+    });
+
+    it('fails with no-profile when no profile and no default resolve', () => {
+      const noDefault = { profiles: sampleProfiles.profiles };
+      writeFileSync(join(configDir, 'profiles.json'), JSON.stringify(noDefault, null, 2));
+      const result = resolveRecallStrictnessTarget({ value: 'strict', configDir });
+      assert.deepEqual(result, { ok: false, reason: 'no-profile' });
+    });
+
+    it('fails with no-profile when no profiles.json exists at all', () => {
+      const result = resolveRecallStrictnessTarget({ value: 'strict', configDir: join(configDir, 'nonexistent') });
+      assert.deepEqual(result, { ok: false, reason: 'no-profile' });
     });
   });
 

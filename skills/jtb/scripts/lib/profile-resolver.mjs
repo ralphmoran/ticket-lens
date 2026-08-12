@@ -115,6 +115,18 @@ export function saveProfileRecallStrictness(name, level, configDir = DEFAULT_CON
   invalidateProfilesCache(configDir);
 }
 
+export function resolveRecallStrictnessTarget({ value, explicitProfileName, configDir = DEFAULT_CONFIG_DIR } = {}) {
+  if (!value) return { ok: false, reason: 'missing-value' };
+  if (!RECALL_STRICTNESS_LEVELS.includes(value)) return { ok: false, reason: 'invalid-level', value };
+
+  const profilesConfig = loadProfiles(configDir);
+  const targetProfile = explicitProfileName ?? profilesConfig?.default;
+  if (!targetProfile || !profilesConfig?.profiles?.[targetProfile]) {
+    return { ok: false, reason: 'no-profile' };
+  }
+  return { ok: true, profileName: targetProfile, value };
+}
+
 // recallTeamId lives in credentials.json (not profiles.json) — it's a
 // sensitive association (which specific Console team a specific local
 // profile/folder routes Recall notes to), not the non-secret profile shape
