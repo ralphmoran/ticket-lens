@@ -180,6 +180,44 @@ describe('profile-resolver', () => {
       const result = resolveConnection('ANY-123', { env, configDir: '/tmp/nonexistent-ticketlens' });
       assert.equal(result.allowPrivateIp, undefined);
     });
+
+    it('carries recallStrictness from a profile that set it', () => {
+      const withStrictness = {
+        profiles: {
+          ...sampleProfiles.profiles,
+          corenexus: { ...sampleProfiles.profiles.corenexus, recallStrictness: 'strict' },
+        },
+        default: sampleProfiles.default,
+      };
+      writeConfig(withStrictness);
+      const result = resolveConnection('CNV1-3', { configDir });
+      assert.equal(result.recallStrictness, 'strict');
+    });
+
+    it('defaults recallStrictness to balanced when the profile never set it', () => {
+      writeConfig();
+      const result = resolveConnection('CNV1-3', { configDir });
+      assert.equal(result.recallStrictness, 'balanced');
+    });
+
+    it('normalizes an invalid stored recallStrictness value to balanced', () => {
+      const corrupted = {
+        profiles: {
+          ...sampleProfiles.profiles,
+          corenexus: { ...sampleProfiles.profiles.corenexus, recallStrictness: 'yolo' },
+        },
+        default: sampleProfiles.default,
+      };
+      writeConfig(corrupted);
+      const result = resolveConnection('CNV1-3', { configDir });
+      assert.equal(result.recallStrictness, 'balanced');
+    });
+
+    it('does not set recallStrictness when falling back to env vars', () => {
+      const env = { JIRA_BASE_URL: 'https://fallback.atlassian.net', JIRA_PAT: 'tok' };
+      const result = resolveConnection('ANY-123', { env, configDir: '/tmp/nonexistent-ticketlens' });
+      assert.equal(result.recallStrictness, undefined);
+    });
   });
 
   describe('loadProfiles', () => {

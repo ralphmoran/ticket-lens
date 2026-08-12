@@ -313,6 +313,7 @@ export function resolveConnection(ticketKey, opts = {}) {
       staleRule: profile.staleRule ?? null,
       sortBy: profile.sortBy ?? null,
       allowPrivateIp: profile.allowPrivateIp || false,
+      recallStrictness: normalizeRecallStrictness(profile.recallStrictness),
       source: 'profile',
       profileName: profile.name,
     };
