@@ -282,6 +282,52 @@ describe('fetch-ticket integration', () => {
     }
   });
 
+  it('injects the Recall capture strictness line when the resolved profile sets one', async () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'ticketlens-'));
+    writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({
+      profiles: {
+        testprofile: { baseUrl: 'https://profiled.atlassian.net', auth: 'cloud', email: 'p@test.com', ticketPrefixes: ['PROD'], recallStrictness: 'strict' },
+      },
+      default: 'testprofile',
+    }));
+    writeFileSync(join(configDir, 'credentials.json'), JSON.stringify({
+      testprofile: { apiToken: 'profile-token' },
+    }));
+
+    const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
+    const out = captureOutput();
+    try {
+      await run(['PROD-1234', '--depth=0'], {}, mockFetch, configDir);
+      assert.ok(out.stdout.includes('**Recall capture:** strict'));
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('omits the Recall capture strictness line when the resolved profile never set one (regression)', async () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'ticketlens-'));
+    writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({
+      profiles: {
+        testprofile: { baseUrl: 'https://profiled.atlassian.net', auth: 'cloud', email: 'p@test.com', ticketPrefixes: ['PROD'] },
+      },
+      default: 'testprofile',
+    }));
+    writeFileSync(join(configDir, 'credentials.json'), JSON.stringify({
+      testprofile: { apiToken: 'profile-token' },
+    }));
+
+    const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
+    const out = captureOutput();
+    try {
+      await run(['PROD-1234', '--depth=0'], {}, mockFetch, configDir);
+      assert.ok(!out.stdout.includes('**Recall capture:**'));
+    } finally {
+      out.restore();
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
+
   it('--depth=1 does not trigger upgrade prompt', async () => {
     const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
     const out = captureOutput();

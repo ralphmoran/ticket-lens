@@ -1124,7 +1124,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
       // Apply --budget pruning on the plain brief before styling (Pro only).
       // When --budget is active, always output plain text (pruning operates on unescaped chars).
-      let plainBrief = assembleBrief(cached.ticket, codeRefs, templateSections, recallNotes, recallMoreCount, gaps);
+      let plainBrief = assembleBrief(cached.ticket, codeRefs, templateSections, recallNotes, recallMoreCount, gaps, conn.recallStrictness);
       const budgetArgCached = args.find(a => a.startsWith('--budget='));
       if (budgetArgCached) {
         const budgetN = parseInt(budgetArgCached.split('=')[1], 10);
@@ -1138,7 +1138,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       }
       let brief = (budgetArgCached && licensedFn('pro', configDir))
         ? plainBrief
-        : (useStyled ? styleBrief(cached.ticket, codeRefs, { styled: true, templateSections, recallNotes, recallMoreCount, gaps }) : plainBrief);
+        : (useStyled ? styleBrief(cached.ticket, codeRefs, { styled: true, templateSections, recallNotes, recallMoreCount, gaps, recallStrictness: conn.recallStrictness }) : plainBrief);
 
       if (args.includes('--handoff')) {
         const handoffResult = await applyHandoff(cached.ticket, args, opts, configDir, licensedFn, upgradeFn);
@@ -1317,7 +1317,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   // Apply --budget pruning on the plain brief before styling (Pro only).
   // When --budget is active, always output plain text (pruning operates on unescaped chars).
-  let plainOutput = assembleBrief(ticket, codeRefs, templateSections, recallNotes, recallMoreCount, gaps);
+  let plainOutput = assembleBrief(ticket, codeRefs, templateSections, recallNotes, recallMoreCount, gaps, conn.recallStrictness);
   const budgetArg = args.find(a => a.startsWith('--budget='));
   if (budgetArg) {
     const budgetN = parseInt(budgetArg.split('=')[1], 10);
@@ -1331,7 +1331,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
   let output = (budgetArg && licensedFn('pro', configDir))
     ? plainOutput
-    : (useStyled ? styleBrief(ticket, codeRefs, { styled: true, templateSections, recallNotes, recallMoreCount, gaps }) : plainOutput);
+    : (useStyled ? styleBrief(ticket, codeRefs, { styled: true, templateSections, recallNotes, recallMoreCount, gaps, recallStrictness: conn.recallStrictness }) : plainOutput);
 
   if (args.includes('--handoff')) {
     const handoffResult = await applyHandoff(ticket, args, opts, configDir, licensedFn, upgradeFn);
