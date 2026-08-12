@@ -1581,3 +1581,178 @@ describe('--handoff flag', () => {
     assert.ok(!stderrOut.includes('Unknown flag'), `--handoff must not trigger unknown-flag error. Got: ${stderrOut}`);
   });
 });
+
+// opts.printErr exists so a long-lived caller (the MCP server) can capture the
+// bare-fetch path's error output instead of it going to the real process.stderr —
+// reading process.exitCode across calls in that server would poison the whole
+// process's exit code after the first failure. These tests cover the shapes
+// actually reachable through the fetch MCP tool's v1 schema (ticket/profile/depth
+// only) — --template=/--summarize/--handoff error paths are out of that schema
+// and unchanged/untested here.
+
+/** A real, working profiles.json + credentials.json pair for a "real-profile" profile — used by
+ * tests that need onProfileNotFound to fire (an explicit --profile= that doesn't match) and then
+ * successfully retry against a profile that does. Caller is responsible for rmSync-ing the dir. */
+function makeRealProfileConfigDir(prefix) {
+  const configDir = mkdtempSync(join(tmpdir(), prefix));
+  writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({
+    profiles: { 'real-profile': { baseUrl: 'https://test.atlassian.net', ticketPrefixes: ['PROD'] } },
+  }), { mode: 0o600 });
+  writeFileSync(join(configDir, 'credentials.json'), JSON.stringify({
+    'real-profile': { pat: 'test-token' },
+  }), { mode: 0o600 });
+  return configDir;
+}
+
+describe('opts.printErr — MCP error capture', () => {
+  it('no ticket key: printErr captures the help output, real stderr untouched', async () => {
+    let errOut = '';
+    const stderrOut = { value: '' };
+    const orig = process.stderr.write;
+    process.stderr.write = (s) => { stderrOut.value += s; return true; };
+    try {
+      await run([], { env: mockEnv, fetcher: mockFetcher, configDir: NO_CONFIG, print: () => {}, printErr: (s) => { errOut += s; } });
+    } finally {
+      process.stderr.write = orig;
+    }
+    assert.ok(errOut.length > 0, 'printErr must have captured the help output');
+    assert.equal(stderrOut.value, '', `real process.stderr must stay untouched. Got: ${stderrOut.value}`);
+    assert.equal(process.exitCode, 1);
+    process.exitCode = undefined;
+  });
+
+  it('invalid ticket key format: printErr captures the exact error, real stderr untouched', async () => {
+    let errOut = '';
+    const stderrOut = { value: '' };
+    const orig = process.stderr.write;
+    process.stderr.write = (s) => { stderrOut.value += s; return true; };
+    try {
+      await run(['not-a-key'], { env: mockEnv, fetcher: mockFetcher, configDir: NO_CONFIG, print: () => {}, printErr: (s) => { errOut += s; } });
+    } finally {
+      process.stderr.write = orig;
+    }
+    assert.match(errOut, /"not-a-key" is not a valid ticket key/);
+    assert.equal(stderrOut.value, '');
+    assert.equal(process.exitCode, 1);
+    process.exitCode = undefined;
+  });
+
+  it('missing credentials: printErr captures the exact error, real stderr untouched', async () => {
+    let errOut = '';
+    const stderrOut = { value: '' };
+    const orig = process.stderr.write;
+    process.stderr.write = (s) => { stderrOut.value += s; return true; };
+    try {
+      await run(['PROJ-1'], { env: {}, fetcher: mockFetcher, configDir: NO_CONFIG, print: () => {}, printErr: (s) => { errOut += s; } });
+    } finally {
+      process.stderr.write = orig;
+    }
+    assert.match(errOut, /Missing env vars|Missing config/);
+    assert.equal(stderrOut.value, '');
+    assert.equal(process.exitCode, 1);
+    process.exitCode = undefined;
+  });
+
+  it('success path: print receives the brief and real stderr stays untouched even though session-connect chatter still fires through printErr', async () => {
+    const printed = [];
+    const errPrinted = [];
+    const stderrOut = { value: '' };
+    const orig = process.stderr.write;
+    process.stderr.write = (s) => { stderrOut.value += s; return true; };
+    try {
+      await run(['PROD-1234', '--depth=0'], {
+        env: mockEnv,
+        fetcher: mockFetcher,
+        configDir: NO_CONFIG,
+        print: (s) => printed.push(s),
+        printErr: (s) => errPrinted.push(s),
+      });
+    } finally {
+      process.stderr.write = orig;
+    }
+    assert.ok(printed.join('').includes('# PROD-1234: Fix payment validation on checkout'));
+    // "Connecting to…"/"Connected" session chatter always fires on a fresh (non-cached)
+    // fetch — a non-empty capture here proves printErr is actually wired into
+    // createSession, not just present-but-unused.
+    assert.ok(errPrinted.length > 0, 'expected session-connect chatter to flow through printErr');
+    assert.equal(stderrOut.value, '', `real process.stderr must stay untouched. Got: ${stderrOut.value}`);
+  });
+
+  it('errStream.isTTY reflects opts.isTTY (which defaults to the real process.stderr.isTTY), not a hardcoded false', async () => {
+    // opts.isTTY is injectable specifically so this can be asserted deterministically
+    // without mutating the real, process-global process.stderr.isTTY — flipping that
+    // for the duration of a test is unsafe in this codebase's own established pattern
+    // (see banner.test.mjs's fakeStream({isTTY}) / profile-picker.test.mjs's
+    // captureStream()) and was the actual cause of an intermittent hang seen while
+    // developing this fix, since a real interactive prompt elsewhere could observe
+    // the mutated ambient value mid-run.
+    const badProfileDir = makeRealProfileConfigDir('ticketlens-badprofile-');
+
+    let seenIsTTY;
+    try {
+      // A --profile= that doesn't exist forces onProfileNotFound → promptProfileSelectFn.
+      await run(['PROD-1234', '--profile=missing-profile'], {
+        env: {},
+        fetcher: mockFetcher,
+        configDir: badProfileDir,
+        isTTY: true,
+        print: () => {},
+        printErr: () => {},
+        promptProfileSelectFn: async (info, { stream }) => { seenIsTTY = stream.isTTY; return null; },
+      });
+    } finally {
+      rmSync(badProfileDir, { recursive: true, force: true });
+      process.exitCode = undefined; // this scenario deliberately hits the "profile not found" failure path
+    }
+    assert.equal(seenIsTTY, true, 'stream.isTTY passed to promptProfileSelect must reflect opts.isTTY, not a hardcoded value');
+  });
+
+  it('printFetchHelp (no ticket key) receives the SAME errStream as the picker functions, not a separately-hardcoded isTTY-less adapter — a prior review pass caught this exact regression', async () => {
+    let errOutTTY = '';
+    let errOutPlain = '';
+    try {
+      await run([], { env: mockEnv, fetcher: mockFetcher, configDir: NO_CONFIG, isTTY: true, print: () => {}, printErr: (s) => { errOutTTY += s; } });
+      process.exitCode = undefined;
+      await run([], { env: mockEnv, fetcher: mockFetcher, configDir: NO_CONFIG, isTTY: false, print: () => {}, printErr: (s) => { errOutPlain += s; } });
+    } finally {
+      process.exitCode = undefined;
+    }
+    // eslint-disable-next-line no-control-regex
+    const ANSI_RE = /\x1b\[[0-9;]*m/;
+    assert.match(errOutTTY, ANSI_RE, 'isTTY:true must produce real ANSI styling — proves printFetchHelp got the real errStream, not a hardcoded-false one');
+    assert.doesNotMatch(errOutPlain, ANSI_RE, 'isTTY:false must produce plain, unstyled output');
+  });
+
+  it('regression guard: a profile-select retry recurses with the SAME injected print/printErr, not the real stdout/stderr — the exact bug selfOpts fixes', async () => {
+    const tmpConfigDir = makeRealProfileConfigDir('ticketlens-profileretry-');
+
+    const printed = [];
+    const errPrinted = [];
+    const stderrOut = { value: '' };
+    const stdoutOut = { value: '' };
+    const origErr = process.stderr.write;
+    const origOut = process.stdout.write;
+    process.stderr.write = (s) => { stderrOut.value += s; return true; };
+    process.stdout.write = (s) => { stdoutOut.value += s; return true; };
+    try {
+      await run(['PROD-1234', '--profile=missing-profile'], {
+        env: {},
+        fetcher: mockFetcher,
+        configDir: tmpConfigDir,
+        print: (s) => printed.push(s),
+        printErr: (s) => errPrinted.push(s),
+        // Bypasses the real interactive picker entirely — proves the recursive
+        // run(newArgs, selfOpts) call it triggers still uses OUR injected
+        // print/printErr, not the real stdout/stderr (selfOpts propagation).
+        promptProfileSelectFn: async () => 'real-profile',
+      });
+    } finally {
+      process.stderr.write = origErr;
+      process.stdout.write = origOut;
+      rmSync(tmpConfigDir, { recursive: true, force: true });
+    }
+    assert.ok(printed.join('').includes('# PROD-1234: Fix payment validation on checkout'), 'the recursive call must have produced the real brief via the injected print');
+    assert.equal(stdoutOut.value, '', `real process.stdout must stay untouched across the recursive retry. Got: ${stdoutOut.value}`);
+    assert.equal(stderrOut.value, '', `real process.stderr must stay untouched across the recursive retry. Got: ${stderrOut.value}`);
+  });
+});

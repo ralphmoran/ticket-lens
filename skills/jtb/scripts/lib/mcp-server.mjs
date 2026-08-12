@@ -25,10 +25,24 @@ import { runDoctor } from './doctor-command.mjs';
 import { runNoteAdd } from './note-command.mjs';
 import { runRecall } from './recall-command.mjs';
 import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate, runTicketCreate } from './ticket-command.mjs';
+import { run as runFetchTicket } from '../fetch-ticket.mjs';
 
 const PROTOCOL_VERSION = '2025-11-25';
 
 const TOOLS = [
+  {
+    name: 'fetch',
+    description: 'Fetch a ticket\'s full context brief (Jira/GitHub/Linear) — description, comments, linked tickets, code references, attachments. The core read action; free tier. Not a discovery tool — requires a known ticket key.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ticket: { type: 'string', description: 'Ticket key, e.g. PROJ-123.' },
+        profile: { type: 'string', description: 'Connection profile to target, overriding folder-based inference and the default profile.' },
+        depth: { type: 'number', description: 'How many hops of linked tickets to traverse. Defaults to 1 (direct links only). 0 disables traversal.' },
+      },
+      required: ['ticket'],
+    },
+  },
   {
     name: 'doctor',
     description: 'Diagnose common TicketLens problems: profile configuration, license freshness, tracker connectivity, attachment cache health, MCP registration, and the Recall sync queue. Always returns structured JSON. Free tier, fully unrestricted — including fix.',
@@ -178,6 +192,54 @@ function capturingStream() {
     write(s) { parts.push(s); return true; },
     get text() { return parts.join(''); },
   };
+}
+
+/**
+ * Deliberately v1-minimal — only the three flags with zero cost/AI-provider
+ * implications (see the 49b scoping decision). If `--summarize`/`--handoff`/
+ * `--budget=`/`--compliance`/`--template=` are ever added here, note that
+ * their error/progress output inside fetch-ticket.mjs's bare-fetch path
+ * (applySummarize/applyHandoff/budgetPruner.pruneBrief/showUpgradePrompt)
+ * still writes to the real process.stderr, not the injected printErr —
+ * unlike every path reachable through this function today. Thread printErr
+ * through those call sites first, or their failures will silently collapse
+ * to callFetch's generic 'fetch failed' instead of the real reason.
+ */
+function buildFetchArgs({ ticket, profile, depth }) {
+  const args = [ticket];
+  if (profile) args.push(`--profile=${profile}`);
+  if (depth !== undefined) args.push(`--depth=${depth}`);
+  return args;
+}
+
+/**
+ * runFetchTicket has no {ok} return value (unlike every other wrapped
+ * function) — failure is signaled by mutating process.exitCode, which is
+ * unsafe to read in a long-lived server (one failed call would poison the
+ * whole process's exit code forever). Success is instead determined by
+ * whether `print` ever received the actual brief — every success path
+ * (cache hit, fresh fetch, handoff) calls it exactly once; every failure
+ * path returns before reaching it. errCapture may contain informational
+ * chatter (cache notice, download progress) even on success — only read
+ * on the failure branch, where it carries the actual error message.
+ */
+async function callFetch(args, { configDir, runFetchTicketFn }) {
+  if (!args.ticket) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: ticket' }] };
+  }
+  const capture = capturingStream();
+  const errCapture = capturingStream();
+  await runFetchTicketFn(buildFetchArgs(args), {
+    configDir,
+    env: process.env,
+    fetcher: globalThis.fetch,
+    print: capture.write,
+    printErr: errCapture.write,
+  });
+  if (capture.text) {
+    return { content: [{ type: 'text', text: capture.text }] };
+  }
+  return { isError: true, content: [{ type: 'text', text: errCapture.text || 'fetch failed' }] };
 }
 
 function buildDoctorArgs({ fix, profile }) {
@@ -403,6 +465,7 @@ async function callTicketCreate(args, { configDir, runTicketCreateFn }) {
 
 async function handleToolsCall(params, deps) {
   const { name, arguments: args = {} } = params ?? {};
+  if (name === 'fetch') return callFetch(args, deps);
   if (name === 'doctor') return callDoctor(args, deps);
   if (name === 'recall_add') return callRecallAdd(args, deps);
   if (name === 'recall_search') return callRecallSearch(args, deps);
@@ -416,7 +479,7 @@ async function handleToolsCall(params, deps) {
   return { isError: true, content: [{ type: 'text', text: `Unknown tool: ${name}` }] };
 }
 
-async function handleMessage(raw, { configDir, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn }) {
+async function handleMessage(raw, { configDir, runFetchTicketFn, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn }) {
   let msg;
   try {
     msg = JSON.parse(raw);
@@ -446,7 +509,7 @@ async function handleMessage(raw, { configDir, runDoctorFn, runNoteAddFn, runRec
 
   if (method === 'tools/call') {
     try {
-      const result = await handleToolsCall(params, { configDir, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
+      const result = await handleToolsCall(params, { configDir, runFetchTicketFn, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
       return jsonRpcResult(id, result);
     } catch (err) {
       return jsonRpcError(id ?? null, -32603, `Internal error: ${err.message}`);
@@ -467,6 +530,7 @@ export function runMcpServer({
   configDir = DEFAULT_CONFIG_DIR,
   stdin = process.stdin,
   stdout = process.stdout,
+  runFetchTicketFn = runFetchTicket,
   runDoctorFn = runDoctor,
   runNoteAddFn = runNoteAdd,
   runRecallFn = runRecall,
@@ -498,7 +562,7 @@ export function runMcpServer({
     // never resolving (a dropped rejection isn't a resolution) — the
     // server would hang on shutdown instead of exiting.
     queue = queue.then(async () => {
-      const response = await handleMessage(line, { configDir, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
+      const response = await handleMessage(line, { configDir, runFetchTicketFn, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
       if (response) stdout.write(response);
     }).catch(() => {});
   });

@@ -71,10 +71,10 @@ describe('mcp-server', () => {
   });
 
   describe('tools/list', () => {
-    it('returns exactly recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
+    it('returns exactly fetch, recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const names = messages[0].result.tools.map((t) => t.name).sort();
-      assert.deepEqual(names, ['doctor', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update']);
+      assert.deepEqual(names, ['doctor', 'fetch', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update']);
       for (const tool of messages[0].result.tools) {
         assert.equal(tool.inputSchema.type, 'object');
         assert.ok(tool.inputSchema.properties, `${tool.name} must declare input properties`);
@@ -106,6 +106,75 @@ describe('mcp-server', () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const dup = messages[0].result.tools.find((t) => t.name === 'ticket_duplicates');
       assert.match(dup.description, /miss|not a guarantee/i);
+    });
+  });
+
+  describe('tools/call fetch', () => {
+    it('happy path: forwards ticket/profile/depth and returns a non-error result with the brief, without touching real stdout', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('PROJ-1: Login broken\n\nSteps to reproduce...\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'fetch', arguments: { ticket: 'PROJ-1', profile: 'work', depth: 2 } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('Login broken'));
+      assert.deepEqual(seen, ['PROJ-1', '--profile=work', '--depth=2']);
+    });
+
+    it('omits --profile and --depth when not given', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('brief\n');
+      };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'fetch', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.deepEqual(seen, ['PROJ-1']);
+    });
+
+    it('missing ticket returns a JSON-RPC tool error without ever calling the real function', async () => {
+      let called = false;
+      const runFetchTicketFn = async () => { called = true; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'fetch', arguments: {} } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(called, false);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /ticket/i);
+    });
+
+    it('a failure (print never receives the brief) maps to a JSON-RPC tool error carrying the printErr message', async () => {
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        opts.printErr('Error: "BAD" is not a valid ticket key. Expected format: PROJ-123\n');
+        // print is never called — this is the real function's actual failure contract.
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'fetch', arguments: { ticket: 'BAD' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /not a valid ticket key/);
+    });
+
+    it('regression guard: informational printErr chatter alongside a real brief must NOT be misread as failure — runFetchTicket writes cache-hit/download-progress notices via printErr on every successful call, not just failures', async () => {
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        opts.printErr('  ○ PROJ-1 · from cache (2m)  ·  --no-cache to refresh\n\n');
+        opts.printErr('Downloading 1 attachment…\n  ✓ 1 downloaded\n\n');
+        opts.print('PROJ-1: Login broken\n\nSteps to reproduce...\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'fetch', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('Login broken'));
     });
   });
 
@@ -852,7 +921,7 @@ describe('mcp-server', () => {
       assert.equal(messages.length, 2, 'both the parse-error response and the valid tools/list response must appear');
       assert.ok(messages[0].error, 'first message must be a JSON-RPC error for the malformed line');
       assert.equal(messages[1].id, 2);
-      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['doctor', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update']);
+      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['doctor', 'fetch', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update']);
     });
 
     it('a syntactically-valid-but-non-object JSON line (e.g. bare "null") does not crash the server or drop later messages', async () => {

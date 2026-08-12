@@ -472,9 +472,9 @@ const RETRY_OPTIONS = [
 ];
 
 export async function run(args, envOrOpts = process.env, fetcher = globalThis.fetch, configDir = undefined) {
-  // Support opts-object injection: run(args, { env, fetcher, configDir, detectVcs, getDiff, print })
+  // Support opts-object injection: run(args, { env, fetcher, configDir, detectVcs, getDiff, print, printErr })
   let env, opts;
-  if (envOrOpts && typeof envOrOpts === 'object' && !Array.isArray(envOrOpts) && ('env' in envOrOpts || 'fetcher' in envOrOpts || 'print' in envOrOpts || 'detectVcs' in envOrOpts || 'getDiff' in envOrOpts)) {
+  if (envOrOpts && typeof envOrOpts === 'object' && !Array.isArray(envOrOpts) && ('env' in envOrOpts || 'fetcher' in envOrOpts || 'print' in envOrOpts || 'printErr' in envOrOpts || 'detectVcs' in envOrOpts || 'getDiff' in envOrOpts)) {
     opts = envOrOpts;
     env = opts.env ?? process.env;
     fetcher = opts.fetcher ?? globalThis.fetch;
@@ -485,6 +485,27 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
 
   const printFn = opts.print ?? ((chunk) => process.stdout.write(chunk));
+  // Mirrors printFn above — only the bare ticket-fetch path (from `const ticketKey =
+  // args.find(...)` onward) uses this; pr/ledger/compliance/review/standup/install-hooks
+  // above still write directly to the real process.stderr (out of scope for this change,
+  // each gets the same treatment when its own MCP tool is built).
+  const printErrFn = opts.printErr ?? ((chunk) => process.stderr.write(chunk));
+  // Reused on every recursive self-call in the bare-fetch path (profile-prompt retries)
+  // so an injected print/printErr survives the retry instead of silently reverting to
+  // the real stdout/stderr.
+  const selfOpts = { env, fetcher, configDir, print: printFn, printErr: printErrFn };
+  // Passed to every stream-shaped helper (createSession, the profile-prompt pickers,
+  // handleUnknownFlags) in the bare-fetch path below. isTTY MUST reflect the real
+  // process.stderr.isTTY, not a hardcoded false: these helpers use it to decide
+  // whether to render an animated/interactive UI at all, for real CLI users too, not
+  // just MCP calls. Their own separate `!process.stdin.setRawMode` gate — always true
+  // under the MCP server, since its stdin is the JSON-RPC channel, never a TTY — is
+  // what actually keeps the interactive branch from firing under MCP; isTTY here only
+  // controls real-terminal UX and must stay accurate for that to keep working. Injectable
+  // via opts.isTTY so a test can assert deterministic behavior without mutating the real,
+  // process-global process.stderr.isTTY (unsafe to flip mid-suite — see fetch-ticket.test.mjs).
+  const isTTY = opts.isTTY ?? process.stderr.isTTY;
+  const errStream = { write: printErrFn, isTTY };
 
   if (args.includes('--help') || args.includes('-h')) {
     printFetchHelp();
@@ -969,12 +990,12 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   const ticketKey = args.find(a => !a.startsWith('--'));
   if (!ticketKey) {
-    printFetchHelp({ stream: process.stderr });
+    printFetchHelp({ stream: errStream });
     process.exitCode = 1;
     return;
   }
   if (!TICKET_KEY_PATTERN.test(ticketKey)) {
-    process.stderr.write(`Error: "${ticketKey}" is not a valid ticket key. Expected format: PROJ-123\n`);
+    printErrFn(`Error: "${ticketKey}" is not a valid ticket key. Expected format: PROJ-123\n`);
     process.exitCode = 1;
     return;
   }
@@ -982,7 +1003,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   // Normalize --project= alias once at entry so all recursive calls only see --profile=
   const projectArg = args.find(a => a.startsWith('--project='));
   if (projectArg) {
-    process.stderr.write(`Hint: --project recognized as alias for --profile=${projectArg.split('=')[1]}\n\n`);
+    printErrFn(`Hint: --project recognized as alias for --profile=${projectArg.split('=')[1]}\n\n`);
     args = args.map(a => a.startsWith('--project=') ? `--profile=${a.split('=')[1]}` : a);
   }
 
@@ -992,7 +1013,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const validatedArgs = await handleUnknownFlags(
     args,
     ['--help', '-h', '--plain', '--styled', '--no-attachments', '--no-cache', '--profile=', '--depth=', '--check', '--summarize', '--cloud', '--compliance', '--budget=', '--handoff', '--provider=', '--template='],
-    { hints: ['--stale=', '--status=', '--static'] } // triage-only flags — shown as hints, not applied
+    { hints: ['--stale=', '--status=', '--static'], stream: errStream } // triage-only flags — shown as hints, not applied
   );
   if (validatedArgs === null) { process.exitCode = 1; return; }
   args = validatedArgs;
@@ -1006,7 +1027,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const tpl = await resolveTemplate(templateSlug, { token: readCliToken(configDir), fetcher });
       templateSections = tpl.sections;
     } catch (err) {
-      process.stderr.write(`Error: ${err.message}\n`);
+      printErrFn(`Error: ${err.message}\n`);
       process.exitCode = 1;
       return;
     }
@@ -1021,10 +1042,11 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       .filter(([, p]) => p.ticketPrefixes?.includes(prefix))
       .map(([name, p]) => ({ name, baseUrl: p.baseUrl || null }));
     if (multiMatches.length > 1) {
-      const picked = await promptMultipleMatches(ticketKey, multiMatches);
+      const promptMultipleMatchesFn = opts.promptMultipleMatchesFn ?? promptMultipleMatches;
+      const picked = await promptMultipleMatchesFn(ticketKey, multiMatches, { stream: errStream });
       if (!picked) { process.exitCode = 1; return; }
       const withProfile = [...args.filter(a => !a.startsWith('--profile=')), `--profile=${picked}`];
-      return run(withProfile, env, fetcher, configDir);
+      return run(withProfile, selfOpts);
     }
   }
 
@@ -1034,18 +1056,19 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     configDir,
     profileName,
     cwd: process.cwd(),
-    onWarning: (w) => process.stderr.write(w + '\n'),
+    onWarning: (w) => printErrFn(w + '\n'),
     onProfileNotFound: (info) => { profileError = info; },
   });
 
   const hasAuth = conn.pat || (conn.email && conn.apiToken);
   if (!conn.baseUrl || !hasAuth) {
     if (profileError) {
-      const picked = await promptProfileSelect(profileError);
+      const promptProfileSelectFn = opts.promptProfileSelectFn ?? promptProfileSelect;
+      const picked = await promptProfileSelectFn(profileError, { stream: errStream });
       if (picked) {
         const newArgs = args.filter(a => !a.startsWith('--profile='));
         newArgs.push(`--profile=${picked}`);
-        return run(newArgs, env, fetcher, configDir);
+        return run(newArgs, selfOpts);
       }
     } else {
       const missing = [];
@@ -1056,7 +1079,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
         : `Missing config in profile "${conn.profileName}": ${missing.join(', ')}`;
       const noProfiles = !loadProfiles(configDir)?.profiles;
       const initHint = noProfiles ? '\nRun `ticketlens init` to set up your connection.' : '';
-      process.stderr.write(`Error: ${hint}${initHint}\n`);
+      printErrFn(`Error: ${hint}${initHint}\n`);
     }
     process.exitCode = 1;
     return;
@@ -1072,10 +1095,11 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const allProfiles = Object.entries(config?.profiles ?? {})
         .map(([name, p]) => ({ name, baseUrl: p.baseUrl || null }));
       if (allProfiles.length > 1) {
-        const picked = await promptProfileMismatch(ticketKey, conn.profileName, allProfiles);
+        const promptProfileMismatchFn = opts.promptProfileMismatchFn ?? promptProfileMismatch;
+        const picked = await promptProfileMismatchFn(ticketKey, conn.profileName, allProfiles, { stream: errStream });
         if (picked && picked !== conn.profileName) {
           const withProfile = [...args.filter(a => !a.startsWith('--profile=')), `--profile=${picked}`];
-          return run(withProfile, env, fetcher, configDir);
+          return run(withProfile, selfOpts);
         }
       }
     }
@@ -1113,7 +1137,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     if (cached) {
       const s = createStyler({ isTTY: process.stderr.isTTY });
       const age = briefCacheAge(cached.fetchedAt);
-      process.stderr.write(`  ${s.dim('○')} ${s.dim(`${ticketKey} · from cache (${age})  ·  --no-cache to refresh`)}\n\n`);
+      printErrFn(`  ${s.dim('○')} ${s.dim(`${ticketKey} · from cache (${age})  ·  --no-cache to refresh`)}\n\n`);
 
       const allText = [cached.ticket.description, ...cached.ticket.comments.map(c => c.body)].filter(Boolean).join('\n');
       const codeRefs = extractCodeReferences(allText);
@@ -1177,7 +1201,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
   // ──────────────────────────────────────────────────────────────────────────
 
-  const session = createSession(conn);
+  const session = createSession(conn, { stream: errStream });
 
   // Load all profiles once for use in the switch-profile retry option.
   const allProfiles = Object.entries(loadProfiles(configDir)?.profiles ?? {})
@@ -1212,23 +1236,28 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       }
 
       if (RETRY_OPTIONS[retryIndex].value === 'switch') {
-        const picked = await promptSwitchProfile(conn.profileName, allProfiles);
+        const promptSwitchProfileFn = opts.promptSwitchProfileFn ?? promptSwitchProfile;
+        const picked = await promptSwitchProfileFn(conn.profileName, allProfiles, { stream: errStream });
         if (picked && picked !== conn.profileName) {
           const withProfile = [...args.filter(a => !a.startsWith('--profile=')), `--profile=${picked}`];
-          return run(withProfile, env, fetcher, configDir);
+          return run(withProfile, selfOpts);
         }
         // Cancelled switch — exit
         process.exitCode = 1;
         return;
       }
 
-      // 'retry' — loop with updated spinner message
+      // 'retry' — loop with updated spinner message. This whole retry-prompt
+      // branch only runs when `!process.stderr.isTTY || !process.stdin.setRawMode`
+      // is false — i.e. never under the MCP server (stdin is always piped there) —
+      // so its remaining process.stderr.write calls are intentionally left
+      // unconverted, dead code under MCP by construction, not an oversight.
       isRetry = true;
       process.stderr.write('\n');
     }
   }
   session.connected();
-  process.stderr.write('\n');
+  printErrFn('\n');
 
   // ── Confluence page fetching ───────────────────────────────────────────────
   // Fetch pages referenced via Jira Remote Links (Confluence-only, non-blocking).
@@ -1276,7 +1305,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
           requirements: extractRequirements(desc),
         };
         const result = dtm.detectDrift(current, prior);
-        if (result.drifted) process.stderr.write(dtm.formatDriftWarning(ticketKey, result.changes));
+        if (result.drifted) printErrFn(dtm.formatDriftWarning(ticketKey, result.changes));
       }
       dtm.writeSnapshot(ticketKey, ticket, { profile: profileName, configDir: resolvedConfigDir, branch });
     }
@@ -1287,14 +1316,14 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const downloadable = (ticket.attachments ?? []).filter(a => a.content);
     if (downloadable.length > 0) {
       const noun = downloadable.length === 1 ? 'attachment' : 'attachments';
-      process.stderr.write(`Downloading ${downloadable.length} ${noun}…\n`);
+      printErrFn(`Downloading ${downloadable.length} ${noun}…\n`);
       // attachment-downloader is Jira-specific — it needs raw auth headers from buildJiraEnv
       const jiraEnv = buildJiraEnv(conn);
       ticket.localAttachments = await downloadAttachments(ticket, {
         env: jiraEnv,
         fetcher,
         noCache: args.includes('--no-cache'),
-        onProgress: (msg) => process.stderr.write(msg + '\n'),
+        onProgress: (msg) => printErrFn(msg + '\n'),
         allowPrivateIp: conn.allowPrivateIp,
       });
       const downloaded = ticket.localAttachments.filter(r => !r.skipped).length;
@@ -1302,8 +1331,8 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const parts = [];
       if (downloaded > 0) parts.push(`${downloaded} downloaded`);
       if (cached > 0) parts.push(`${cached} cached`);
-      if (parts.length > 0) process.stderr.write(`  ✓ ${parts.join(', ')}\n`);
-      process.stderr.write('\n');
+      if (parts.length > 0) printErrFn(`  ✓ ${parts.join(', ')}\n`);
+      printErrFn('\n');
     }
   }
 
@@ -1369,7 +1398,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   // Contextual upsell: after a deep traversal with a substantial graph, nudge toward --summarize
   if (depth > 1 && !args.includes('--summarize') && (ticket.linked?.length ?? 0) >= 2) {
     const s = createStyler({ isTTY: process.stderr.isTTY });
-    process.stderr.write(`  ${s.dim('○')} ${s.dim('Tip: large briefs compress further — `--summarize` condenses this to a single AI digest ($8/mo)')}\n`);
+    printErrFn(`  ${s.dim('○')} ${s.dim('Tip: large briefs compress further — `--summarize` condenses this to a single AI digest ($8/mo)')}\n`);
   }
 }
 
