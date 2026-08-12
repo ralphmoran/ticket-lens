@@ -16,9 +16,14 @@
  * session_id, a blank dedup state, AND a blank transcript file, so a real
  * earlier capture becomes invisible. The cross-session lastCapture marker
  * (keyed by cwd, not session_id) is what actually bridges that boundary.
+ *
+ * Which of the two cases above actually blocks is governed by the active
+ * profile's recallStrictness — see recall-nudge-lib.mjs's shouldNag() doc
+ * comment for the calibration and why strict doesn't widen this further.
  */
 
-import { readStdinJson, readState, writeState, scanTranscript, hasRecentCapture, writeLastCaptureAt } from './recall-nudge-lib.mjs';
+import { readStdinJson, readState, writeState, scanTranscript, hasRecentCapture, writeLastCaptureAt, shouldNag } from './recall-nudge-lib.mjs';
+import { resolveProfile, normalizeRecallStrictness } from '../scripts/lib/profile-resolver.mjs';
 
 const input = readStdinJson();
 const sessionId = input?.session_id;
@@ -37,8 +42,11 @@ if (sawNoteAdd) writeLastCaptureAt(cwd, Date.now());
 const state = readState(sessionId);
 if (state.stopChecked) process.exit(0); // already asked once this session — respect the answer
 
-if (!sawTicketKey || sawNoteAdd) {
-  process.exit(0); // no ticket work, or already captured — nothing to force
+const profile = resolveProfile(null, { cwd });
+const recallStrictness = normalizeRecallStrictness(profile?.recallStrictness);
+
+if (!shouldNag({ sawTicketKey, sawRecallFlag, sawNoteAdd, recallStrictness })) {
+  process.exit(0); // nothing this strictness level requires a capture for
 }
 
 if (hasRecentCapture(cwd)) {
