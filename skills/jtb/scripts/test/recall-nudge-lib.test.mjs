@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scanTranscript, lastCapturePath, readLastCaptureAt, writeLastCaptureAt, hasRecentCapture, CAPTURE_FRESHNESS_MS } from '../../hooks/recall-nudge-lib.mjs';
+import { scanTranscript, lastCapturePath, readLastCaptureAt, writeLastCaptureAt, hasRecentCapture, CAPTURE_FRESHNESS_MS, shouldNag } from '../../hooks/recall-nudge-lib.mjs';
 
 function assistantEntry(blocks) {
   return JSON.stringify({ type: 'assistant', message: { content: blocks } });
@@ -105,5 +105,72 @@ describe('scanTranscript', () => {
       assistantEntry([toolUse('Bash', { command: '/jtb note --title="x"' })]),
     ]);
     assert.equal(scanTranscript(p).sawNoteAdd, true);
+  });
+});
+
+describe('shouldNag (Stop hook trigger decision)', () => {
+  describe('balanced (today\'s exact trigger — LOCK)', () => {
+    it('does not nag when no ticket work happened', () => {
+      assert.equal(shouldNag({ sawTicketKey: false, sawRecallFlag: false, sawNoteAdd: false, recallStrictness: 'balanced' }), false);
+    });
+
+    it('does not nag when a note was already added', () => {
+      assert.equal(shouldNag({ sawTicketKey: true, sawRecallFlag: false, sawNoteAdd: true, recallStrictness: 'balanced' }), false);
+    });
+
+    it('does not nag when a note was added even if a flag was also raised', () => {
+      assert.equal(shouldNag({ sawTicketKey: true, sawRecallFlag: true, sawNoteAdd: true, recallStrictness: 'balanced' }), false);
+    });
+
+    it('nags when ticket work happened with no note and no flag', () => {
+      assert.equal(shouldNag({ sawTicketKey: true, sawRecallFlag: false, sawNoteAdd: false, recallStrictness: 'balanced' }), true);
+    });
+
+    it('nags when a flag was raised but never followed by a note', () => {
+      assert.equal(shouldNag({ sawTicketKey: true, sawRecallFlag: true, sawNoteAdd: false, recallStrictness: 'balanced' }), true);
+    });
+  });
+
+  describe('strict (deliberately identical to balanced — not widened, spec §5)', () => {
+    it('matches every balanced case exactly', () => {
+      const cases = [
+        { sawTicketKey: false, sawRecallFlag: false, sawNoteAdd: false },
+        { sawTicketKey: true, sawRecallFlag: false, sawNoteAdd: true },
+        { sawTicketKey: true, sawRecallFlag: true, sawNoteAdd: true },
+        { sawTicketKey: true, sawRecallFlag: false, sawNoteAdd: false },
+        { sawTicketKey: true, sawRecallFlag: true, sawNoteAdd: false },
+      ];
+      for (const c of cases) {
+        assert.equal(
+          shouldNag({ ...c, recallStrictness: 'strict' }),
+          shouldNag({ ...c, recallStrictness: 'balanced' }),
+        );
+      }
+    });
+  });
+
+  describe('loose (narrowed to the broken-promise case only)', () => {
+    it('does not nag when ticket work happened but nothing was ever flagged', () => {
+      assert.equal(shouldNag({ sawTicketKey: true, sawRecallFlag: false, sawNoteAdd: false, recallStrictness: 'loose' }), false);
+    });
+
+    it('still nags when a flag was raised but never followed by a note', () => {
+      assert.equal(shouldNag({ sawTicketKey: true, sawRecallFlag: true, sawNoteAdd: false, recallStrictness: 'loose' }), true);
+    });
+
+    it('does not nag when no ticket work happened', () => {
+      assert.equal(shouldNag({ sawTicketKey: false, sawRecallFlag: true, sawNoteAdd: false, recallStrictness: 'loose' }), false);
+    });
+
+    it('does not nag when a note was already added, even with a flag', () => {
+      assert.equal(shouldNag({ sawTicketKey: true, sawRecallFlag: true, sawNoteAdd: true, recallStrictness: 'loose' }), false);
+    });
+  });
+
+  it('defaults to balanced behavior when recallStrictness is omitted', () => {
+    assert.equal(
+      shouldNag({ sawTicketKey: true, sawRecallFlag: false, sawNoteAdd: false }),
+      true,
+    );
   });
 });

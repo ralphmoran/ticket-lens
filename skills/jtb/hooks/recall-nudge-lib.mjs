@@ -159,3 +159,21 @@ export function scanTranscript(transcriptPath) {
 
   return result;
 }
+
+/**
+ * Decides whether the Stop hook should block, calibrated by the active
+ * profile's recallStrictness. `strict` deliberately uses the exact same
+ * trigger as `balanced` — it does not additionally bypass
+ * hasRecentCapture()'s rollover bridge or recall-nudge-stop.mjs's
+ * once-per-session cap, both correctness invariants rather than
+ * calibration knobs. Bypassing either would reintroduce a real bug
+ * (re-nagging after a genuine capture that lands just before a
+ * compaction/session_id rollover, or nagging more than once per session).
+ * Strict's actual effect on capture volume comes from SKILL.md's lowered
+ * in-session capture bar, not from this function.
+ */
+export function shouldNag({ sawTicketKey, sawRecallFlag, sawNoteAdd, recallStrictness = 'balanced' }) {
+  if (!sawTicketKey || sawNoteAdd) return false;
+  if (recallStrictness === 'loose') return sawRecallFlag; // only the broken-promise case
+  return true; // balanced and strict: ticket work with no note is enough
+}
