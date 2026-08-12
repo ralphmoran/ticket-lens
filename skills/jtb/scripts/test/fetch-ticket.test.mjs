@@ -943,6 +943,82 @@ describe('compliance subcommand', () => {
       rmSync(tmpDir, { recursive: true });
     }
   });
+
+  it('routes no-ticket-key error to injected printErr instead of real stderr', async () => {
+    const out = captureOutput();
+    const errChunks = [];
+    try {
+      await run(['compliance'], {
+        env: validEnv,
+        fetcher: mockFetcher,
+        configDir: NO_CONFIG,
+        printErr: (chunk) => errChunks.push(chunk),
+      });
+      assert.ok(errChunks.join('').includes('requires a ticket key'));
+      assert.equal(out.stderr, '', 'must not also leak to the real stderr when printErr is injected');
+    } finally {
+      out.restore();
+      process.exitCode = undefined;
+    }
+  });
+
+  it('routes invalid-key error to injected printErr instead of real stderr', async () => {
+    const out = captureOutput();
+    const errChunks = [];
+    try {
+      await run(['compliance', 'not-a-key'], {
+        env: validEnv,
+        fetcher: mockFetcher,
+        configDir: NO_CONFIG,
+        printErr: (chunk) => errChunks.push(chunk),
+      });
+      assert.ok(errChunks.join('').includes('not a valid ticket key'));
+      assert.equal(out.stderr, '');
+    } finally {
+      out.restore();
+      process.exitCode = undefined;
+    }
+  });
+
+  it('routes no-credentials error to injected printErr instead of real stderr', async () => {
+    const out = captureOutput();
+    const errChunks = [];
+    try {
+      await run(['compliance', 'PROD-1234'], {
+        env: {},
+        fetcher: mockFetcher,
+        configDir: NO_CONFIG,
+        printErr: (chunk) => errChunks.push(chunk),
+      });
+      assert.ok(errChunks.join('').includes('No Jira credentials'));
+      assert.equal(out.stderr, '');
+    } finally {
+      out.restore();
+      process.exitCode = undefined;
+    }
+  });
+
+  it('passes an isTTY-aware stream to runComplianceCheck so its Pro-gate upgrade prompt honors injected printErr, not real stderr', async () => {
+    let receivedStream;
+    const errChunks = [];
+    await run(['compliance', 'PROD-1234'], {
+      env: validEnv,
+      fetcher: mockFetcher,
+      configDir: NO_CONFIG,
+      print: () => {},
+      printErr: (chunk) => errChunks.push(chunk),
+      isTTY: true,
+      runComplianceCheck: async ({ stream }) => {
+        receivedStream = stream;
+        stream.write('upgrade prompt text\n');
+        return null;
+      },
+    });
+    process.exitCode = undefined;
+    assert.equal(typeof receivedStream.write, 'function');
+    assert.equal(receivedStream.isTTY, true, 'stream must carry isTTY — showUpgradePrompt reads it to decide styling');
+    assert.ok(errChunks.join('').includes('upgrade prompt text'), 'stream.write must route through the injected printErr');
+  });
 });
 
 describe('pr subcommand', () => {

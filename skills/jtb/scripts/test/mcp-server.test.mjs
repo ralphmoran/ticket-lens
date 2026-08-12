@@ -74,7 +74,7 @@ describe('mcp-server', () => {
     it('returns exactly fetch, recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const names = messages[0].result.tools.map((t) => t.name).sort();
-      assert.deepEqual(names, ['doctor', 'fetch', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
+      assert.deepEqual(names, ['compliance', 'doctor', 'fetch', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
       for (const tool of messages[0].result.tools) {
         assert.equal(tool.inputSchema.type, 'object');
         assert.ok(tool.inputSchema.properties, `${tool.name} must declare input properties`);
@@ -175,6 +175,89 @@ describe('mcp-server', () => {
       );
       assert.equal(messages[0].result.isError, undefined);
       assert.ok(messages[0].result.content[0].text.includes('Login broken'));
+    });
+  });
+
+  describe('tools/call compliance', () => {
+    it('happy path: forwards ticket/profile as a compliance dispatch and returns a non-error result with the report, without touching real stdout', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('  Compliance Check — PROJ-1\n  Coverage: 90%\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'compliance', arguments: { ticket: 'PROJ-1', profile: 'work' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('Coverage: 90%'));
+      assert.deepEqual(seen, ['compliance', 'PROJ-1', '--profile=work']);
+    });
+
+    it('omits --profile when not given', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('report\n');
+      };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'compliance', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.deepEqual(seen, ['compliance', 'PROJ-1']);
+    });
+
+    it('missing ticket returns a JSON-RPC tool error without ever calling the real function', async () => {
+      let called = false;
+      const runFetchTicketFn = async () => { called = true; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'compliance', arguments: {} } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(called, false);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /ticket/i);
+    });
+
+    it('a failure (print never receives the report) maps to a JSON-RPC tool error carrying the printErr message', async () => {
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        opts.printErr('Error: No Jira credentials found. Run \'ticketlens init\' or set JIRA_BASE_URL + JIRA_API_TOKEN.\n');
+        // print is never called — this is the real function's actual failure contract.
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'compliance', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /No Jira credentials/);
+    });
+
+    it('a below-threshold coverage report is still a successful tool call — the CLI signals fail/pass via process.exitCode, which this tool never reads; the report content itself is what tells the caller coverage is low', async () => {
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        opts.print('  Compliance Check — PROJ-1\n  Coverage: 40%\n  Missing: error handling, retry logic\n');
+        process.exitCode = 1; // real dispatch sets this on below-threshold; the MCP wrapper must not read it
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'compliance', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      process.exitCode = undefined;
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('Coverage: 40%'));
+    });
+
+    it('the license/usage-gate case (no report printed) surfaces as isError with the upgrade-prompt text from printErr', async () => {
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        opts.printErr('  ◆ --compliance requires Pro\n  Upgrade: https://ticketlens.dev/upgrade\n');
+        process.exitCode = 1;
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'compliance', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      process.exitCode = undefined;
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /requires Pro/);
     });
   });
 
@@ -1017,7 +1100,7 @@ describe('mcp-server', () => {
       assert.equal(messages.length, 2, 'both the parse-error response and the valid tools/list response must appear');
       assert.ok(messages[0].error, 'first message must be a JSON-RPC error for the malformed line');
       assert.equal(messages[1].id, 2);
-      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['doctor', 'fetch', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
+      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['compliance', 'doctor', 'fetch', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
     });
 
     it('a syntactically-valid-but-non-object JSON line (e.g. bare "null") does not crash the server or drop later messages', async () => {

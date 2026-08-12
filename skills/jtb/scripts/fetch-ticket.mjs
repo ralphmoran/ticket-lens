@@ -618,12 +618,12 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   if (args[0] === 'compliance') {
     const ticketKeyArg = args[1];
     if (!ticketKeyArg) {
-      process.stderr.write('Error: "compliance" requires a ticket key. Usage: ticketlens compliance PROJ-123\n');
+      printErrFn('Error: "compliance" requires a ticket key. Usage: ticketlens compliance PROJ-123\n');
       process.exitCode = 1;
       return;
     }
     if (!TICKET_KEY_PATTERN.test(ticketKeyArg)) {
-      process.stderr.write(`Error: "${ticketKeyArg}" is not a valid ticket key. Expected format: PROJ-123\n`);
+      printErrFn(`Error: "${ticketKeyArg}" is not a valid ticket key. Expected format: PROJ-123\n`);
       process.exitCode = 1;
       return;
     }
@@ -647,13 +647,13 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       configDir: resolvedConfigDir,
       profileName: profileNameC,
       cwd: process.cwd(),
-      onWarning: (w) => process.stderr.write(w + '\n'),
+      onWarning: (w) => printErrFn(w + '\n'),
       onProfileNotFound: () => {},
     });
 
     const hasAuthC = connC.pat || (connC.email && connC.apiToken);
     if (!connC.baseUrl || !hasAuthC) {
-      process.stderr.write('Error: No Jira credentials found. Run \'ticketlens init\' or set JIRA_BASE_URL + JIRA_API_TOKEN.\n');
+      printErrFn('Error: No Jira credentials found. Run \'ticketlens init\' or set JIRA_BASE_URL + JIRA_API_TOKEN.\n');
       process.exitCode = 1;
       return;
     }
@@ -664,7 +664,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     try {
       ticketC = await adapterC.fetchTicket(ticketKeyArg, { depth: 0 });
     } catch (err) {
-      process.stderr.write(`Error fetching ${ticketKeyArg}: ${err.message}\n`);
+      printErrFn(`Error fetching ${ticketKeyArg}: ${err.message}\n`);
       process.exitCode = 1;
       return;
     }
@@ -679,6 +679,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       description: ticketC.description,
       ticketKey: ticketKeyArg,
       configDir: resolvedConfigDir,
+      stream: errStream,
     });
 
     if (complianceResult === null) {

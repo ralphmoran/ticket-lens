@@ -67,6 +67,18 @@ const TOOLS = [
     },
   },
   {
+    name: 'compliance',
+    description: 'Check a ticket\'s acceptance-criteria coverage against the current git diff — extracts requirements from the ticket description, matches them against code changes, and reports a coverage percentage plus what\'s missing. Read-only; the same check `ticketlens install-hooks` runs automatically. Free tier: 3 checks per month; TicketLens Pro removes the limit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ticket: { type: 'string', description: 'Ticket key, e.g. PROJ-123.' },
+        profile: { type: 'string', description: 'Connection profile to target, overriding folder-based inference and the default profile.' },
+      },
+      required: ['ticket'],
+    },
+  },
+  {
     name: 'doctor',
     description: 'Diagnose common TicketLens problems: profile configuration, license freshness, tracker connectivity, attachment cache health, MCP registration, and the Recall sync queue. Always returns structured JSON. Free tier, fully unrestricted — including fix.',
     inputSchema: {
@@ -236,23 +248,23 @@ function buildFetchArgs({ ticket, profile, depth }) {
 }
 
 /**
- * runFetchTicket has no {ok} return value (unlike every other wrapped
- * function) — failure is signaled by mutating process.exitCode, which is
- * unsafe to read in a long-lived server (one failed call would poison the
- * whole process's exit code forever). Success is instead determined by
- * whether `print` ever received the actual brief — every success path
- * (cache hit, fresh fetch, handoff) calls it exactly once; every failure
- * path returns before reaching it. errCapture may contain informational
+ * Shared by every dispatch that goes through fetch-ticket.mjs's `run()`
+ * (currently `fetch` and `compliance` — `compliance` is just another
+ * subcommand of that same function). `run()` has no {ok} return value
+ * (unlike every other wrapped function) — failure is signaled by mutating
+ * process.exitCode, which is unsafe to read in a long-lived server (one
+ * failed call would poison the whole process's exit code forever). Success
+ * is instead determined by whether `print` ever received real content —
+ * every success path (cache hit, fresh fetch, handoff, a printed report
+ * regardless of pass/fail) calls it exactly once; every failure path
+ * returns before reaching it. errCapture may contain informational
  * chatter (cache notice, download progress) even on success — only read
  * on the failure branch, where it carries the actual error message.
  */
-async function callFetch(args, { configDir, runFetchTicketFn }) {
-  if (!args.ticket) {
-    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: ticket' }] };
-  }
+async function callFetchTicketRun(buildArgsFn, args, { configDir, runFetchTicketFn }, fallbackErrorText) {
   const capture = capturingStream();
   const errCapture = capturingStream();
-  await runFetchTicketFn(buildFetchArgs(args), {
+  await runFetchTicketFn(buildArgsFn(args), {
     configDir,
     env: process.env,
     fetcher: globalThis.fetch,
@@ -262,7 +274,14 @@ async function callFetch(args, { configDir, runFetchTicketFn }) {
   if (capture.text) {
     return { content: [{ type: 'text', text: capture.text }] };
   }
-  return { isError: true, content: [{ type: 'text', text: errCapture.text || 'fetch failed' }] };
+  return { isError: true, content: [{ type: 'text', text: errCapture.text || fallbackErrorText }] };
+}
+
+async function callFetch(args, deps) {
+  if (!args.ticket) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: ticket' }] };
+  }
+  return callFetchTicketRun(buildFetchArgs, args, deps, 'fetch failed');
 }
 
 /**
@@ -322,6 +341,34 @@ async function callTriage(args, { configDir, runTriageFn }) {
     return { content: [{ type: 'text', text: capture.text }] };
   }
   return { isError: true, content: [{ type: 'text', text: errCapture.text || 'triage failed' }] };
+}
+
+/**
+ * `compliance` is a subcommand of the same fetch-ticket.mjs `run()` that
+ * `callFetch` already wraps — reuses `runFetchTicketFn`, no new dependency
+ * or import. See fetch-ticket.mjs's `compliance` dispatch block (thread
+ * printErr through it before this tool existed — see the fetch tool's own
+ * shipping notes for why that treatment was deferred per-tool).
+ */
+function buildComplianceArgs({ ticket, profile }) {
+  const args = ['compliance', ticket];
+  if (profile) args.push(`--profile=${profile}`);
+  return args;
+}
+
+/**
+ * Uses the shared callFetchTicketRun — a below-threshold result is still a
+ * successful check: `run()` prints the report (via `printFn`) before
+ * evaluating the threshold, so a failing coverage percentage is real,
+ * useful report content, not a tool failure. Only the license/usage-gate
+ * case (`runComplianceCheck` returns null) skips the report print entirely
+ * — that's the one path that surfaces as `isError`.
+ */
+async function callCompliance(args, deps) {
+  if (!args.ticket) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: ticket' }] };
+  }
+  return callFetchTicketRun(buildComplianceArgs, args, deps, 'compliance check failed');
 }
 
 function buildDoctorArgs({ fix, profile }) {
@@ -549,6 +596,7 @@ async function handleToolsCall(params, deps) {
   const { name, arguments: args = {} } = params ?? {};
   if (name === 'fetch') return callFetch(args, deps);
   if (name === 'triage') return callTriage(args, deps);
+  if (name === 'compliance') return callCompliance(args, deps);
   if (name === 'doctor') return callDoctor(args, deps);
   if (name === 'recall_add') return callRecallAdd(args, deps);
   if (name === 'recall_search') return callRecallSearch(args, deps);

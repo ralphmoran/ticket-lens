@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.35.0 -->
+<!-- jtb-skill-version: 0.36.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -403,6 +403,11 @@ Use this evaluation order:
 
 ### Privacy
 `--compliance` never sends data anywhere. The diff stays local. All analysis is performed by Claude Code within your session context.
+
+### Standalone command
+The same tier-gated check also runs as its own command — `ticketlens compliance PROJ-123` — independent of a full ticket fetch. This is what `ticketlens install-hooks` wires into a pre-push git hook (`ticketlens compliance "$KEY" || exit 1`, gated on a configurable coverage threshold). It shares the same `FREE_LIMIT`/Pro gate and the same compliance ledger as the `--compliance` flag above.
+
+If this harness has TicketLens's MCP server configured (a tool named `compliance` — often shown as `mcp__ticketlens__compliance` — visible in your tool list), prefer it over the bash form: same tier gate (Free: 3 checks/month, Pro: unlimited), same report — just no shell command to construct or stdout to parse. It accepts `ticket`/`profile`, matching the standalone command's arguments above.
 
 ---
 

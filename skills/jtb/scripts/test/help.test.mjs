@@ -432,6 +432,12 @@ describe('printMcpHelp — ticket tools', () => {
     assert.match(out, /\btriage\b/);
   });
 
+  it('documents compliance and its Free 3-checks/month cap', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /\bcompliance\b/);
+    assert.match(out, /3-checks\/month/);
+  });
+
   it('documents ticket_comment, ticket_transition, ticket_assign, ticket_duplicates, ticket_link, ticket_update, and ticket_create alongside recall_add/recall_search', () => {
     const out = captureHelp(printMcpHelp);
     assert.match(out, /recall_add/);
