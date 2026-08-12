@@ -26,6 +26,7 @@ import { runNoteAdd } from './note-command.mjs';
 import { runRecall } from './recall-command.mjs';
 import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate, runTicketCreate } from './ticket-command.mjs';
 import { run as runFetchTicket } from '../fetch-ticket.mjs';
+import { run as runTriage } from '../fetch-my-tickets.mjs';
 
 const PROTOCOL_VERSION = '2025-11-25';
 
@@ -41,6 +42,28 @@ const TOOLS = [
         depth: { type: 'number', description: 'How many hops of linked tickets to traverse. Defaults to 1 (direct links only). 0 disables traversal.' },
       },
       required: ['ticket'],
+    },
+  },
+  {
+    name: 'triage',
+    description: 'Scan assigned tickets and surface what needs attention — replies owed, aging tickets, stale-status tickets. The base scan is free tier; some options require a TicketLens Pro or Team license.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        profile: { type: 'string', description: 'Connection profile to target, overriding folder-based inference and the default profile.' },
+        stale: { type: 'number', description: 'Days before an untouched ticket counts as aging. Defaults to 5.' },
+        status: { type: 'array', items: { type: 'string' }, description: 'Statuses to include, overriding the profile default / built-in defaults (In Progress, Code Review, QA).' },
+        sort: { type: 'string', description: 'Sort order for results, overriding the profile default.' },
+        save: { type: 'string', description: 'Write the plain-text summary to this local file path instead of (in addition to) returning it. Requires a TicketLens Pro license.' },
+        all: { type: 'boolean', description: 'Triage every configured profile, not just the resolved one. Requires a TicketLens Pro license.' },
+        digest: { type: 'boolean', description: 'Deliver the scored results to the digest backend instead of returning them as text — on success, no summary is returned, only a delivery confirmation. Requires a TicketLens Pro license.' },
+        assignee: { type: 'string', description: 'View another user\'s tickets instead of your own. Requires a TicketLens Team license.' },
+        sprint: { type: 'string', description: 'Scope to a named sprint. Requires a TicketLens Team license.' },
+        export: { type: 'string', enum: ['csv', 'json'], description: 'Write results to a file in this format instead of returning the summary text, returning the written file path instead. Requires a TicketLens Team license.' },
+        project: { type: 'string', description: 'Scope to a project/team key. Requires a TicketLens Team license.' },
+        label: { type: 'array', items: { type: 'string' }, description: 'Scope to one or more labels. Requires a TicketLens Team license.' },
+        priority: { type: 'string', description: 'Scope to a priority name, e.g. "High". Requires a TicketLens Team license.' },
+      },
     },
   },
   {
@@ -240,6 +263,65 @@ async function callFetch(args, { configDir, runFetchTicketFn }) {
     return { content: [{ type: 'text', text: capture.text }] };
   }
   return { isError: true, content: [{ type: 'text', text: errCapture.text || 'fetch failed' }] };
+}
+
+/**
+ * Deliberately excludes --push/--share — those sync/share a snapshot as a
+ * human-collaboration side effect (Console notification queue, shareable
+ * link), not "what needs attention" read value. See the 49b scoping memory.
+ */
+function buildTriageArgs({ profile, stale, status, sort, save, all, digest, assignee, sprint, export: exportFormat, project, label, priority }) {
+  const args = ['--plain'];
+  if (profile) args.push(`--profile=${profile}`);
+  if (stale !== undefined) args.push(`--stale=${stale}`);
+  if (Array.isArray(status) && status.length > 0) args.push(`--status=${status.join(',')}`);
+  if (sort) args.push(`--sort=${sort}`);
+  if (save) args.push(`--save=${save}`);
+  if (all === true) args.push('--all');
+  if (digest === true) args.push('--digest');
+  if (assignee) args.push(`--assignee=${assignee}`);
+  if (sprint) args.push(`--sprint=${sprint}`);
+  if (exportFormat) args.push(`--export=${exportFormat}`);
+  if (project) args.push(`--project=${project}`);
+  if (Array.isArray(label) && label.length > 0) args.push(`--label=${label.join(',')}`);
+  if (priority) args.push(`--priority=${priority}`);
+  return args;
+}
+
+/**
+ * runTriage has the same no-{ok}-return architecture as runFetchTicket —
+ * success is "did print receive the summary," failure is whatever landed in
+ * the injected stream. One deliberate exception: `--digest` delivers to the
+ * backend and prints NOTHING to `print` on success (locked by
+ * fetch-my-tickets.test.mjs's own "stdout should be empty" test) — an empty
+ * capture there means delivery succeeded, not that it failed. Only a gate
+ * rejection (Pro license, captured in `stream`) or a thrown delivery error
+ * (caught below) signal an actual digest failure.
+ */
+async function callTriage(args, { configDir, runTriageFn }) {
+  const capture = capturingStream();
+  const errCapture = capturingStream();
+  try {
+    await runTriageFn(buildTriageArgs(args), {
+      configDir,
+      env: process.env,
+      fetcher: globalThis.fetch,
+      print: capture.write,
+      stream: errCapture,
+    });
+  } catch (err) {
+    return { isError: true, content: [{ type: 'text', text: err.message }] };
+  }
+  if (args.digest === true) {
+    if (errCapture.text) {
+      return { isError: true, content: [{ type: 'text', text: errCapture.text }] };
+    }
+    return { content: [{ type: 'text', text: 'Digest delivered.' }] };
+  }
+  if (capture.text) {
+    return { content: [{ type: 'text', text: capture.text }] };
+  }
+  return { isError: true, content: [{ type: 'text', text: errCapture.text || 'triage failed' }] };
 }
 
 function buildDoctorArgs({ fix, profile }) {
@@ -466,6 +548,7 @@ async function callTicketCreate(args, { configDir, runTicketCreateFn }) {
 async function handleToolsCall(params, deps) {
   const { name, arguments: args = {} } = params ?? {};
   if (name === 'fetch') return callFetch(args, deps);
+  if (name === 'triage') return callTriage(args, deps);
   if (name === 'doctor') return callDoctor(args, deps);
   if (name === 'recall_add') return callRecallAdd(args, deps);
   if (name === 'recall_search') return callRecallSearch(args, deps);
@@ -479,7 +562,7 @@ async function handleToolsCall(params, deps) {
   return { isError: true, content: [{ type: 'text', text: `Unknown tool: ${name}` }] };
 }
 
-async function handleMessage(raw, { configDir, runFetchTicketFn, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn }) {
+async function handleMessage(raw, { configDir, runFetchTicketFn, runTriageFn, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn }) {
   let msg;
   try {
     msg = JSON.parse(raw);
@@ -509,7 +592,7 @@ async function handleMessage(raw, { configDir, runFetchTicketFn, runDoctorFn, ru
 
   if (method === 'tools/call') {
     try {
-      const result = await handleToolsCall(params, { configDir, runFetchTicketFn, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
+      const result = await handleToolsCall(params, { configDir, runFetchTicketFn, runTriageFn, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
       return jsonRpcResult(id, result);
     } catch (err) {
       return jsonRpcError(id ?? null, -32603, `Internal error: ${err.message}`);
@@ -531,6 +614,7 @@ export function runMcpServer({
   stdin = process.stdin,
   stdout = process.stdout,
   runFetchTicketFn = runFetchTicket,
+  runTriageFn = runTriage,
   runDoctorFn = runDoctor,
   runNoteAddFn = runNoteAdd,
   runRecallFn = runRecall,
@@ -562,7 +646,7 @@ export function runMcpServer({
     // never resolving (a dropped rejection isn't a resolution) — the
     // server would hang on shutdown instead of exiting.
     queue = queue.then(async () => {
-      const response = await handleMessage(line, { configDir, runFetchTicketFn, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
+      const response = await handleMessage(line, { configDir, runFetchTicketFn, runTriageFn, runDoctorFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
       if (response) stdout.write(response);
     }).catch(() => {});
   });

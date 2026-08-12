@@ -425,6 +425,13 @@ describe('printHelp — Recall commands', () => {
 });
 
 describe('printMcpHelp — ticket tools', () => {
+  it('documents fetch, doctor, and triage alongside the ticket-write tools', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /\bfetch\b/);
+    assert.match(out, /\bdoctor\b/);
+    assert.match(out, /\btriage\b/);
+  });
+
   it('documents ticket_comment, ticket_transition, ticket_assign, ticket_duplicates, ticket_link, ticket_update, and ticket_create alongside recall_add/recall_search', () => {
     const out = captureHelp(printMcpHelp);
     assert.match(out, /recall_add/);

@@ -54,6 +54,17 @@ function captureOutput() {
   return { get stdout() { return stdout; }, get stderr() { return stderr; }, restore };
 }
 
+// Matches the injectable-stream convention already established in
+// profile-picker.test.mjs / banner.test.mjs — never mutate the real global.
+function captureStream() {
+  const lines = [];
+  return {
+    write: (s) => lines.push(s),
+    isTTY: false,
+    get output() { return lines.join(''); },
+  };
+}
+
 function setupConfig() {
   const configDir = mkdtempSync(join(tmpdir(), 'ticketlens-'));
   writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({
@@ -767,6 +778,116 @@ describe('triage --digest', () => {
       isLicensed: (tier) => tier === 'pro',
     });
     assert.equal(delivered.length, 1);
+  });
+});
+
+describe('triage — opts.stream injection (MCP transport capture)', () => {
+  it('LOCK: profile-not-found error still reaches the real process.stderr when opts.stream is omitted', async () => {
+    const out = captureOutput();
+    try {
+      await run([], {}, undefined, '/tmp/nonexistent-ticketlens');
+      assert.ok(out.stderr.includes('Could not determine Jira profile'));
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('captures the profile-not-found error into opts.stream instead of the real process.stderr', async () => {
+    const stream = captureStream();
+    const out = captureOutput();
+    try {
+      await run([], { env: {}, configDir: '/tmp/nonexistent-ticketlens', stream });
+      assert.ok(stream.output.includes('Could not determine Jira profile'));
+      assert.equal(out.stderr, '', 'nothing should leak to the real process.stderr');
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('captures the --save Pro-gate upgrade prompt into opts.stream', async () => {
+    const stream = captureStream();
+    const out = captureOutput();
+    try {
+      await run(['triage', '--save=/tmp/x.txt'], { env: mockEnv, fetcher: mockFetcher, isLicensed: () => false, stream });
+      const text = stream.output;
+      assert.ok(text.includes('--save'));
+      assert.equal(out.stderr, '', 'nothing should leak to the real process.stderr');
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('captures the --all Pro-gate upgrade prompt into opts.stream', async () => {
+    const stream = captureStream();
+    const out = captureOutput();
+    try {
+      await run(['triage', '--all'], { env: mockEnv, fetcher: mockFetcher, isLicensed: () => false, stream });
+      assert.ok(stream.output.includes('--all'));
+      assert.equal(out.stderr, '');
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('captures the --assignee Team-gate upgrade prompt into opts.stream', async () => {
+    const stream = captureStream();
+    const out = captureOutput();
+    try {
+      await run(['triage', '--assignee=jane'], { env: mockEnv, fetcher: mockFetcher, isLicensed: () => false, stream });
+      assert.ok(stream.output.includes('--assignee'));
+      assert.equal(out.stderr, '');
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('captures the --export Team-gate upgrade prompt into opts.stream', async () => {
+    const stream = captureStream();
+    const out = captureOutput();
+    try {
+      await run(['triage', '--export=csv'], { env: mockEnv, fetcher: mockFetcher, isLicensed: () => false, stream });
+      assert.ok(stream.output.includes('--export'));
+      assert.equal(out.stderr, '');
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('captures the --project Team-gate upgrade prompt into opts.stream', async () => {
+    const stream = captureStream();
+    const out = captureOutput();
+    try {
+      await run(['triage', '--project=PROJ'], { env: mockEnv, fetcher: mockFetcher, isLicensed: () => false, stream });
+      assert.ok(stream.output.includes('--project'));
+      assert.equal(out.stderr, '');
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('captures the connection-failure session footer into opts.stream, never the real process.stderr', async () => {
+    const stream = captureStream();
+    const failingFetcher = async () => ({ ok: false, status: 401, statusText: 'Unauthorized' });
+    const out = captureOutput();
+    try {
+      await run([], { env: mockEnv, fetcher: failingFetcher, stream });
+      assert.ok(stream.output.length > 0, 'the classified connection error must land in opts.stream');
+      assert.equal(out.stderr, '', 'nothing should leak to the real process.stderr');
+    } finally {
+      out.restore();
+    }
+  });
+
+  it('captures the invalid --export value error into opts.stream', async () => {
+    const stream = captureStream();
+    const out = captureOutput();
+    try {
+      await run(['triage', '--export=pdf'], { env: mockEnv, fetcher: mockFetcher, isLicensed: () => true, stream });
+      assert.ok(stream.output.includes('pdf'));
+      assert.equal(out.stderr, '');
+    } finally {
+      out.restore();
+    }
   });
 });
 

@@ -74,7 +74,7 @@ describe('mcp-server', () => {
     it('returns exactly fetch, recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const names = messages[0].result.tools.map((t) => t.name).sort();
-      assert.deepEqual(names, ['doctor', 'fetch', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update']);
+      assert.deepEqual(names, ['doctor', 'fetch', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
       for (const tool of messages[0].result.tools) {
         assert.equal(tool.inputSchema.type, 'object');
         assert.ok(tool.inputSchema.properties, `${tool.name} must declare input properties`);
@@ -175,6 +175,102 @@ describe('mcp-server', () => {
       );
       assert.equal(messages[0].result.isError, undefined);
       assert.ok(messages[0].result.content[0].text.includes('Login broken'));
+    });
+  });
+
+  describe('tools/call triage', () => {
+    it('happy path: forwards every field to CLI flags, always forcing --plain, and returns the summary', async () => {
+      let seen;
+      const runTriageFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('3 tickets need attention\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'triage', arguments: {
+          profile: 'work', stale: 3, status: ['QA', 'Code Review'], sort: 'age',
+          save: '/tmp/x.txt', all: true, digest: false,
+          assignee: 'jane', sprint: 'Sprint 4', export: 'csv',
+          project: 'PROJ', label: ['urgent', 'backend'], priority: 'High',
+        } } }],
+        { configDir, runTriageFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('3 tickets need attention'));
+      assert.deepEqual(seen, [
+        '--plain', '--profile=work', '--stale=3', '--status=QA,Code Review', '--sort=age',
+        '--save=/tmp/x.txt', '--all', '--assignee=jane', '--sprint=Sprint 4', '--export=csv',
+        '--project=PROJ', '--label=urgent,backend', '--priority=High',
+      ]);
+    });
+
+    it('omits every optional flag when not given, forwarding only --plain', async () => {
+      let seen;
+      const runTriageFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('All clear\n');
+      };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'triage', arguments: {} } }],
+        { configDir, runTriageFn },
+      );
+      assert.deepEqual(seen, ['--plain']);
+    });
+
+    it('a failure (print never receives a summary) maps to a JSON-RPC tool error carrying the stream message', async () => {
+      const runTriageFn = async (cmdArgs, opts) => {
+        opts.stream.write('Error: Could not determine Jira profile.\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'triage', arguments: {} } }],
+        { configDir, runTriageFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /Could not determine Jira profile/);
+    });
+
+    it('a failure with nothing captured anywhere falls back to a generic error, never a false success', async () => {
+      const runTriageFn = async () => {};
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'triage', arguments: {} } }],
+        { configDir, runTriageFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /triage failed/);
+    });
+
+    it('a thrown error (e.g. from the digest deliverer) is caught and returned as a JSON-RPC tool error, not an internal error', async () => {
+      const runTriageFn = async () => { throw new Error('Digest delivery failed: 503'); };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'triage', arguments: { digest: true } } }],
+        { configDir, runTriageFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /Digest delivery failed/);
+      assert.equal(messages[0].error, undefined, 'must be a normal tool result, not a JSON-RPC protocol-level error');
+    });
+
+    it('regression guard: --digest succeeds silently on stdout by design — empty print must NOT be misread as failure', async () => {
+      const runTriageFn = async () => {
+        // Real digest behavior: delivers to the backend, calls neither print nor stream on success.
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'triage', arguments: { digest: true } } }],
+        { configDir, runTriageFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.match(messages[0].result.content[0].text, /Digest delivered/);
+    });
+
+    it('a --digest gate rejection (captured in stream, not print) still maps to isError, unlike the silent-success case', async () => {
+      const runTriageFn = async (cmdArgs, opts) => {
+        opts.stream.write('  ◆ --digest requires Pro\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'triage', arguments: { digest: true } } }],
+        { configDir, runTriageFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /--digest requires Pro/);
     });
   });
 
@@ -921,7 +1017,7 @@ describe('mcp-server', () => {
       assert.equal(messages.length, 2, 'both the parse-error response and the valid tools/list response must appear');
       assert.ok(messages[0].error, 'first message must be a JSON-RPC error for the malformed line');
       assert.equal(messages[1].id, 2);
-      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['doctor', 'fetch', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update']);
+      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['doctor', 'fetch', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
     });
 
     it('a syntactically-valid-but-non-object JSON line (e.g. bare "null") does not crash the server or drop later messages', async () => {

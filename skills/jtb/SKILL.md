@@ -106,6 +106,8 @@ Where `$EXTRA_ARGS` are any flags passed (e.g. `--stale=3 --status=QA --profile=
 
 **IMPORTANT:** Copy the script's stdout and display it directly as your response text (not inside a tool result). This ensures the markdown table renders visibly and URLs are clickable in the terminal. No VCS enrichment, no plan mode. Stop here.
 
+If this harness has TicketLens's MCP server configured (a tool named `triage` — often shown as `mcp__ticketlens__triage` — visible in your tool list), prefer it over the bash form: same license gate per option (Free base scan, Pro `save`/`all`/`digest`, Team `assignee`/`sprint`/`export`/`project`/`label`/`priority`) — just no shell command to construct. It accepts `profile`/`stale`/`status`/`sort` plus those gated options; `--push`/`--share` aren't exposed yet — fall back to the bash form for those.
+
 ---
 
 ### Collisions subcommand
@@ -144,6 +146,8 @@ ticketlens "$TICKET_KEY" $EXTRA_ARGS
 Where `$TICKET_KEY` is the first argument (e.g. `PROD-1234`) and `$EXTRA_ARGS` are any flags passed (e.g. `--depth=0`).
 
 The script outputs a structured markdown TicketBrief to stdout. If it fails (exit code 1), show the stderr message to the user.
+
+If this harness has TicketLens's MCP server configured (a tool named `fetch` — often shown as `mcp__ticketlens__fetch` — visible in your tool list), prefer it over the bash form: same license gate (Free), same cache — just no shell command to construct or stdout to parse. It accepts `ticket`/`profile`/`depth`, matching `$TICKET_KEY`/`--profile`/`--depth` above; other CLI flags (`--summarize`, `--handoff`, `--no-cache`, etc.) aren't exposed yet — fall back to the bash form for those.
 
 ### Step 2b: Read attached files
 

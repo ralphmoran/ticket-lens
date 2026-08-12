@@ -57,6 +57,12 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     env = envOrOpts;
   }
 
+  // Injectable stderr-equivalent — defaults to the real stream so every existing
+  // CLI caller (which never sets opts.stream) is byte-identical to before. Lets
+  // a long-lived host (the MCP server) capture banners/errors instead of losing
+  // them to a real process.stderr it never reads.
+  const stream = opts.stream ?? process.stderr;
+
   // Strip leading 'triage' subcommand if present (when called via CLI router)
   if (args[0] === 'triage') args = args.slice(1);
 
@@ -99,7 +105,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const saveArg = args.find(a => a.startsWith('--save='))?.split('=').slice(1).join('=') ?? null;
 
   if (exportArg && exportArg !== 'csv' && exportArg !== 'json') {
-    process.stderr.write(`Error: --export must be csv or json, got: ${exportArg}\n`);
+    stream.write(`Error: --export must be csv or json, got: ${exportArg}\n`);
     process.exitCode = 1;
     return;
   }
@@ -120,14 +126,14 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   // --save=FILE: Pro gate + validate path is not a directory
   if (saveArg) {
     if (!licensedFn('pro', configDir)) {
-      upgradeFn('pro', '--save');
+      upgradeFn('pro', '--save', { stream });
       process.exitCode = 1;
       return;
     }
     const resolvedSave = resolvePath(saveArg);
     try {
       if (statSync(resolvedSave).isDirectory()) {
-        process.stderr.write(`Error: --save path must be a file, not a directory: ${resolvedSave}\n`);
+        stream.write(`Error: --save path must be a file, not a directory: ${resolvedSave}\n`);
         process.exitCode = 1;
         return;
       }
@@ -138,7 +144,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   if (projectArg || labelArg || priorityArg) {
     if (!licensedFn('team', configDir)) {
       const flag = projectArg ? '--project' : labelArg ? '--label' : '--priority';
-      upgradeFn('team', flag);
+      upgradeFn('team', flag, { stream });
       process.exitCode = 1;
       return;
     }
@@ -147,14 +153,14 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   // --all: triage all configured profiles in parallel with live status block
   if (allFlag) {
     if (!licensedFn('pro', configDir)) {
-      upgradeFn('pro', '--all');
+      upgradeFn('pro', '--all', { stream });
       process.exitCode = 1;
       return;
     }
     const profilesConfig = loadProfiles(configDir);
     const profileNames = profilesConfig?.profiles ? Object.keys(profilesConfig.profiles) : [];
     if (profileNames.length === 0) {
-      process.stderr.write('Error: No profiles configured. Run `ticketlens init` first.\n');
+      stream.write('Error: No profiles configured. Run `ticketlens init` first.\n');
       process.exitCode = 1;
       return;
     }
@@ -234,14 +240,14 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   // Team-tier gate: --assignee and --sprint require a Team license
   if ((assigneeArg || sprintArg) && !licensedFn('team', configDir)) {
-    upgradeFn('team', assigneeArg ? '--assignee' : '--sprint');
+    upgradeFn('team', assigneeArg ? '--assignee' : '--sprint', { stream });
     process.exitCode = 1;
     return;
   }
 
   // Team-tier gate: --export requires a Team license
   if (exportArg && !licensedFn('team', configDir)) {
-    upgradeFn('team', '--export');
+    upgradeFn('team', '--export', { stream });
     process.exitCode = 1;
     return;
   }
@@ -256,14 +262,14 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     configDir,
     profileName,
     cwd,
-    onWarning: (w) => process.stderr.write(w + '\n'),
+    onWarning: (w) => stream.write(w + '\n'),
     onProfileNotFound: (info) => { profileError = info; },
   });
 
   const hasAuth = conn.pat || (conn.email && conn.apiToken);
   if (!conn.baseUrl || !hasAuth) {
     if (profileError) {
-      const picked = await promptProfileSelect(profileError);
+      const picked = await promptProfileSelect(profileError, { stream });
       if (picked) {
         // Re-run with the selected profile
         const newArgs = args.filter(a => !a.startsWith('--profile='));
@@ -275,7 +281,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const msg = noProfiles
         ? 'Error: Could not determine Jira profile.\nRun `ticketlens init` to set up your connection.'
         : 'Error: Could not determine Jira profile. Use --profile=NAME or add projectPaths to ~/.ticketlens/profiles.json';
-      process.stderr.write(msg + '\n');
+      stream.write(msg + '\n');
     }
     process.exitCode = 1;
     return;
@@ -304,7 +310,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const priorityClause = priorityArg  ? ` AND priority = "${escapeJql(priorityArg.split('=')[1])}"` : '';
   const jql = `${assigneeClause} AND status IN (${statusList})${sprintClause}${projectClause}${labelClause}${priorityClause} ORDER BY updated DESC`;
 
-  const session = createSession(conn);
+  const session = createSession(conn, { stream });
   session.spin(`Connecting to ${session.label}…`);
 
   // Fire both requests concurrently — they are independent of each other
@@ -329,7 +335,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
 
   session.connected();
-  process.stderr.write('\n');
+  stream.write('\n');
 
   const scanSpinner = createSpinner('Scanning tickets…');
   scanSpinner.start();
@@ -341,7 +347,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     scanSpinner.stop();
     if (err.status === 400 && err.detail && /does not exist for the field 'status'/.test(err.detail)) {
       const s = session.styler;
-      const out = process.stderr;
+      const out = stream;
       out.write(`\n  ${s.yellow('○')} Status mismatch — checking Jira...\n`);
       try {
         const available = await adapter.fetchStatuses();
@@ -424,7 +430,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     : currentUser;
 
   if (assigneeName) {
-    process.stderr.write(`Viewing ${assigneeName}'s tickets\n\n`);
+    stream.write(`Viewing ${assigneeName}'s tickets\n\n`);
   }
 
   const scored = tickets.map(t => scoreAttention(t, effectiveUser, { staleDays, customRules: conn.attentionRules, staleRule: conn.staleRule ?? null }));
@@ -445,7 +451,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   // --digest: POST scored results to the digest backend endpoint
   if (digestFlag) {
     if (!licensedFn('pro', configDir)) {
-      upgradeFn('pro', '--digest');
+      upgradeFn('pro', '--digest', { stream });
       process.exitCode = 1;
       return;
     }
