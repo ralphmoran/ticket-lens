@@ -154,6 +154,32 @@ describe('styleBrief', () => {
     assert.ok(result.includes('John Dev'), 'Should show assignee');
   });
 
+  it('injects a Recall capture line when recallStrictness is strict', () => {
+    const ticket = makeBriefTicket();
+    const result = styleBrief(ticket, null, { styled: false, recallStrictness: 'strict' });
+    assert.ok(result.includes('Recall capture:') && result.includes('strict'));
+  });
+
+  it('injects a Recall capture line when recallStrictness is loose', () => {
+    const ticket = makeBriefTicket();
+    const result = styleBrief(ticket, null, { styled: false, recallStrictness: 'loose' });
+    assert.ok(result.includes('Recall capture:') && result.includes('loose'));
+  });
+
+  it('omits the Recall capture line when recallStrictness is balanced', () => {
+    const ticket = makeBriefTicket();
+    const result = styleBrief(ticket, null, { styled: false, recallStrictness: 'balanced' });
+    assert.ok(!result.includes('Recall capture:'));
+  });
+
+  it('omits the Recall capture line when recallStrictness is not passed at all (regression)', () => {
+    const ticket = makeBriefTicket();
+    const withoutOpt = styleBrief(ticket, null, { styled: false });
+    const withBalanced = styleBrief(ticket, null, { styled: false, recallStrictness: 'balanced' });
+    assert.equal(withoutOpt, withBalanced);
+    assert.ok(!withoutOpt.includes('Recall capture:'));
+  });
+
   it('regression: ticket Created:/Updated: stay bare YYYY-MM-DD dates — unaffected by Recall\'s switch to relative time', () => {
     const ticket = makeBriefTicket({ created: '2026-03-01T10:00:00Z', updated: '2026-03-05T10:00:00Z' });
     const result = styleBrief(ticket, null, { styled: false });

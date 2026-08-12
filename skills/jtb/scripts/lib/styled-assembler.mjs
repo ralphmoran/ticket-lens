@@ -133,7 +133,7 @@ export function styleRecallResults(digests, opts = {}) {
 }
 
 export function styleBrief(ticket, codeRefs = null, opts = {}) {
-  const { styled = true, templateSections = null, recallNotes = null, recallMoreCount = 0, gaps = null } = opts;
+  const { styled = true, templateSections = null, recallNotes = null, recallMoreCount = 0, gaps = null, recallStrictness = 'balanced' } = opts;
   const ts = templateSections;
   const s = createStyler({ forceColor: styled, noColor: !styled });
 
@@ -153,6 +153,10 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
   if (ticket.created) meta.push(`${s.dim('Created:')} ${ticket.created.split('T')[0]}`);
   if (ticket.updated) meta.push(`${s.dim('Updated:')} ${ticket.updated.split('T')[0]}`);
   sections.push(meta.join(s.dim('  ·  ')));
+
+  if (recallStrictness !== 'balanced') {
+    sections.push(`${s.dim('Recall capture:')} ${recallStrictness}`);
+  }
 
   // Description
   if (ticket.description && (ts === null || ts.description !== false)) {
