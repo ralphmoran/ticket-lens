@@ -6,7 +6,7 @@ import { formatTable } from './table-formatter.mjs';
 import { formatSize } from './attachment-downloader.mjs';
 import { timeAgo, truncate, stripCr, escapeLeadingHeading } from './config.mjs';
 
-export function assembleBrief(ticket, codeRefs = null, templateSections = null, recallNotes = null, recallMoreCount = 0, gaps = null) {
+export function assembleBrief(ticket, codeRefs = null, templateSections = null, recallNotes = null, recallMoreCount = 0, gaps = null, recallStrictness = 'balanced') {
   const s = templateSections;
   const sections = [];
   sections.push(`# ${ticket.key}: ${ticket.summary}`);
@@ -16,6 +16,10 @@ export function assembleBrief(ticket, codeRefs = null, templateSections = null, 
   if (ticket.created) meta.push(`**Created:** ${ticket.created.split('T')[0]}`);
   if (ticket.updated) meta.push(`**Updated:** ${ticket.updated.split('T')[0]}`);
   sections.push(meta.join(' | '));
+
+  if (recallStrictness !== 'balanced') {
+    sections.push(`**Recall capture:** ${recallStrictness}`);
+  }
 
   if (ticket.description && (s === null || s.description !== false)) {
     sections.push(`## Description\n\n${stripCr(ticket.description)}`);

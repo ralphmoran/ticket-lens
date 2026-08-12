@@ -40,6 +40,28 @@ describe('assembleBrief', () => {
     assert.ok(result.includes('**Assignee:** John Dev'));
   });
 
+  it('injects a Recall capture line when recallStrictness is strict', () => {
+    const result = assembleBrief(baseTicket, null, null, null, 0, null, 'strict');
+    assert.ok(result.includes('**Recall capture:** strict'));
+  });
+
+  it('injects a Recall capture line when recallStrictness is loose', () => {
+    const result = assembleBrief(baseTicket, null, null, null, 0, null, 'loose');
+    assert.ok(result.includes('**Recall capture:** loose'));
+  });
+
+  it('omits the Recall capture line when recallStrictness is balanced', () => {
+    const result = assembleBrief(baseTicket, null, null, null, 0, null, 'balanced');
+    assert.ok(!result.includes('**Recall capture:**'));
+  });
+
+  it('omits the Recall capture line when recallStrictness is not passed at all (regression)', () => {
+    const withoutParam = assembleBrief(baseTicket);
+    const withBalanced = assembleBrief(baseTicket, null, null, null, 0, null, 'balanced');
+    assert.equal(withoutParam, withBalanced);
+    assert.ok(!withoutParam.includes('**Recall capture:**'));
+  });
+
   it('renders description section', () => {
     const result = assembleBrief(baseTicket);
     assert.ok(result.includes('## Description'));
