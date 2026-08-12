@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveConnection, resolveProfile, resolveProfileByPath, findProfilesByPrefix, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams, saveProfileRecallTeamId, loadProfileRecallTeamId, normalizeRecallStrictness, RECALL_STRICTNESS_LEVELS, DEFAULT_RECALL_STRICTNESS } from '../lib/profile-resolver.mjs';
+import { resolveConnection, resolveProfile, resolveProfileByPath, findProfilesByPrefix, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams, saveProfileRecallTeamId, loadProfileRecallTeamId, saveProfileRecallStrictness, normalizeRecallStrictness, RECALL_STRICTNESS_LEVELS, DEFAULT_RECALL_STRICTNESS } from '../lib/profile-resolver.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 
 const sampleProfiles = {
@@ -530,6 +530,48 @@ describe('profile-resolver', () => {
 
     it('RECALL_STRICTNESS_LEVELS is exactly the three named levels', () => {
       assert.deepEqual(RECALL_STRICTNESS_LEVELS, ['loose', 'balanced', 'strict']);
+    });
+  });
+
+  describe('saveProfileRecallStrictness', () => {
+    let configDir;
+
+    beforeEach(() => {
+      configDir = mkdtempSync(join(tmpdir(), 'ticketlens-'));
+      writeFileSync(join(configDir, 'profiles.json'), JSON.stringify(sampleProfiles, null, 2));
+    });
+
+    afterEach(() => {
+      rmSync(configDir, { recursive: true, force: true });
+    });
+
+    it('writes recallStrictness onto an existing profile', () => {
+      saveProfileRecallStrictness('corenexus', 'strict', configDir);
+      const saved = JSON.parse(readFileSync(join(configDir, 'profiles.json'), 'utf8'));
+      assert.equal(saved.profiles.corenexus.recallStrictness, 'strict');
+    });
+
+    it('never clobbers other fields on the same profile', () => {
+      saveProfileRecallStrictness('corenexus', 'loose', configDir);
+      const saved = JSON.parse(readFileSync(join(configDir, 'profiles.json'), 'utf8'));
+      assert.equal(saved.profiles.corenexus.baseUrl, sampleProfiles.profiles.corenexus.baseUrl);
+      assert.deepEqual(saved.profiles.corenexus.ticketPrefixes, sampleProfiles.profiles.corenexus.ticketPrefixes);
+    });
+
+    it('does not affect other profiles', () => {
+      saveProfileRecallStrictness('corenexus', 'strict', configDir);
+      const saved = JSON.parse(readFileSync(join(configDir, 'profiles.json'), 'utf8'));
+      assert.equal(saved.profiles.acme.recallStrictness, undefined);
+    });
+
+    it('throws for an unknown profile', () => {
+      assert.throws(() => saveProfileRecallStrictness('nonexistent', 'strict', configDir), /Unknown profile/);
+    });
+
+    it('invalidates the profiles cache so a subsequent loadProfiles sees the new value', () => {
+      saveProfileRecallStrictness('corenexus', 'strict', configDir);
+      const reloaded = loadProfiles(configDir);
+      assert.equal(reloaded.profiles.corenexus.recallStrictness, 'strict');
     });
   });
 

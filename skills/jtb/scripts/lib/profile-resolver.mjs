@@ -107,6 +107,14 @@ export function normalizeRecallStrictness(value) {
   return RECALL_STRICTNESS_LEVELS.includes(value) ? value : DEFAULT_RECALL_STRICTNESS;
 }
 
+export function saveProfileRecallStrictness(name, level, configDir = DEFAULT_CONFIG_DIR) {
+  const config = loadProfiles(configDir) || { profiles: {} };
+  if (!config.profiles[name]) throw new Error(`Unknown profile "${name}"`);
+  config.profiles[name] = { ...config.profiles[name], recallStrictness: normalizeRecallStrictness(level) };
+  writeFileSync(join(configDir, 'profiles.json'), JSON.stringify(config, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
+  invalidateProfilesCache(configDir);
+}
+
 // recallTeamId lives in credentials.json (not profiles.json) — it's a
 // sensitive association (which specific Console team a specific local
 // profile/folder routes Recall notes to), not the non-secret profile shape
