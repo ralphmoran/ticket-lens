@@ -126,6 +126,8 @@ profiles.json (profiles.<name>.recallStrictness)
 
 The two levers read the same stored value independently — the hook never sees the brief Claude read earlier in the session, and doesn't need to.
 
+**Known limitation for multi-profile users:** Lever 1 (`resolveConnection(ticketKey, ...)`) resolves by ticket-key prefix when a ticket key is available. Lever 2 (`resolveProfile(null, { cwd })`, in the Stop hook) never receives a ticket key, so it falls through to cwd/`projectPaths` then the default profile. A multi-profile user can therefore have the two levers resolve to genuinely different profiles in the same session, so the setting doesn't reliably reweight both together outside the single-profile case (the common case, where this is moot). The thorough fix — threading `scanTranscript()`'s matched ticket key into the Stop hook's profile resolution so both levers agree — is a follow-up, not part of this spec; tracked in the backlog.
+
 ---
 
 ## 7. Testing considerations (for the plan, not exhaustive here)

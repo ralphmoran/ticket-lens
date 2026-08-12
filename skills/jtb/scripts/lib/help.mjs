@@ -937,6 +937,7 @@ export function printConfigHelp({ stream = process.stdout } = {}) {
     '',
     `  ${s.bold(s.brand('ticketlens'))} ${s.bold('config')} ${s.dim('[--profile=NAME]')}`,
     `  ${s.bold(s.brand('ticketlens'))} ${s.bold('config set aiProvider')} ${s.dim('<anthropic|openai|groq>')}`,
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('config set recallStrictness')} ${s.dim('<loose|balanced|strict>')}`,
     '',
     `  Edit settings for an existing profile using an interactive wizard.`,
     `  Without ${s.cyan('--profile')}, edits the currently active profile.`,
@@ -951,6 +952,11 @@ export function printConfigHelp({ stream = process.stdout } = {}) {
     `                            ${s.dim('openai')}    = GPT-4o mini ${s.dim('(paid)')}`,
     `                            ${s.dim('groq')}      = Llama 3.1 ${s.dim('(free tier)')}`,
     '',
+    `    ${s.brand('set recallStrictness')} ${s.dim('<LEVEL>')}   Tune Recall-capture strictness`,
+    `                            ${s.dim('loose')}    = capture only strong, clear signals`,
+    `                            ${s.dim('balanced')} = today's default behavior`,
+    `                            ${s.dim('strict')}   = capture more liberally, when in doubt`,
+    '',
     `  ${s.bold('OPTIONS')}`,
     '',
     `    ${s.brand('--profile')}=${s.dim('NAME')}   Profile to configure`,
@@ -962,6 +968,7 @@ export function printConfigHelp({ stream = process.stdout } = {}) {
     `    ${s.dim('$')} ticketlens config --profile=work`,
     `    ${s.dim('$')} ticketlens config set aiProvider groq`,
     `    ${s.dim('$')} ticketlens config set aiProvider anthropic`,
+    `    ${s.dim('$')} ticketlens config set recallStrictness strict`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');

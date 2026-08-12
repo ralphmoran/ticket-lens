@@ -20,6 +20,15 @@
  * Which of the two cases above actually blocks is governed by the active
  * profile's recallStrictness — see recall-nudge-lib.mjs's shouldNag() doc
  * comment for the calibration and why strict doesn't widen this further.
+ *
+ * Known limitation: resolveProfile(null, { cwd }) below has no ticket key to
+ * match against, so it falls through to cwd/projectPaths then the default
+ * profile — unlike the brief-injection lever (resolveConnection(ticketKey, ...)
+ * in profile-resolver.mjs), which resolves by ticket-key prefix when one is
+ * available. For a multi-profile user these two levers can genuinely resolve
+ * different profiles in the same session, so the recallStrictness setting
+ * doesn't reliably reweight both together outside the single-profile case.
+ * Not fixed here — see design spec §6 for the follow-up.
  */
 
 import { readStdinJson, readState, writeState, scanTranscript, hasRecentCapture, writeLastCaptureAt, shouldNag } from './recall-nudge-lib.mjs';

@@ -670,6 +670,7 @@ ticketlens switch                             # Switch between configured profil
 ticketlens config                             # Edit the active profile
 ticketlens config --profile=acme             # Edit a specific profile
 ticketlens config set aiProvider groq        # Set default AI provider (groq|openai|anthropic)
+ticketlens config set recallStrictness strict # Tune Recall-capture strictness (loose|balanced|strict)
 ticketlens profiles                           # List all configured profiles
 ticketlens ls                                 # Alias for profiles
 ticketlens profiles --plain                   # Tab-separated (scripts / pipes)

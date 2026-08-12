@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { statePath } from '../../hooks/recall-nudge-lib.mjs';
+import { statePath, writeLastCaptureAt, lastCapturePath } from '../../hooks/recall-nudge-lib.mjs';
 
 const HOOK_PATH = fileURLToPath(new URL('../../hooks/recall-nudge-stop.mjs', import.meta.url));
 
@@ -49,6 +49,7 @@ describe('recall-nudge-stop hook (subprocess)', () => {
 
   afterEach(() => {
     try { rmSync(statePath(sessionId)); } catch { /* not written this test — fine */ }
+    try { rmSync(lastCapturePath(dir)); } catch { /* not written this test — fine */ }
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -96,20 +97,46 @@ describe('recall-nudge-stop hook (subprocess)', () => {
   });
 
   it('LOCK: never blocks a second time for the same session_id, at every strictness level', () => {
+    const transcriptByLevel = {
+      loose: transcriptWith([
+        assistantText('Looking at PROD-1234 now.'),
+        assistantText('🔖 Recall-flag: found a gotcha'),
+      ]),
+      balanced: transcriptWith([assistantText('Looking at PROD-1234 now.')]),
+      strict: transcriptWith([assistantText('Looking at PROD-1234 now.')]),
+    };
     for (const level of ['loose', 'balanced', 'strict']) {
       writeProfile(home, level);
       const sid = `${sessionId}-${level}`;
-      writeFileSync(transcriptPath, transcriptWith([assistantText('Looking at PROD-1234 now.')]));
+      writeFileSync(transcriptPath, transcriptByLevel[level]);
       const first = runHook({ sessionId: sid, transcriptPath, cwd: dir, home });
       const second = runHook({ sessionId: sid, transcriptPath, cwd: dir, home });
       try {
-        if (level === 'loose') {
-          // loose never blocks this signal at all — both calls exit 0, cap is moot but must not regress
-          assert.equal(first.status, 0, `loose first (should be 0, no flag raised)`);
-        } else {
-          assert.equal(first.status, 2, `${level} first`);
-        }
+        assert.equal(first.status, 2, `${level} first (must actually block)`);
         assert.equal(second.status, 0, `${level} second (cap must hold)`);
+      } finally {
+        try { rmSync(statePath(sid)); } catch { /* fine */ }
+      }
+    }
+  });
+
+  it('LOCK: hasRecentCapture bridge suppresses the nag across a session_id rollover, at every strictness level', () => {
+    const transcriptByLevel = {
+      loose: transcriptWith([
+        assistantText('Looking at PROD-1234 now.'),
+        assistantText('🔖 Recall-flag: found a gotcha'),
+      ]),
+      balanced: transcriptWith([assistantText('Looking at PROD-1234 now.')]),
+      strict: transcriptWith([assistantText('Looking at PROD-1234 now.')]),
+    };
+    for (const level of ['loose', 'balanced', 'strict']) {
+      writeProfile(home, level);
+      const sid = `${sessionId}-bridge-${level}`;
+      writeFileSync(transcriptPath, transcriptByLevel[level]);
+      writeLastCaptureAt(dir, Date.now());
+      const result = runHook({ sessionId: sid, transcriptPath, cwd: dir, home });
+      try {
+        assert.equal(result.status, 0, `${level}: bridge must suppress the nag`);
       } finally {
         try { rmSync(statePath(sid)); } catch { /* fine */ }
       }
