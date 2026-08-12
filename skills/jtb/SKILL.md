@@ -213,11 +213,21 @@ If the TicketBrief includes a `## Recall` section, those are the user's own save
 
 ### When to capture a note
 
+If the TicketBrief includes a `**Recall capture:**` line, calibrate against the matching level below. No such line (or `balanced`) uses the **Balanced** rule as-is — this is the default and requires no adjustment.
+
 Capture only when **all three** hold:
 
 1. **Not already written down** — not in the ticket description or comments, not already in an existing `## Recall` note shown in this brief.
 2. **Generalizes beyond this one diff** — useful to a future session on this ticket, this project, or a similar bug class. A fact only relevant to the exact change you just made doesn't qualify.
 3. **Cost real effort to discover** — required debugging, reading multiple files, trial and error, or a decision with a non-obvious rationale. Something obvious from reading the code once doesn't qualify.
+
+Point 1 and the secret/credential exclusion below are correctness checks, not judgment calls — they hold at every strictness level, no exceptions.
+
+**Balanced (default):** the three-part rule above, applied as written.
+
+**Loose (`**Recall capture:** loose`):** raise the bar on points 2 and 3 — only capture when the effort was clearly substantial (real debugging or multiple files, not "read one file twice") and the generalization is concrete, not speculative ("useful to a similar bug class" needs a plausible next occurrence, not just theoretical reuse). When genuinely borderline, skip it.
+
+**Strict (`**Recall capture:** strict`):** lower the bar on points 2 and 3 — capture when in doubt. A decision with a rationale that took even a moment of back-and-forth to land on, or a fact that plausibly helps a future session even if the connection isn't certain, qualifies. Still never capture something that fails point 1, or that's shaped like a credential/API key — the tool rejects those at save time regardless.
 
 Example that qualifies: an undocumented schema quirk found only by reading raw DDL (e.g. a table has no `name` column, it's on a related table instead). Example that doesn't: a one-off typo fix with no broader lesson.
 
