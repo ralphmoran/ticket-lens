@@ -36,6 +36,15 @@ function writeProfile(home, recallStrictness) {
   writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({ profiles: { test: profile }, default: 'test' }));
 }
 
+// Two profiles with distinct ticketPrefixes and distinct recallStrictness —
+// used to prove the Stop hook resolves the SAME profile as the ticket key
+// mentioned in the transcript, not just cwd/default (backlog #12).
+function writeMultiProfile(home, { defaultName, profiles }) {
+  const configDir = join(home, '.ticketlens');
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(join(configDir, 'profiles.json'), JSON.stringify({ profiles, default: defaultName }));
+}
+
 describe('recall-nudge-stop hook (subprocess)', () => {
   let dir, home, transcriptPath, sessionId;
 
@@ -141,5 +150,42 @@ describe('recall-nudge-stop hook (subprocess)', () => {
         try { rmSync(statePath(sid)); } catch { /* fine */ }
       }
     }
+  });
+
+  describe('multi-profile resolution by matched ticket key (backlog #12)', () => {
+    it('nags per the NON-default profile matching the transcript\'s ticket key, not the default\'s strictness', () => {
+      // Default profile ('alpha') is 'loose' — ticket-work-only would NOT nag under loose.
+      // But the transcript's ticket key (BETA-42) belongs to 'beta', which is 'strict'
+      // (same trigger as balanced: ticket work with no note/flag DOES nag). Before the
+      // fix, the hook always resolved 'alpha' (the default) since it never saw the
+      // ticket key — this proves it now resolves 'beta' instead.
+      writeMultiProfile(home, {
+        defaultName: 'alpha',
+        profiles: {
+          alpha: { baseUrl: 'https://a.atlassian.net', ticketPrefixes: ['ALPHA'], recallStrictness: 'loose' },
+          beta: { baseUrl: 'https://b.atlassian.net', ticketPrefixes: ['BETA'], recallStrictness: 'strict' },
+        },
+      });
+      writeFileSync(transcriptPath, transcriptWith([assistantText('Looking at BETA-42 now.')]));
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+      assert.equal(result.status, 2);
+    });
+
+    it('suppresses the nag per the NON-default profile\'s looser strictness, not the default\'s stricter one', () => {
+      // Default profile ('alpha') is 'strict' — ticket-work-only WOULD nag under strict.
+      // The transcript's ticket key (BETA-42) belongs to 'beta', which is 'loose'
+      // (ticket-work-only, no flag, does NOT nag under loose). Before the fix, the hook
+      // always resolved 'alpha' (the default) and would have wrongly nagged.
+      writeMultiProfile(home, {
+        defaultName: 'alpha',
+        profiles: {
+          alpha: { baseUrl: 'https://a.atlassian.net', ticketPrefixes: ['ALPHA'], recallStrictness: 'strict' },
+          beta: { baseUrl: 'https://b.atlassian.net', ticketPrefixes: ['BETA'], recallStrictness: 'loose' },
+        },
+      });
+      writeFileSync(transcriptPath, transcriptWith([assistantText('Looking at BETA-42 now.')]));
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+      assert.equal(result.status, 0);
+    });
   });
 });

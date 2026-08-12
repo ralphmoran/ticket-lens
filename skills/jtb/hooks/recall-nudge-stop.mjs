@@ -21,14 +21,13 @@
  * profile's recallStrictness — see recall-nudge-lib.mjs's shouldNag() doc
  * comment for the calibration and why strict doesn't widen this further.
  *
- * Known limitation: resolveProfile(null, { cwd }) below has no ticket key to
- * match against, so it falls through to cwd/projectPaths then the default
- * profile — unlike the brief-injection lever (resolveConnection(ticketKey, ...)
- * in profile-resolver.mjs), which resolves by ticket-key prefix when one is
- * available. For a multi-profile user these two levers can genuinely resolve
- * different profiles in the same session, so the recallStrictness setting
- * doesn't reliably reweight both together outside the single-profile case.
- * Not fixed here — see design spec §6 for the follow-up.
+ * resolveProfile() below is given scanTranscript()'s matched ticket key (not
+ * null), so it resolves by ticket-key prefix the same way the brief-injection
+ * lever (resolveConnection(ticketKey, ...) in profile-resolver.mjs) does —
+ * both levers now agree on which profile's recallStrictness applies for a
+ * multi-profile user. When no ticket key was seen, or it matches no profile's
+ * ticketPrefixes, this falls through to cwd/projectPaths then the default
+ * profile, same as before (backlog #12, design spec §6).
  */
 
 import { readStdinJson, readState, writeState, scanTranscript, hasRecentCapture, writeLastCaptureAt, shouldNag } from './recall-nudge-lib.mjs';
@@ -41,7 +40,7 @@ const cwd = input?.cwd ?? process.cwd();
 
 if (!sessionId || !transcriptPath) process.exit(0);
 
-const { sawTicketKey, sawRecallFlag, sawNoteAdd } = scanTranscript(transcriptPath);
+const { sawTicketKey, sawRecallFlag, sawNoteAdd, ticketKey } = scanTranscript(transcriptPath);
 
 // Refreshed on every check, independent of the once-per-session gate below —
 // a capture that happens AFTER this session already nagged once must still
@@ -51,7 +50,7 @@ if (sawNoteAdd) writeLastCaptureAt(cwd, Date.now());
 const state = readState(sessionId);
 if (state.stopChecked) process.exit(0); // already asked once this session — respect the answer
 
-const profile = resolveProfile(null, { cwd });
+const profile = resolveProfile(ticketKey, { cwd });
 const recallStrictness = normalizeRecallStrictness(profile?.recallStrictness);
 
 if (!shouldNag({ sawTicketKey, sawRecallFlag, sawNoteAdd, recallStrictness })) {

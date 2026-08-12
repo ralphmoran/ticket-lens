@@ -106,6 +106,28 @@ describe('scanTranscript', () => {
     ]);
     assert.equal(scanTranscript(p).sawNoteAdd, true);
   });
+
+  it('ticketKey is null when no ticket key ever appears', () => {
+    const p = writeTranscript([assistantEntry([text('Just chatting, no ticket work.')])]);
+    const result = scanTranscript(p);
+    assert.equal(result.sawTicketKey, false);
+    assert.equal(result.ticketKey, null);
+  });
+
+  it('ticketKey captures the matched text, not just the boolean', () => {
+    const p = writeTranscript([assistantEntry([text('Looking at PROD-1234 now.')])]);
+    const result = scanTranscript(p);
+    assert.equal(result.sawTicketKey, true);
+    assert.equal(result.ticketKey, 'PROD-1234');
+  });
+
+  it('ticketKey is the FIRST match when a session mentions more than one ticket', () => {
+    const p = writeTranscript([
+      assistantEntry([text('Looking at PROD-1234 now.')]),
+      assistantEntry([text('Also touching OTHER-99 while I\'m here.')]),
+    ]);
+    assert.equal(scanTranscript(p).ticketKey, 'PROD-1234');
+  });
 });
 
 describe('shouldNag (Stop hook trigger decision)', () => {

@@ -118,9 +118,17 @@ export function hasRecentCapture(cwd, now = Date.now()) {
  * tool — for note-add. Missing the MCP path here was a real bug: it made
  * the Stop hook nudge even after a note was genuinely captured via MCP,
  * since only the Bash/CLI form was ever recognized.
+ *
+ * `ticketKey` carries the FIRST matched ticket key's literal text (or
+ * `null`), so callers can resolve a profile by ticket-key prefix the same
+ * way `resolveConnection()` does — see recall-nudge-stop.mjs. First match,
+ * not last: the primary ticket a session is about is normally established
+ * early, and picking one deterministic match keeps this function decoupled
+ * from profiles.json (it stays a pure transcript reader; profile lookup
+ * and its own fallback chain belong entirely to resolveProfile()).
  */
 export function scanTranscript(transcriptPath) {
-  const result = { sawTicketKey: false, sawRecallFlag: false, sawNoteAdd: false };
+  const result = { sawTicketKey: false, sawRecallFlag: false, sawNoteAdd: false, ticketKey: null };
   let lines;
   try {
     lines = fs.readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
@@ -136,10 +144,22 @@ export function scanTranscript(transcriptPath) {
       continue;
     }
 
-    // Ticket-key detection stays broad (whole entry, any role) — it's only
-    // the weaker "did ticket work happen at all" signal, and a rare false
-    // positive here just means an extra harmless once-per-session check.
-    if (TICKET_KEY_RE.test(JSON.stringify(entry))) result.sawTicketKey = true;
+    // Ticket-key detection stays broad (whole entry, any role) — for
+    // sawTicketKey alone, it's only the weaker "did ticket work happen at
+    // all" signal, so a rare false positive just means an extra harmless
+    // once-per-session check. The captured ticketKey text carries a bit
+    // more weight (it also selects which profile's recallStrictness
+    // applies, see recall-nudge-stop.mjs), but the ceiling is still just
+    // "the wrong local settings value governs one Stop-hook decision" — no
+    // credentials or ticket data are read using this key, so a false
+    // positive here stays low-consequence, not narrowed further for now.
+    if (!result.ticketKey) {
+      const match = TICKET_KEY_RE.exec(JSON.stringify(entry));
+      if (match) {
+        result.sawTicketKey = true;
+        result.ticketKey = match[0];
+      }
+    }
 
     if (entry.type !== 'assistant') continue;
     const blocks = entry.message?.content;
