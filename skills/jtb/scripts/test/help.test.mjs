@@ -438,6 +438,14 @@ describe('printMcpHelp — ticket tools', () => {
     assert.match(out, /3-checks\/month/);
   });
 
+  it('documents review, standup, and pr with their tier notes', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /\breview\b/);
+    assert.match(out, /\bstandup\b/);
+    assert.match(out, /\bpr\b/);
+    assert.match(out, /standup.*Free/s);
+  });
+
   it('documents ticket_comment, ticket_transition, ticket_assign, ticket_duplicates, ticket_link, ticket_update, and ticket_create alongside recall_add/recall_search', () => {
     const out = captureHelp(printMcpHelp);
     assert.match(out, /recall_add/);

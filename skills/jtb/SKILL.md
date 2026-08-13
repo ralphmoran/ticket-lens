@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.36.0 -->
+<!-- jtb-skill-version: 0.37.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -124,6 +124,63 @@ Where `$EXTRA_ARGS` are any flags passed (e.g. `--json`, `--plain`).
 Requires a Team license and at least one teammate in the same group. Compares your current branch's changed files against teammates' recent branches. Outputs a collision report or an empty-state message.
 
 Display the script's stdout directly. No plan mode. Stop here.
+
+---
+
+### Standup subcommand
+
+If the first argument is `standup`:
+
+Run:
+```bash
+ticketlens standup $EXTRA_ARGS
+```
+
+Where `$EXTRA_ARGS` are any flags passed (e.g. `--since=48 --format=pr --profile=acme`).
+
+Summarizes recent git commits grouped by linked ticket key. `--since=N` (hours, default 24) or a git-compatible date expression (`--since="3 days ago"`); `--format=standup` (default) renders a per-ticket standup update, `--format=pr` renders the same grouped commits as PR-body-style markdown. Read-only, fully free tier — no license gate on any option.
+
+Display the script's stdout directly. No plan mode. Stop here.
+
+If this harness has TicketLens's MCP server configured (a tool named `standup` — often shown as `mcp__ticketlens__standup` — visible in your tool list), prefer it over the bash form: same output, no license gate, no shell command to construct. It accepts `since`/`format`/`profile`.
+
+---
+
+### PR subcommand
+
+If the first argument is `pr`:
+
+Run:
+```bash
+ticketlens pr PROJ-123 $EXTRA_ARGS
+```
+
+Where `$EXTRA_ARGS` are any flags passed (e.g. `--profile=acme`). Requires a ticket key as the first positional argument.
+
+Assembles a ready-to-paste PR description: what changed (from commits linked to the ticket), linked tickets, and — if the ticket has acceptance criteria — a requirements-coverage section. Read-only. The requirements-coverage section reuses the same Free-tier 3-checks/month counter as `--compliance`/`ticketlens compliance` — running `pr` on a ticket with acceptance criteria counts against that shared monthly limit; Pro removes the cap.
+
+Display the script's stdout directly. No plan mode. Stop here.
+
+If this harness has TicketLens's MCP server configured (a tool named `pr` — often shown as `mcp__ticketlens__pr` — visible in your tool list), prefer it over the bash form: same output, same shared compliance-counter caveat, no shell command to construct. It accepts `ticket`/`profile`.
+
+---
+
+### Review subcommand
+
+If the first argument is `review`:
+
+Run:
+```bash
+ticketlens review $EXTRA_ARGS
+```
+
+Where `$EXTRA_ARGS` are any flags passed (e.g. `--base=develop --profile=acme`). No required positional argument — operates on the current branch.
+
+Assembles PR review context from the current git branch: changed files, linked-ticket summaries from commits/branch name, and (Pro) a requirements-coverage / review-focus section extracted from the diff against acceptance criteria. `--base=BRANCH` (or its alias `--branch=BRANCH`) sets the diff base, auto-detecting `main`/`master`/`develop` when omitted. Read-only — never modifies the tracker or the repo. Free tier gets branch info, changed files, and ticket context; Pro adds the requirements-coverage and review-focus sections — same split as `--compliance`.
+
+Display the script's stdout directly. No plan mode. Stop here.
+
+If this harness has TicketLens's MCP server configured (a tool named `review` — often shown as `mcp__ticketlens__review` — visible in your tool list), prefer it over the bash form: same tier gate (Free: branch/files/tickets, Pro: +coverage/focus), no shell command to construct. It accepts `base`/`branch`/`profile` — `base` and `branch` are aliases; if both are given, `base` wins.
 
 ---
 

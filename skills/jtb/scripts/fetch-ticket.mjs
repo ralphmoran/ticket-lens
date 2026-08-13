@@ -336,17 +336,20 @@ async function countRecallInjection(recallNotes, configDir, opts) {
   }
 }
 
-function makeSpinner(s) {
-  // setInterval won't fire while spawnSync blocks the event loop, so we draw
-  // synchronously on update() and only use setInterval during async fetch phases.
-  if (!process.stderr.isTTY) return { update: () => {}, startAnim: () => {}, done: () => {} };
+// setInterval won't fire while spawnSync blocks the event loop, so we draw
+// synchronously on update() and only use setInterval during async fetch phases.
+// Both callers pass run()'s errStream, so the spinner shares the same isTTY and
+// write target as everything else the command emits: the real process.stderr for
+// a CLI user, the captured printErr under MCP (where the draws must not leak).
+function makeSpinner(s, { isTTY, write }) {
+  if (!isTTY) return { update: () => {}, startAnim: () => {}, done: () => {} };
   const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
   let fi = 0, msg = '', lastW = 0, timerId = null, finished = false;
 
   const draw = () => {
     const raw = `  ${s.brand(frames[fi % frames.length])} ${s.dim(msg)}`;
     const vis = raw.replace(/\x1b\[[0-9;]*m/g, '');
-    process.stderr.write(`\r${raw}${' '.repeat(Math.max(0, lastW - vis.length))}`);
+    write(`\r${raw}${' '.repeat(Math.max(0, lastW - vis.length))}`);
     lastW = vis.length;
   };
 
@@ -360,7 +363,7 @@ function makeSpinner(s) {
       if (finished) return;
       finished = true;
       if (timerId) { clearInterval(timerId); timerId = null; }
-      process.stderr.write('\r\x1b[2K');
+      write('\r\x1b[2K');
     },
   };
 }
@@ -485,10 +488,10 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
 
   const printFn = opts.print ?? ((chunk) => process.stdout.write(chunk));
-  // Mirrors printFn above — only the bare ticket-fetch path (from `const ticketKey =
-  // args.find(...)` onward) uses this; pr/ledger/compliance/review/standup/install-hooks
-  // above still write directly to the real process.stderr (out of scope for this change,
-  // each gets the same treatment when its own MCP tool is built).
+  // Mirrors printFn above — the bare ticket-fetch, compliance, pr, review, and standup
+  // paths all use this now (each has an MCP tool). `ledger` above still writes directly
+  // to the real process.stderr (no MCP tool yet); `install-hooks` is CLI-only and never
+  // gets one.
   const printErrFn = opts.printErr ?? ((chunk) => process.stderr.write(chunk));
   // Reused on every recursive self-call in the bare-fetch path (profile-prompt retries)
   // so an injected print/printErr survives the retry instead of silently reverting to
@@ -549,12 +552,12 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const { assemblePr } = await import('./lib/pr-assembler.mjs');
     const ticketKeyArg = args[1];
     if (!ticketKeyArg) {
-      process.stderr.write('Error: "pr" requires a ticket key. Usage: ticketlens pr PROJ-123\n');
+      printErrFn('Error: "pr" requires a ticket key. Usage: ticketlens pr PROJ-123\n');
       process.exitCode = 1;
       return;
     }
     if (!TICKET_KEY_PATTERN.test(ticketKeyArg)) {
-      process.stderr.write(`Error: "${ticketKeyArg}" is not a valid ticket key. Expected format: PROJ-123\n`);
+      printErrFn(`Error: "${ticketKeyArg}" is not a valid ticket key. Expected format: PROJ-123\n`);
       process.exitCode = 1;
       return;
     }
@@ -568,27 +571,33 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       configDir: resolvedConfigDir,
       profileName: profileNamePr,
       cwd: process.cwd(),
-      onWarning: (w) => process.stderr.write(w + '\n'),
+      onWarning: (w) => printErrFn(w + '\n'),
       onProfileNotFound: () => {},
     });
 
     const hasAuthPr = connPr.pat || (connPr.email && connPr.apiToken);
     if (!connPr.baseUrl || !hasAuthPr) {
-      process.stderr.write('Error: No Jira credentials found. Run \'ticketlens init\' or set JIRA_BASE_URL + JIRA_API_TOKEN.\n');
+      printErrFn('Error: No Jira credentials found. Run \'ticketlens init\' or set JIRA_BASE_URL + JIRA_API_TOKEN.\n');
       process.exitCode = 1;
       return;
     }
 
     const adapterPr = resolveAdapter(connPr, { fetcher });
+    const complianceRunnerPr = opts.runComplianceCheck ?? runComplianceCheck;
 
     try {
       const md = await assemblePr(ticketKeyArg, {
         configDir: resolvedConfigDir,
         fetchTicketFn: (key, fOpts = {}) => adapterPr.fetchTicket(key, fOpts),
+        // assemblePr's own runComplianceCheckFn default has no stream override
+        // (compliance-checker.mjs's `stream = process.stderr`), so the Pro-gate
+        // upgrade prompt would leak to real stderr unless threaded here — same
+        // treatment as the compliance dispatch block above (`stream: errStream`).
+        runComplianceCheckFn: (o) => complianceRunnerPr({ ...o, stream: errStream }),
       });
       printFn(md + '\n');
     } catch (err) {
-      process.stderr.write(`Error: ${err.message}\n`);
+      printErrFn(`Error: ${err.message}\n`);
       process.exitCode = 1;
     }
     return;
@@ -710,7 +719,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const execFn = opts.execFn ?? spawnSync;
     const cwd = process.cwd();
 
-    const sErr = createStyler({ isTTY: process.stderr.isTTY });
+    const sErr = createStyler({ isTTY });
 
     // Validate flags before any git work
     const reviewFlags = args.slice(1);
@@ -721,28 +730,28 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       // Detect --profile-NAME typo (dash instead of =)
       const profileDashM = flag.match(/^--profile-(.+)$/);
       if (profileDashM) {
-        process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--profile=${profileDashM[1]}`)}?\n`);
+        printErrFn(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--profile=${profileDashM[1]}`)}?\n`);
         process.exitCode = 1;
         return;
       }
       const baseDashM = flag.match(/^--base-(.+)$/);
       if (baseDashM) {
-        process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--base=${baseDashM[1]}`)}?\n`);
+        printErrFn(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--base=${baseDashM[1]}`)}?\n`);
         process.exitCode = 1;
         return;
       }
       const branchDashM = flag.match(/^--branch-(.+)$/);
       if (branchDashM) {
-        process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--branch=${branchDashM[1]}`)}?\n`);
+        printErrFn(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--branch=${branchDashM[1]}`)}?\n`);
         process.exitCode = 1;
         return;
       }
-      process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Usage: ${sErr.cyan('ticketlens review [--base=BRANCH] [--branch=BRANCH] [--profile=NAME]')}\n`);
+      printErrFn(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Usage: ${sErr.cyan('ticketlens review [--base=BRANCH] [--branch=BRANCH] [--profile=NAME]')}\n`);
       process.exitCode = 1;
       return;
     }
 
-    const spinner = makeSpinner(sErr);
+    const spinner = makeSpinner(sErr, errStream);
     const stderrNotes = [];
 
     // Resolve base branch: --base=BRANCH or auto-detect main/master/develop
@@ -756,7 +765,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const verifyR = execFn('git', ['rev-parse', '--verify', baseBranch], { encoding: 'utf8', cwd, timeout: 5_000 });
       if (verifyR.status !== 0) {
         spinner.done();
-        process.stderr.write(`${sErr.red('✖')} Branch "${baseBranch}" not found in this repository.\n`);
+        printErrFn(`${sErr.red('✖')} Branch "${baseBranch}" not found in this repository.\n`);
         process.exitCode = 1;
         return;
       }
@@ -794,10 +803,10 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       const profiles = loadProfiles(resolvedConfigDir);
       if (!profiles?.profiles?.[profileNameR]) {
         spinner.done();
-        process.stderr.write(`${sErr.red('✖')} Profile "${profileNameR}" not found.\n`);
+        printErrFn(`${sErr.red('✖')} Profile "${profileNameR}" not found.\n`);
         const names = Object.keys(profiles?.profiles ?? {});
-        if (names.length > 0) process.stderr.write(`  ${sErr.dim('Available:')} ${names.join(', ')}\n`);
-        else process.stderr.write(`  Run ${sErr.cyan('ticketlens init')} to configure a profile.\n`);
+        if (names.length > 0) printErrFn(`  ${sErr.dim('Available:')} ${names.join(', ')}\n`);
+        else printErrFn(`  Run ${sErr.cyan('ticketlens init')} to configure a profile.\n`);
         process.exitCode = 1;
         return;
       }
@@ -839,8 +848,8 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     }
 
     spinner.done();
-    for (const note of stderrNotes) process.stderr.write(note + '\n');
-    if (stderrNotes.length > 0) process.stderr.write('\n');
+    for (const note of stderrNotes) printErrFn(note + '\n');
+    if (stderrNotes.length > 0) printErrFn('\n');
 
     const isLic = opts.isLicensedFn ?? ((tier) => isLicensed(tier, resolvedConfigDir));
     const assembleFn = opts.assemblePrReviewFn ?? assemblePrReview;
@@ -867,7 +876,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const resolvedConfigDir = configDir ?? (await import('./lib/config.mjs')).DEFAULT_CONFIG_DIR;
     const execFn = opts.execFn ?? spawnSync;
     const cwd = process.cwd();
-    const sErr = createStyler({ isTTY: process.stderr.isTTY });
+    const sErr = createStyler({ isTTY });
 
     const standupFlags = args.slice(1);
 
@@ -878,29 +887,29 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
       const sinceDashM = flag.match(/^--since-(.+)$/);
       if (sinceDashM) {
-        process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--since=${sinceDashM[1]}`)}?\n`);
+        printErrFn(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--since=${sinceDashM[1]}`)}?\n`);
         process.exitCode = 1;
         return;
       }
       const formatDashM = flag.match(/^--format-(.+)$/);
       if (formatDashM) {
-        process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--format=${formatDashM[1]}`)}?\n`);
+        printErrFn(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--format=${formatDashM[1]}`)}?\n`);
         process.exitCode = 1;
         return;
       }
       const profileDashM = flag.match(/^--profile-(.+)$/);
       if (profileDashM) {
-        process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--profile=${profileDashM[1]}`)}?\n`);
+        printErrFn(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Did you mean ${sErr.cyan(`--profile=${profileDashM[1]}`)}?\n`);
         process.exitCode = 1;
         return;
       }
       const formatValueM = flag.match(/^--format=(.+)$/);
       if (formatValueM) {
-        process.stderr.write(`${sErr.red('✖')} Invalid --format value: "${formatValueM[1]}". Expected: standup or pr\n`);
+        printErrFn(`${sErr.red('✖')} Invalid --format value: "${formatValueM[1]}". Expected: standup or pr\n`);
         process.exitCode = 1;
         return;
       }
-      process.stderr.write(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Usage: ${sErr.cyan('ticketlens standup [--since=N] [--format=standup|pr] [--profile=NAME]')}\n`);
+      printErrFn(`${sErr.red('✖')} Unknown flag: ${sErr.bold(flag)}\n  Usage: ${sErr.cyan('ticketlens standup [--since=N] [--format=standup|pr] [--profile=NAME]')}\n`);
       process.exitCode = 1;
       return;
     }
@@ -921,16 +930,16 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     if (profileNameS) {
       const profiles = loadProfiles(resolvedConfigDir);
       if (!profiles?.profiles?.[profileNameS]) {
-        process.stderr.write(`${sErr.red('✖')} Profile "${profileNameS}" not found.\n`);
+        printErrFn(`${sErr.red('✖')} Profile "${profileNameS}" not found.\n`);
         const names = Object.keys(profiles?.profiles ?? {});
-        if (names.length > 0) process.stderr.write(`  ${sErr.dim('Available:')} ${names.join(', ')}\n`);
-        else process.stderr.write(`  Run ${sErr.cyan('ticketlens init')} to configure a profile.\n`);
+        if (names.length > 0) printErrFn(`  ${sErr.dim('Available:')} ${names.join(', ')}\n`);
+        else printErrFn(`  Run ${sErr.cyan('ticketlens init')} to configure a profile.\n`);
         process.exitCode = 1;
         return;
       }
     }
 
-    const spinner = makeSpinner(sErr);
+    const spinner = makeSpinner(sErr, errStream);
     const stderrNotes = [];
 
     spinner.update('Scanning git log…');
@@ -977,8 +986,8 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     }
 
     spinner.done();
-    for (const note of stderrNotes) process.stderr.write(note + '\n');
-    if (stderrNotes.length > 0) process.stderr.write('\n');
+    for (const note of stderrNotes) printErrFn(note + '\n');
+    if (stderrNotes.length > 0) printErrFn('\n');
 
     const isPlain = standupFlags.includes('--plain');
     const assembleStandupFn = opts.assembleStandupFn ?? assembleStandup;

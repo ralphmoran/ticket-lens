@@ -74,7 +74,7 @@ describe('mcp-server', () => {
     it('returns exactly fetch, recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const names = messages[0].result.tools.map((t) => t.name).sort();
-      assert.deepEqual(names, ['compliance', 'doctor', 'fetch', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
+      assert.deepEqual(names, ['compliance', 'doctor', 'fetch', 'pr', 'recall_add', 'recall_search', 'review', 'standup', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
       for (const tool of messages[0].result.tools) {
         assert.equal(tool.inputSchema.type, 'object');
         assert.ok(tool.inputSchema.properties, `${tool.name} must declare input properties`);
@@ -258,6 +258,155 @@ describe('mcp-server', () => {
       process.exitCode = undefined;
       assert.equal(messages[0].result.isError, true);
       assert.match(messages[0].result.content[0].text, /requires Pro/);
+    });
+  });
+
+  describe('tools/call review', () => {
+    it('happy path: forwards base/profile as a review dispatch and returns a non-error result with the markdown', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('## PR Review Context\n\n### Changed files (2)\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'review', arguments: { base: 'develop', profile: 'work' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('PR Review Context'));
+      assert.deepEqual(seen, ['review', '--base=develop', '--profile=work']);
+    });
+
+    it('branch is an alias for base — forwarded as --branch= when base is omitted', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => { seen = cmdArgs; opts.print('## PR Review Context\n'); };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'review', arguments: { branch: 'develop' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.deepEqual(seen, ['review', '--branch=develop']);
+    });
+
+    it('base wins when both base and branch are given', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => { seen = cmdArgs; opts.print('## PR Review Context\n'); };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'review', arguments: { base: 'develop', branch: 'main' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.deepEqual(seen, ['review', '--base=develop']);
+    });
+
+    it('omits every flag when no args given, forwarding only the subcommand', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => { seen = cmdArgs; opts.print('## PR Review Context\n'); };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'review', arguments: {} } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.deepEqual(seen, ['review']);
+    });
+
+    it('a failure (print never receives the markdown) maps to a JSON-RPC tool error carrying the printErr message', async () => {
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        opts.printErr('✖ Profile "nonexistent" not found.\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'review', arguments: { profile: 'nonexistent' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /not found/);
+    });
+  });
+
+  describe('tools/call standup', () => {
+    it('happy path: forwards since/format/profile and returns a non-error result with the markdown', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('## Standup — Mon\n\n- PROJ-1: add login\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'standup', arguments: { since: '48', format: 'pr', profile: 'work' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('add login'));
+      assert.deepEqual(seen, ['standup', '--since=48', '--format=pr', '--profile=work']);
+    });
+
+    it('omits every flag when no args given, forwarding only the subcommand', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => { seen = cmdArgs; opts.print('## Standup\n'); };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'standup', arguments: {} } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.deepEqual(seen, ['standup']);
+    });
+
+    it('a failure (print never receives the markdown) maps to a JSON-RPC tool error carrying the printErr message', async () => {
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        opts.printErr('✖ Invalid --format value: "bogus". Expected: standup or pr\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'standup', arguments: { format: 'bogus' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /Invalid --format/);
+    });
+  });
+
+  describe('tools/call pr', () => {
+    it('happy path: forwards ticket/profile as a pr dispatch and returns a non-error result with the markdown', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('# PROJ-1\n\n### What changed\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'pr', arguments: { ticket: 'PROJ-1', profile: 'work' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('What changed'));
+      assert.deepEqual(seen, ['pr', 'PROJ-1', '--profile=work']);
+    });
+
+    it('omits --profile when not given', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => { seen = cmdArgs; opts.print('brief\n'); };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'pr', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.deepEqual(seen, ['pr', 'PROJ-1']);
+    });
+
+    it('missing ticket returns a JSON-RPC tool error without ever calling the real function', async () => {
+      let called = false;
+      const runFetchTicketFn = async () => { called = true; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'pr', arguments: {} } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(called, false);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /ticket/i);
+    });
+
+    it('a failure (print never receives the markdown) maps to a JSON-RPC tool error carrying the printErr message', async () => {
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        opts.printErr('Error: No Jira credentials found. Run \'ticketlens init\' or set JIRA_BASE_URL + JIRA_API_TOKEN.\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'pr', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /No Jira credentials/);
     });
   });
 
@@ -1100,7 +1249,7 @@ describe('mcp-server', () => {
       assert.equal(messages.length, 2, 'both the parse-error response and the valid tools/list response must appear');
       assert.ok(messages[0].error, 'first message must be a JSON-RPC error for the malformed line');
       assert.equal(messages[1].id, 2);
-      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['compliance', 'doctor', 'fetch', 'recall_add', 'recall_search', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
+      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['compliance', 'doctor', 'fetch', 'pr', 'recall_add', 'recall_search', 'review', 'standup', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
     });
 
     it('a syntactically-valid-but-non-object JSON line (e.g. bare "null") does not crash the server or drop later messages', async () => {

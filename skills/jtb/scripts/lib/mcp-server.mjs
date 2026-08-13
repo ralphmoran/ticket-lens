@@ -79,6 +79,42 @@ const TOOLS = [
     },
   },
   {
+    name: 'review',
+    description: 'Assemble PR review context from the current git branch — changed files, linked-ticket summaries, and (Pro) a requirements-coverage / review-focus section extracted from the diff against acceptance criteria. Read-only; never modifies the tracker or the repo. Free tier gets branch info, changed files, and ticket context; TicketLens Pro adds the requirements-coverage and review-focus sections — same split as the `compliance` tool.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        base: { type: 'string', description: 'Base branch to diff against. Auto-detects main/master/develop when omitted. Alias of `branch` — if both are given, `base` wins.' },
+        branch: { type: 'string', description: 'Alias for `base` — same effect, provided for parity with the CLI\'s `--branch=` flag.' },
+        profile: { type: 'string', description: 'Connection profile to target, overriding folder-based inference and the default profile.' },
+      },
+    },
+  },
+  {
+    name: 'standup',
+    description: 'Summarize recent git commits grouped by linked ticket — a standup update or, with format:"pr", PR-body-style formatting. Read-only, fully free tier — no license gate on any option.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        since: { type: 'string', description: 'How far back to scan — an integer number of hours ("24") or a git-compatible date expression ("3 days ago"). Defaults to 24 hours.' },
+        format: { type: 'string', enum: ['standup', 'pr'], description: 'Output shape: "standup" (default) groups commits under a per-ticket standup update; "pr" renders the same grouped commits as PR-body-style markdown.' },
+        profile: { type: 'string', description: 'Connection profile to target, overriding folder-based inference and the default profile.' },
+      },
+    },
+  },
+  {
+    name: 'pr',
+    description: 'Assemble a ready-to-paste PR description for a ticket — what changed (from linked commits), linked tickets, and (if the ticket has acceptance criteria) a requirements-coverage section. Read-only. The requirements-coverage section reuses the same Free-tier 3-checks/month counter as the `compliance` tool — calling `pr` on a ticket with acceptance criteria counts against that shared monthly limit; TicketLens Pro removes the cap.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ticket: { type: 'string', description: 'Ticket key, e.g. PROJ-123.' },
+        profile: { type: 'string', description: 'Connection profile to target, overriding folder-based inference and the default profile.' },
+      },
+      required: ['ticket'],
+    },
+  },
+  {
     name: 'doctor',
     description: 'Diagnose common TicketLens problems: profile configuration, license freshness, tracker connectivity, attachment cache health, MCP registration, and the Recall sync queue. Always returns structured JSON. Free tier, fully unrestricted — including fix.',
     inputSchema: {
@@ -249,8 +285,8 @@ function buildFetchArgs({ ticket, profile, depth }) {
 
 /**
  * Shared by every dispatch that goes through fetch-ticket.mjs's `run()`
- * (currently `fetch` and `compliance` — `compliance` is just another
- * subcommand of that same function). `run()` has no {ok} return value
+ * (currently `fetch`, `compliance`, `review`, `standup`, and `pr` — all but
+ * `fetch` are subcommands of that same function). `run()` has no {ok} return value
  * (unlike every other wrapped function) — failure is signaled by mutating
  * process.exitCode, which is unsafe to read in a long-lived server (one
  * failed call would poison the whole process's exit code forever). Success
@@ -369,6 +405,51 @@ async function callCompliance(args, deps) {
     return { isError: true, content: [{ type: 'text', text: 'Missing required argument: ticket' }] };
   }
   return callFetchTicketRun(buildComplianceArgs, args, deps, 'compliance check failed');
+}
+
+/**
+ * `review`/`standup`/`pr` are all subcommands of the same fetch-ticket.mjs
+ * `run()` that `callFetch`/`callCompliance` already wrap — reuse
+ * `runFetchTicketFn`, no new dependency. Each subcommand's error/progress
+ * paths (including makeSpinner's writes) were threaded through opts.printErr
+ * as part of adding these tools — see fetch-ticket.mjs's `review`/`standup`/
+ * `pr` dispatch blocks and makeSpinner's injectable {isTTY, write}.
+ */
+function buildReviewArgs({ base, branch, profile }) {
+  const args = ['review'];
+  if (base) args.push(`--base=${base}`);
+  else if (branch) args.push(`--branch=${branch}`);
+  if (profile) args.push(`--profile=${profile}`);
+  return args;
+}
+
+async function callReview(args, deps) {
+  return callFetchTicketRun(buildReviewArgs, args, deps, 'review failed');
+}
+
+function buildStandupArgs({ since, format, profile }) {
+  const args = ['standup'];
+  if (since !== undefined) args.push(`--since=${since}`);
+  if (format) args.push(`--format=${format}`);
+  if (profile) args.push(`--profile=${profile}`);
+  return args;
+}
+
+async function callStandup(args, deps) {
+  return callFetchTicketRun(buildStandupArgs, args, deps, 'standup failed');
+}
+
+function buildPrArgs({ ticket, profile }) {
+  const args = ['pr', ticket];
+  if (profile) args.push(`--profile=${profile}`);
+  return args;
+}
+
+async function callPr(args, deps) {
+  if (!args.ticket) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: ticket' }] };
+  }
+  return callFetchTicketRun(buildPrArgs, args, deps, 'pr failed');
 }
 
 function buildDoctorArgs({ fix, profile }) {
@@ -597,6 +678,9 @@ async function handleToolsCall(params, deps) {
   if (name === 'fetch') return callFetch(args, deps);
   if (name === 'triage') return callTriage(args, deps);
   if (name === 'compliance') return callCompliance(args, deps);
+  if (name === 'review') return callReview(args, deps);
+  if (name === 'standup') return callStandup(args, deps);
+  if (name === 'pr') return callPr(args, deps);
   if (name === 'doctor') return callDoctor(args, deps);
   if (name === 'recall_add') return callRecallAdd(args, deps);
   if (name === 'recall_search') return callRecallSearch(args, deps);

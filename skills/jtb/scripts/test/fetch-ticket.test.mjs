@@ -1078,6 +1078,61 @@ describe('pr subcommand', () => {
       assert.ok(out.stdout.includes('CNV1-2'), 'output should include alphanumeric ticket key');
     } finally { out.restore(); }
   });
+
+  it('routes no-ticket-key error to injected printErr instead of real stderr', async () => {
+    const out = captureOutput();
+    const errChunks = [];
+    try {
+      await run(['pr'], { env: validEnv, fetcher: mockFetcher, configDir: NO_CONFIG, printErr: (chunk) => errChunks.push(chunk) });
+      assert.ok(errChunks.join('').includes('"pr" requires a ticket key'));
+      assert.equal(out.stderr, '', 'must not also leak to the real stderr when printErr is injected');
+    } finally { out.restore(); }
+  });
+
+  it('routes invalid-key error to injected printErr instead of real stderr', async () => {
+    const out = captureOutput();
+    const errChunks = [];
+    try {
+      await run(['pr', 'not-a-key'], { env: validEnv, fetcher: mockFetcher, configDir: NO_CONFIG, printErr: (chunk) => errChunks.push(chunk) });
+      assert.ok(errChunks.join('').includes('not a valid ticket key'));
+      assert.equal(out.stderr, '');
+    } finally { out.restore(); }
+  });
+
+  it('routes no-credentials error to injected printErr instead of real stderr', async () => {
+    const out = captureOutput();
+    const errChunks = [];
+    try {
+      await run(['pr', 'PROD-1234'], { env: {}, fetcher: mockFetcher, configDir: NO_CONFIG, printErr: (chunk) => errChunks.push(chunk) });
+      assert.ok(errChunks.join('').includes('No Jira credentials found'));
+      assert.equal(out.stderr, '');
+    } finally { out.restore(); }
+  });
+
+  it('passes an isTTY-aware stream to the internal runComplianceCheck so its Pro-gate upgrade prompt honors injected printErr, not real stderr', async () => {
+    const out = captureOutput();
+    let receivedStream;
+    const errChunks = [];
+    try {
+      await run(['pr', 'PROD-1234'], {
+        env: validEnv,
+        fetcher: mockFetcher,
+        configDir: NO_CONFIG,
+        isTTY: true,
+        print: () => {},
+        printErr: (chunk) => errChunks.push(chunk),
+        runComplianceCheck: async ({ stream }) => {
+          receivedStream = stream;
+          stream.write('upgrade prompt text\n');
+          return null;
+        },
+      });
+      assert.equal(typeof receivedStream.write, 'function');
+      assert.equal(receivedStream.isTTY, true, 'stream must carry isTTY — showUpgradePrompt reads it to decide styling');
+      assert.ok(errChunks.join('').includes('upgrade prompt text'), 'stream.write must route through the injected printErr');
+      assert.equal(out.stderr, '', 'must not also leak to the real stderr when printErr is injected');
+    } finally { out.restore(); }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1391,6 +1446,70 @@ describe('review dispatch', () => {
     }, async () => ({ ok: false }), NO_CONFIG);
     assert.deepEqual(capturedTickets, [], 'tickets should be empty when no keys found');
   });
+
+  it('routes unknown-flag error to injected printErr instead of real stderr', async () => {
+    const out = captureOutput();
+    const errChunks = [];
+    try {
+      await run(['review', '--basessss=mmm'], {
+        env: {}, configDir: NO_CONFIG, execFn: mockExecFn, print: () => {}, printErr: (chunk) => errChunks.push(chunk),
+      }, async () => ({ ok: false }));
+      assert.ok(errChunks.join('').includes('Unknown flag'));
+      assert.equal(out.stderr, '', 'must not also leak to the real stderr when printErr is injected');
+    } finally { out.restore(); process.exitCode = undefined; }
+  });
+
+  it('routes branch-not-found error to injected printErr instead of real stderr', async () => {
+    const out = captureOutput();
+    const errChunks = [];
+    const noSuchBranchExec = (cmd, args) => {
+      if (args.includes('--verify')) return { status: 1, stdout: '' };
+      return { status: 0, stdout: '' };
+    };
+    try {
+      await run(['review', '--base=ghost-branch'], {
+        env: {}, configDir: NO_CONFIG, execFn: noSuchBranchExec, print: () => {}, printErr: (chunk) => errChunks.push(chunk),
+      }, async () => ({ ok: false }));
+      const err = errChunks.join('');
+      assert.ok(err.includes('ghost-branch'), `error must name the missing branch. Got: ${err}`);
+      assert.ok(err.includes('not found'), `error must say "not found". Got: ${err}`);
+      assert.equal(out.stderr, '');
+    } finally { out.restore(); process.exitCode = undefined; }
+  });
+
+  it('routes profile-not-found error to injected printErr instead of real stderr', async () => {
+    const out = captureOutput();
+    const errChunks = [];
+    try {
+      await run(['review', '--profile=nonexistent'], {
+        env: {}, configDir: NO_CONFIG, execFn: mockExecFn, print: () => {}, printErr: (chunk) => errChunks.push(chunk),
+      }, async () => ({ ok: false }));
+      const err = errChunks.join('');
+      assert.ok(err.includes('nonexistent'), `error must name the missing profile. Got: ${err}`);
+      assert.ok(err.includes('not found'), `error must say "not found". Got: ${err}`);
+      assert.equal(out.stderr, '');
+    } finally { out.restore(); process.exitCode = undefined; }
+  });
+
+  it('spinner writes route through injected printErr, not real stderr, when isTTY:true — the makeSpinner injection fix', async () => {
+    const out = captureOutput();
+    const errChunks = [];
+    const slowExec = (cmd, args) => {
+      if (args.includes('--verify')) return { status: 0, stdout: '' };
+      if (args.includes('--show-current')) return { status: 0, stdout: 'feat/PROJ-123\n' };
+      if (args.includes('--oneline')) return { status: 0, stdout: 'abc1234 feat: PROJ-123 add login\n' };
+      if (args[0] === 'diff') return { status: 0, stdout: '' };
+      return { status: 1, stdout: '' };
+    };
+    try {
+      await run(['review'], {
+        env: {}, configDir: NO_CONFIG, execFn: slowExec, isTTY: true, print: () => {}, printErr: (chunk) => errChunks.push(chunk),
+        assemblePrReviewFn: async () => '## PR Review Context\n',
+      }, async () => ({ ok: false }));
+      assert.ok(errChunks.join('').includes('Scanning branch'), 'spinner update() text must flow through injected printErr');
+      assert.equal(out.stderr, '', 'spinner draws must not leak to the real stderr when printErr is injected');
+    } finally { out.restore(); }
+  });
 });
 
 // ─── standup dispatch ─────────────────────────────────────────────────────────
@@ -1531,6 +1650,57 @@ describe('standup dispatch', () => {
     }, async () => ({ ok: false }), NO_CONFIG);
 
     assert.equal(capturedOpts?.format, 'pr', `Expected format=pr. Got: ${capturedOpts?.format}`);
+  });
+
+  it('routes unknown-flag error to injected printErr instead of real stderr', async () => {
+    const out = captureOutput();
+    const errChunks = [];
+    try {
+      await run(['standup', '--badflags=foo'], {
+        env: {}, configDir: NO_CONFIG, execFn: mockStandupExec, print: () => {}, printErr: (chunk) => errChunks.push(chunk),
+      }, async () => ({ ok: false }));
+      assert.ok(errChunks.join('').includes('Unknown flag'));
+      assert.equal(out.stderr, '', 'must not also leak to the real stderr when printErr is injected');
+    } finally { out.restore(); process.exitCode = undefined; }
+  });
+
+  it('routes invalid-format error to injected printErr instead of real stderr', async () => {
+    const out = captureOutput();
+    const errChunks = [];
+    try {
+      await run(['standup', '--format=invalid'], {
+        env: {}, configDir: NO_CONFIG, execFn: mockStandupExec, print: () => {}, printErr: (chunk) => errChunks.push(chunk),
+      }, async () => ({ ok: false }));
+      assert.ok(errChunks.join('').includes('Invalid --format'));
+      assert.equal(out.stderr, '');
+    } finally { out.restore(); process.exitCode = undefined; }
+  });
+
+  it('routes profile-not-found error to injected printErr instead of real stderr', async () => {
+    const out = captureOutput();
+    const errChunks = [];
+    try {
+      await run(['standup', '--profile=nonexistent'], {
+        env: {}, configDir: NO_CONFIG, execFn: mockStandupExec, print: () => {}, printErr: (chunk) => errChunks.push(chunk),
+      }, async () => ({ ok: false }));
+      const err = errChunks.join('');
+      assert.ok(err.includes('nonexistent'), `error must name the missing profile. Got: ${err}`);
+      assert.ok(err.includes('not found'), `error must say "not found". Got: ${err}`);
+      assert.equal(out.stderr, '');
+    } finally { out.restore(); process.exitCode = undefined; }
+  });
+
+  it('spinner writes route through injected printErr, not real stderr, when isTTY:true — the makeSpinner injection fix', async () => {
+    const out = captureOutput();
+    const errChunks = [];
+    try {
+      await run(['standup'], {
+        env: {}, configDir: NO_CONFIG, execFn: mockStandupExec, isTTY: true, print: () => {}, printErr: (chunk) => errChunks.push(chunk),
+        assembleStandupFn: () => '## Standup\n',
+      }, async () => ({ ok: false }));
+      assert.ok(errChunks.join('').includes('Scanning git log'), 'spinner update() text must flow through injected printErr');
+      assert.equal(out.stderr, '', 'spinner draws must not leak to the real stderr when printErr is injected');
+    } finally { out.restore(); }
   });
 });
 
