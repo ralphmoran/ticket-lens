@@ -74,7 +74,7 @@ describe('mcp-server', () => {
     it('returns exactly fetch, recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const names = messages[0].result.tools.map((t) => t.name).sort();
-      assert.deepEqual(names, ['compliance', 'doctor', 'fetch', 'pr', 'recall_add', 'recall_search', 'review', 'standup', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
+      assert.deepEqual(names, ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'pr', 'recall_add', 'recall_search', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
       for (const tool of messages[0].result.tools) {
         assert.equal(tool.inputSchema.type, 'object');
         assert.ok(tool.inputSchema.properties, `${tool.name} must declare input properties`);
@@ -176,6 +176,27 @@ describe('mcp-server', () => {
       assert.equal(messages[0].result.isError, undefined);
       assert.ok(messages[0].result.content[0].text.includes('Login broken'));
     });
+
+    it('CRITICAL regression guard: a ticket argument of literally "--help" must not leak fetch-ticket.mjs\'s help text to real stdout — must route through the real (unmocked) run()\'s injected print, never desyncing the JSON-RPC channel', async () => {
+      const origWrite = process.stdout.write;
+      const realStdoutChunks = [];
+      process.stdout.write = (s) => { realStdoutChunks.push(String(s)); return origWrite.call(process.stdout, s); };
+      let messages;
+      try {
+        ({ messages } = await drive(
+          [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'fetch', arguments: { ticket: '--help' } } }],
+          { configDir },
+        ));
+      } finally {
+        process.stdout.write = origWrite;
+      }
+      assert.ok(
+        !realStdoutChunks.some((s) => s.includes('ticketlens <TICKET-KEY>')),
+        'help text must never reach real stdout — it would desync the JSON-RPC channel',
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.match(messages[0].result.content[0].text, /ticketlens <TICKET-KEY>/);
+    });
   });
 
   describe('tools/call compliance', () => {
@@ -258,6 +279,27 @@ describe('mcp-server', () => {
       process.exitCode = undefined;
       assert.equal(messages[0].result.isError, true);
       assert.match(messages[0].result.content[0].text, /requires Pro/);
+    });
+
+    it('CRITICAL regression guard: a ticket argument of literally "--help" must not leak fetch-ticket.mjs\'s help text to real stdout — same shared run(), reached via the compliance dispatch', async () => {
+      const origWrite = process.stdout.write;
+      const realStdoutChunks = [];
+      process.stdout.write = (s) => { realStdoutChunks.push(String(s)); return origWrite.call(process.stdout, s); };
+      let messages;
+      try {
+        ({ messages } = await drive(
+          [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'compliance', arguments: { ticket: '--help' } } }],
+          { configDir },
+        ));
+      } finally {
+        process.stdout.write = origWrite;
+      }
+      assert.ok(
+        !realStdoutChunks.some((s) => s.includes('ticketlens <TICKET-KEY>')),
+        'help text must never reach real stdout — it would desync the JSON-RPC channel',
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.match(messages[0].result.content[0].text, /ticketlens <TICKET-KEY>/);
     });
   });
 
@@ -408,6 +450,27 @@ describe('mcp-server', () => {
       assert.equal(messages[0].result.isError, true);
       assert.match(messages[0].result.content[0].text, /No Jira credentials/);
     });
+
+    it('CRITICAL regression guard: a ticket argument of literally "--help" must not leak fetch-ticket.mjs\'s help text to real stdout — same shared run(), reached via the pr dispatch', async () => {
+      const origWrite = process.stdout.write;
+      const realStdoutChunks = [];
+      process.stdout.write = (s) => { realStdoutChunks.push(String(s)); return origWrite.call(process.stdout, s); };
+      let messages;
+      try {
+        ({ messages } = await drive(
+          [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'pr', arguments: { ticket: '--help' } } }],
+          { configDir },
+        ));
+      } finally {
+        process.stdout.write = origWrite;
+      }
+      assert.ok(
+        !realStdoutChunks.some((s) => s.includes('ticketlens <TICKET-KEY>')),
+        'help text must never reach real stdout — it would desync the JSON-RPC channel',
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.match(messages[0].result.content[0].text, /ticketlens <TICKET-KEY>/);
+    });
   });
 
   describe('tools/call triage', () => {
@@ -503,6 +566,173 @@ describe('mcp-server', () => {
       );
       assert.equal(messages[0].result.isError, true);
       assert.match(messages[0].result.content[0].text, /--digest requires Pro/);
+    });
+  });
+
+  describe('tools/call stats', () => {
+    it('happy path: forwards profile/days/format and returns the report', async () => {
+      let seen;
+      const runStatsFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('Avg response time  4.2h\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'stats', arguments: { profile: 'work', days: 14, format: 'json' } } }],
+        { configDir, runStatsFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('Avg response time'));
+      assert.deepEqual(seen, ['--profile=work', '--days=14', '--format=json']);
+    });
+
+    it('omits every optional flag when not given', async () => {
+      let seen;
+      const runStatsFn = async (cmdArgs, opts) => { seen = cmdArgs; opts.print('ok\n'); };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'stats', arguments: {} } }],
+        { configDir, runStatsFn },
+      );
+      assert.deepEqual(seen, []);
+    });
+
+    it('a failure (print never receives a report) maps to a JSON-RPC tool error carrying the warn message', async () => {
+      const runStatsFn = async (cmdArgs, opts) => {
+        opts.warn('Error: --days must be between 1 and 30, got: 99\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'stats', arguments: { days: 99 } } }],
+        { configDir, runStatsFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /--days must be between 1 and 30/);
+    });
+
+    it('a failure with nothing captured anywhere falls back to a generic error, never a false success', async () => {
+      const runStatsFn = async () => {};
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'stats', arguments: {} } }],
+        { configDir, runStatsFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /stats failed/);
+    });
+  });
+
+  describe('tools/call history', () => {
+    it('happy path: forwards ticket and returns the timeline', async () => {
+      let seen;
+      const runHistoryFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('History for PROJ-1 (2 entries)\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'history', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runHistoryFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('History for PROJ-1'));
+      assert.deepEqual(seen, ['PROJ-1']);
+    });
+
+    it('rejects a missing ticket argument before ever calling runHistoryFn', async () => {
+      let called = false;
+      const runHistoryFn = async () => { called = true; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'history', arguments: {} } }],
+        { configDir, runHistoryFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /Missing required argument: ticket/);
+      assert.equal(called, false);
+    });
+
+    it('CRITICAL regression guard: a ticket argument of literally "--help" must not leak help text to real stdout — it must route through the real (unmocked) runHistory\'s injected print, never desyncing the JSON-RPC channel', async () => {
+      // Patches real process.stdout.write to inspect content, not mere
+      // occurrence — `node --test`'s own reporter writes to real stdout
+      // asynchronously during this await, which is unrelated noise. The
+      // actual regression signature is the distinctive help text leaking
+      // onto that stream; anything else here is the test runner itself.
+      const origWrite = process.stdout.write;
+      const realStdoutChunks = [];
+      process.stdout.write = (s) => { realStdoutChunks.push(String(s)); return origWrite.call(process.stdout, s); };
+      let messages;
+      try {
+        ({ messages } = await drive(
+          [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'history', arguments: { ticket: '--help' } } }],
+          { configDir },
+        ));
+      } finally {
+        process.stdout.write = origWrite;
+      }
+      assert.ok(
+        !realStdoutChunks.some((s) => s.includes('ticketlens history TICKET-KEY')),
+        'help text must never reach real stdout — it would desync the JSON-RPC channel',
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.match(messages[0].result.content[0].text, /ticketlens history TICKET-KEY/);
+    });
+
+    it('regression guard: a Pro-gate rejection surfaces the real upgrade-prompt text through the injected warn, not a generic fallback (same leak class fixed for compliance/pr)', async () => {
+      const runHistoryFn = async (cmdArgs, opts) => {
+        opts.warn('  ◆ ticketlens history requires Pro\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'history', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runHistoryFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /requires Pro/);
+    });
+
+    it('a failure with nothing captured anywhere falls back to a generic error, never a false success', async () => {
+      const runHistoryFn = async () => {};
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'history', arguments: { ticket: 'PROJ-1' } } }],
+        { configDir, runHistoryFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /history failed/);
+    });
+  });
+
+  describe('tools/call collisions', () => {
+    it('happy path: forwards json/plain and returns the report on ok:true', async () => {
+      let seen;
+      const runCollisionsFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('2 collisions found\n');
+        return { ok: true };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'collisions', arguments: { json: true } } }],
+        { configDir, runCollisionsFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('2 collisions found'));
+      assert.deepEqual(seen, ['--json']);
+    });
+
+    it('omits both flags when neither json nor plain is given', async () => {
+      let seen;
+      const runCollisionsFn = async (cmdArgs, opts) => { seen = cmdArgs; opts.print('none\n'); return { ok: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'collisions', arguments: {} } }],
+        { configDir, runCollisionsFn },
+      );
+      assert.deepEqual(seen, []);
+    });
+
+    it('regression guard: a print-only failure (403/401/network error, never warn) still maps to isError via the returned {ok}, not the print-received-content heuristic used by other tools', async () => {
+      const runCollisionsFn = async (cmdArgs, opts) => {
+        opts.print('  ✗ collisions requires a Team license.\n');
+        return { ok: false, status: 403 };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'collisions', arguments: {} } }],
+        { configDir, runCollisionsFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /requires a Team license/);
     });
   });
 
@@ -1249,7 +1479,7 @@ describe('mcp-server', () => {
       assert.equal(messages.length, 2, 'both the parse-error response and the valid tools/list response must appear');
       assert.ok(messages[0].error, 'first message must be a JSON-RPC error for the malformed line');
       assert.equal(messages[1].id, 2);
-      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['compliance', 'doctor', 'fetch', 'pr', 'recall_add', 'recall_search', 'review', 'standup', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
+      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'pr', 'recall_add', 'recall_search', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
     });
 
     it('a syntactically-valid-but-non-object JSON line (e.g. bare "null") does not crash the server or drop later messages', async () => {

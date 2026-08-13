@@ -511,7 +511,9 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   const errStream = { write: printErrFn, isTTY };
 
   if (args.includes('--help') || args.includes('-h')) {
-    printFetchHelp();
+    // stdout's own isTTY, not the `isTTY` above (that one is documented as
+    // reflecting process.stderr.isTTY for the stderr-bound helpers below).
+    printFetchHelp({ stream: { write: printFn, isTTY: process.stdout.isTTY } });
     return;
   }
 

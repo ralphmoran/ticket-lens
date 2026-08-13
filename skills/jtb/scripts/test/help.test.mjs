@@ -479,6 +479,16 @@ describe('printMcpHelp — ticket tools', () => {
     const out = captureHelp(printMcpHelp);
     assert.match(out, /server itself is ungated/i);
   });
+
+  it('documents stats, history, and collisions with their tier notes', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /\bstats\b/);
+    assert.match(out, /\bhistory\b/);
+    assert.match(out, /\bcollisions\b/);
+    assert.match(out, /stats.*Free with a 7-day lookback/s);
+    assert.match(out, /history.*requires Pro/s);
+    assert.match(out, /collisions.*ticketlens login.*Team license/s);
+  });
 });
 
 describe('printAssignHelp', () => {

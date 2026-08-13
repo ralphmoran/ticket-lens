@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.37.0 -->
+<!-- jtb-skill-version: 0.38.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -124,6 +124,46 @@ Where `$EXTRA_ARGS` are any flags passed (e.g. `--json`, `--plain`).
 Requires a Team license and at least one teammate in the same group. Compares your current branch's changed files against teammates' recent branches. Outputs a collision report or an empty-state message.
 
 Display the script's stdout directly. No plan mode. Stop here.
+
+If this harness has TicketLens's MCP server configured (a tool named `collisions` — often shown as `mcp__ticketlens__collisions` — visible in your tool list), prefer it over the bash form: same Team-license gate, same `ticketlens login` requirement, no shell command to construct. It accepts `json`/`plain`.
+
+---
+
+### Stats subcommand
+
+If the first argument is `stats`:
+
+Run:
+```bash
+ticketlens stats $EXTRA_ARGS
+```
+
+Where `$EXTRA_ARGS` are any flags passed (e.g. `--days=14 --format=json --profile=acme`).
+
+Shows response-time and triage-cadence metrics from local triage history: avg/median response time, clear rate, triage run count, current urgency breakdown. Read-only, entirely local — no network call. `--days=N` (default 7; Free silently caps at 7, Pro allows up to 30); `--format=plain` (default, human-readable table) or `--format=json` (scripting).
+
+Display the script's stdout directly. No plan mode. Stop here.
+
+If this harness has TicketLens's MCP server configured (a tool named `stats` — often shown as `mcp__ticketlens__stats` — visible in your tool list), prefer it over the bash form: same Free/Pro day-cap split, no shell command to construct. It accepts `profile`/`days`/`format`.
+
+---
+
+### History subcommand
+
+If the first argument is `history`:
+
+Run:
+```bash
+ticketlens history TICKET-KEY
+```
+
+Requires a ticket key as the first positional argument. Requires a Pro license.
+
+Shows the ticket's urgency timeline from local triage history — every prior triage scan that surfaced it, with the urgency level and reason computed at that point in time. Read-only, entirely local — no network call, no other flags.
+
+Display the script's stdout directly. No plan mode. Stop here.
+
+If this harness has TicketLens's MCP server configured (a tool named `history` — often shown as `mcp__ticketlens__history` — visible in your tool list), prefer it over the bash form: same Pro gate, no shell command to construct. It accepts `ticket`.
 
 ---
 
