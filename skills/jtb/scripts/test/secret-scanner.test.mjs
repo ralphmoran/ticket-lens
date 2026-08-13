@@ -414,6 +414,60 @@ describe('scanForSecrets — regression: bare code-identifier filenames are not 
   });
 });
 
+describe('scanForSecrets — regression: bare hyphenated-stem filenames are not secrets (backlog #13, standalone case)', () => {
+  test('exact live repro: a bare kebab-case .mjs filename (this project\'s own naming convention) mentioned standalone is not rejected, but does warn', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'recall-nudge-stop.mjs is a hook.' });
+    assert.equal(result.rejected, false);
+    assert.match(result.warnings.join(' '), /code-filename-shaped/);
+  });
+
+  test('a hyphenated stem with an oversized segment does not qualify as a compound, so it is still a full hard reject — no known real filename segment runs that long', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'abcdefghijklmnopqrstuv-scanner.mjs is a hook.' });
+    assert.equal(result.rejected, true);
+  });
+
+  test('security regression: a genuinely random NO-case-switch, hyphenated token with a fake extension is downgraded to a warning, never silently exempted — same accepted trade-off as the no-hyphen mixed-case case above, still visible, never silent', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'zqxvbnmkl-poiuytrewq.mjs was mentioned once.' });
+    assert.equal(result.rejected, false);
+    assert.match(result.warnings.join(' '), /code-filename-shaped/, 'must never pass through with zero trace, even though it is not hard-blocked');
+  });
+
+  test('digits in a hyphenated stem are still NOT exempted — the stem character class never gained digit support', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'recall-nudge-stop2.mjs is a hook.' });
+    assert.equal(result.rejected, true);
+  });
+});
+
+describe('scanForSecrets — regression: filename+identifier joins are not a secret (backlog #13)', () => {
+  test('exact live repro: "note-command.mjs\'s runNoteAdd" false-positived — ordinary phrasing for "the function in this file"', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: "note-command.mjs's runNoteAdd needs a look." });
+    assert.equal(result.rejected, false);
+  });
+
+  test('the same filename without the possessive, next to an identifier, was always fine (control case)', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'note-command.mjs handles this.' });
+    assert.equal(result.rejected, false);
+  });
+
+  test('a non-hyphenated filename possessive next to a camelCase identifier is not a secret (isolates the possessive-suffix support from the hyphen support covered by the repro above)', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: "index.js's getUserById needs review." });
+    assert.equal(result.rejected, false);
+  });
+
+  test('known accepted gap: a genuine fragmented secret with a fake filename+possessive inserted as bait is not caught — same class of gap as isLabelWord\'s ordinary-word/hyphenated-compound allowances, not a new exposure', () => {
+    const secret = 'k3f9x7q2z8p1m6w4y0j5h2n9v3t8s1r7d4c6b0a2e5f9x1q7z3';
+    const unsplit = scanForSecrets({ title: 'x', tags: [], body: secret });
+    assert.equal(unsplit.rejected, true, 'sanity check: the unsplit secret is caught');
+    const evaded = scanForSecrets({ title: 'x', tags: [], body: `${secret.slice(0, 18)} bait.mjs's ${secret.slice(18, 36)} bait.mjs's ${secret.slice(36)}` });
+    assert.equal(evaded.rejected, false, 'documents the known gap — see isLabelWord doc comment for why this class of separator-word bait is accepted, not fixed');
+  });
+
+  test('digits in a filename-shaped run-stop candidate are still not exempted — the new check reuses no digit support', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: "Base64EncoderForV2Payloads123456789.php's caller changed." });
+    assert.equal(result.rejected, true);
+  });
+});
+
 describe('scanForSecrets — documented accepted gap: entropy join no longer spans a field boundary', () => {
   test('a secret split exactly across a tag and the body is not caught by the entropy join — hard-reject shapes still are, this is entropy-only and deliberate', () => {
     // Trade-off accepted alongside the Trigger-3 field-boundary fix above:

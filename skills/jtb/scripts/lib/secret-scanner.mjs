@@ -73,6 +73,11 @@ const HARD_REJECT_PATTERNS = [
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 
+// Shared between CODE_FILENAME_RE below and FILENAME_REFERENCE_RE further
+// down, the same way WHITESPACE_CLASS is shared across the whitespace
+// regexes above — one definition so the two can't silently drift apart.
+const CODE_EXTENSION_ALTERNATION = 'php|m?js|tsx?|jsx|py|rb|java|go|rs|vue|s?css|md|json|ya?ml|sh';
+
 // A letters-only token ending in a recognized source-file extension reads as
 // high-entropy the same way a real secret does — a class name doubling as its
 // filename is the common case, but a deliberately-renamed or accidentally
@@ -86,17 +91,60 @@ const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 // not a shortcut inside looksRandom itself. A bare identifier with no
 // extension (a method name, not a filename) isn't covered by this at all —
 // that shape is indistinguishable from a base64 secret fragment either way.
-const CODE_FILENAME_RE = /^[A-Za-z]+\.(php|m?js|tsx?|jsx|py|rb|java|go|rs|vue|s?css|md|json|ya?ml|sh)$/i;
+//
+// Stem allows hyphens (this project's own file-naming convention —
+// "recall-nudge-stop.mjs", "secret-scanner.mjs") captured as group 1, so
+// looksLikeCodeFilename can judge a kebab-case stem the same way
+// isHyphenatedWordCompound already judges one elsewhere in this file (see
+// its call below) — a real multi-word filename reads as short, plausible
+// segments, not one long random run.
+const CODE_FILENAME_RE = new RegExp(`^([A-Za-z][A-Za-z-]*)\\.(${CODE_EXTENSION_ALTERNATION})$`, 'i');
+
+// A hyphenated-stem filename (this project's own file-naming convention —
+// "secret-scanner.mjs", "note-command.mjs") optionally followed by a
+// directly-attached possessive apostrophe-s ("note-command.mjs's") stops a
+// joinedChunkRuns run the same way any other label word does (see
+// isLabelWord below). Deliberately a SEPARATE regex from CODE_FILENAME_RE
+// above rather than a loosened version of it: CODE_FILENAME_RE feeds
+// looksLikeCodeFilename's downgrade-a-reject-to-a-warning path and is
+// guarded by hasInternalCaseSwitch specifically so a random single-case
+// string plus a fake extension can't be silently waved through (see its
+// docstring) — loosening that guard is out of scope here and unnecessary:
+// this regex only ever stops a *run*, it never exempts a token from the
+// standalone entropy check (every token stays in the flat `tokens` array
+// in scanForSecrets regardless of isLabelWord), so it cannot itself bypass
+// detection the way a change to CODE_FILENAME_RE could.
+//
+// Known accepted gap, same class as isLabelWord's ordinary-word and
+// hyphenated-compound allowances below: a deliberate attacker could append
+// a fake ".mjs" (optionally + "'s") to the first half of a fragmented
+// secret specifically to stop the join here. Not a new exposure — this
+// file already accepts that an ordinary word or short hyphenated compound
+// can be used the same way (see isLabelWord's "Known accepted gap"
+// comment). HARD_REJECT_PATTERNS are unaffected either way: that pass uses
+// stopAtLabelWords:false and also checks the raw combined/despacedCombined
+// text regardless of any token's label-word status.
+const FILENAME_REFERENCE_RE = new RegExp(`^[A-Za-z][A-Za-z-]*\\.(${CODE_EXTENSION_ALTERNATION})('s)?$`, 'i');
 
 function looksLikeCodeFilename(rawToken) {
   const stripped = stripEdgePunctuation(rawToken);
   const match = stripped.match(CODE_FILENAME_RE);
-  // Requiring an internal case switch in the stem (the same signal used to
-  // detect base64 content elsewhere in this file) means a genuinely random
-  // single-case letter run plus a fake extension gets no special treatment
-  // at all — only tokens that already look like a real PascalCase/camelCase
-  // identifier reach the softer warning path below.
-  return match !== null && hasInternalCaseSwitch(match[0]);
+  if (match === null) return false;
+  // Two independent ways a filename-shaped token reads as "structured, not
+  // random" rather than a disguised secret: an internal case switch (the
+  // same signal used to detect base64 content elsewhere in this file) is
+  // the PascalCase/camelCase signal; isHyphenatedWordCompound (already
+  // defined above, already reused this way for the join-stopping check) is
+  // the kebab-case signal — this project's own actual file-naming
+  // convention. A genuinely random single-case, non-hyphenated letter run
+  // plus a fake extension satisfies neither and gets no special treatment
+  // at all — only tokens that already look like a real filename (either
+  // convention) reach the softer warning path below.
+  return hasInternalCaseSwitch(match[0]) || isHyphenatedWordCompound(match[1]);
+}
+
+function looksLikeFilenameReference(strippedToken) {
+  return FILENAME_REFERENCE_RE.test(strippedToken);
 }
 
 function shannonEntropy(token) {
@@ -190,13 +238,25 @@ function isHyphenatedWordCompound(token) {
 /**
  * True for a token that stops a joined-chunk run: either a recognized git/
  * checksum label word ("commit", "sha256", "md5sum", ...), a hyphenated
- * compound word (see isHyphenatedWordCompound), or an ordinary English word
- * (letters only, optionally with an internal possessive/contraction
- * apostrophe — "relay's", "doesn't" — but no base64-style case switching).
- * Anything else — a fragment containing a digit or other symbol, or an
- * all-letter chunk that still reads as random content — stays eligible to
- * join, so a secret split by whitespace can still be reassembled for the
- * entropy check.
+ * compound word (see isHyphenatedWordCompound), a filename reference (see
+ * FILENAME_REFERENCE_RE — "note-command.mjs", "note-command.mjs's"), or an
+ * ordinary English word (letters only, optionally with an internal
+ * possessive/contraction apostrophe — "relay's", "doesn't" — but no
+ * base64-style case switching). Anything else — a fragment containing a
+ * digit or other symbol, or an all-letter chunk that still reads as random
+ * content — stays eligible to join, so a secret split by whitespace can
+ * still be reassembled for the entropy check.
+ *
+ * Filename references (backlog #13) matter for the same reason the
+ * apostrophe allowance below does: "note-command.mjs's runNoteAdd" is
+ * ordinary engineering prose (a filename possessive next to an identifier),
+ * but before this allowance neither token qualified as a label word — the
+ * filename fails the ordinary-word branch (hyphen and period aren't
+ * letters) and the identifier fails it too (camelCase has an internal case
+ * switch, by design) — so they glued into one candidate that tripped the
+ * entropy threshold. See FILENAME_REFERENCE_RE's own comment for why this
+ * is scoped separately from CODE_FILENAME_RE/looksLikeCodeFilename and
+ * cannot reopen that function's CRITICAL-bypass guard.
  *
  * The apostrophe allowance matters because without it, an ordinary possessive
  * next to another non-label token (e.g. a hyphenated compound: "relay's
@@ -235,6 +295,7 @@ function isLabelWord(token) {
   const stripped = stripEdgePunctuation(token);
   if (GIT_REFERENCE_WORD_RE.test(stripped)) return true;
   if (isHyphenatedWordCompound(stripped)) return true;
+  if (looksLikeFilenameReference(stripped)) return true;
   return /^[A-Za-z]+(?:'[A-Za-z]+)*$/.test(stripped) && !hasInternalCaseSwitch(stripped);
 }
 
