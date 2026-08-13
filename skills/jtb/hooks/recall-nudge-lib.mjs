@@ -100,6 +100,50 @@ export function hasRecentCapture(cwd, now = Date.now()) {
 }
 
 /**
+ * Cross-session NAG marker (backlog #14) — same shape as lastCapturePath/
+ * readLastCaptureAt/writeLastCaptureAt/hasRecentCapture above, but records
+ * "we already blocked once for this directory" instead of "a note was
+ * added". Closes a gap those functions never covered: they bridge a
+ * session_id rollover only when a REAL capture landed, but a dismissed nag
+ * ("genuinely nothing qualified" — the hook's own suggested response) was
+ * never remembered anywhere. Since compaction/resume mints a brand-new
+ * session_id (see recall-nudge-stop.mjs's docstring), and that resets the
+ * per-session_id stopChecked gate, one long working session with several
+ * compaction cycles could get nagged repeatedly for the same still-ongoing
+ * work — a real, reported friction source (backlog #14), not hypothetical.
+ * Deliberately a separate marker file from lastCapture (not folded into
+ * it): a nag and a capture are different facts, and conflating them would
+ * make hasRecentCapture's "a real capture landed" guarantee ambiguous.
+ * Reuses CAPTURE_FRESHNESS_MS rather than a second magic number — the same
+ * 2-hour window is a reasonable proxy for "still the same working session"
+ * in both cases, and a distinct constant isn't justified by anything
+ * observed so far.
+ */
+export function lastNagPath(cwd) {
+  const hash = crypto.createHash('sha256').update(cwd || 'unknown').digest('hex').slice(0, 16);
+  return path.join(privateTmpDir(), `lastnag-${hash}.json`);
+}
+
+export function readLastNagAt(cwd) {
+  try {
+    return JSON.parse(fs.readFileSync(lastNagPath(cwd), 'utf8')).lastNagAt ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function writeLastNagAt(cwd, timestamp) {
+  try {
+    fs.writeFileSync(lastNagPath(cwd), JSON.stringify({ lastNagAt: timestamp }));
+  } catch { /* best-effort — losing this marker only costs one extra nag next rollover */ }
+}
+
+export function hasRecentNag(cwd, now = Date.now()) {
+  const lastNagAt = readLastNagAt(cwd);
+  return lastNagAt > 0 && (now - lastNagAt) < CAPTURE_FRESHNESS_MS;
+}
+
+/**
  * Reads the transcript (JSONL) and returns simple booleans about what
  * happened this session. Best-effort: any read/parse failure returns all
  * false rather than throwing — a broken transcript must never block Claude.

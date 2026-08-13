@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { statePath, writeLastCaptureAt, lastCapturePath } from '../../hooks/recall-nudge-lib.mjs';
+import { statePath, writeLastCaptureAt, lastCapturePath, lastNagPath } from '../../hooks/recall-nudge-lib.mjs';
 
 const HOOK_PATH = fileURLToPath(new URL('../../hooks/recall-nudge-stop.mjs', import.meta.url));
 
@@ -59,6 +59,7 @@ describe('recall-nudge-stop hook (subprocess)', () => {
   afterEach(() => {
     try { rmSync(statePath(sessionId)); } catch { /* not written this test — fine */ }
     try { rmSync(lastCapturePath(dir)); } catch { /* not written this test — fine */ }
+    try { rmSync(lastNagPath(dir)); } catch { /* not written this test — fine */ }
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -117,14 +118,21 @@ describe('recall-nudge-stop hook (subprocess)', () => {
     for (const level of ['loose', 'balanced', 'strict']) {
       writeProfile(home, level);
       const sid = `${sessionId}-${level}`;
+      // Distinct cwd per iteration: this test isolates per-session_id dedup
+      // specifically, so it must not trigger the (separate, intentional)
+      // cross-session lastNag bridge (backlog #14) that now legitimately
+      // suppresses a repeat nag for the SAME cwd across different session_ids.
+      const levelDir = join(dir, `lock-${level}`);
+      mkdirSync(levelDir, { recursive: true });
       writeFileSync(transcriptPath, transcriptByLevel[level]);
-      const first = runHook({ sessionId: sid, transcriptPath, cwd: dir, home });
-      const second = runHook({ sessionId: sid, transcriptPath, cwd: dir, home });
+      const first = runHook({ sessionId: sid, transcriptPath, cwd: levelDir, home });
+      const second = runHook({ sessionId: sid, transcriptPath, cwd: levelDir, home });
       try {
         assert.equal(first.status, 2, `${level} first (must actually block)`);
         assert.equal(second.status, 0, `${level} second (cap must hold)`);
       } finally {
         try { rmSync(statePath(sid)); } catch { /* fine */ }
+        try { rmSync(lastNagPath(levelDir)); } catch { /* fine */ }
       }
     }
   });
@@ -149,6 +157,26 @@ describe('recall-nudge-stop hook (subprocess)', () => {
       } finally {
         try { rmSync(statePath(sid)); } catch { /* fine */ }
       }
+    }
+  });
+
+  it('LOCK-NEW: hasRecentNag bridge suppresses a repeat nag across a session_id rollover, when the first session already nagged with no capture in between (backlog #14 — compaction/resume rollover)', () => {
+    // Same ongoing work, no note added between the two invocations — simulates
+    // a compaction/resume event minting a brand-new session_id mid-session,
+    // which resets the per-session_id stopChecked gate. Before this fix, only
+    // a REAL capture (hasRecentCapture) bridged that boundary; a dismissed nag
+    // was never remembered, so the same still-ongoing work got nagged again.
+    writeFileSync(transcriptPath, transcriptWith([assistantText('Looking at PROD-1234 now.')]));
+    const sidA = `${sessionId}-nag-a`;
+    const sidB = `${sessionId}-nag-b`;
+    const first = runHook({ sessionId: sidA, transcriptPath, cwd: dir, home });
+    const second = runHook({ sessionId: sidB, transcriptPath, cwd: dir, home });
+    try {
+      assert.equal(first.status, 2, 'first session must actually block (sanity — no capture, no prior nag yet)');
+      assert.equal(second.status, 0, 'second session (new session_id, same cwd, no capture in between, within the freshness window) must NOT re-nag');
+    } finally {
+      try { rmSync(statePath(sidA)); } catch { /* fine */ }
+      try { rmSync(statePath(sidB)); } catch { /* fine */ }
     }
   });
 

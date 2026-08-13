@@ -15,7 +15,12 @@
  * survive a compaction/resume event — that hands this hook a brand-new
  * session_id, a blank dedup state, AND a blank transcript file, so a real
  * earlier capture becomes invisible. The cross-session lastCapture marker
- * (keyed by cwd, not session_id) is what actually bridges that boundary.
+ * (keyed by cwd, not session_id) is what actually bridges that boundary
+ * for a genuine capture. The parallel lastNag marker (backlog #14) bridges
+ * the same boundary for a DISMISSED nag: without it, a session that already
+ * got its one nag and was told "genuinely nothing qualified" would nag
+ * again after the next compaction/resume rollover, since that dismissal
+ * was never recorded anywhere — only a real capture was.
  *
  * Which of the two cases above actually blocks is governed by the active
  * profile's recallStrictness — see recall-nudge-lib.mjs's shouldNag() doc
@@ -30,7 +35,7 @@
  * profile, same as before (backlog #12, design spec §6).
  */
 
-import { readStdinJson, readState, writeState, scanTranscript, hasRecentCapture, writeLastCaptureAt, shouldNag } from './recall-nudge-lib.mjs';
+import { readStdinJson, readState, writeState, scanTranscript, hasRecentCapture, writeLastCaptureAt, hasRecentNag, writeLastNagAt, shouldNag } from './recall-nudge-lib.mjs';
 import { resolveProfile, normalizeRecallStrictness } from '../scripts/lib/profile-resolver.mjs';
 
 const input = readStdinJson();
@@ -61,8 +66,13 @@ if (hasRecentCapture(cwd)) {
   process.exit(0); // a real capture landed recently in this same directory, just under a different session_id
 }
 
+if (hasRecentNag(cwd)) {
+  process.exit(0); // already nagged recently in this same directory, just under a different session_id — a compaction/resume rollover, not a fresh session (backlog #14)
+}
+
 state.stopChecked = true;
 writeState(sessionId, state);
+writeLastNagAt(cwd, Date.now());
 
 if (sawRecallFlag) {
   process.stderr.write(

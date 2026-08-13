@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scanTranscript, lastCapturePath, readLastCaptureAt, writeLastCaptureAt, hasRecentCapture, CAPTURE_FRESHNESS_MS, shouldNag } from '../../hooks/recall-nudge-lib.mjs';
+import { scanTranscript, lastCapturePath, readLastCaptureAt, writeLastCaptureAt, hasRecentCapture, lastNagPath, readLastNagAt, writeLastNagAt, hasRecentNag, CAPTURE_FRESHNESS_MS, shouldNag } from '../../hooks/recall-nudge-lib.mjs';
 
 function assistantEntry(blocks) {
   return JSON.stringify({ type: 'assistant', message: { content: blocks } });
@@ -51,6 +51,44 @@ describe('lastCapture marker (cross-session, survives a session_id rollover)', (
 
   it('CAPTURE_FRESHNESS_MS is 2 hours, per the user-set window', () => {
     assert.equal(CAPTURE_FRESHNESS_MS, 2 * 60 * 60 * 1000);
+  });
+});
+
+describe('lastNag marker (cross-session, survives a session_id rollover — backlog #14)', () => {
+  const cwd = '/fake/test/cwd-for-recall-nudge-lib-nag-tests';
+
+  afterEach(() => {
+    try { rmSync(lastNagPath(cwd)); } catch { /* not written this test — fine */ }
+  });
+
+  it('hasRecentNag is false when nothing was ever recorded for this cwd', () => {
+    assert.equal(hasRecentNag(cwd), false);
+  });
+
+  it('readLastNagAt is 0 when nothing was ever recorded', () => {
+    assert.equal(readLastNagAt(cwd), 0);
+  });
+
+  it('writeLastNagAt then hasRecentNag is true within the freshness window', () => {
+    const now = Date.now();
+    writeLastNagAt(cwd, now);
+    assert.equal(hasRecentNag(cwd, now + 1000), true);
+  });
+
+  it('hasRecentNag is false once the freshness window has fully elapsed', () => {
+    const now = Date.now();
+    writeLastNagAt(cwd, now);
+    assert.equal(hasRecentNag(cwd, now + CAPTURE_FRESHNESS_MS + 1), false);
+  });
+
+  it('different cwds get independent markers — one directory\'s nag never masks another\'s', () => {
+    writeLastNagAt(cwd, Date.now());
+    assert.equal(hasRecentNag('/a/totally/different/cwd-never-written'), false);
+  });
+
+  it('nag and capture markers are independent — recording one does not satisfy the other', () => {
+    writeLastNagAt(cwd, Date.now());
+    assert.equal(hasRecentCapture(cwd), false);
   });
 });
 
