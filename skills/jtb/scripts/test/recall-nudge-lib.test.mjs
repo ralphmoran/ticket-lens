@@ -168,37 +168,131 @@ describe('scanTranscript', () => {
   });
 });
 
+describe('sawFetch detection (backlog #15 — nag-trigger precision)', () => {
+  let dir;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'recall-nudge-test-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  function writeTranscript(lines) {
+    const p = join(dir, 'transcript.jsonl');
+    writeFileSync(p, lines.join('\n'), 'utf8');
+    return p;
+  }
+
+  it('detects the bare CLI form ("ticketlens TICKET-KEY") as sawFetch', () => {
+    const p = writeTranscript([
+      assistantEntry([toolUse('Bash', { command: 'ticketlens PROD-1234 --depth=2' })]),
+    ]);
+    assert.equal(scanTranscript(p).sawFetch, true);
+  });
+
+  it('does NOT treat "ticketlens fetch TICKET-KEY" as sawFetch — there is no such subcommand; it falls through to the catch-all and errors as an invalid ticket key, so counting it would mask a broken invocation', () => {
+    const p = writeTranscript([
+      assistantEntry([toolUse('Bash', { command: 'ticketlens fetch PROD-1234' })]),
+    ]);
+    assert.equal(scanTranscript(p).sawFetch, false);
+  });
+
+  it('detects the "ticketlens get TICKET-KEY" CLI alias as sawFetch', () => {
+    const p = writeTranscript([
+      assistantEntry([toolUse('Bash', { command: 'ticketlens get PROD-1234' })]),
+    ]);
+    assert.equal(scanTranscript(p).sawFetch, true);
+  });
+
+  it('detects the "tl" bin alias (bare and "get" forms) as sawFetch', () => {
+    const bare = writeTranscript([
+      assistantEntry([toolUse('Bash', { command: 'tl PROD-1234' })]),
+    ]);
+    assert.equal(scanTranscript(bare).sawFetch, true);
+
+    const withGet = writeTranscript([
+      assistantEntry([toolUse('Bash', { command: 'tl get PROD-1234' })]),
+    ]);
+    assert.equal(scanTranscript(withGet).sawFetch, true);
+  });
+
+  it('does not false-positive on "tl" appearing mid-word (e.g. "html", "ctl")', () => {
+    const p = writeTranscript([
+      assistantEntry([toolUse('Bash', { command: 'html PROD-1234' })]),
+    ]);
+    assert.equal(scanTranscript(p).sawFetch, false);
+  });
+
+  it('detects the /jtb skill wrapper form as sawFetch', () => {
+    const p = writeTranscript([
+      assistantEntry([toolUse('Bash', { command: '/jtb PROD-1234' })]),
+    ]);
+    assert.equal(scanTranscript(p).sawFetch, true);
+  });
+
+  it('detects the ticketlens MCP fetch tool call as sawFetch', () => {
+    const p = writeTranscript([
+      assistantEntry([toolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' })]),
+    ]);
+    assert.equal(scanTranscript(p).sawFetch, true);
+  });
+
+  it('detects an aliased MCP server name for fetch (user renamed the server in their own .mcp.json)', () => {
+    const p = writeTranscript([
+      assistantEntry([toolUse('mcp__my-ticketlens-alias__fetch', { ticket: 'PROD-1234' })]),
+    ]);
+    assert.equal(scanTranscript(p).sawFetch, true);
+  });
+
+  it('does not false-positive on an unrelated ticketlens MCP tool (e.g. triage)', () => {
+    const p = writeTranscript([
+      assistantEntry([toolUse('mcp__ticketlens__triage', {})]),
+    ]);
+    assert.equal(scanTranscript(p).sawFetch, false);
+  });
+
+  it('does not false-positive on an unrelated CLI subcommand that also takes a ticket key (e.g. compliance)', () => {
+    const p = writeTranscript([
+      assistantEntry([toolUse('Bash', { command: 'ticketlens compliance PROD-1234' })]),
+    ]);
+    assert.equal(scanTranscript(p).sawFetch, false);
+  });
+
+  it('the reported repro: a ticket-key-shaped string with no fetch tool call at all does not set sawFetch', () => {
+    const p = writeTranscript([assistantEntry([text('Looking at PROD-1234 now.')])]);
+    const result = scanTranscript(p);
+    assert.equal(result.sawTicketKey, true); // still captured — used for profile resolution only
+    assert.equal(result.sawFetch, false); // but no fetch ever ran, so the Stop hook must not nag
+  });
+});
+
 describe('shouldNag (Stop hook trigger decision)', () => {
   describe('balanced (today\'s exact trigger — LOCK)', () => {
     it('does not nag when no ticket work happened', () => {
-      assert.equal(shouldNag({ sawTicketKey: false, sawRecallFlag: false, sawNoteAdd: false, recallStrictness: 'balanced' }), false);
+      assert.equal(shouldNag({ sawFetch: false, sawRecallFlag: false, sawNoteAdd: false, recallStrictness: 'balanced' }), false);
     });
 
     it('does not nag when a note was already added', () => {
-      assert.equal(shouldNag({ sawTicketKey: true, sawRecallFlag: false, sawNoteAdd: true, recallStrictness: 'balanced' }), false);
+      assert.equal(shouldNag({ sawFetch: true, sawRecallFlag: false, sawNoteAdd: true, recallStrictness: 'balanced' }), false);
     });
 
     it('does not nag when a note was added even if a flag was also raised', () => {
-      assert.equal(shouldNag({ sawTicketKey: true, sawRecallFlag: true, sawNoteAdd: true, recallStrictness: 'balanced' }), false);
+      assert.equal(shouldNag({ sawFetch: true, sawRecallFlag: true, sawNoteAdd: true, recallStrictness: 'balanced' }), false);
     });
 
     it('nags when ticket work happened with no note and no flag', () => {
-      assert.equal(shouldNag({ sawTicketKey: true, sawRecallFlag: false, sawNoteAdd: false, recallStrictness: 'balanced' }), true);
+      assert.equal(shouldNag({ sawFetch: true, sawRecallFlag: false, sawNoteAdd: false, recallStrictness: 'balanced' }), true);
     });
 
     it('nags when a flag was raised but never followed by a note', () => {
-      assert.equal(shouldNag({ sawTicketKey: true, sawRecallFlag: true, sawNoteAdd: false, recallStrictness: 'balanced' }), true);
+      assert.equal(shouldNag({ sawFetch: true, sawRecallFlag: true, sawNoteAdd: false, recallStrictness: 'balanced' }), true);
     });
   });
 
   describe('strict (deliberately identical to balanced — not widened, spec §5)', () => {
     it('matches every balanced case exactly', () => {
       const cases = [
-        { sawTicketKey: false, sawRecallFlag: false, sawNoteAdd: false },
-        { sawTicketKey: true, sawRecallFlag: false, sawNoteAdd: true },
-        { sawTicketKey: true, sawRecallFlag: true, sawNoteAdd: true },
-        { sawTicketKey: true, sawRecallFlag: false, sawNoteAdd: false },
-        { sawTicketKey: true, sawRecallFlag: true, sawNoteAdd: false },
+        { sawFetch: false, sawRecallFlag: false, sawNoteAdd: false },
+        { sawFetch: true, sawRecallFlag: false, sawNoteAdd: true },
+        { sawFetch: true, sawRecallFlag: true, sawNoteAdd: true },
+        { sawFetch: true, sawRecallFlag: false, sawNoteAdd: false },
+        { sawFetch: true, sawRecallFlag: true, sawNoteAdd: false },
       ];
       for (const c of cases) {
         assert.equal(
@@ -211,25 +305,25 @@ describe('shouldNag (Stop hook trigger decision)', () => {
 
   describe('loose (narrowed to the broken-promise case only)', () => {
     it('does not nag when ticket work happened but nothing was ever flagged', () => {
-      assert.equal(shouldNag({ sawTicketKey: true, sawRecallFlag: false, sawNoteAdd: false, recallStrictness: 'loose' }), false);
+      assert.equal(shouldNag({ sawFetch: true, sawRecallFlag: false, sawNoteAdd: false, recallStrictness: 'loose' }), false);
     });
 
     it('still nags when a flag was raised but never followed by a note', () => {
-      assert.equal(shouldNag({ sawTicketKey: true, sawRecallFlag: true, sawNoteAdd: false, recallStrictness: 'loose' }), true);
+      assert.equal(shouldNag({ sawFetch: true, sawRecallFlag: true, sawNoteAdd: false, recallStrictness: 'loose' }), true);
     });
 
     it('does not nag when no ticket work happened', () => {
-      assert.equal(shouldNag({ sawTicketKey: false, sawRecallFlag: true, sawNoteAdd: false, recallStrictness: 'loose' }), false);
+      assert.equal(shouldNag({ sawFetch: false, sawRecallFlag: true, sawNoteAdd: false, recallStrictness: 'loose' }), false);
     });
 
     it('does not nag when a note was already added, even with a flag', () => {
-      assert.equal(shouldNag({ sawTicketKey: true, sawRecallFlag: true, sawNoteAdd: true, recallStrictness: 'loose' }), false);
+      assert.equal(shouldNag({ sawFetch: true, sawRecallFlag: true, sawNoteAdd: true, recallStrictness: 'loose' }), false);
     });
   });
 
   it('defaults to balanced behavior when recallStrictness is omitted', () => {
     assert.equal(
-      shouldNag({ sawTicketKey: true, sawRecallFlag: false, sawNoteAdd: false }),
+      shouldNag({ sawFetch: true, sawRecallFlag: false, sawNoteAdd: false }),
       true,
     );
   });

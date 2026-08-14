@@ -3,12 +3,16 @@
  * Stop hook — end-of-session Recall check.
  *
  * Blocks (exit 2) at most ONCE per session — never traps the user in a
- * loop regardless of how Claude responds. Two cases force a check:
+ * loop regardless of how Claude responds. Both cases below require jtb's
+ * fetch to have actually run this session (backlog #15) — a ticket-key-
+ * shaped string appearing incidentally (a doc, a code comment, a test
+ * fixture) is not enough, matching SKILL.md's own capture-guidance scope.
+ * Given that:
  *   1. Claude flagged something (🔖 Recall-flag:) but never called note add
  *      — a broken promise, the strongest signal something was missed.
  *   2. Ticket work happened all session with zero flags and zero notes
  *      — the weaker "did anything ever get considered?" catch.
- * Anything else (no ticket work at all, or a note was already added) exits
+ * Anything else (no fetch this session, or a note was already added) exits
  * clean — this must never be the reason a session can't end.
  *
  * The per-session_id "asked once" state (readState/writeState) cannot
@@ -45,7 +49,7 @@ const cwd = input?.cwd ?? process.cwd();
 
 if (!sessionId || !transcriptPath) process.exit(0);
 
-const { sawTicketKey, sawRecallFlag, sawNoteAdd, ticketKey } = scanTranscript(transcriptPath);
+const { sawFetch, sawRecallFlag, sawNoteAdd, ticketKey } = scanTranscript(transcriptPath);
 
 // Refreshed on every check, independent of the once-per-session gate below —
 // a capture that happens AFTER this session already nagged once must still
@@ -58,7 +62,7 @@ if (state.stopChecked) process.exit(0); // already asked once this session — r
 const profile = resolveProfile(ticketKey, { cwd });
 const recallStrictness = normalizeRecallStrictness(profile?.recallStrictness);
 
-if (!shouldNag({ sawTicketKey, sawRecallFlag, sawNoteAdd, recallStrictness })) {
+if (!shouldNag({ sawFetch, sawRecallFlag, sawNoteAdd, recallStrictness })) {
   process.exit(0); // nothing this strictness level requires a capture for
 }
 

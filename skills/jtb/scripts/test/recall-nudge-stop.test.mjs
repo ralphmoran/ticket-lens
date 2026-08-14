@@ -72,36 +72,59 @@ describe('recall-nudge-stop hook (subprocess)', () => {
     assert.equal(result.status, 0);
   });
 
-  it('exits 2 with no profile configured (default balanced) when ticket work happened with no note and no flag', () => {
+  it('exits 0 when a ticket-key-shaped string appears but no fetch tool was ever called (the reported false positive — backlog #15)', () => {
     writeFileSync(transcriptPath, transcriptWith([assistantText('Looking at PROD-1234 now.')]));
+    const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+    assert.equal(result.status, 0);
+  });
+
+  it('exits 2 when jtb\'s fetch actually ran (MCP form), with no note and no flag', () => {
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantText('Looking at PROD-1234 now.'),
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+    ]));
     const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
     assert.equal(result.status, 2);
   });
 
-  it('loose profile: exits 0 when ticket work happened but nothing was ever flagged', () => {
+  it('exits 2 when jtb\'s fetch ran via the bare CLI form (ticketlens TICKET-KEY), with no note', () => {
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantToolUse('Bash', { command: 'ticketlens PROD-1234' }),
+    ]));
+    const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+    assert.equal(result.status, 2);
+  });
+
+  it('loose profile: exits 0 when fetch ran but nothing was ever flagged', () => {
     writeProfile(home, 'loose');
-    writeFileSync(transcriptPath, transcriptWith([assistantText('Looking at PROD-1234 now.')]));
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantText('Looking at PROD-1234 now.'),
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+    ]));
     const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
     assert.equal(result.status, 0);
   });
 
   it('loose profile: still exits 2 when a flag was raised but never followed by a note', () => {
     writeProfile(home, 'loose');
-    // Ticket-key mention is required here: shouldNag's own committed contract
-    // (recall-nudge-lib.test.mjs:162) is that sawRecallFlag alone, with no
-    // ticket key ever seen, is NOT enough to nag — the flag text alone
-    // (as the brief's original fixture had it) never sets sawTicketKey true.
+    // A real fetch call is required here too (backlog #15): shouldNag's gate
+    // is now sawFetch, not sawTicketKey — sawRecallFlag alone, with no fetch
+    // ever run, is NOT enough to nag even in loose mode.
     writeFileSync(transcriptPath, transcriptWith([
       assistantText('Looking at PROD-1234 now.'),
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
       assistantText('🔖 Recall-flag: found a gotcha'),
     ]));
     const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
     assert.equal(result.status, 2);
   });
 
-  it('strict profile: behaves identically to no profile (balanced) — exits 2 on ticket work with no note', () => {
+  it('strict profile: behaves identically to no profile (balanced) — exits 2 when fetch ran with no note', () => {
     writeProfile(home, 'strict');
-    writeFileSync(transcriptPath, transcriptWith([assistantText('Looking at PROD-1234 now.')]));
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantText('Looking at PROD-1234 now.'),
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+    ]));
     const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
     assert.equal(result.status, 2);
   });
@@ -110,10 +133,17 @@ describe('recall-nudge-stop hook (subprocess)', () => {
     const transcriptByLevel = {
       loose: transcriptWith([
         assistantText('Looking at PROD-1234 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
         assistantText('🔖 Recall-flag: found a gotcha'),
       ]),
-      balanced: transcriptWith([assistantText('Looking at PROD-1234 now.')]),
-      strict: transcriptWith([assistantText('Looking at PROD-1234 now.')]),
+      balanced: transcriptWith([
+        assistantText('Looking at PROD-1234 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      ]),
+      strict: transcriptWith([
+        assistantText('Looking at PROD-1234 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      ]),
     };
     for (const level of ['loose', 'balanced', 'strict']) {
       writeProfile(home, level);
@@ -141,10 +171,17 @@ describe('recall-nudge-stop hook (subprocess)', () => {
     const transcriptByLevel = {
       loose: transcriptWith([
         assistantText('Looking at PROD-1234 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
         assistantText('🔖 Recall-flag: found a gotcha'),
       ]),
-      balanced: transcriptWith([assistantText('Looking at PROD-1234 now.')]),
-      strict: transcriptWith([assistantText('Looking at PROD-1234 now.')]),
+      balanced: transcriptWith([
+        assistantText('Looking at PROD-1234 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      ]),
+      strict: transcriptWith([
+        assistantText('Looking at PROD-1234 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      ]),
     };
     for (const level of ['loose', 'balanced', 'strict']) {
       writeProfile(home, level);
@@ -166,7 +203,10 @@ describe('recall-nudge-stop hook (subprocess)', () => {
     // which resets the per-session_id stopChecked gate. Before this fix, only
     // a REAL capture (hasRecentCapture) bridged that boundary; a dismissed nag
     // was never remembered, so the same still-ongoing work got nagged again.
-    writeFileSync(transcriptPath, transcriptWith([assistantText('Looking at PROD-1234 now.')]));
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantText('Looking at PROD-1234 now.'),
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+    ]));
     const sidA = `${sessionId}-nag-a`;
     const sidB = `${sessionId}-nag-b`;
     const first = runHook({ sessionId: sidA, transcriptPath, cwd: dir, home });
@@ -194,7 +234,10 @@ describe('recall-nudge-stop hook (subprocess)', () => {
           beta: { baseUrl: 'https://b.atlassian.net', ticketPrefixes: ['BETA'], recallStrictness: 'strict' },
         },
       });
-      writeFileSync(transcriptPath, transcriptWith([assistantText('Looking at BETA-42 now.')]));
+      writeFileSync(transcriptPath, transcriptWith([
+        assistantText('Looking at BETA-42 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'BETA-42' }),
+      ]));
       const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
       assert.equal(result.status, 2);
     });
@@ -211,7 +254,10 @@ describe('recall-nudge-stop hook (subprocess)', () => {
           beta: { baseUrl: 'https://b.atlassian.net', ticketPrefixes: ['BETA'], recallStrictness: 'loose' },
         },
       });
-      writeFileSync(transcriptPath, transcriptWith([assistantText('Looking at BETA-42 now.')]));
+      writeFileSync(transcriptPath, transcriptWith([
+        assistantText('Looking at BETA-42 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'BETA-42' }),
+      ]));
       const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
       assert.equal(result.status, 0);
     });

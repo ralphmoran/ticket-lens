@@ -18,6 +18,19 @@ export const NOTE_ADD_RE = /\bticketlens\s+note\s+add\b|\/jtb\s+note\b/;
 // (mcp__<server-alias>__<tool-name>) — the server alias is whatever the user
 // named it in their own .mcp.json, so only the tool-name suffix is fixed.
 export const NOTE_ADD_MCP_RE = /^mcp__.+__recall_add$/;
+// Matches jtb's fetch: the CLI's bare/default ticket-key form ("ticketlens
+// PROJ-123" or its "tl" bin alias), the "get" alias form, and the /jtb skill
+// wrapper. Deliberately excludes an explicit "fetch" subcommand — there is
+// no such subcommand; parseCommand() (cli.mjs) only special-cases "get" as
+// an alias, so "ticketlens fetch PROJ-123" falls through to the catch-all
+// with "fetch" itself still in argv and errors as an invalid ticket key
+// (live-verified during code review) — matching it here would silently
+// swallow a broken invocation as if a real fetch had happened. Also
+// deliberately does not match any other tracked subcommand (triage/
+// compliance/etc) — those are lowercase words and can never satisfy the
+// uppercase ticket-key class required immediately after the command name.
+export const FETCH_RE = /\bticketlens\s+(?:get\s+)?[A-Z][A-Z0-9]{1,9}-\d+\b|\btl\s+(?:get\s+)?[A-Z][A-Z0-9]{1,9}-\d+\b|\/jtb\s+(?:get\s+)?[A-Z][A-Z0-9]{1,9}-\d+\b/;
+export const FETCH_MCP_RE = /^mcp__.+__fetch$/;
 
 export function readStdinJson() {
   const raw = fs.readFileSync(0, 'utf8');
@@ -170,9 +183,19 @@ export function hasRecentNag(cwd, now = Date.now()) {
  * early, and picking one deterministic match keeps this function decoupled
  * from profiles.json (it stays a pure transcript reader; profile lookup
  * and its own fallback chain belong entirely to resolveProfile()).
+ *
+ * `sawFetch` (backlog #15) is deliberately narrower than `sawTicketKey`: it
+ * only goes true when jtb's fetch tool actually ran (CLI or MCP form, same
+ * dual-detection shape as sawNoteAdd below) — not merely when a ticket-key-
+ * shaped string appears anywhere in the transcript. `sawTicketKey` false-
+ * positived on any incidental match (a doc, a code comment, a test fixture
+ * name like BETA-42), which is fine for its own low-stakes use (picking
+ * which profile's settings apply) but was wrong as shouldNag()'s nag
+ * precondition — SKILL.md's own capture guidance is scoped to "whenever
+ * jtb's fetch was used," so the hook now checks the same thing it backstops.
  */
 export function scanTranscript(transcriptPath) {
-  const result = { sawTicketKey: false, sawRecallFlag: false, sawNoteAdd: false, ticketKey: null };
+  const result = { sawTicketKey: false, sawRecallFlag: false, sawNoteAdd: false, sawFetch: false, ticketKey: null };
   let lines;
   try {
     lines = fs.readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
@@ -217,6 +240,10 @@ export function scanTranscript(transcriptPath) {
         const isCliNoteAdd = block.name === 'Bash' && NOTE_ADD_RE.test(block.input?.command ?? '');
         const isMcpNoteAdd = NOTE_ADD_MCP_RE.test(block.name ?? '');
         if (isCliNoteAdd || isMcpNoteAdd) result.sawNoteAdd = true;
+
+        const isCliFetch = block.name === 'Bash' && FETCH_RE.test(block.input?.command ?? '');
+        const isMcpFetch = FETCH_MCP_RE.test(block.name ?? '');
+        if (isCliFetch || isMcpFetch) result.sawFetch = true;
       }
     }
   }
@@ -235,9 +262,17 @@ export function scanTranscript(transcriptPath) {
  * compaction/session_id rollover, or nagging more than once per session).
  * Strict's actual effect on capture volume comes from SKILL.md's lowered
  * in-session capture bar, not from this function.
+ *
+ * Gated on `sawFetch`, not `sawTicketKey` (backlog #15) — including the
+ * `sawRecallFlag` broken-promise case, which is why the gate is a blanket
+ * `!sawFetch` check rather than per-branch: a flag can't legitimately fire
+ * outside real ticket work, and this keeps the whole function's trigger
+ * matching SKILL.md's own capture-guidance scope exactly ("unconditionally
+ * whenever jtb's fetch was used"), instead of firing on any incidental
+ * ticket-key-shaped string.
  */
-export function shouldNag({ sawTicketKey, sawRecallFlag, sawNoteAdd, recallStrictness = 'balanced' }) {
-  if (!sawTicketKey || sawNoteAdd) return false;
+export function shouldNag({ sawFetch, sawRecallFlag, sawNoteAdd, recallStrictness = 'balanced' }) {
+  if (!sawFetch || sawNoteAdd) return false;
   if (recallStrictness === 'loose') return sawRecallFlag; // only the broken-promise case
-  return true; // balanced and strict: ticket work with no note is enough
+  return true; // balanced and strict: a fetch with no note is enough
 }
