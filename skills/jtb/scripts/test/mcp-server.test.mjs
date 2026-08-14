@@ -74,7 +74,7 @@ describe('mcp-server', () => {
     it('returns exactly fetch, recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const names = messages[0].result.tools.map((t) => t.name).sort();
-      assert.deepEqual(names, ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'pr', 'recall_add', 'recall_search', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
+      assert.deepEqual(names, ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
       for (const tool of messages[0].result.tools) {
         assert.equal(tool.inputSchema.type, 'object');
         assert.ok(tool.inputSchema.properties, `${tool.name} must declare input properties`);
@@ -473,6 +473,47 @@ describe('mcp-server', () => {
     });
   });
 
+  describe('tools/call ledger', () => {
+    it('happy path: defaults to json format when no format given, and returns a non-error result with the export', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('{"records":[],"exportedAt":"2026-08-14T00:00:00.000Z","signature":"abc"}\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ledger', arguments: {} } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('exportedAt'));
+      assert.deepEqual(seen, ['ledger']);
+    });
+
+    it('forwards format:"csv" as --format=csv', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => { seen = cmdArgs; opts.print('ts,ticketKey\n'); };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ledger', arguments: { format: 'csv' } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.deepEqual(seen, ['ledger', '--format=csv']);
+    });
+
+    it('the license-gate case (no export printed) surfaces as isError with the upgrade-prompt text from printErr', async () => {
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        opts.printErr('  ◆ ledger requires Pro\n  Upgrade: https://ticketlens.dev/upgrade\n');
+        process.exitCode = 1;
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ledger', arguments: {} } }],
+        { configDir, runFetchTicketFn },
+      );
+      process.exitCode = undefined;
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /requires Pro/);
+    });
+  });
+
   describe('tools/call triage', () => {
     it('happy path: forwards every field to CLI flags, always forcing --plain, and returns the summary', async () => {
       let seen;
@@ -805,6 +846,186 @@ describe('mcp-server', () => {
       );
       assert.equal(seenArgs.length, 1, 'the forged flag must not become a second array element');
       assert.equal(seenArgs[0], '--title=--ticket=EVIL-999');
+    });
+  });
+
+  describe('tools/call recall_update', () => {
+    it('happy path: forwards id/ticket/expectMtime and returns a non-error result without touching real stdout', async () => {
+      let seenArgs;
+      let seenBody;
+      const runNotePatchFn = async (cmdArgs, opts) => {
+        seenArgs = cmdArgs;
+        seenBody = await opts.readStdin();
+        opts.stream.write('  Updated note (fake-id.md)\n');
+        return { patched: true };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_update', arguments: { id: 'fake-id.md', ticket: 'PROJ-1', expectMtime: 12345, body: 'Better draft.' } } }],
+        { configDir, runNotePatchFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('Updated note'));
+      assert.deepEqual(seenArgs, ['--id=fake-id.md', '--ticket=PROJ-1', '--expect-mtime=12345']);
+      assert.equal(seenBody, 'Better draft.');
+    });
+
+    it('omits ticket/expectMtime when not given', async () => {
+      let seenArgs;
+      const runNotePatchFn = async (cmdArgs) => { seenArgs = cmdArgs; return { patched: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_update', arguments: { id: 'fake-id.md', body: 'x' } } }],
+        { configDir, runNotePatchFn },
+      );
+      assert.deepEqual(seenArgs, ['--id=fake-id.md']);
+    });
+
+    it('missing id returns a JSON-RPC tool error without ever calling the real function', async () => {
+      let called = false;
+      const runNotePatchFn = async () => { called = true; return { patched: true }; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_update', arguments: { body: 'x' } } }],
+        { configDir, runNotePatchFn },
+      );
+      assert.equal(called, false);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /id/i);
+    });
+
+    it('missing body returns a JSON-RPC tool error without ever calling the real function', async () => {
+      let called = false;
+      const runNotePatchFn = async () => { called = true; return { patched: true }; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_update', arguments: { id: 'fake-id.md' } } }],
+        { configDir, runNotePatchFn },
+      );
+      assert.equal(called, false);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /body/i);
+    });
+
+    it('patched:false (unlicensed, or not found/stale) returns a JSON-RPC error result, not a thrown exception or success shape', async () => {
+      const runNotePatchFn = async (cmdArgs, opts) => {
+        opts.stream.write('  Note not updated — (fake-id.md) not found or already changed.\n');
+        return { patched: false };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_update', arguments: { id: 'fake-id.md', body: 'x' } } }],
+        { configDir, runNotePatchFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.equal(messages[0].error, undefined, 'must be a tool-result error (isError), not a transport-level JSON-RPC error');
+    });
+
+    it('never falls through to defaultReadStdin — body comes from the tool call arguments only', async () => {
+      let readStdinFnSeen;
+      const runNotePatchFn = async (cmdArgs, opts) => {
+        readStdinFnSeen = opts.readStdin;
+        return { patched: true };
+      };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_update', arguments: { id: 'fake-id.md', body: 'exact body' } } }],
+        { configDir, runNotePatchFn },
+      );
+      assert.equal(typeof readStdinFnSeen, 'function');
+      assert.equal(await readStdinFnSeen(), 'exact body');
+    });
+
+    it('flag-shaped text in id cannot forge a second flag (--ticket=EVIL-999 stays literal)', async () => {
+      let seenArgs;
+      const runNotePatchFn = async (cmdArgs) => { seenArgs = cmdArgs; return { patched: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_update', arguments: { id: '--ticket=EVIL-999', body: 'x' } } }],
+        { configDir, runNotePatchFn },
+      );
+      assert.equal(seenArgs.length, 1, 'the forged flag must not become a second array element');
+      assert.equal(seenArgs[0], '--id=--ticket=EVIL-999');
+    });
+  });
+
+  describe('tools/call recall_delete', () => {
+    it('happy path: confirm:true translates to id + --yes and returns a non-error result', async () => {
+      let seenArgs;
+      const runNoteDeleteFn = async (cmdArgs, opts) => {
+        seenArgs = cmdArgs;
+        opts.stream.write('  Deleted note (fake-id.md) — local vault only; see help for team-synced notes.\n');
+        return { deleted: true };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_delete', arguments: { id: 'fake-id.md', ticket: 'PROJ-1', confirm: true } } }],
+        { configDir, runNoteDeleteFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('Deleted note'));
+      assert.deepEqual(seenArgs, ['--id=fake-id.md', '--ticket=PROJ-1', '--yes']);
+    });
+
+    it('omits ticket when not given', async () => {
+      let seenArgs;
+      const runNoteDeleteFn = async (cmdArgs) => { seenArgs = cmdArgs; return { deleted: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_delete', arguments: { id: 'fake-id.md', confirm: true } } }],
+        { configDir, runNoteDeleteFn },
+      );
+      assert.deepEqual(seenArgs, ['--id=fake-id.md', '--yes']);
+    });
+
+    it('missing id returns a JSON-RPC tool error without ever calling the real function', async () => {
+      let called = false;
+      const runNoteDeleteFn = async () => { called = true; return { deleted: true }; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_delete', arguments: { confirm: true } } }],
+        { configDir, runNoteDeleteFn },
+      );
+      assert.equal(called, false);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /id/i);
+    });
+
+    it('confirm not true (omitted) rejects before ever calling the real function — no real TTY exists under MCP to fall back on for an interactive prompt', async () => {
+      let called = false;
+      const runNoteDeleteFn = async () => { called = true; return { deleted: true }; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_delete', arguments: { id: 'fake-id.md' } } }],
+        { configDir, runNoteDeleteFn },
+      );
+      assert.equal(called, false);
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /confirm/i);
+    });
+
+    it('confirm:false explicitly rejects before ever calling the real function', async () => {
+      let called = false;
+      const runNoteDeleteFn = async () => { called = true; return { deleted: true }; };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_delete', arguments: { id: 'fake-id.md', confirm: false } } }],
+        { configDir, runNoteDeleteFn },
+      );
+      assert.equal(called, false);
+      assert.equal(messages[0].result.isError, true);
+    });
+
+    it('deleted:false (unlicensed, or not found) returns a JSON-RPC error result, not a thrown exception or success shape', async () => {
+      const runNoteDeleteFn = async (cmdArgs, opts) => {
+        opts.stream.write('  Note not deleted — (fake-id.md) not found.\n');
+        return { deleted: false };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_delete', arguments: { id: 'fake-id.md', confirm: true } } }],
+        { configDir, runNoteDeleteFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.equal(messages[0].error, undefined, 'must be a tool-result error (isError), not a transport-level JSON-RPC error');
+    });
+
+    it('flag-shaped text in id cannot forge a second flag (--ticket=EVIL-999 stays literal)', async () => {
+      let seenArgs;
+      const runNoteDeleteFn = async (cmdArgs) => { seenArgs = cmdArgs; return { deleted: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_delete', arguments: { id: '--ticket=EVIL-999', confirm: true } } }],
+        { configDir, runNoteDeleteFn },
+      );
+      assert.equal(seenArgs[0], '--id=--ticket=EVIL-999');
+      assert.equal(seenArgs.length, 2, 'the forged flag must not become a third array element');
     });
   });
 
@@ -1479,7 +1700,7 @@ describe('mcp-server', () => {
       assert.equal(messages.length, 2, 'both the parse-error response and the valid tools/list response must appear');
       assert.ok(messages[0].error, 'first message must be a JSON-RPC error for the malformed line');
       assert.equal(messages[1].id, 2);
-      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'pr', 'recall_add', 'recall_search', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
+      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
     });
 
     it('a syntactically-valid-but-non-object JSON line (e.g. bare "null") does not crash the server or drop later messages', async () => {
@@ -1546,6 +1767,37 @@ describe('mcp-server', () => {
         [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_search', arguments: { query: 'x' } } }],
         { configDir },
       );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /pro/i);
+    });
+
+    it('recall_update: unlicensed configDir is rejected by the real license gate', async () => {
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_update', arguments: { id: 'fake-id.md', body: 'x' } } }],
+        { configDir },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /pro/i);
+    });
+
+    it('recall_delete: unlicensed configDir is rejected by the real license gate', async () => {
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_delete', arguments: { id: 'fake-id.md', confirm: true } } }],
+        { configDir },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /pro/i);
+    });
+
+    it('ledger: unlicensed configDir is rejected by the real license gate', async () => {
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ledger', arguments: {} } }],
+        { configDir },
+      );
+      // Unlike runNoteAdd/runNotePatch/runNoteDelete (which return a status object),
+      // fetch-ticket.mjs's run() signals failure via process.exitCode — must reset it
+      // or it leaks into this process's real exit code after the test run.
+      process.exitCode = undefined;
       assert.equal(messages[0].result.isError, true);
       assert.match(messages[0].result.content[0].text, /pro/i);
     });

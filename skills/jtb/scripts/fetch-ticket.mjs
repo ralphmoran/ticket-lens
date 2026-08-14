@@ -488,10 +488,9 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
 
   const printFn = opts.print ?? ((chunk) => process.stdout.write(chunk));
-  // Mirrors printFn above — the bare ticket-fetch, compliance, pr, review, and standup
-  // paths all use this now (each has an MCP tool). `ledger` above still writes directly
-  // to the real process.stderr (no MCP tool yet); `install-hooks` is CLI-only and never
-  // gets one.
+  // Mirrors printFn above — the bare ticket-fetch, compliance, pr, review, standup, and
+  // ledger paths all use this now (each has an MCP tool). `install-hooks` is CLI-only
+  // and never gets one.
   const printErrFn = opts.printErr ?? ((chunk) => process.stderr.write(chunk));
   // Reused on every recursive self-call in the bare-fetch path (profile-prompt retries)
   // so an injected print/printErr survives the retry instead of silently reverting to
@@ -610,7 +609,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const { isLicensed: isLic, showUpgradePrompt: showUpgrade } = await import('./lib/license.mjs');
     const resolvedConfigDir = configDir ?? (await import('./lib/config.mjs')).DEFAULT_CONFIG_DIR;
     if (!isLic('pro', resolvedConfigDir)) {
-      showUpgrade('pro', 'ledger', { stream: process.stderr });
+      showUpgrade('pro', 'ledger', { stream: errStream });
       process.exitCode = 1;
       return;
     }
@@ -621,7 +620,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       printFn(result + '\n');
     } else {
       printFn(JSON.stringify(result, null, 2) + '\n');
-      process.stderr.write('  Verify signature: HMAC-SHA256 over {records, exportedAt} with key at ledger-key\n');
+      printErrFn('  Verify signature: HMAC-SHA256 over {records, exportedAt} with key at ledger-key\n');
     }
     return;
   }

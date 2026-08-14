@@ -1135,6 +1135,56 @@ describe('pr subcommand', () => {
   });
 });
 
+describe('ledger subcommand', () => {
+  const mockFetcher = async () => ({ ok: true, json: async () => cloudFixture });
+
+  it('unlicensed: routes the upgrade prompt to injected printErr, not real stderr — print never called', async () => {
+    const out = captureOutput();
+    const printed = [];
+    const errChunks = [];
+    try {
+      await run(['ledger'], { env: validEnv, fetcher: mockFetcher, configDir: NO_CONFIG, print: (s) => printed.push(s), printErr: (s) => errChunks.push(s) });
+      assert.equal(printed.length, 0, 'must not print a report when the license gate blocks the call');
+      assert.ok(errChunks.join('').length > 0, 'printErr must have captured the upgrade prompt');
+      assert.equal(out.stderr, '', 'must not also leak to the real stderr when printErr is injected');
+      assert.equal(process.exitCode, 1);
+    } finally { out.restore(); process.exitCode = undefined; }
+  });
+
+  it('licensed, default json format: print receives records/exportedAt/signature, and the verify-signature note routes to injected printErr', async () => {
+    const { writeLicense } = await import('../lib/license.mjs');
+    const tmpDir = mkdtempSync(join(tmpdir(), 'tl-ledger-'));
+    writeLicense({ key: 'AAAA-BBBB-CCCC-DDDD', tier: 'pro', email: 'dev@example.com', validatedAt: new Date().toISOString(), provider: 'lemonsqueezy' }, tmpDir);
+    const out = captureOutput();
+    const printed = [];
+    const errChunks = [];
+    try {
+      await run(['ledger'], { env: validEnv, fetcher: mockFetcher, configDir: tmpDir, print: (s) => printed.push(s), printErr: (s) => errChunks.push(s) });
+      const parsed = JSON.parse(printed.join(''));
+      assert.deepEqual(parsed.records, []);
+      assert.equal(typeof parsed.exportedAt, 'string');
+      assert.equal(typeof parsed.signature, 'string');
+      assert.match(errChunks.join(''), /Verify signature: HMAC-SHA256/);
+      assert.equal(out.stderr, '', 'must not also leak to the real stderr when printErr is injected');
+    } finally { out.restore(); rmSync(tmpDir, { recursive: true, force: true }); }
+  });
+
+  it('licensed, csv format: print receives the CSV header with no records, and printErr is never called (no verify-signature note for csv)', async () => {
+    const { writeLicense } = await import('../lib/license.mjs');
+    const tmpDir = mkdtempSync(join(tmpdir(), 'tl-ledger-'));
+    writeLicense({ key: 'AAAA-BBBB-CCCC-DDDD', tier: 'pro', email: 'dev@example.com', validatedAt: new Date().toISOString(), provider: 'lemonsqueezy' }, tmpDir);
+    const out = captureOutput();
+    const printed = [];
+    const errChunks = [];
+    try {
+      await run(['ledger', '--format=csv'], { env: validEnv, fetcher: mockFetcher, configDir: tmpDir, print: (s) => printed.push(s), printErr: (s) => errChunks.push(s) });
+      assert.equal(printed.join('').trim(), 'ts,ticketKey,commitSha,author,coverage,missing,noCriteria');
+      assert.equal(errChunks.length, 0, 'csv format has no verify-signature note to print');
+      assert.equal(out.stderr, '', 'must not also leak to the real stderr when printErr is injected');
+    } finally { out.restore(); rmSync(tmpDir, { recursive: true, force: true }); }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Confluence page fetching integration
 // ---------------------------------------------------------------------------

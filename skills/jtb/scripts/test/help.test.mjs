@@ -489,6 +489,20 @@ describe('printMcpHelp — ticket tools', () => {
     assert.match(out, /history.*requires Pro/s);
     assert.match(out, /collisions.*ticketlens login.*Team license/s);
   });
+
+  it('documents ledger, recall_update, and recall_delete — the last 2 of 11 planned MCP tools (ROADMAP 49b)', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /\bledger\b/);
+    assert.match(out, /\brecall_update\b/);
+    assert.match(out, /\brecall_delete\b/);
+  });
+
+  it('flags recall_delete as destructive, requiring confirm: true, with no interactive prompt under MCP', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /recall_delete.*destructive/s);
+    assert.match(out, /confirm.*true/);
+    assert.match(out, /no interactive.*prompt/i);
+  });
 });
 
 describe('printAssignHelp', () => {

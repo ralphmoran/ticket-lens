@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.38.0 -->
+<!-- jtb-skill-version: 0.39.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -66,7 +66,7 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb assign PROD-1234 --to=me          # assign the ticket to yourself (Pro)
 ```
 
-**Destructive commands** (`note delete`, `cloud-keys remove`, `delete <profile>`) prompt for interactive y/N confirmation and refuse outright in a non-interactive shell unless `--yes` is passed — there is no way to silently skip this. Only pass `--yes` when the user has explicitly asked for that specific deletion in this conversation (their message *is* the confirmation); never add it to route around the prompt for a deletion you decided to make on your own.
+**Destructive commands** (`note delete`, `cloud-keys remove`, `delete <profile>`) prompt for interactive y/N confirmation and refuse outright in a non-interactive shell unless `--yes` is passed — there is no way to silently skip this. Only pass `--yes` when the user has explicitly asked for that specific deletion in this conversation (their message *is* the confirmation); never add it to route around the prompt for a deletion you decided to make on your own. If this harness has TicketLens's MCP server configured, `note delete`'s equivalent is the `recall_delete` tool (`id`/`ticket`/`confirm`) — it has no interactive prompt at all (no real terminal exists under MCP to prompt against), so `confirm: true` is the only way it ever executes; the same rule applies — only pass it when the user's message is the confirmation for that specific note.
 
 ## Prerequisites
 
@@ -370,6 +370,8 @@ When it does apply, run up to 3 rounds:
      ticketlens note patch --id="THE-ID-PRINTED-ABOVE" --ticket=TICKET-KEY --expect-mtime="THE-MTIME-FROM-STEP-1"
    ```
    `--expect-mtime` is what keeps this safe: if the file changed since step 1 (the user hand-edited it while you were drafting), the patch silently no-ops and prints "not found or already changed" — the user's own edit always wins, never gets clobbered by a stale background draft.
+
+   If this harness has TicketLens's MCP server configured (a tool named `recall_update` — often shown as `mcp__ticketlens__recall_update` — visible in your tool list), prefer it over the bash form: same license gate, same structural/secret-scan checks, same optimistic-concurrency behavior via `expectMtime` — just no shell command or stdin piping to construct. It accepts `id`/`body`/`ticket`/`expectMtime`.
 5. Repeat from step 1 (re-capture mtime/body fresh each round) up to 3 total rounds. If no round ever produces a fully-passing draft, patch in whichever round scored highest across all attempts, and let the "not found or already changed" message stand if that patch itself loses a late race — don't retry past round 3.
 
 This never calls any external API or bills any tokens beyond the session you already have open — the generator and validator are subagents inside your own Claude Code session, not a TicketLens server call.
@@ -505,6 +507,9 @@ Use this evaluation order:
 The same tier-gated check also runs as its own command — `ticketlens compliance PROJ-123` — independent of a full ticket fetch. This is what `ticketlens install-hooks` wires into a pre-push git hook (`ticketlens compliance "$KEY" || exit 1`, gated on a configurable coverage threshold). It shares the same `FREE_LIMIT`/Pro gate and the same compliance ledger as the `--compliance` flag above.
 
 If this harness has TicketLens's MCP server configured (a tool named `compliance` — often shown as `mcp__ticketlens__compliance` — visible in your tool list), prefer it over the bash form: same tier gate (Free: 3 checks/month, Pro: unlimited), same report — just no shell command to construct or stdout to parse. It accepts `ticket`/`profile`, matching the standalone command's arguments above.
+
+### Ledger export
+`ticketlens ledger [--format=json|csv]` exports the same local, signed compliance ledger these checks write to — entirely local, no network call. `[Pro]`. If this harness has TicketLens's MCP server configured (a tool named `ledger` — often shown as `mcp__ticketlens__ledger` — visible in your tool list), prefer it over the bash form: same tier gate, same export, just no shell command to construct or stdout to parse. It accepts `format` (`json`/`csv`, defaults to `json`).
 
 ---
 

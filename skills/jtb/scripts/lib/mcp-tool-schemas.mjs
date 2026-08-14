@@ -89,6 +89,16 @@ export const TOOLS = [
     },
   },
   {
+    name: 'ledger',
+    description: 'Export the local compliance ledger — a signed, tamper-evident record of every compliance check run (ticket key, commit SHA, author, timestamp, coverage %). Read-only, entirely local — no network call. Verifiable offline: the json format includes an HMAC-SHA256 signature over {records, exportedAt}, keyed at a local ledger-key file. Requires a TicketLens Pro license.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        format: { type: 'string', enum: ['json', 'csv'], description: 'Output shape: "json" (default) includes the HMAC signature; "csv" is a flat export with no signature.' },
+      },
+    },
+  },
+  {
     name: 'stats',
     description: 'Show response-time and triage-cadence metrics from local triage history — average/median response time, clear rate, triage run count, current urgency breakdown. Read-only, entirely local — no network call. Free tier: 7-day lookback max; TicketLens Pro extends it to 30 days.',
     inputSchema: {
@@ -145,6 +155,33 @@ export const TOOLS = [
         body: { type: 'string', description: 'The note body — one or more paragraphs.' },
       },
       required: ['title', 'body'],
+    },
+  },
+  {
+    name: 'recall_update',
+    description: 'Overwrite an existing Recall note\'s body with a better draft — internal plumbing for the jtb skill\'s note quality loop, not typically called directly. The new body gets the same structural and secret-scan checks a user-typed body gets. Local vault only. Requires a TicketLens Pro license.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Note id to patch, as printed by recall_add or recall_search.' },
+        body: { type: 'string', description: 'The replacement note body.' },
+        ticket: { type: 'string', description: 'Ticket key the note is about, e.g. PROJ-123. Optional — narrows the search when omitted, the vault is searched across all ticket prefixes.' },
+        expectMtime: { type: 'number', description: 'The note file\'s mtime (ms) last observed by the caller. If the note changed since then, the patch is a no-op rather than an overwrite — optimistic concurrency, not a hard requirement.' },
+      },
+      required: ['id', 'body'],
+    },
+  },
+  {
+    name: 'recall_delete',
+    description: 'Delete a Recall note from the local vault. Irreversible locally, and destructive — requires `confirm: true` alongside `id` to actually execute; there is no interactive y/N prompt under MCP (no real terminal exists to prompt against), so omitting confirm always fails rather than silently blocking. Local vault only — if this note was already pushed to a team, teammates who pulled it keep their copy; deleting it there too is a manager action from the Console (Admin > Recall). Requires a TicketLens Pro license.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Note id to delete, as printed by recall_add or recall_search.' },
+        ticket: { type: 'string', description: 'Ticket key the note is about, e.g. PROJ-123. Optional — narrows the search when omitted, the vault is searched across all ticket prefixes.' },
+        confirm: { type: 'boolean', description: 'Must be true to actually execute the deletion — a nudge and audit trail, not just a formality. Omitted or false always fails.' },
+      },
+      required: ['id'],
     },
   },
   {

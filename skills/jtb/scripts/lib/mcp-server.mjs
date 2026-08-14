@@ -22,7 +22,7 @@
 import readline from 'node:readline';
 import { DEFAULT_CONFIG_DIR, getVersion } from './config.mjs';
 import { runDoctor } from './doctor-command.mjs';
-import { runNoteAdd } from './note-command.mjs';
+import { runNoteAdd, runNotePatch, runNoteDelete } from './note-command.mjs';
 import { runRecall } from './recall-command.mjs';
 import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate, runTicketCreate } from './ticket-command.mjs';
 import { run as runFetchTicket } from '../fetch-ticket.mjs';
@@ -239,6 +239,25 @@ async function callPr(args, deps) {
   return callFetchTicketRun(buildPrArgs, args, deps, 'pr failed');
 }
 
+/**
+ * `ledger` is a subcommand of the same fetch-ticket.mjs `run()` that
+ * `callFetch`/`callCompliance`/`callPr` already wrap — reuses `runFetchTicketFn`,
+ * no new dependency. Unlike those, it has no `ticket`/`profile` argument — the
+ * ledger is local and config-dir scoped, not per-ticket. Its two direct
+ * `process.stderr` writes (the license-gate upgrade prompt and the
+ * verify-signature note printed alongside a successful json export) were
+ * threaded through opts.printErr as part of adding this tool.
+ */
+function buildLedgerArgs({ format }) {
+  const args = ['ledger'];
+  if (format) args.push(`--format=${format}`);
+  return args;
+}
+
+async function callLedger(args, deps) {
+  return callFetchTicketRun(buildLedgerArgs, args, deps, 'ledger export failed');
+}
+
 function buildDoctorArgs({ fix, profile }) {
   const args = ['--format=json'];
   if (fix === true) args.push('--fix');
@@ -353,6 +372,68 @@ async function callRecallAdd(args, { configDir, runNoteAddFn }) {
   });
   const content = [{ type: 'text', text: capture.text }];
   return written ? { content } : { isError: true, content };
+}
+
+/**
+ * Builds runNotePatch's cmdArgs array — same single-opaque-element reasoning
+ * as buildNoteAddArgs above. `expectMtime` is optimistic-concurrency: a
+ * caller that fetched a note via recall_search and wants to refine it
+ * without racing a concurrent edit passes back the mtime it observed.
+ */
+function buildNotePatchArgs({ id, ticket, expectMtime }) {
+  const args = [`--id=${id}`];
+  if (ticket) args.push(`--ticket=${ticket}`);
+  if (expectMtime !== undefined) args.push(`--expect-mtime=${expectMtime}`);
+  return args;
+}
+
+async function callRecallUpdate(args, { configDir, runNotePatchFn }) {
+  if (!args.id) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: id' }] };
+  }
+  if (!args.body) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: body' }] };
+  }
+  const capture = capturingStream();
+  const { patched } = await runNotePatchFn(buildNotePatchArgs(args), {
+    configDir,
+    stream: capture,
+    readStdin: async () => args.body,
+  });
+  const content = [{ type: 'text', text: capture.text }];
+  return patched ? { content } : { isError: true, content };
+}
+
+/**
+ * Builds runNoteDelete's cmdArgs array — same single-opaque-element reasoning
+ * as buildNoteAddArgs above. Always passes `--yes`: runNoteDelete's own
+ * confirmDestructive gate refuses outright in non-interactive mode (no real
+ * TTY exists under the MCP transport to prompt against), so without it every
+ * call would fail. The caller's `confirm: true` is enforced in callRecallDelete
+ * below instead, before runNoteDeleteFn is ever reached — same nudge-and-audit
+ * -trail spirit as ticket_transition/ticket_link, but deliberately a different
+ * code path: those two defer the refusal to the wrapped CLI function, which
+ * here would surface as that generic non-interactive error instead of a
+ * dedicated one naming `confirm`.
+ */
+function buildNoteDeleteArgs({ id, ticket }) {
+  const args = [`--id=${id}`];
+  if (ticket) args.push(`--ticket=${ticket}`);
+  args.push('--yes');
+  return args;
+}
+
+async function callRecallDelete(args, { configDir, runNoteDeleteFn }) {
+  if (!args.id) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: id' }] };
+  }
+  if (args.confirm !== true) {
+    return { isError: true, content: [{ type: 'text', text: 'Deletion requires confirm: true — this cannot be restored.' }] };
+  }
+  const capture = capturingStream();
+  const { deleted } = await runNoteDeleteFn(buildNoteDeleteArgs(args), { configDir, stream: capture });
+  const content = [{ type: 'text', text: capture.text }];
+  return deleted ? { content } : { isError: true, content };
 }
 
 async function callRecallSearch(args, { configDir, runRecallFn }) {
@@ -532,11 +613,14 @@ async function handleToolsCall(params, deps) {
   if (name === 'review') return callReview(args, deps);
   if (name === 'standup') return callStandup(args, deps);
   if (name === 'pr') return callPr(args, deps);
+  if (name === 'ledger') return callLedger(args, deps);
   if (name === 'doctor') return callDoctor(args, deps);
   if (name === 'stats') return callStats(args, deps);
   if (name === 'history') return callHistory(args, deps);
   if (name === 'collisions') return callCollisions(args, deps);
   if (name === 'recall_add') return callRecallAdd(args, deps);
+  if (name === 'recall_update') return callRecallUpdate(args, deps);
+  if (name === 'recall_delete') return callRecallDelete(args, deps);
   if (name === 'recall_search') return callRecallSearch(args, deps);
   if (name === 'ticket_comment') return callTicketComment(args, deps);
   if (name === 'ticket_transition') return callTicketTransition(args, deps);
@@ -548,7 +632,7 @@ async function handleToolsCall(params, deps) {
   return { isError: true, content: [{ type: 'text', text: `Unknown tool: ${name}` }] };
 }
 
-async function handleMessage(raw, { configDir, runFetchTicketFn, runTriageFn, runDoctorFn, runStatsFn, runHistoryFn, runCollisionsFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn }) {
+async function handleMessage(raw, deps) {
   let msg;
   try {
     msg = JSON.parse(raw);
@@ -578,7 +662,7 @@ async function handleMessage(raw, { configDir, runFetchTicketFn, runTriageFn, ru
 
   if (method === 'tools/call') {
     try {
-      const result = await handleToolsCall(params, { configDir, runFetchTicketFn, runTriageFn, runDoctorFn, runStatsFn, runHistoryFn, runCollisionsFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
+      const result = await handleToolsCall(params, deps);
       return jsonRpcResult(id, result);
     } catch (err) {
       return jsonRpcError(id ?? null, -32603, `Internal error: ${err.message}`);
@@ -606,6 +690,8 @@ export function runMcpServer({
   runHistoryFn = runHistory,
   runCollisionsFn = runCollisions,
   runNoteAddFn = runNoteAdd,
+  runNotePatchFn = runNotePatch,
+  runNoteDeleteFn = runNoteDelete,
   runRecallFn = runRecall,
   runTicketCommentFn = runTicketComment,
   runTicketTransitionListFn = runTicketTransitionList,
@@ -624,6 +710,11 @@ export function runMcpServer({
   stdin.on('error', () => {});
   stdout.on('error', () => {});
 
+  // Assembled once and passed straight through handleMessage to handleToolsCall,
+  // which is the only place the individual functions are read — so a new tool
+  // needs its dependency named here and in the parameter list above, nowhere else.
+  const deps = { configDir, runFetchTicketFn, runTriageFn, runDoctorFn, runStatsFn, runHistoryFn, runCollisionsFn, runNoteAddFn, runNotePatchFn, runNoteDeleteFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn };
+
   const rl = readline.createInterface({ input: stdin, terminal: false });
   let queue = Promise.resolve();
 
@@ -635,7 +726,7 @@ export function runMcpServer({
     // never resolving (a dropped rejection isn't a resolution) — the
     // server would hang on shutdown instead of exiting.
     queue = queue.then(async () => {
-      const response = await handleMessage(line, { configDir, runFetchTicketFn, runTriageFn, runDoctorFn, runStatsFn, runHistoryFn, runCollisionsFn, runNoteAddFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn });
+      const response = await handleMessage(line, deps);
       if (response) stdout.write(response);
     }).catch(() => {});
   });
