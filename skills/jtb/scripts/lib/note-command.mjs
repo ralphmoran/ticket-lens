@@ -131,7 +131,11 @@ export async function runNoteAdd(cmdArgs, {
   }
 
   const ticketKeys = ticketKey ? [ticketKey] : [];
-  const { id } = writeNoteFn({ title, ticketKeys, tags, author, body }, { configDir });
+  // Captured once and threaded into writeNoteFn's now() override so the local
+  // vault file's `created` and the pushed payload's captured_at can never skew
+  // by the (short but real) gap between the local write and the push below.
+  const capturedAt = new Date();
+  const { id } = writeNoteFn({ title, ticketKeys, tags, author, body }, { configDir, now: () => capturedAt });
   incrementDraftKeptFn(configDir);
   const styled = !cmdArgs.includes('--plain') && stream.isTTY;
   const s = createStyler({ forceColor: styled, noColor: !styled });
@@ -144,7 +148,7 @@ export async function runNoteAdd(cmdArgs, {
     // the backend wire contract, not the local vault's internal camelCase shape.
     const profile = resolveProfileFn(ticketKey || null, { configDir, cwd: process.cwd() });
     const recallTeamId = profile ? loadProfileRecallTeamIdFn(profile.name, configDir) : null;
-    const payload = { external_id: id, title, tickets: ticketKeys, tags, author, sources: [], body };
+    const payload = { external_id: id, title, tickets: ticketKeys, tags, author, sources: [], body, captured_at: capturedAt.toISOString() };
     if (recallTeamId !== null) payload.group_id = recallTeamId;
     const result = await pushNoteFn(payload, { cliToken, configDir, warn });
     if (isRetryableFailureFn(result)) {

@@ -28,6 +28,7 @@ import { runTicketComment, runTicketTransitionList, runTicketTransition, runTick
 import { run as runFetchTicket } from '../fetch-ticket.mjs';
 import { run as runTriage } from '../fetch-my-tickets.mjs';
 import { runStats } from './run-stats.mjs';
+import { runIssueTypes } from './run-issue-types.mjs';
 import { runHistory } from './run-history.mjs';
 import { runCollisions } from './run-collisions.mjs';
 import { TOOLS } from './mcp-tool-schemas.mjs';
@@ -306,6 +307,18 @@ function buildStatsArgs({ profile, days, format }) {
 
 async function callStats(args, { configDir, runStatsFn }) {
   return callPrintWarnRun(buildStatsArgs, args, { configDir, runFn: runStatsFn }, 'stats failed');
+}
+
+function buildIssueTypesArgs({ profile, refresh, format }) {
+  const args = [];
+  if (profile) args.push(`--profile=${profile}`);
+  if (refresh === true) args.push('--refresh');
+  if (format) args.push(`--format=${format}`);
+  return args;
+}
+
+async function callIssueTypes(args, { configDir, runIssueTypesFn }) {
+  return callPrintWarnRun(buildIssueTypesArgs, args, { configDir, runFn: runIssueTypesFn }, 'issue-types failed');
 }
 
 function buildHistoryArgs({ ticket }) {
@@ -616,6 +629,7 @@ async function handleToolsCall(params, deps) {
   if (name === 'ledger') return callLedger(args, deps);
   if (name === 'doctor') return callDoctor(args, deps);
   if (name === 'stats') return callStats(args, deps);
+  if (name === 'issue_types') return callIssueTypes(args, deps);
   if (name === 'history') return callHistory(args, deps);
   if (name === 'collisions') return callCollisions(args, deps);
   if (name === 'recall_add') return callRecallAdd(args, deps);
@@ -687,6 +701,7 @@ export function runMcpServer({
   runTriageFn = runTriage,
   runDoctorFn = runDoctor,
   runStatsFn = runStats,
+  runIssueTypesFn = runIssueTypes,
   runHistoryFn = runHistory,
   runCollisionsFn = runCollisions,
   runNoteAddFn = runNoteAdd,
@@ -713,7 +728,7 @@ export function runMcpServer({
   // Assembled once and passed straight through handleMessage to handleToolsCall,
   // which is the only place the individual functions are read — so a new tool
   // needs its dependency named here and in the parameter list above, nowhere else.
-  const deps = { configDir, runFetchTicketFn, runTriageFn, runDoctorFn, runStatsFn, runHistoryFn, runCollisionsFn, runNoteAddFn, runNotePatchFn, runNoteDeleteFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn };
+  const deps = { configDir, runFetchTicketFn, runTriageFn, runDoctorFn, runStatsFn, runIssueTypesFn, runHistoryFn, runCollisionsFn, runNoteAddFn, runNotePatchFn, runNoteDeleteFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn };
 
   const rl = readline.createInterface({ input: stdin, terminal: false });
   let queue = Promise.resolve();

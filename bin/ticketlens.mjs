@@ -27,12 +27,13 @@ import {
   printInitHelp, printSwitchHelp, printConfigHelp,
   printReviewHelp, printStandupHelp, printUpdateSkillHelp,
   printComplianceHelp, printLedgerHelp, printPrHelp, printInstallHooksHelp,
-  printCollisionsHelp, printStatsHelp, printDoctorHelp,
+  printCollisionsHelp, printStatsHelp, printIssueTypesHelp, printDoctorHelp,
   printCloudKeysHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
   printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { runStats } from '../skills/jtb/scripts/lib/run-stats.mjs';
+import { runIssueTypes } from '../skills/jtb/scripts/lib/run-issue-types.mjs';
 import { createStyler } from '../skills/jtb/scripts/lib/ansi.mjs';
 import { readCliToken, deleteCliToken } from '../skills/jtb/scripts/lib/cli-auth.mjs';
 import { runLogin } from '../skills/jtb/scripts/lib/login-flow.mjs';
@@ -153,6 +154,15 @@ switch (command) {
   case 'stats': {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printStatsHelp(); break; }
     runStats(cmdArgs).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+  }
+
+  case 'issue-types': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printIssueTypesHelp(); break; }
+    runIssueTypes(cmdArgs).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
     });

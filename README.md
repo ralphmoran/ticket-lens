@@ -44,6 +44,7 @@
   - [Recall](#recall)
   - [Comment, Transition, Assign, Duplicates, Link, Update & Create](#comment-transition-assign-duplicates-link-update--create)
   - [Response-Time Stats](#response-time-stats)
+  - [Pre-fetch Issue Types](#pre-fetch-issue-types)
   - [Doctor](#doctor)
   - [Custom Attention Rules](#custom-attention-rules)
   - [Login](#login)
@@ -453,7 +454,7 @@ Every note is scanned before saving — anything shaped like a real secret (API 
 
 **Removing a note:** `ticketlens note delete --id="..." [--ticket=KEY]` removes a note from your local vault. Local only — if it was already pushed to a team, teammates who pulled it keep their copy; deleting it there too is a manager action from the Console (Admin > Recall).
 
-**Any MCP-capable AI harness:** `ticketlens mcp` starts a stdio [MCP](https://modelcontextprotocol.io) server exposing `fetch`, `triage`, `compliance`, `review`, `standup`, `pr`, `stats`, `history`, `collisions`, `ledger`, `doctor`, `recall_add`, `recall_update`, `recall_delete`, `recall_search`, `ticket_comment`, `ticket_transition`, `ticket_assign`, `ticket_duplicates`, `ticket_link`, `ticket_update`, and `ticket_create` as native tools — every CLI action now has an MCP tool, so any MCP-compatible AI assistant, not just Claude Code, can call them directly instead of constructing a shell command. It's a thin adapter over the exact same code as the CLI commands above — same license gate per tool, same secret scan/local vault/tracker writes, same team sync — nothing is reimplemented. `fetch`, `doctor`, and `standup` are Free; `triage`'s base scan is Free with some options gated Pro/Team, same as the CLI (`ticketlens triage --help`); `compliance` and `pr` are Free, sharing a 3-checks/month cap on their requirements-coverage section, Pro unlimited; `review` is Free for branch/files/ticket context, with its coverage/focus section requiring Pro as a plain license check — it does not draw from that same monthly counter; `stats` is Free with a 7-day lookback cap, Pro extends it to 30 days, same split as the CLI (`ticketlens stats --help`); `history` reads local triage history only (zero network) and requires Pro; `collisions` requires `ticketlens login` (Console access) plus a Team license; `ledger` exports the local, signed compliance audit trail (zero network) and requires Pro; every other tool needs Pro. `recall_update` overwrites an existing Recall note's body — internal plumbing for the note quality loop, not typically called directly. `recall_delete` is destructive and local-vault-only — requires `confirm: true` alongside `id` to actually execute; there is no interactive y/N prompt under MCP (no real terminal to prompt against), so omitting it always fails rather than silently blocking. Point your harness's MCP config at it: `{ "command": "ticketlens", "args": ["mcp"] }` — or run `ticketlens mcp install` in a project to write that entry into its `.mcp.json` for you (creates the file if it doesn't exist, merges in if it does — never touches any other entry already there; `--dry-run` to preview first).
+**Any MCP-capable AI harness:** `ticketlens mcp` starts a stdio [MCP](https://modelcontextprotocol.io) server exposing `fetch`, `triage`, `compliance`, `review`, `standup`, `pr`, `stats`, `issue_types`, `history`, `collisions`, `ledger`, `doctor`, `recall_add`, `recall_update`, `recall_delete`, `recall_search`, `ticket_comment`, `ticket_transition`, `ticket_assign`, `ticket_duplicates`, `ticket_link`, `ticket_update`, and `ticket_create` as native tools — every CLI action now has an MCP tool, so any MCP-compatible AI assistant, not just Claude Code, can call them directly instead of constructing a shell command. It's a thin adapter over the exact same code as the CLI commands above — same license gate per tool, same secret scan/local vault/tracker writes, same team sync — nothing is reimplemented. `fetch`, `doctor`, and `standup` are Free; `triage`'s base scan is Free with some options gated Pro/Team, same as the CLI (`ticketlens triage --help`); `compliance` and `pr` are Free, sharing a 3-checks/month cap on their requirements-coverage section, Pro unlimited; `review` is Free for branch/files/ticket context, with its coverage/focus section requiring Pro as a plain license check — it does not draw from that same monthly counter; `stats` is Free with a 7-day lookback cap, Pro extends it to 30 days, same split as the CLI (`ticketlens stats --help`); `issue_types` is Free and Jira-only — pre-fetches and caches a profile's real creatable projects and issue types ahead of a `ticket_create` attempt, sharing its cache with that tool's own reactive enrichment; Linear/GitHub profiles get a clear "not available" instead of an empty result; `history` reads local triage history only (zero network) and requires Pro; `collisions` requires `ticketlens login` (Console access) plus a Team license; `ledger` exports the local, signed compliance audit trail (zero network) and requires Pro; every other tool needs Pro. `recall_update` overwrites an existing Recall note's body — internal plumbing for the note quality loop, not typically called directly. `recall_delete` is destructive and local-vault-only — requires `confirm: true` alongside `id` to actually execute; there is no interactive y/N prompt under MCP (no real terminal to prompt against), so omitting it always fails rather than silently blocking. Point your harness's MCP config at it: `{ "command": "ticketlens", "args": ["mcp"] }` — or run `ticketlens mcp install` in a project to write that entry into its `.mcp.json` for you (creates the file if it doesn't exist, merges in if it does — never touches any other entry already there; `--dry-run` to preview first).
 
 `note add`'s save confirmation and `recall`'s search results are styled by default in a terminal; add `--plain` to either for bare, pipe-safe output. `recall` always shows each note's file ID (e.g. `[1784135399545-fe01c4.md]`) so you can open it directly (`cat ~/.ticketlens/recall/<PREFIX>/<id>`), or pass `--full` to print the full body content inline instead. Each result shows a relative time (`2h ago`, `3d ago`) rather than a bare date — the full-precision timestamp is always in the note file's own frontmatter.
 
@@ -497,7 +498,7 @@ Write directly to the ticket in its real tracker — Jira, GitHub, or Linear —
 
 `--attach=path1,path2` (comma-separated local file paths) is available on `comment` and `create` only. Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
 
-**A bad `--project`/`--type` gets a better error, automatically.** If create fails because the project or issue type doesn't exist, TicketLens fetches your tracker's real, current project list (and, for Jira, the real issue types for that project) and shows them alongside the failure — e.g. `Known creatable projects: CNV1, CNV2.` — rather than a bare tracker error. This is reactive only: it never runs on a successful create, never auto-retries the write, and is cached locally per profile for 24h so a burst of failed attempts doesn't re-fetch every time.
+**A bad `--project`/`--type` gets a better error, automatically.** If create fails because the project or issue type doesn't exist, TicketLens fetches your tracker's real, current project list (and, for Jira, the real issue types for that project) and shows them alongside the failure — e.g. `Known creatable projects: CNV1, CNV2.` — rather than a bare tracker error. This is reactive only: it never runs on a successful create, never auto-retries the write, and is cached locally per profile for 24h so a burst of failed attempts doesn't re-fetch every time. `ticketlens issue-types` (below) is the proactive counterpart — pre-fetches and caches the same data ahead of time, so a `create` right after it is a pure cache hit.
 
 All six write actions (comment/transition/assign/link/update/create) have a short local debounce (10s) against an accidental double-fire (a flaky retry, hitting enter twice), and every successful write is appended to a local, append-only audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — unlike Recall notes, ticket writes aren't naturally idempotent, so a timed-out attempt is surfaced to you instead of silently repeated. `duplicates` has neither, since nothing is written.
 
@@ -523,6 +524,19 @@ A one-line summary footer is also appended automatically to `ticketlens triage` 
 ```
 ── This week: avg 3.2h response · 80% cleared within 24h (5 runs) ──
 ```
+
+---
+
+### Pre-fetch Issue Types
+
+```bash
+ticketlens issue-types                   # Pre-fetch/cache the active profile's real projects + Jira issue types
+ticketlens issue-types --profile=acme    # Target a specific profile
+ticketlens issue-types --refresh         # Force a live fetch, bypassing the cache
+ticketlens issue-types --format=json     # JSON output for scripting
+```
+
+Fetches a profile's real creatable projects and, for Jira, each project's valid issue types — the proactive counterpart to `create`'s reactive failure-message enrichment (above): a ready lookup instead of only learning them from a failed create's error. Jira only — Linear has no per-project issue-type concept and GitHub has neither, so both report a clear "not available" instead of an empty result. Free, no license gate. Shares its cache with `create`'s enrichment (`~/.ticketlens/cache/PROFILE/ticket-metadata.json`, 24h TTL), so a `create` failure right after this command is a pure cache hit, no extra network round-trip.
 
 ---
 
@@ -817,6 +831,12 @@ ticketlens stats                              # Response-time metrics from local
 ticketlens stats --profile=acme              # Metrics for a specific profile
 ticketlens stats --days=14                   # Extend lookback window (Pro, max 30)
 ticketlens stats --format=json               # JSON output for scripting
+
+# ── Issue Types ───────────────────────────────────────────────────────────────
+ticketlens issue-types                        # Pre-fetch/cache the active profile's projects + Jira issue types
+ticketlens issue-types --profile=acme        # Target a specific profile
+ticketlens issue-types --refresh             # Force a live fetch, bypassing the cache
+ticketlens issue-types --format=json         # JSON output for scripting
 
 # ── Doctor ────────────────────────────────────────────────────────────────────
 ticketlens doctor                             # Diagnose profile/license/connectivity/cache/MCP-registration/queue problems

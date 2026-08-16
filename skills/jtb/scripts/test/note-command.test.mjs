@@ -479,6 +479,39 @@ describe('runNoteAdd — team sync (push after local write)', () => {
   });
 });
 
+describe('runNoteAdd — captured_at (49g: local-creation vs server-push timestamp)', () => {
+  test('the push payload includes captured_at as an ISO timestamp', async () => {
+    let capturedNote;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: (note) => { capturedNote = note; return Promise.resolve({ ok: true }); },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.match(capturedNote.captured_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  });
+
+  test('the same instant is threaded to writeNoteFn as a now() override — local file and pushed payload can never skew', async () => {
+    let writeNoteNow, capturedNote;
+    const deps = baseDeps({
+      writeNoteFn: (note, opts) => { writeNoteNow = opts.now().toISOString(); return { id: 'note-1.md', path: 'x' }; },
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: (note) => { capturedNote = note; return Promise.resolve({ ok: true }); },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
+    assert.equal(capturedNote.captured_at, writeNoteNow);
+  });
+
+  test('without a cliToken (no push attempted), writeNoteFn still receives the same now() override', async () => {
+    let receivedNow;
+    const deps = baseDeps({
+      writeNoteFn: (note, opts) => { receivedNow = opts.now; return { id: 'x', path: 'x' }; },
+      readCliTokenFn: () => null,
+    });
+    await runNoteAdd(['--title=x'], deps);
+    assert.equal(typeof receivedNow, 'function');
+  });
+});
+
 describe('runNoteAdd — explicit team targeting via the active profile\'s recallTeamId', () => {
   test('includes group_id when the resolved profile has a recallTeamId in credentials.json', async () => {
     let capturedNote;

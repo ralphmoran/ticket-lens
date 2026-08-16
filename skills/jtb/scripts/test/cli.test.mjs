@@ -185,6 +185,18 @@ describe('parseCommand', () => {
     assert.deepEqual(result.args, ['--json']);
   });
 
+  it('routes "issue-types" to the issue-types command, not the default fetch fallthrough', () => {
+    const result = parseCommand(['issue-types']);
+    assert.equal(result.command, 'issue-types');
+    assert.deepEqual(result.args, []);
+  });
+
+  it('routes "issue-types --profile=myteam --refresh" with flags preserved', () => {
+    const result = parseCommand(['issue-types', '--profile=myteam', '--refresh']);
+    assert.equal(result.command, 'issue-types');
+    assert.deepEqual(result.args, ['--profile=myteam', '--refresh']);
+  });
+
   it('routes "cloud-keys" to the cloud-keys command, not the default fetch fallthrough', () => {
     const result = parseCommand(['cloud-keys']);
     assert.equal(result.command, 'cloud-keys');

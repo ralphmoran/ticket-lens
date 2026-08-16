@@ -111,6 +111,18 @@ export const TOOLS = [
     },
   },
   {
+    name: 'issue_types',
+    description: 'Pre-fetch and cache a profile\'s real creatable projects and their valid Jira issue types, ahead of a `ticket_create` attempt — a ready lookup instead of only learning them from a failed create\'s error message. Jira only; Linear/GitHub report "not available" (Linear has no per-project issue-type concept, GitHub has neither). Shares its cache with ticket_create\'s own failure-message enrichment (24h TTL) — a create failure right after this call is a pure cache hit, no extra network round-trip.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        profile: { type: 'string', description: 'Connection profile to target, overriding folder-based inference and the default profile.' },
+        refresh: { type: 'boolean', description: 'Force a live fetch even if a complete cache already exists for this profile.' },
+        format: { type: 'string', enum: ['plain', 'json'], description: 'Output shape: "plain" (default) is a human-readable table; "json" is structured for scripting.' },
+      },
+    },
+  },
+  {
     name: 'history',
     description: 'Show a ticket\'s urgency timeline from local triage history — every prior triage scan that surfaced it, with the urgency level and reason computed at that point in time. Read-only, entirely local — no network call. Requires a TicketLens Pro license.',
     inputSchema: {

@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.39.0 -->
+<!-- jtb-skill-version: 0.40.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -42,6 +42,8 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb stats                             # personal response-time metrics from local history
 /jtb stats --days=14                   # extend lookback window (Pro, max 30)
 /jtb stats --format=json               # JSON output for scripting
+/jtb issue-types                       # pre-fetch/cache a profile's valid Jira issue types
+/jtb issue-types --refresh             # force a live fetch, bypassing the cache
 /jtb collisions                        # show branch collisions with teammates (Team)
 /jtb collisions --json                 # machine-readable output
 /jtb review                            # code-review context brief from current branch
@@ -145,6 +147,25 @@ Shows response-time and triage-cadence metrics from local triage history: avg/me
 Display the script's stdout directly. No plan mode. Stop here.
 
 If this harness has TicketLens's MCP server configured (a tool named `stats` — often shown as `mcp__ticketlens__stats` — visible in your tool list), prefer it over the bash form: same Free/Pro day-cap split, no shell command to construct. It accepts `profile`/`days`/`format`.
+
+---
+
+### Issue-types subcommand
+
+If the first argument is `issue-types`:
+
+Run:
+```bash
+ticketlens issue-types $EXTRA_ARGS
+```
+
+Where `$EXTRA_ARGS` are any flags passed (e.g. `--profile=acme --refresh --format=json`).
+
+Pre-fetches and caches a profile's real creatable projects and their valid Jira issue types, ahead of a `ticketlens create` attempt — a ready lookup instead of only learning them from a failed create's error message. Jira only; Linear (no per-project issue-type concept) and GitHub (neither) report a clear "not available" instead of an empty result. Free, no license gate. `--profile=NAME` (target a specific tracker profile); `--refresh` (force a live fetch even if a complete cache already exists); `--format=plain` (default, human-readable table) or `--format=json` (scripting). Shares its cache with `ticketlens create`'s own failure-message enrichment (`~/.ticketlens/cache/PROFILE/ticket-metadata.json`, 24h TTL) — a create failure right after this command is a pure cache hit.
+
+Display the script's stdout directly. No plan mode. Stop here.
+
+If this harness has TicketLens's MCP server configured (a tool named `issue_types` — often shown as `mcp__ticketlens__issue_types` — visible in your tool list), prefer it over the bash form: same Jira-only scope, same shared cache, no shell command to construct. It accepts `profile`/`refresh`/`format`.
 
 ---
 

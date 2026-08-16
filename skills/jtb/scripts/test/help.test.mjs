@@ -8,7 +8,7 @@ import {
   printInitHelp, printSwitchHelp, printConfigHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
   printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
-  printCloudKeysHelp,
+  printCloudKeysHelp, printIssueTypesHelp,
 } from '../lib/help.mjs';
 
 function captureHelp(fn) {
@@ -96,6 +96,27 @@ describe('printHistoryHelp', () => {
     assert.match(out, /history/);
     assert.match(out, /TICKET-KEY/);
     assert.match(out, /\[Pro\]/);
+  });
+});
+
+describe('printIssueTypesHelp', () => {
+  it('documents --profile, --refresh, --format, and the Jira-only scope', () => {
+    const out = captureHelp(printIssueTypesHelp);
+    assert.match(out, /issue-types/);
+    assert.match(out, /--profile/);
+    assert.match(out, /--refresh/);
+    assert.match(out, /--format/);
+    assert.match(out, /Jira only/i);
+  });
+});
+
+describe('printHelp — documents issue-types', () => {
+  it('main USAGE lists issue-types alongside create', () => {
+    const out = captureHelp(printHelp);
+    const createIdx = out.indexOf('ticketlens create');
+    const issueTypesIdx = out.indexOf('ticketlens issue-types');
+    assert.ok(issueTypesIdx !== -1, 'expected a top-level line for issue-types');
+    assert.ok(createIdx !== -1 && issueTypesIdx > createIdx, 'issue-types should be listed near create');
   });
 });
 
@@ -502,6 +523,13 @@ describe('printMcpHelp — ticket tools', () => {
     assert.match(out, /recall_delete.*destructive/s);
     assert.match(out, /confirm.*true/);
     assert.match(out, /no interactive.*prompt/i);
+  });
+
+  it('documents issue_types (ROADMAP 49i) — Free, Jira-only, shares its cache with ticket_create', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /\bissue_types\b/);
+    assert.match(out, /issue_types.*Free.*Jira-only/s);
+    assert.match(out, /not available/);
   });
 });
 

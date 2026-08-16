@@ -74,7 +74,7 @@ describe('mcp-server', () => {
     it('returns exactly fetch, recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const names = messages[0].result.tools.map((t) => t.name).sort();
-      assert.deepEqual(names, ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
+      assert.deepEqual(names, ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'issue_types', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
       for (const tool of messages[0].result.tools) {
         assert.equal(tool.inputSchema.type, 'object');
         assert.ok(tool.inputSchema.properties, `${tool.name} must declare input properties`);
@@ -656,6 +656,55 @@ describe('mcp-server', () => {
       );
       assert.equal(messages[0].result.isError, true);
       assert.match(messages[0].result.content[0].text, /stats failed/);
+    });
+  });
+
+  describe('tools/call issue_types', () => {
+    it('happy path: forwards profile/refresh/format and returns the report', async () => {
+      let seen;
+      const runIssueTypesFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('PROD  Task, Bug\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'issue_types', arguments: { profile: 'work', refresh: true, format: 'json' } } }],
+        { configDir, runIssueTypesFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('PROD'));
+      assert.deepEqual(seen, ['--profile=work', '--refresh', '--format=json']);
+    });
+
+    it('omits every optional flag when not given', async () => {
+      let seen;
+      const runIssueTypesFn = async (cmdArgs, opts) => { seen = cmdArgs; opts.print('ok\n'); };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'issue_types', arguments: {} } }],
+        { configDir, runIssueTypesFn },
+      );
+      assert.deepEqual(seen, []);
+    });
+
+    it('a failure (print never receives a report) maps to a JSON-RPC tool error carrying the warn message', async () => {
+      const runIssueTypesFn = async (cmdArgs, opts) => {
+        opts.warn('  Issue types are not available for this tracker (linear) — only Jira exposes per-project issue types.\n');
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'issue_types', arguments: {} } }],
+        { configDir, runIssueTypesFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /not available for this tracker/);
+    });
+
+    it('a failure with nothing captured anywhere falls back to a generic error, never a false success', async () => {
+      const runIssueTypesFn = async () => {};
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'issue_types', arguments: {} } }],
+        { configDir, runIssueTypesFn },
+      );
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /issue-types failed/);
     });
   });
 
@@ -1700,7 +1749,7 @@ describe('mcp-server', () => {
       assert.equal(messages.length, 2, 'both the parse-error response and the valid tools/list response must appear');
       assert.ok(messages[0].error, 'first message must be a JSON-RPC error for the malformed line');
       assert.equal(messages[1].id, 2);
-      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
+      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'issue_types', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
     });
 
     it('a syntactically-valid-but-non-object JSON line (e.g. bare "null") does not crash the server or drop later messages', async () => {
