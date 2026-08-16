@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/npm/dm/ticketlens?style=flat-square&color=06b6d4&label=downloads" />
   <img src="https://github.com/ralphmoran/ticket-lens/actions/workflows/test.yml/badge.svg?style=flat-square" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" />
-  <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen?style=flat-square" />
+  <img src="https://img.shields.io/badge/node-%3E%3D22-brightgreen?style=flat-square" />
 </div>
 
 </div>
