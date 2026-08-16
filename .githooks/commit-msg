@@ -1,0 +1,10 @@
+#!/bin/sh
+# Rejects commits with a Co-Authored-By trailer.
+# Global preference: no attribution lines in this repo's history.
+# See: false GitHub contributor attribution from a stray "Co-Authored-By: claude-flow" trailer (2026-08-05).
+
+if grep -qiE '^Co-Authored-By:' "$1"; then
+  echo "commit-msg hook: 'Co-Authored-By' trailers are not allowed in this repo." >&2
+  echo "Remove the trailer and commit again." >&2
+  exit 1
+fi
