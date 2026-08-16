@@ -87,7 +87,7 @@ describe('writeNote — path-traversal safety on title/tags', () => {
       { configDir },
     );
     assert.equal(notePath.startsWith(path.join(configDir, 'recall', 'PROD')), true);
-    assert.equal(fs.existsSync(path.join(configDir, '..', '..', 'etc', 'passwd')), false);
+    assert.match(path.basename(notePath), /^\d+-[0-9a-f]{6}\.md$/);
   });
 
   test('a malicious tag never becomes part of the file path', () => {
