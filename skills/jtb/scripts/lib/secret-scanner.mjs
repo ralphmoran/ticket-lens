@@ -32,6 +32,30 @@ const MAX_JOINED_CHUNKS = 4;
 const MAX_COMPOUND_SEGMENT_LENGTH = 15;
 const HYPHENATED_COMPOUND_RE = /^[A-Za-z]+(-[A-Za-z]+)+$/;
 
+// A candidate containing an unstripped '(', ')', '[', or ']' reads as code
+// syntax (an array/list literal element, or a function-call argument — e.g.
+// "['compliance', '--help']" or "matches(x)") rather than a secret fragment.
+// Consulted ONLY from looksLikeCodeSyntax below, which downgrades a matching
+// high-entropy candidate to a warning — deliberately NOT wired into
+// isLabelWord (backlog #14 residual, code review caught this on the first
+// pass): making a bracket-bearing token a hard isLabelWord stop would end a
+// joinedChunkRuns run there unconditionally, the same way GIT_REFERENCE_WORD_RE/
+// isHyphenatedWordCompound/looksLikeFilenameReference already do — but unlike
+// those, a bracket character is trivial for an attacker to insert anywhere
+// ("a(b"), and doing so would fully and SILENTLY stop a genuine fragmented
+// secret split around it from ever being reassembled for the entropy check
+// (confirmed live: a real 36-char secret split into two 18-char halves around
+// a bare "a(b" separator went from rejected:true to a fully silent
+// rejected:false/warnings:[] once isLabelWord treated brackets as a stop).
+// The downgrade-only design below avoids that: the join still happens (a
+// bracket-bearing token is ordinary, never a label word), so any joined
+// candidate spanning real secret content still trips the entropy check —
+// and since that joined candidate necessarily still contains the bracket
+// character too, looksLikeCodeSyntax downgrades it to a WARNING rather than
+// silently exempting it, unlike the fully-silent gap the hard-wall version
+// would have reopened.
+const CODE_SYNTAX_RE = /[()[\]]/;
+
 // U+200B (ZERO WIDTH SPACE) is added explicitly: despite the name, it does
 // NOT carry the Unicode White_Space property (General_Category=Cf, not Zs),
 // so it's excluded from JS's native \s (ECMA-262 WhiteSpace production) —
@@ -145,6 +169,29 @@ function looksLikeCodeFilename(rawToken) {
 
 function looksLikeFilenameReference(strippedToken) {
   return FILENAME_REFERENCE_RE.test(strippedToken);
+}
+
+/**
+ * True for a candidate — a raw token OR a joinedChunkRuns result — that
+ * itself contains an unstripped '(', ')', '[', or ']': code syntax (a
+ * function-call argument or array/list-literal element) rather than a secret
+ * fragment. Deliberately NOT wired into isLabelWord/joinedChunkRuns (see
+ * CODE_SYNTAX_RE's own comment for why that hard-wall approach reopened a
+ * silent reassembly bypass) — instead this only downgrades a candidate that
+ * ALREADY tripped looksRandom, same never-exempt treatment as
+ * looksLikeCodeFilename below. Covers both backlog #14 residual shapes: a
+ * token already 20+ chars on its own with no join needed (e.g.
+ * "matches(['compliance'," — whitespace-split with no space after '(' or
+ * '[', so it's one raw token from the very first split), and a joined run
+ * that only crosses the entropy threshold once several bracket-literal
+ * tokens glue together (e.g. "['compliance','--help','-h','debug']") — the
+ * bracket character survives into the joined string either way, so this
+ * still catches it. Fully exempting this shape would let a 20+ char secret
+ * dodge rejection just by wrapping it in a fake "f(" / "[" — see the
+ * security regression test alongside looksLikeCodeFilename's.
+ */
+function looksLikeCodeSyntax(rawToken) {
+  return CODE_SYNTAX_RE.test(stripEdgePunctuation(rawToken));
 }
 
 function shannonEntropy(token) {
@@ -396,11 +443,14 @@ export function scanForSecrets({ title = '', tags = [], body = '' } = {}) {
   // Downgrading to a warning — never silently dropping the signal — matches
   // how an email address is already handled below.
   const randomCandidates = candidates.filter(token => !EMAIL_RE.test(token) && looksRandom(token, combined));
-  if (randomCandidates.some(token => !looksLikeCodeFilename(token))) {
+  if (randomCandidates.some(token => !looksLikeCodeFilename(token) && !looksLikeCodeSyntax(token))) {
     reasons.push('Contains a long, random-looking string that could be a secret.');
   }
   if (randomCandidates.some(token => looksLikeCodeFilename(token))) {
     warnings.push('Contains a code-filename-shaped token that also reads as high-entropy — double-check it is not a credential.');
+  }
+  if (randomCandidates.some(token => looksLikeCodeSyntax(token))) {
+    warnings.push('Contains a code-syntax-shaped token (brackets or parentheses) that also reads as high-entropy — double-check it is not a credential.');
   }
 
   if (EMAIL_RE.test(combined)) {

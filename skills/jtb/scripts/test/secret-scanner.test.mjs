@@ -468,6 +468,65 @@ describe('scanForSecrets — regression: filename+identifier joins are not a sec
   });
 });
 
+describe('scanForSecrets — regression: bracket/paren code-syntax tokens are not a secret (backlog #14 residual)', () => {
+  test('exact live repro: a 4-element bracket-quoted array literal false-positived via the entropy join', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: "['compliance', '--help', '-h', 'debug']" });
+    assert.equal(result.rejected, false);
+  });
+
+  test('a bracket literal wrapped in a function call false-positived the same way', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: "matches(['compliance', '--help'])" });
+    assert.equal(result.rejected, false);
+  });
+
+  test('a dotted method call joined with an arrow token false-positived the same way', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'process.argv.slice(2) => done' });
+    assert.equal(result.rejected, false);
+  });
+
+  test('control case: the same array literal content without brackets/quotes is unaffected (sanity check on the fix scope)', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'compliance --help -h debug' });
+    assert.equal(result.rejected, false);
+  });
+
+  test('security regression: a real hard-reject secret adjacent to a bracket literal is still caught — bracket stop-word only affects the generic entropy join, not HARD_REJECT_PATTERNS', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: "args are ['compliance', '--help'] and the key is AKIAIOSFODNN7EXAMPLE" });
+    assert.equal(result.rejected, true);
+    assert.match(result.reasons.join(' '), /AWS access key/i);
+  });
+
+  test('security regression: a genuinely random letters-only secret disguised by wrapping it in a fake function call is downgraded to a warning, never silently exempted', () => {
+    // Same bypass class the looksLikeCodeFilename security review already
+    // closed for ".php"-suffixed secrets: fully exempting a bracket/paren-
+    // wrapped high-entropy token would let an attacker dodge rejection by
+    // wrapping any 20+ char secret in "f(" / "[". Must still surface a
+    // warning — never rejected:false with zero trace.
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'wrap(XqZkTmWpLbNvRcYsHjFgAbCd)' });
+    assert.equal(result.rejected, false);
+    assert.match(result.warnings.join(' '), /code-syntax-shaped/, 'must never pass through with zero trace, even though it is not hard-blocked');
+  });
+
+  test('CRITICAL regression caught in code review: a genuine secret split into two <20-char halves around a trivial bracket-bearing bait token still reassembles for the entropy check and surfaces a warning, never a fully silent pass', () => {
+    // The first version of this fix made CODE_SYNTAX_RE an isLabelWord hard
+    // stop, which ended a joinedChunkRuns run at ANY bracket-bearing token —
+    // including a trivial 3-char bait like "a(b" that isn't itself code, just
+    // happens to contain a paren. That fully and SILENTLY defeated
+    // reassembly of a real secret split around it (rejected:false,
+    // warnings:[] — confirmed live via git stash before/after). Fixed by
+    // never wiring CODE_SYNTAX_RE into isLabelWord at all — see
+    // CODE_SYNTAX_RE's own comment. Pinned here so it can't silently regress
+    // back to the hard-wall version.
+    const secret = 'k3f9x7q2z8p1m6w4y0j5h2n9v3t8s1r7d4Q9'; // 36 chars, two 18-char halves
+    const half1 = secret.slice(0, 18);
+    const half2 = secret.slice(18, 36);
+    const unsplit = scanForSecrets({ title: 'x', tags: [], body: secret });
+    assert.equal(unsplit.rejected, true, 'sanity check: the unsplit secret is caught');
+    const split = scanForSecrets({ title: 'x', tags: [], body: `${half1} a(b ${half2}` });
+    assert.equal(split.rejected, false, 'the bracket bait downgrades this to a warning, same as any other code-syntax-shaped high-entropy candidate');
+    assert.match(split.warnings.join(' '), /code-syntax-shaped/, 'must never pass through with zero trace — the CRITICAL bug produced warnings:[] here');
+  });
+});
+
 describe('scanForSecrets — documented accepted gap: entropy join no longer spans a field boundary', () => {
   test('a secret split exactly across a tag and the body is not caught by the entropy join — hard-reject shapes still are, this is entropy-only and deliberate', () => {
     // Trade-off accepted alongside the Trigger-3 field-boundary fix above:
