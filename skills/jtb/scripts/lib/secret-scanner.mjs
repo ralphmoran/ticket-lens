@@ -172,34 +172,49 @@ const UNDERSCORE_COMPOUND_RE = /^[A-Za-z]+(_[A-Za-z]+)+$/;
 // delimiters within one candidate would need.
 const SLASH_PATH_RE = /^[A-Za-z0-9]+(\/[A-Za-z0-9]+)+\/?$/;
 
+// PHP static method/property/const access (Class_Name::method,
+// Class_Name::CONST), optionally prefixed by a leading backslash (PHP's
+// fully-qualified global-namespace form — stripEdgePunctuation does not
+// strip a LEADING backslash, only the trailing/leading punctuation in
+// EDGE_PUNCTUATION_RE's class). The class part reuses the same shape as
+// UNDERSCORE_COMPOUND_RE but allows a bare (non-underscore) class name too
+// — real code has both ("Zend_Http_Client::GET" and "Router::dispatch").
+// Found live: backlog #17's ORIGINAL bug report repro included this exact
+// class+member shape (`Advent_Http_ClientFactory::clientForJson`,
+// `Zend_Http_Client::GET`), but the first fix only covered the bare class
+// name in isolation — the embedded "::member" broke UNDERSCORE_COMPOUND_RE's
+// match (colons aren't letters/underscores) and no other exemption applied.
+const STATIC_REFERENCE_RE = /^\\?([A-Za-z]+(?:_[A-Za-z]+)*)::([A-Za-z_][A-Za-z0-9_]*)$/;
+
 /**
  * Downgrade-only, same never-exempt treatment as looksLikeCodeFilename and
  * looksLikeCodeSyntax below: true for a candidate shaped like a multi-segment
- * code identifier (underscore-delimited PHP/Zend-1-style class name) or a
- * namespace/filesystem path (slash-delimited), each segment capped at
- * MAX_COMPOUND_SEGMENT_LENGTH so a long random run can't pose as one
- * "segment" — same cap isHyphenatedWordCompound already uses. Backlog #17:
- * isLabelWord's ordinary-word branch only matches letters-only tokens with
- * no separator at all, and neither existing downgrade path below requires a
- * file extension or bracket/paren — so a standalone identifier or path like
- * the two shapes above had no exemption path whatsoever, unlike a hyphenated
- * compound or a dotted filename.
+ * code identifier (underscore-delimited PHP/Zend-1-style class name), a
+ * namespace/filesystem path (slash-delimited), or a PHP static method/const
+ * reference (Class_Name::member, see STATIC_REFERENCE_RE), each segment
+ * capped at MAX_COMPOUND_SEGMENT_LENGTH so a long random run can't pose as
+ * one "segment" — same cap isHyphenatedWordCompound already uses. Backlog
+ * #17: isLabelWord's ordinary-word branch only matches letters-only tokens
+ * with no separator at all, and neither existing downgrade path below
+ * requires a file extension or bracket/paren — so a standalone identifier,
+ * path, or static reference like the three shapes above had no exemption
+ * path whatsoever, unlike a hyphenated compound or a dotted filename.
  *
- * A disguised real secret matching either shape still surfaces as a
- * warning, never a silent pass — see the security regression tests
- * alongside this function's own tests for both shapes.
+ * A disguised real secret matching any of the three shapes still surfaces
+ * as a warning, never a silent pass — see the security regression tests
+ * alongside this function's own tests for all three shapes.
  *
  * Known accepted gap (security review, backlog #17): unlike
  * isHyphenatedWordCompound, this has no whole-token case-switch guard (see
  * UNDERSCORE_COMPOUND_RE's own comment for why one can't be added without
  * rejecting the real Zend_Http_Client-shaped identifiers this exists to
  * recognize) — so a uniform-case (all-upper or all-lower) letters-only
- * secret needs only ONE underscore or slash inserted to downgrade from a
- * full reject to a warning, no camouflage (fake extension, case pattern)
- * required. Still never a silent pass — always a warning — so this is the
- * same class of trade-off as CODE_SYNTAX_RE's even less-constrained
- * downgrade above (any bracket/paren, no shape requirement at all), not a
- * new exposure.
+ * secret needs only ONE underscore, slash, or "::" inserted to downgrade
+ * from a full reject to a warning, no camouflage (fake extension, case
+ * pattern) required. Still never a silent pass — always a warning — so
+ * this is the same class of trade-off as CODE_SYNTAX_RE's even less-
+ * constrained downgrade above (any bracket/paren, no shape requirement at
+ * all), not a new exposure.
  */
 function looksLikeCodeIdentifierOrPath(rawToken) {
   const stripped = stripEdgePunctuation(rawToken);
@@ -208,6 +223,12 @@ function looksLikeCodeIdentifierOrPath(rawToken) {
   }
   if (SLASH_PATH_RE.test(stripped)) {
     return stripped.split('/').filter(Boolean).every(segment => segment.length <= MAX_COMPOUND_SEGMENT_LENGTH);
+  }
+  const staticRefMatch = stripped.match(STATIC_REFERENCE_RE);
+  if (staticRefMatch) {
+    const classSegmentsWithinCap = staticRefMatch[1].split('_').every(segment => segment.length <= MAX_COMPOUND_SEGMENT_LENGTH);
+    const memberWithinCap = staticRefMatch[2].length <= MAX_COMPOUND_SEGMENT_LENGTH;
+    return classSegmentsWithinCap && memberWithinCap;
   }
   return false;
 }

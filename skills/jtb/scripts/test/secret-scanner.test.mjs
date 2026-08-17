@@ -592,6 +592,35 @@ describe('scanForSecrets — regression: underscore- and slash-delimited code id
     assert.equal(upper.rejected, false);
     assert.match(upper.warnings.join(' '), /code-identifier-or-path-shaped/, 'must never pass through with zero trace');
   });
+
+  test('live gap found post-ship: a PHP static method/const reference (Class_Name::member) is not rejected, but does warn — the original bug report\'s own repro included this exact shape (Zend_Http_Client::GET) and the first fix only covered the bare class name, not the class+member pair', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'Zend_Http_Client::GET is used here.' });
+    assert.equal(result.rejected, false);
+    assert.match(result.warnings.join(' '), /code-identifier-or-path-shaped/);
+  });
+
+  test('static reference with a leading backslash (PHP fully-qualified global-namespace form) is not rejected, but does warn', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: '\\Acme_Http_ClientFactory::clientForJson is the method.' });
+    assert.equal(result.rejected, false);
+    assert.match(result.warnings.join(' '), /code-identifier-or-path-shaped/);
+  });
+
+  test('a bare (non-underscore-delimited) class name with a static member reference is not rejected either — the class part does not require a compound shape', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'PaymentGateway::processCharge runs first.' });
+    assert.equal(result.rejected, false);
+    assert.match(result.warnings.join(' '), /code-identifier-or-path-shaped/);
+  });
+
+  test('security regression: an oversized member name after :: does not qualify, so it is still a full hard reject', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'Zend_Http_Client::abcdefghijklmnopqrstuvwxyz is used here.' });
+    assert.equal(result.rejected, true);
+  });
+
+  test('security regression: a genuinely random secret disguised as a static reference (Class::member shape) is downgraded to a warning, never silently exempted', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'XqZkTmWpLbNvRc::YsHjFgAbCdEf was mentioned once.' });
+    assert.equal(result.rejected, false);
+    assert.match(result.warnings.join(' '), /code-identifier-or-path-shaped/, 'must never pass through with zero trace, even though it is not hard-blocked');
+  });
 });
 
 describe('scanForSecrets — documented accepted gap: entropy join no longer spans a field boundary', () => {
