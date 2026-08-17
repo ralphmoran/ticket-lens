@@ -366,14 +366,25 @@ describe('runNoteAdd — --attach (local file attachments, backlog #6)', () => {
     assert.equal(readCalls, 0);
   });
 
-  test('DECISION: attachments are never included in the team-sync push payload (local vault only, backlog #6)', async () => {
+  test('DECISION: attachments ARE included in the team-sync push payload, base64-encoded (backlog #19 — supersedes the prior local-only decision)', async () => {
     let capturedNote;
+    const buf = Buffer.from([1, 2, 3]);
     const deps = baseDeps({
       readCliTokenFn: () => 'tl_key',
-      readAttachmentsFn: () => ({ files: [{ ok: true, filename: 'a.png', buffer: Buffer.from([1]), size: 1 }], droppedCount: 0 }),
+      readAttachmentsFn: () => ({ files: [{ ok: true, filename: 'a.png', buffer: buf, size: 3 }], droppedCount: 0 }),
       pushNoteFn: (note) => { capturedNote = note; return Promise.resolve({ ok: true }); },
     });
     await runNoteAdd(['--title=x', '--ticket=PROD-1', '--attach=/a.png'], deps);
+    assert.deepEqual(capturedNote.attachments, [{ filename: 'a.png', content: buf.toString('base64') }]);
+  });
+
+  test('LOCK: no --attach means no attachments key in the push payload at all', async () => {
+    let capturedNote;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      pushNoteFn: (note) => { capturedNote = note; return Promise.resolve({ ok: true }); },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1'], deps);
     assert.equal('attachments' in capturedNote, false);
   });
 });

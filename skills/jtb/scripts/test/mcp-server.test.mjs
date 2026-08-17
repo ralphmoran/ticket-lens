@@ -108,11 +108,12 @@ describe('mcp-server', () => {
       assert.match(dup.description, /miss|not a guarantee/i);
     });
 
-    it('backlog #16: recall_add\'s attachments property states it stays local, unlike ticket attachments', async () => {
+    it('backlog #19: recall_add\'s attachments property states it syncs to Console with the note, superseding backlog #16\'s local-only wording', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const recallAdd = messages[0].result.tools.find((t) => t.name === 'recall_add');
       const attachDesc = recallAdd.inputSchema.properties.attachments.description;
-      assert.match(attachDesc, /never (be )?(pushed|synced)/i);
+      assert.match(attachDesc, /sync/i);
+      assert.doesNotMatch(attachDesc, /never (be )?(pushed|synced)/i);
     });
   });
 

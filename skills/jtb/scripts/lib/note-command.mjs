@@ -191,6 +191,13 @@ export async function runNoteAdd(cmdArgs, {
     const recallTeamId = profile ? loadProfileRecallTeamIdFn(profile.name, configDir) : null;
     const payload = { external_id: id, title, tickets: ticketKeys, tags, author, sources: [], body, captured_at: capturedAt.toISOString() };
     if (recallTeamId !== null) payload.group_id = recallTeamId;
+    // Base64 over the existing JSON push endpoint — additive to the wire
+    // contract, no new request format. Backend re-validates size/count caps
+    // independently (RecallAttachmentStorage) rather than trusting this
+    // client-side pass, same defense-in-depth posture as the secret scanner.
+    if (attachments.length > 0) {
+      payload.attachments = attachments.map(a => ({ filename: a.filename, content: a.buffer.toString('base64') }));
+    }
     const result = await pushNoteFn(payload, { cliToken, configDir, warn });
     if (isRetryableFailureFn(result)) {
       await enqueueNoteFn(payload, { cliToken, configDir, warn });
