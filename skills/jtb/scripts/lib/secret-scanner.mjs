@@ -32,9 +32,11 @@ const MAX_JOINED_CHUNKS = 4;
 const MAX_COMPOUND_SEGMENT_LENGTH = 15;
 const HYPHENATED_COMPOUND_RE = /^[A-Za-z]+(-[A-Za-z]+)+$/;
 
-// A candidate containing an unstripped '(', ')', '[', or ']' reads as code
-// syntax (an array/list literal element, or a function-call argument — e.g.
-// "['compliance', '--help']" or "matches(x)") rather than a secret fragment.
+// A candidate containing an unstripped '(', ')', '[', ']', '<', or '>' reads
+// as code/document syntax (an array/list literal element, a function-call
+// argument, or a markup/dictionary delimiter — e.g. "['compliance', '--help']",
+// "matches(x)", or a PDF object's "<</Type/Font>>") rather than a secret
+// fragment.
 // Consulted ONLY from looksLikeCodeSyntax below, which downgrades a matching
 // high-entropy candidate to a warning — deliberately NOT wired into
 // isLabelWord (backlog #14 residual, code review caught this on the first
@@ -54,7 +56,15 @@ const HYPHENATED_COMPOUND_RE = /^[A-Za-z]+(-[A-Za-z]+)+$/;
 // character too, looksLikeCodeSyntax downgrades it to a WARNING rather than
 // silently exempting it, unlike the fully-silent gap the hard-wall version
 // would have reopened.
-const CODE_SYNTAX_RE = /[()[\]]/;
+//
+// Angle brackets added 2026-08-17 (backlog #19 follow-up, ported from
+// RecallSecretScanner.php): Recall attachment content-based classification
+// means a simple/uncompressed PDF's own object syntax
+// ("obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj") is now a
+// realistic scan candidate — same "structured, not random" shape ()[]
+// already cover, still downgrade-only, still never consulted by
+// HARD_REJECT_PATTERNS.
+const CODE_SYNTAX_RE = /[()[\]<>]/;
 
 // U+200B (ZERO WIDTH SPACE) is added explicitly: despite the name, it does
 // NOT carry the Unicode White_Space property (General_Category=Cf, not Zs),

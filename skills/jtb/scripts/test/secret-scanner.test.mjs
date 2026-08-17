@@ -635,3 +635,26 @@ describe('scanForSecrets — documented accepted gap: entropy join no longer spa
     assert.equal(result.rejected, false);
   });
 });
+
+describe('scanForSecrets — angle-bracket code/document syntax (backlog #19 follow-up)', () => {
+  test('SECURITY: a simple PDF\'s own object syntax is not rejected but does warn', () => {
+    // Live false-positive found 2026-08-17 on the backend (ported here for
+    // parity): a simple/uncompressed PDF is almost entirely ASCII text, so
+    // its own object dictionary syntax ("obj<</Type/Font/...>>endobj") reads
+    // as a realistic high-entropy candidate with no ()[] present.
+    const result = scanForSecrets({ title: 'x', tags: [], body: '1 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj' });
+    assert.equal(result.rejected, false);
+    assert.ok(result.warnings.length > 0);
+  });
+
+  test('a real secret wrapped in angle brackets is still hard-rejected', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'Key: <AKIAIOSFODNN7EXAMPLE>' });
+    assert.equal(result.rejected, true);
+  });
+
+  test('a generic random secret wrapped in angle brackets is downgraded, never silently exempted', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: '<zqXvbNmKlPoIuYtRfghjklqwertyuiop>' });
+    assert.equal(result.rejected, false);
+    assert.ok(result.warnings.length > 0);
+  });
+});
