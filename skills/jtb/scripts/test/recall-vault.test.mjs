@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { writeNote, listNotes, rebuildIndex, resolvePrefix, upsertPulledNote, deleteNote, deleteNoteAnyPrefix, patchNoteBody } from '../lib/recall-vault.mjs';
+import { writeNote, listNotes, rebuildIndex, resolvePrefix, upsertPulledNote, deleteNote, deleteNoteAnyPrefix, patchNoteBody, writeFileAtomically } from '../lib/recall-vault.mjs';
 import { timeAgo } from '../lib/config.mjs';
 
 let configDir;
@@ -77,6 +77,93 @@ describe('writeNote — basic write', () => {
     const { id } = writeNote({ title: 'Pushable note', ticketKeys: ['PROD-1'], tags: [], author: 'ralph', body: 'x' }, { configDir });
     const [note] = listNotes({ prefix: 'PROD' }, { configDir });
     assert.equal(note.externalId, id);
+  });
+
+  test('LOCK: a note written with no attachments carries an empty attachments list and no attachment folder', () => {
+    const { id, path: notePath } = writeNote({ title: 'No attachments', ticketKeys: ['PROD-1'], tags: [], author: 'ralph', body: 'x' }, { configDir });
+    const [note] = listNotes({ prefix: 'PROD' }, { configDir });
+    assert.deepEqual(note.attachments, []);
+    assert.equal(note.attachmentsDir, null);
+    assert.equal(fs.existsSync(path.join(path.dirname(notePath), id.replace(/\.md$/, ''))), false);
+  });
+});
+
+describe('writeFileAtomically — Buffer support', () => {
+  test('LOCK: still writes string contents as utf8 text', () => {
+    const target = path.join(configDir, 'text.md');
+    fs.mkdirSync(configDir, { recursive: true });
+    writeFileAtomically(target, 'plain text');
+    assert.equal(fs.readFileSync(target, 'utf8'), 'plain text');
+  });
+
+  test('writes Buffer contents as raw bytes, not utf8-mangled text', () => {
+    const target = path.join(configDir, 'binary.png');
+    fs.mkdirSync(configDir, { recursive: true });
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    writeFileAtomically(target, bytes);
+    assert.deepEqual(fs.readFileSync(target), bytes);
+  });
+});
+
+describe('writeNote — attachments', () => {
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+
+  test('saves attachment files into a folder named after the note id, next to the note', () => {
+    const { id, path: notePath } = writeNote(
+      { title: 'With screenshot', ticketKeys: ['PROD-1'], author: 'ralph', body: 'x', attachments: [{ filename: 'shot.png', buffer: png }] },
+      { configDir },
+    );
+    const attachDir = path.join(path.dirname(notePath), id.replace(/\.md$/, ''));
+    assert.equal(fs.existsSync(path.join(attachDir, 'shot.png')), true);
+    assert.deepEqual(fs.readFileSync(path.join(attachDir, 'shot.png')), png);
+  });
+
+  test('records the saved filenames in frontmatter, readable back via listNotes', () => {
+    writeNote(
+      { title: 'With files', ticketKeys: ['PROD-1'], author: 'ralph', body: 'x', attachments: [{ filename: 'a.png', buffer: png }, { filename: 'b.txt', buffer: Buffer.from('hi') }] },
+      { configDir },
+    );
+    const [note] = listNotes({ prefix: 'PROD' }, { configDir });
+    assert.deepEqual(note.attachments, ['a.png', 'b.txt']);
+    assert.equal(note.attachmentsDir?.endsWith(note.id.replace(/\.md$/, '')), true);
+  });
+
+  test('two attachments with the same filename are deduped, not silently overwritten', () => {
+    const { id, path: notePath } = writeNote(
+      { title: 'Dup names', ticketKeys: ['PROD-1'], author: 'ralph', body: 'x', attachments: [{ filename: 'shot.png', buffer: png }, { filename: 'shot.png', buffer: Buffer.from([1, 2, 3]) }] },
+      { configDir },
+    );
+    const attachDir = path.join(path.dirname(notePath), id.replace(/\.md$/, ''));
+    assert.deepEqual(fs.readFileSync(path.join(attachDir, 'shot.png')), png);
+    assert.deepEqual(fs.readFileSync(path.join(attachDir, 'shot-2.png')), Buffer.from([1, 2, 3]));
+  });
+
+  test('a 3-way filename collision produces shot.png, shot-2.png, shot-3.png in order', () => {
+    const { id, path: notePath } = writeNote(
+      {
+        title: 'Triple dup', ticketKeys: ['PROD-1'], author: 'ralph', body: 'x',
+        attachments: [
+          { filename: 'shot.png', buffer: Buffer.from([1]) },
+          { filename: 'shot.png', buffer: Buffer.from([2]) },
+          { filename: 'shot.png', buffer: Buffer.from([3]) },
+        ],
+      },
+      { configDir },
+    );
+    const attachDir = path.join(path.dirname(notePath), id.replace(/\.md$/, ''));
+    assert.deepEqual(fs.readFileSync(path.join(attachDir, 'shot.png')), Buffer.from([1]));
+    assert.deepEqual(fs.readFileSync(path.join(attachDir, 'shot-2.png')), Buffer.from([2]));
+    assert.deepEqual(fs.readFileSync(path.join(attachDir, 'shot-3.png')), Buffer.from([3]));
+  });
+
+  test('a collision on an extension-less filename dedupes without a trailing dot', () => {
+    const { id, path: notePath } = writeNote(
+      { title: 'No extension', ticketKeys: ['PROD-1'], author: 'ralph', body: 'x', attachments: [{ filename: 'README', buffer: Buffer.from([1]) }, { filename: 'README', buffer: Buffer.from([2]) }] },
+      { configDir },
+    );
+    const attachDir = path.join(path.dirname(notePath), id.replace(/\.md$/, ''));
+    assert.deepEqual(fs.readFileSync(path.join(attachDir, 'README')), Buffer.from([1]));
+    assert.deepEqual(fs.readFileSync(path.join(attachDir, 'README-2')), Buffer.from([2]));
   });
 });
 
@@ -375,6 +462,19 @@ describe('deleteNote — removes a tombstoned note without scanning the whole va
   test('an invalid ticket key throws rather than resolving to an unintended path', () => {
     assert.throws(() => deleteNote({ external_id: '1700000000000-abcdef.md', tickets: ['../../etc'] }, { configDir }));
   });
+
+  test('deleting a note also removes its attachment folder, so nothing orphans on disk', () => {
+    const { id, path: notePath } = writeNote(
+      { title: 'x', ticketKeys: ['PROD-1'], author: 'a', body: 'x', attachments: [{ filename: 'shot.png', buffer: Buffer.from([1]) }] },
+      { configDir },
+    );
+    const attachDir = path.join(path.dirname(notePath), id.replace(/\.md$/, ''));
+    assert.equal(fs.existsSync(attachDir), true);
+
+    deleteNote({ external_id: id, tickets: ['PROD-1'] }, { configDir });
+
+    assert.equal(fs.existsSync(attachDir), false);
+  });
 });
 
 describe('deleteNoteAnyPrefix — deletes when the caller does not know which prefix folder a note lives in', () => {
@@ -414,6 +514,18 @@ describe('deleteNoteAnyPrefix — deletes when the caller does not know which pr
     const result = deleteNoteAnyPrefix('1700000000000-abcdef.md', { configDir: `${configDir}/never-created` });
     assert.equal(result.deleted, false);
     assert.equal(result.prefix, null);
+  });
+
+  test('deleting a note also removes its attachment folder when found via any-prefix search', () => {
+    const { id, path: notePath } = writeNote(
+      { title: 'x', ticketKeys: ['CNV1-25'], author: 'a', body: 'x', attachments: [{ filename: 'shot.png', buffer: Buffer.from([1]) }] },
+      { configDir },
+    );
+    const attachDir = path.join(path.dirname(notePath), id.replace(/\.md$/, ''));
+
+    deleteNoteAnyPrefix(id, { configDir });
+
+    assert.equal(fs.existsSync(attachDir), false);
   });
 });
 

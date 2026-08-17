@@ -112,11 +112,14 @@ export function styleRecallResults(digests, opts = {}) {
     return 'No matching notes found.';
   }
 
+  const attachmentBadge = d => d.attachments?.length > 0 ? `  (${d.attachments.length} attachment${d.attachments.length === 1 ? '' : 's'})` : '';
+  const attachmentLine = d => d.attachments?.length > 0 ? `\nAttachments: ${d.attachments.join(', ')}` : '';
+
   if (!styled) {
     const entries = digests.map(d => {
       const ticketList = d.tickets?.length > 0 ? ` (${escapeLeadingHeading(d.tickets.join(', '))})` : '';
-      const summary = `${escapeLeadingHeading(d.title)}${ticketList} — ${timeAgo(d.created)}  [${d.id}]`;
-      return full ? `${summary}\n${escapeLeadingHeading(d.body)}` : summary;
+      const summary = `${escapeLeadingHeading(d.title)}${ticketList} — ${timeAgo(d.created)}  [${d.id}]${attachmentBadge(d)}`;
+      return full ? `${summary}${attachmentLine(d)}\n${escapeLeadingHeading(d.body)}` : summary;
     });
     return entries.join(full ? '\n\n' : '\n');
   }
@@ -126,8 +129,9 @@ export function styleRecallResults(digests, opts = {}) {
     const ticketList = d.tickets?.length > 0 ? ` ${s.dim(`(${escapeLeadingHeading(d.tickets.join(', '))})`)}` : '';
     const ago = s.dim(timeAgo(d.created));
     const id = s.dim(`[${d.id}]`);
-    const summary = `${s.brand('●')} ${s.bold(escapeLeadingHeading(d.title))}${ticketList} ${s.dim('—')} ${ago}  ${id}`;
-    return full ? `${summary}\n${escapeLeadingHeading(d.body)}` : summary;
+    const badge = d.attachments?.length > 0 ? s.dim(attachmentBadge(d)) : '';
+    const summary = `${s.brand('●')} ${s.bold(escapeLeadingHeading(d.title))}${ticketList} ${s.dim('—')} ${ago}  ${id}${badge}`;
+    return full ? `${summary}${attachmentLine(d)}\n${escapeLeadingHeading(d.body)}` : summary;
   });
   return entries.join(full ? '\n\n' : '\n');
 }
@@ -245,7 +249,10 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
       const ticketList = note.tickets?.length > 0 ? ` ${s.dim(`(${escapeLeadingHeading(note.tickets.join(', '))})`)}` : '';
       const badge = note.status === 'unverified' ? ` ${s.dim('(unverified)')}` : '';
       const tagsLine = note.tags?.length > 0 ? `\n  ${s.dim(`Tags: ${escapeLeadingHeading(note.tags.join(', '))}`)}` : '';
-      return `${s.brand('●')} ${s.bold(escapeLeadingHeading(note.title))}${ticketList}${badge}${tagsLine}\n  ${escapeLeadingHeading(note.body)}`;
+      // Filenames are already sanitized to [a-zA-Z0-9._-] before being saved
+      // (attachment-uploader.mjs), so no heading-injection escaping is needed here.
+      const attachmentsLine = note.attachments?.length > 0 ? `\n  ${s.dim(`Attachments: ${note.attachments.join(', ')}`)}` : '';
+      return `${s.brand('●')} ${s.bold(escapeLeadingHeading(note.title))}${ticketList}${badge}${tagsLine}${attachmentsLine}\n  ${escapeLeadingHeading(note.body)}`;
     });
     const more = recallMoreCount > 0
       ? `\n\n${s.bold(s.yellow(`${recallMoreCount} more Recall note${recallMoreCount === 1 ? '' : 's'} linked to ${ticket.key} — run`))} ${s.bold(s.brand(`ticketlens recall ${ticket.key}`))} ${s.bold(s.yellow('for details.'))}`

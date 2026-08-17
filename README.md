@@ -460,6 +460,8 @@ Every note is scanned before saving — anything shaped like a real secret (API 
 
 **Tags matter for search relevance.** `--tags=a,b` accepts anything, but a generic tag (the project name, "gotcha", "bug") gives future search almost nothing to match on. Tag with what the note is actually *about* — the specific technology, error type, or root cause (`retry-backoff`, `null-pointer`, `auth-middleware`) — so it surfaces when someone else hits the same problem.
 
+**Local file attachments.** `note add --attach=path1,path2` saves a screenshot or file alongside the note, in your local vault only (`~/.ticketlens/recall/<PREFIX>/<note-id>/`) — same 10 MB/file, 50 MB/call, 20-file caps as ticket attachments. Unlike ticket attachments, this is never pushed to Team Recall sync — a teammate who pulls the note gets the text only, not the file.
+
 **Gaps** — every `ticketlens PROJ-123` brief also diffs the ticket's own description against its linked tickets (from the depth traversal you already requested) and its own downloaded attachments, looking for requirements mentioned there but missing here. Anything uncovered shows up under a `## Gaps` section, citing exactly where it came from — a linked ticket key or an attachment filename — as evidence, never an instruction to act on. Nothing is saved anywhere; it's recomputed fresh on every fetch. Requires a Pro license, same as Recall. No network call beyond what the brief already made.
 
 ---
@@ -801,6 +803,7 @@ ticketlens history <TICKET-KEY>               # Show urgency timeline for a tick
 
 # ── Recall ────────────────────────────────────────────────────────────────────
 echo "note body" | ticketlens note add --title="..." --ticket=CNV1-2 --tags=a,b  # Save a note [Pro]
+echo "note body" | ticketlens note add --title="..." --attach=shot.png,log.txt  # Save a note with local file attachments [Pro]
 ticketlens note delete --id="..." --ticket=CNV1-2  # Remove a note from your local vault [Pro]
 ticketlens recall CNV1-2                      # Search saved notes by ticket key [Pro]
 ticketlens recall "retry backoff"             # Free-text search across all notes [Pro]

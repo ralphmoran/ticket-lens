@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.40.0 -->
+<!-- jtb-skill-version: 0.41.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -59,6 +59,7 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb cloud-keys priority groq 1        # set provider priority (lower = tried first)
 /jtb cloud-keys timeout anthropic 15   # set per-request timeout in seconds
 /jtb note add --title="gotcha text" --ticket=PROD-1234    # save a Recall note (Pro, body from stdin)
+/jtb note add --title="..." --attach=./shot.png,./log.txt # attach local files to a Recall note (Pro, local vault only — see note below)
 /jtb recall PROD-1234                  # search saved Recall notes (Pro)
 /jtb recall sync                       # retry any notes stuck in the local queue (Team+)
 /jtb recall settings                   # show effective retry-queue settings, fetched live (Team+)
@@ -369,6 +370,8 @@ echo "The body text of the note, one or more paragraphs." | \
 ```
 
 **Choosing tags:** derive them from this note's actual content — the specific technology, error type, root cause, or affected component (e.g. `retry-backoff`, `null-pointer`, `auth-middleware`) — never the project name or a generic category word like `gotcha` or `bug`. A tag like `jtb` or `ticketlens` tells a future search nothing that the ticket/project context doesn't already say; a tag like `retry-backoff` is what actually surfaces this note when someone else hits the same problem. A tag that just restates the title in different words, or one you can't trace to a specific sentence in the body, gives that same zero signal — if you can't point to the exact phrase that justifies it, drop it. Same rule whether you're constructing the bash command above or calling `recall_add` directly — see its tool description for the same guidance.
+
+**Attaching local files.** `note add --attach=path1,path2` (Pro) saves a screenshot or file alongside the note, in the local vault only — same 10 MB/file, 50 MB/call, 20-file caps as `ticket_create`/`ticket_comment`'s `--attach`. Unlike ticket attachments, this never uploads anywhere: it is not pushed to the team Console backend even with Team Recall sync active, so a teammate who pulls this note gets the text only, not the file. The `recall_add` MCP tool does not yet support attachments — this is CLI-only today; use the bash form above when a file needs to be attached.
 
 To search saved notes directly (outside of automatic brief injection): `ticketlens recall "<query>"`.
 

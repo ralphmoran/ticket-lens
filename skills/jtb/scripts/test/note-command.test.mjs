@@ -291,6 +291,93 @@ describe('runNoteAdd — --include-attachments', () => {
   });
 });
 
+describe('runNoteAdd — --attach (local file attachments, backlog #6)', () => {
+  test('LOCK: without --attach, readAttachmentsFn is never called and the bare confirmation is unchanged', async () => {
+    let readCalls = 0;
+    const deps = baseDeps({
+      readAttachmentsFn: () => { readCalls++; return { files: [], droppedCount: 0 }; },
+      stream: makeStream({ isTTY: true }),
+    });
+    await runNoteAdd(['--title=x', '--plain'], deps);
+    assert.equal(readCalls, 0);
+    assert.equal(deps.stream.lines.join(''), '  Saved note "x" (note-1.md)\n');
+  });
+
+  test('with --attach, parses comma-separated paths and passes them to readAttachmentsFn', async () => {
+    let capturedPaths;
+    const deps = baseDeps({
+      readAttachmentsFn: (paths) => { capturedPaths = paths; return { files: [], droppedCount: 0 }; },
+    });
+    await runNoteAdd(['--title=x', '--attach=/a/shot.png, /b/log.txt'], deps);
+    assert.deepEqual(capturedPaths, ['/a/shot.png', '/b/log.txt']);
+  });
+
+  test('valid attachments are passed to writeNoteFn as {filename, buffer} pairs', async () => {
+    let capturedAttachments;
+    const buf = Buffer.from([1, 2, 3]);
+    const deps = baseDeps({
+      readAttachmentsFn: () => ({ files: [{ ok: true, filename: 'shot.png', buffer: buf, size: 3 }], droppedCount: 0 }),
+      writeNoteFn: (note) => { capturedAttachments = note.attachments; return { id: 'x', path: 'x' }; },
+    });
+    await runNoteAdd(['--title=x', '--attach=/a/shot.png'], deps);
+    assert.deepEqual(capturedAttachments, [{ filename: 'shot.png', buffer: buf }]);
+  });
+
+  test('an invalid attachment path warns but still saves the note (best-effort, same philosophy as ticket --attach)', async () => {
+    const deps = baseDeps({
+      readAttachmentsFn: () => ({ files: [{ ok: false, path: '/missing.png', error: 'not-found' }], droppedCount: 0 }),
+    });
+    const result = await runNoteAdd(['--title=x', '--attach=/missing.png'], deps);
+    assert.equal(result.written, true);
+    assert.match(deps.stream.lines.join(''), /\/missing\.png.*not found/i);
+  });
+
+  test('a too-large file is reported with the same "exceeds 10 MB" wording used by ticket attachments', async () => {
+    const deps = baseDeps({
+      readAttachmentsFn: () => ({ files: [{ ok: false, path: '/huge.zip', error: 'too-large' }], droppedCount: 0 }),
+    });
+    await runNoteAdd(['--title=x', '--attach=/huge.zip'], deps);
+    assert.match(deps.stream.lines.join(''), /exceeds 10 MB/);
+  });
+
+  test('a dropped count over the 20-file cap is reported', async () => {
+    const deps = baseDeps({
+      readAttachmentsFn: () => ({ files: [], droppedCount: 3 }),
+    });
+    await runNoteAdd(['--title=x', '--attach=/a.png'], deps);
+    assert.match(deps.stream.lines.join(''), /3 attachment\(s\) dropped/);
+  });
+
+  test('the success message includes the saved attachment count', async () => {
+    const deps = baseDeps({
+      readAttachmentsFn: () => ({ files: [{ ok: true, filename: 'a.png', buffer: Buffer.from([1]), size: 1 }, { ok: true, filename: 'b.png', buffer: Buffer.from([1]), size: 1 }], droppedCount: 0 }),
+    });
+    await runNoteAdd(['--title=x', '--attach=/a.png,/b.png', '--plain'], deps);
+    assert.match(deps.stream.lines.join(''), /2 attachment\(s\)/);
+  });
+
+  test('a rejected note (secret scan fail) never reads attachments from disk', async () => {
+    let readCalls = 0;
+    const deps = baseDeps({
+      scanForSecretsFn: () => ({ rejected: true, reasons: ['x'], warnings: [] }),
+      readAttachmentsFn: () => { readCalls++; return { files: [], droppedCount: 0 }; },
+    });
+    await runNoteAdd(['--title=x', '--attach=/a.png'], deps);
+    assert.equal(readCalls, 0);
+  });
+
+  test('DECISION: attachments are never included in the team-sync push payload (local vault only, backlog #6)', async () => {
+    let capturedNote;
+    const deps = baseDeps({
+      readCliTokenFn: () => 'tl_key',
+      readAttachmentsFn: () => ({ files: [{ ok: true, filename: 'a.png', buffer: Buffer.from([1]), size: 1 }], droppedCount: 0 }),
+      pushNoteFn: (note) => { capturedNote = note; return Promise.resolve({ ok: true }); },
+    });
+    await runNoteAdd(['--title=x', '--ticket=PROD-1', '--attach=/a.png'], deps);
+    assert.equal('attachments' in capturedNote, false);
+  });
+});
+
 function basePatchDeps(overrides = {}) {
   return {
     configDir: '/fake/config',

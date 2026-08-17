@@ -317,6 +317,20 @@ describe('styleBrief', () => {
     assert.match(result, /unverified/i);
   });
 
+  it('LOCK: a Recall note with no attachments field omits the Attachments label (regression)', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'x', tickets: [], status: 'unverified', body: 'y', tags: ['bug'] }];
+    const result = styleBrief(ticket, null, { styled: false, recallNotes });
+    assert.doesNotMatch(result, /Attachments:/);
+  });
+
+  it('backlog #6: shows an Attachments label listing filenames so the reader knows to look in the local vault', () => {
+    const ticket = makeBriefTicket();
+    const recallNotes = [{ title: 'x', tickets: [], status: 'unverified', body: 'y', attachments: ['shot.png', 'log.txt'] }];
+    const result = styleBrief(ticket, null, { styled: false, recallNotes });
+    assert.match(result, /Attachments: shot\.png, log\.txt/);
+  });
+
   it('escapes a "## " line inside a note body so it cannot be mistaken for a real document section', () => {
     const ticket = makeBriefTicket();
     const recallNotes = [{ title: 'Gotcha', tickets: [], status: 'unverified', body: 'Context.\n\n## Steps to reproduce\n\nDetails.' }];
@@ -533,6 +547,30 @@ describe('styleRecallResults', () => {
     const withHeadingTicket = [{ id: 'x.md', title: 'Gotcha', tickets: ['PROD-1', 'x\n## Attachments'], created: '2026-07-10T00:00:00.000Z', body: 'x' }];
     const result = styleRecallResults(withHeadingTicket, { styled: false });
     assert.equal(/^## Attachments/m.test(result), false);
+  });
+
+  it('LOCK: a digest with no attachments field renders identically to before (regression fixture unaffected)', () => {
+    const result = styleRecallResults(digests, { styled: false });
+    assert.doesNotMatch(result, /attachment/i);
+  });
+
+  it('backlog #6: a note with attachments shows a count badge in the summary line', () => {
+    const withAttachments = [{ ...digests[0], attachments: ['shot.png', 'log.txt'] }];
+    const result = styleRecallResults(withAttachments, { styled: false });
+    assert.match(result, /2 attachments/);
+  });
+
+  it('backlog #6: a single attachment uses the singular form', () => {
+    const withOne = [{ ...digests[0], attachments: ['shot.png'] }];
+    const result = styleRecallResults(withOne, { styled: false });
+    assert.match(result, /1 attachment\b/);
+    assert.doesNotMatch(result, /1 attachments/);
+  });
+
+  it('backlog #6: --full also lists the attachment filenames', () => {
+    const withAttachments = [{ ...digests[0], attachments: ['shot.png', 'log.txt'] }];
+    const result = styleRecallResults(withAttachments, { styled: false, full: true });
+    assert.match(result, /Attachments: shot\.png, log\.txt/);
   });
 
   it('escapes a "## " line inside a note body when --full is used', () => {

@@ -49,24 +49,70 @@ function generateNoteId() {
   return `${Date.now()}-${randomBytes(3).toString('hex')}.md`;
 }
 
+// Also used for attachment bytes: Node ignores the encoding argument when
+// contents is a Buffer, so binary is written verbatim.
 export function writeFileAtomically(filePath, contents) {
   const tmpPath = `${filePath}.${process.pid}.tmp`;
   fs.writeFileSync(tmpPath, contents, 'utf8');
   fs.renameSync(tmpPath, filePath);
 }
 
+// A note's attachment folder is always named after its own id (minus the
+// .md extension) — same "derived, never trusted from user text" rule as
+// the note filename itself, so it needs no separate path-safety guard.
+function attachmentsDirFor(noteDir, id) {
+  return path.join(noteDir, id.replace(/\.md$/, ''));
+}
+
+// Two attachments in one note can share a basename (e.g. two screenshots
+// both named "screenshot.png" from different source folders) — dedupe so
+// the second write can't silently clobber the first.
+function uniquifyFilename(filename, used) {
+  const ext = path.extname(filename);
+  const stem = path.basename(filename, ext);
+  let candidate = filename;
+  let n = 1;
+  while (used.has(candidate)) {
+    n += 1;
+    candidate = `${stem}-${n}${ext}`;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
 /**
- * @param {{ title: string, ticketKeys?: string[], tags?: string[], author: string, sources?: string[], body: string }} note
+ * @param {string} noteDir
+ * @param {string} id
+ * @param {Array<{ filename: string, buffer: Buffer }>} attachments
+ * @returns {string[]} the filenames actually saved, in order
+ */
+function writeAttachments(noteDir, id, attachments) {
+  if (attachments.length === 0) return [];
+  const attachDir = attachmentsDirFor(noteDir, id);
+  fs.mkdirSync(attachDir, { recursive: true });
+  const used = new Set();
+  const saved = [];
+  for (const { filename, buffer } of attachments) {
+    const uniqueName = uniquifyFilename(filename, used);
+    writeFileAtomically(path.join(attachDir, uniqueName), buffer);
+    saved.push(uniqueName);
+  }
+  return saved;
+}
+
+/**
+ * @param {{ title: string, ticketKeys?: string[], tags?: string[], author: string, sources?: string[], body: string, attachments?: Array<{ filename: string, buffer: Buffer }> }} note
  * @param {{ configDir?: string, now?: () => Date }} [opts]
  * @returns {{ id: string, path: string }}
  */
-export function writeNote({ title, ticketKeys = [], tags = [], author, sources = [], body }, { configDir = DEFAULT_CONFIG_DIR, now = () => new Date() } = {}) {
+export function writeNote({ title, ticketKeys = [], tags = [], author, sources = [], body, attachments = [] }, { configDir = DEFAULT_CONFIG_DIR, now = () => new Date() } = {}) {
   const prefix = resolvePrefix(ticketKeys[0]);
   const dir = prefixDir(configDir, prefix);
   fs.mkdirSync(dir, { recursive: true });
 
   const id = generateNoteId();
   const notePath = path.join(dir, id);
+  const savedAttachments = writeAttachments(dir, id, attachments);
 
   const data = {
     title,
@@ -80,6 +126,7 @@ export function writeNote({ title, ticketKeys = [], tags = [], author, sources =
     // A locally-authored note's own filename doubles as its push idempotency
     // key — pushing the same file twice must upsert one backend row, not two.
     externalId: id,
+    ...(savedAttachments.length > 0 ? { attachments: savedAttachments } : {}),
   };
 
   writeFileAtomically(notePath, serializeFrontmatter(data, body));
@@ -161,6 +208,7 @@ export function deleteNote({ external_id: externalId, tickets = [] }, { configDi
   }
 
   fs.unlinkSync(notePath);
+  fs.rmSync(attachmentsDirFor(path.dirname(notePath), externalId), { recursive: true, force: true });
   return { deleted: true, prefix };
 }
 
@@ -185,9 +233,11 @@ export function deleteNoteAnyPrefix(externalId, { configDir = DEFAULT_CONFIG_DIR
 
   const prefixes = [GENERAL_BUCKET, ...allPrefixDirs(configDir).filter(p => p !== GENERAL_BUCKET)];
   for (const prefix of prefixes) {
-    const notePath = path.join(prefixDir(configDir, prefix), externalId);
+    const dir = prefixDir(configDir, prefix);
+    const notePath = path.join(dir, externalId);
     if (fs.existsSync(notePath)) {
       fs.unlinkSync(notePath);
+      fs.rmSync(attachmentsDirFor(dir, externalId), { recursive: true, force: true });
       return { deleted: true, prefix };
     }
   }
@@ -268,8 +318,10 @@ function readNote(filePath) {
   // place every consumer (search display, index rebuild, brief injection) reads
   // a note through, so nothing downstream has to remember to guard against it.
   const title = (data.title ?? '(untitled note)').replace(/[\r\n]+/g, ' ');
+  const id = path.basename(filePath);
+  const attachments = data.attachments ?? [];
   return {
-    id: path.basename(filePath),
+    id,
     path: filePath,
     title,
     aliases: data.aliases ?? [],
@@ -280,6 +332,8 @@ function readNote(filePath) {
     status: data.status ?? 'unverified',
     sources: data.sources ?? [],
     externalId: data.externalId ?? null,
+    attachments,
+    attachmentsDir: attachments.length > 0 ? attachmentsDirFor(path.dirname(filePath), id) : null,
     body,
   };
 }

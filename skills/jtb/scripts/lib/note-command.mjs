@@ -18,9 +18,41 @@ import { pushNote } from './recall-sync.mjs';
 import { enqueueNote, isRetryableFailure, maybeAutoFlush } from './recall-queue.mjs';
 import { incrementDraftKept, incrementDraftDeleted } from './activity-counter.mjs';
 import { extractText } from './attachment-text.mjs';
+import { readAttachments, MAX_ATTACHMENTS } from './attachment-uploader.mjs';
 import { TICKET_KEY_PATTERN } from './cli.mjs';
 import { createStyler } from './ansi.mjs';
 import { confirmDestructive } from './confirm.mjs';
+
+const ATTACHMENT_ERROR_MESSAGES = {
+  'not-found': 'file not found',
+  'not-a-file': 'not a file',
+  'empty': 'file is empty',
+  'too-large': 'exceeds 10 MB limit',
+  'total-size-exceeded': 'exceeds the 50 MB total limit for this note',
+};
+
+function parseAttachPaths(cmdArgs) {
+  const raw = parseFlag(cmdArgs, 'attach');
+  return raw ? raw.split(',').map(p => p.trim()).filter(Boolean) : [];
+}
+
+/**
+ * Splits a readAttachments() batch into what's usable for writeNote (plain
+ * {filename, buffer} pairs — the vault doesn't care about size/mimeType)
+ * and human-readable warning lines for anything that failed, same
+ * best-effort philosophy as ticket_create/comment's --attach: one bad path
+ * never blocks the note from being saved.
+ */
+function summarizeAttachments({ files, droppedCount }) {
+  const saved = [];
+  const warnings = [];
+  for (const f of files) {
+    if (f.ok) saved.push({ filename: f.filename, buffer: f.buffer });
+    else warnings.push(`  Skipped attachment ${f.path}: ${ATTACHMENT_ERROR_MESSAGES[f.error] ?? f.error}\n`);
+  }
+  if (droppedCount > 0) warnings.push(`  ${droppedCount} attachment(s) dropped — exceeds the ${MAX_ATTACHMENTS}-file limit per call.\n`);
+  return { saved, warnings };
+}
 
 function defaultListAttachments(configDir, ticketKey) {
   const cacheDir = path.join(configDir, 'cache', ticketKey);
@@ -84,6 +116,7 @@ export async function runNoteAdd(cmdArgs, {
   incrementDraftDeletedFn = incrementDraftDeleted,
   listAttachmentsFn = defaultListAttachments,
   extractTextFn = extractText,
+  readAttachmentsFn = readAttachments,
   author = os.userInfo().username,
 } = {}) {
   if (!isLicensedFn('pro', configDir)) {
@@ -93,7 +126,7 @@ export async function runNoteAdd(cmdArgs, {
 
   const rawTitle = parseFlag(cmdArgs, 'title');
   if (!rawTitle) {
-    stream.write('Usage: ticketlens note add --title="..." [--ticket=KEY] [--tags=a,b]\n');
+    stream.write('Usage: ticketlens note add --title="..." [--ticket=KEY] [--tags=a,b] [--attach=path1,path2]\n');
     return { written: false };
   }
   // A title is one line: collapse any embedded newline so it can never be used
@@ -130,16 +163,24 @@ export async function runNoteAdd(cmdArgs, {
     stream.write(`  Warning: ${warning}\n`);
   }
 
+  const attachPaths = parseAttachPaths(cmdArgs);
+  const { saved: attachments, warnings: attachWarnings } = attachPaths.length > 0
+    ? summarizeAttachments(readAttachmentsFn(attachPaths))
+    : { saved: [], warnings: [] };
+  for (const warning of attachWarnings) stream.write(warning);
+
   const ticketKeys = ticketKey ? [ticketKey] : [];
   // Captured once and threaded into writeNoteFn's now() override so the local
   // vault file's `created` and the pushed payload's captured_at can never skew
   // by the (short but real) gap between the local write and the push below.
   const capturedAt = new Date();
-  const { id } = writeNoteFn({ title, ticketKeys, tags, author, body }, { configDir, now: () => capturedAt });
+  const { id } = writeNoteFn({ title, ticketKeys, tags, author, body, attachments }, { configDir, now: () => capturedAt });
   incrementDraftKeptFn(configDir);
   const styled = !cmdArgs.includes('--plain') && stream.isTTY;
   const s = createStyler({ forceColor: styled, noColor: !styled });
-  stream.write(styled ? `\n  ${s.green('✔')} Saved note "${title}" (${id})\n\n` : `  Saved note "${title}" (${id})\n`);
+  const attachSuffix = attachments.length > 0 ? ` + ${attachments.length} attachment(s)` : '';
+  const savedLine = `Saved note "${title}" (${id})${attachSuffix}`;
+  stream.write(styled ? `\n  ${s.green('✔')} ${savedLine}\n\n` : `  ${savedLine}\n`);
 
   const cliToken = readCliTokenFn(configDir);
   if (cliToken) {

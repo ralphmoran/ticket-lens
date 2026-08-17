@@ -107,7 +107,11 @@ export function assembleBrief(ticket, codeRefs = null, templateSections = null, 
       const ticketList = note.tickets?.length > 0 ? ` (${escapeLeadingHeading(note.tickets.join(', '))})` : '';
       const badge = note.status === 'unverified' ? ' _(unverified)_' : '';
       const tagsLine = note.tags?.length > 0 ? `\n  Tags: ${escapeLeadingHeading(note.tags.join(', '))}` : '';
-      return `- **${escapeLeadingHeading(note.title)}**${ticketList}${badge}${tagsLine}\n  ${escapeLeadingHeading(note.body)}`;
+      // Filenames are already sanitized to [a-zA-Z0-9._-] before being saved
+      // (attachment-uploader.mjs's sanitizeFilename), so no heading-injection
+      // escaping is needed here — same trust chain as styled-assembler.mjs.
+      const attachmentsLine = note.attachments?.length > 0 ? `\n  Attachments: ${note.attachments.join(', ')}` : '';
+      return `- **${escapeLeadingHeading(note.title)}**${ticketList}${badge}${tagsLine}${attachmentsLine}\n  ${escapeLeadingHeading(note.body)}`;
     });
     const more = recallMoreCount > 0
       ? `\n\n**${recallMoreCount} more Recall note${recallMoreCount === 1 ? '' : 's'} linked to ${ticket.key} — run \`ticketlens recall ${ticket.key}\` for details.**`

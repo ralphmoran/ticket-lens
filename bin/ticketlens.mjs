@@ -743,7 +743,7 @@ switch (command) {
       });
       break;
     }
-    process.stderr.write('Usage: ticketlens note add --title="..." [--ticket=KEY] [--tags=a,b]\n');
+    process.stderr.write('Usage: ticketlens note add --title="..." [--ticket=KEY] [--tags=a,b] [--attach=path1,path2]\n');
     process.exitCode = 1;
     break;
   }

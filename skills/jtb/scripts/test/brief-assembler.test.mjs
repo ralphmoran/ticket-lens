@@ -472,6 +472,17 @@ describe('assembleBrief — Recall section', () => {
     assert.doesNotMatch(result, /Tags:/);
   });
 
+  it('backlog #6: shows an Attachments label so the AI-facing plain brief carries the same signal as the terminal view', () => {
+    const withAttachments = [{ ...recallNotes[0], attachments: ['shot.png', 'log.txt'] }];
+    const result = assembleBrief(baseTicket, null, null, withAttachments);
+    assert.match(result, /Attachments: shot\.png, log\.txt/);
+  });
+
+  it('LOCK: omits the Attachments label when the note has no attachments field', () => {
+    const result = assembleBrief(baseTicket, null, null, recallNotes);
+    assert.doesNotMatch(result, /Attachments:/);
+  });
+
   it('omits the Recall section when recallNotes is an empty array', () => {
     const result = assembleBrief(baseTicket, null, null, []);
     assert.ok(!result.includes('## Recall'));
