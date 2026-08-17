@@ -107,6 +107,13 @@ describe('mcp-server', () => {
       const dup = messages[0].result.tools.find((t) => t.name === 'ticket_duplicates');
       assert.match(dup.description, /miss|not a guarantee/i);
     });
+
+    it('backlog #16: recall_add\'s attachments property states it stays local, unlike ticket attachments', async () => {
+      const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
+      const recallAdd = messages[0].result.tools.find((t) => t.name === 'recall_add');
+      const attachDesc = recallAdd.inputSchema.properties.attachments.description;
+      assert.match(attachDesc, /never (be )?(pushed|synced)/i);
+    });
   });
 
   describe('tools/call fetch', () => {
@@ -895,6 +902,36 @@ describe('mcp-server', () => {
       );
       assert.equal(seenArgs.length, 1, 'the forged flag must not become a second array element');
       assert.equal(seenArgs[0], '--title=--ticket=EVIL-999');
+    });
+
+    it('backlog #16: forwards attachments as a comma-joined --attach flag, same as ticket_comment', async () => {
+      let seenArgs;
+      const runNoteAddFn = async (cmdArgs) => { seenArgs = cmdArgs; return { written: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_add', arguments: { title: 'x', body: 'y', attachments: ['/a/shot.png', '/b/log.txt'] } } }],
+        { configDir, runNoteAddFn },
+      );
+      assert.ok(seenArgs.includes('--attach=/a/shot.png,/b/log.txt'));
+    });
+
+    it('LOCK: omitting attachments produces no --attach flag at all', async () => {
+      let seenArgs;
+      const runNoteAddFn = async (cmdArgs) => { seenArgs = cmdArgs; return { written: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_add', arguments: { title: 'x', body: 'y' } } }],
+        { configDir, runNoteAddFn },
+      );
+      assert.equal(seenArgs.some(a => a.startsWith('--attach=')), false);
+    });
+
+    it('an empty attachments array produces no --attach flag', async () => {
+      let seenArgs;
+      const runNoteAddFn = async (cmdArgs) => { seenArgs = cmdArgs; return { written: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_add', arguments: { title: 'x', body: 'y', attachments: [] } } }],
+        { configDir, runNoteAddFn },
+      );
+      assert.equal(seenArgs.some(a => a.startsWith('--attach=')), false);
     });
   });
 

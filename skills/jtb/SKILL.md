@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.41.0 -->
+<!-- jtb-skill-version: 0.42.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -371,7 +371,7 @@ echo "The body text of the note, one or more paragraphs." | \
 
 **Choosing tags:** derive them from this note's actual content — the specific technology, error type, root cause, or affected component (e.g. `retry-backoff`, `null-pointer`, `auth-middleware`) — never the project name or a generic category word like `gotcha` or `bug`. A tag like `jtb` or `ticketlens` tells a future search nothing that the ticket/project context doesn't already say; a tag like `retry-backoff` is what actually surfaces this note when someone else hits the same problem. A tag that just restates the title in different words, or one you can't trace to a specific sentence in the body, gives that same zero signal — if you can't point to the exact phrase that justifies it, drop it. Same rule whether you're constructing the bash command above or calling `recall_add` directly — see its tool description for the same guidance.
 
-**Attaching local files.** `note add --attach=path1,path2` (Pro) saves a screenshot or file alongside the note, in the local vault only — same 10 MB/file, 50 MB/call, 20-file caps as `ticket_create`/`ticket_comment`'s `--attach`. Unlike ticket attachments, this never uploads anywhere: it is not pushed to the team Console backend even with Team Recall sync active, so a teammate who pulls this note gets the text only, not the file. The `recall_add` MCP tool does not yet support attachments — this is CLI-only today; use the bash form above when a file needs to be attached.
+**Attaching local files.** `note add --attach=path1,path2` (Pro) saves a screenshot or file alongside the note, in the local vault only — same 10 MB/file, 50 MB/call, 20-file caps as `ticket_create`/`ticket_comment`'s `--attach`. Unlike ticket attachments, this never uploads anywhere: it is not pushed to the team Console backend even with Team Recall sync active, so a teammate who pulls this note gets the text only, not the file. The `recall_add` MCP tool has a matching `attachments` array parameter — prefer it over the bash form when available, same rule as the rest of this section.
 
 To search saved notes directly (outside of automatic brief injection): `ticketlens recall "<query>"`.
 

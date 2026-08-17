@@ -362,10 +362,11 @@ async function callCollisions(args, { configDir, runCollisionsFn }) {
  * `--ticket=EVIL-999` stays inert precisely because it's never anything
  * but one opaque array element.
  */
-function buildNoteAddArgs({ title, ticket, tags }) {
+function buildNoteAddArgs({ title, ticket, tags, attachments }) {
   const args = [`--title=${title}`];
   if (ticket) args.push(`--ticket=${ticket}`);
   if (Array.isArray(tags) && tags.length > 0) args.push(`--tags=${tags.join(',')}`);
+  if (Array.isArray(attachments) && attachments.length > 0) args.push(`--attach=${attachments.join(',')}`);
   return args;
 }
 
