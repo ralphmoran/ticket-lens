@@ -150,6 +150,68 @@ const CODE_FILENAME_RE = new RegExp(`^([A-Za-z][A-Za-z-]*)\\.(${CODE_EXTENSION_A
 // text regardless of any token's label-word status.
 const FILENAME_REFERENCE_RE = new RegExp(`^[A-Za-z][A-Za-z-]*\\.(${CODE_EXTENSION_ALTERNATION})('s)?$`, 'i');
 
+// Underscore-delimited segments (Zend-1-style PHP class names — a common
+// legacy naming convention, e.g. "Acme_Http_ClientFactory",
+// "Zend_Http_Client") are letters-only per segment, no digit support (same
+// convention as CODE_FILENAME_RE's stem). Deliberately does NOT require
+// isHyphenatedWordCompound's "no internal case switch" guard: that guard
+// exists there to keep base64-shaped content from posing as a lowercase-
+// English hyphenated compound, but PascalCase segments ARE the real,
+// expected positive signal for a class name ("ClientFactory",
+// "SaleSystem") — requiring their absence would reject the exact
+// legitimate shape this exists to recognize. See
+// looksLikeCodeIdentifierOrPath's own comment for how this stays
+// downgrade-only despite that asymmetry.
+const UNDERSCORE_COMPOUND_RE = /^[A-Za-z]+(_[A-Za-z]+)+$/;
+
+// Slash-delimited path segments (a namespace-shaped filesystem/class path —
+// "acme/library/Billing/Client/Http/Adapter/Fetch/", optionally trailing-
+// slash-terminated). Allows digits per segment (real
+// directory/namespace segments routinely do — "v2", "api2"), unlike the
+// underscore shape above — a deliberate, narrower convention than mixing
+// delimiters within one candidate would need.
+const SLASH_PATH_RE = /^[A-Za-z0-9]+(\/[A-Za-z0-9]+)+\/?$/;
+
+/**
+ * Downgrade-only, same never-exempt treatment as looksLikeCodeFilename and
+ * looksLikeCodeSyntax below: true for a candidate shaped like a multi-segment
+ * code identifier (underscore-delimited PHP/Zend-1-style class name) or a
+ * namespace/filesystem path (slash-delimited), each segment capped at
+ * MAX_COMPOUND_SEGMENT_LENGTH so a long random run can't pose as one
+ * "segment" — same cap isHyphenatedWordCompound already uses. Backlog #17:
+ * isLabelWord's ordinary-word branch only matches letters-only tokens with
+ * no separator at all, and neither existing downgrade path below requires a
+ * file extension or bracket/paren — so a standalone identifier or path like
+ * the two shapes above had no exemption path whatsoever, unlike a hyphenated
+ * compound or a dotted filename.
+ *
+ * A disguised real secret matching either shape still surfaces as a
+ * warning, never a silent pass — see the security regression tests
+ * alongside this function's own tests for both shapes.
+ *
+ * Known accepted gap (security review, backlog #17): unlike
+ * isHyphenatedWordCompound, this has no whole-token case-switch guard (see
+ * UNDERSCORE_COMPOUND_RE's own comment for why one can't be added without
+ * rejecting the real Zend_Http_Client-shaped identifiers this exists to
+ * recognize) — so a uniform-case (all-upper or all-lower) letters-only
+ * secret needs only ONE underscore or slash inserted to downgrade from a
+ * full reject to a warning, no camouflage (fake extension, case pattern)
+ * required. Still never a silent pass — always a warning — so this is the
+ * same class of trade-off as CODE_SYNTAX_RE's even less-constrained
+ * downgrade above (any bracket/paren, no shape requirement at all), not a
+ * new exposure.
+ */
+function looksLikeCodeIdentifierOrPath(rawToken) {
+  const stripped = stripEdgePunctuation(rawToken);
+  if (UNDERSCORE_COMPOUND_RE.test(stripped)) {
+    return stripped.split('_').every(segment => segment.length <= MAX_COMPOUND_SEGMENT_LENGTH);
+  }
+  if (SLASH_PATH_RE.test(stripped)) {
+    return stripped.split('/').filter(Boolean).every(segment => segment.length <= MAX_COMPOUND_SEGMENT_LENGTH);
+  }
+  return false;
+}
+
 function looksLikeCodeFilename(rawToken) {
   const stripped = stripEdgePunctuation(rawToken);
   const match = stripped.match(CODE_FILENAME_RE);
@@ -443,7 +505,11 @@ export function scanForSecrets({ title = '', tags = [], body = '' } = {}) {
   // Downgrading to a warning — never silently dropping the signal — matches
   // how an email address is already handled below.
   const randomCandidates = candidates.filter(token => !EMAIL_RE.test(token) && looksRandom(token, combined));
-  if (randomCandidates.some(token => !looksLikeCodeFilename(token) && !looksLikeCodeSyntax(token))) {
+  if (
+    randomCandidates.some(
+      token => !looksLikeCodeFilename(token) && !looksLikeCodeSyntax(token) && !looksLikeCodeIdentifierOrPath(token),
+    )
+  ) {
     reasons.push('Contains a long, random-looking string that could be a secret.');
   }
   if (randomCandidates.some(token => looksLikeCodeFilename(token))) {
@@ -451,6 +517,9 @@ export function scanForSecrets({ title = '', tags = [], body = '' } = {}) {
   }
   if (randomCandidates.some(token => looksLikeCodeSyntax(token))) {
     warnings.push('Contains a code-syntax-shaped token (brackets or parentheses) that also reads as high-entropy — double-check it is not a credential.');
+  }
+  if (randomCandidates.some(token => looksLikeCodeIdentifierOrPath(token))) {
+    warnings.push('Contains a code-identifier-or-path-shaped token that also reads as high-entropy — double-check it is not a credential.');
   }
 
   if (EMAIL_RE.test(combined)) {

@@ -527,6 +527,73 @@ describe('scanForSecrets — regression: bracket/paren code-syntax tokens are no
   });
 });
 
+describe('scanForSecrets — regression: underscore- and slash-delimited code identifiers/paths are not secrets (backlog #17)', () => {
+  test('exact live repro: a standalone Zend-1-style underscore-delimited class name is not rejected, but does warn', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'Acme_Http_ClientFactory is the class.' });
+    assert.equal(result.rejected, false);
+    assert.match(result.warnings.join(' '), /code-identifier-or-path-shaped/);
+  });
+
+  test('exact live repro: a standalone slash-delimited namespace path, including its trailing slash, is not rejected, but does warn', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'Found it in acme/library/Billing/Client/Http/Adapter/Fetch/ today.' });
+    assert.equal(result.rejected, false);
+    assert.match(result.warnings.join(' '), /code-identifier-or-path-shaped/);
+  });
+
+  test('an underscore-delimited token with an oversized segment does not qualify as a compound, so it is still a full hard reject — no known real class-name segment runs that long', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'Acme_AbcdefghijklmnopqrstuvwxyzExtraLong is the class.' });
+    assert.equal(result.rejected, true);
+  });
+
+  test('a slash-delimited path with an oversized segment does not qualify, so it is still a full hard reject', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'Found it in advweb/AbcdefghijklmnopqrstuvwxyzExtraLong/Fetch today.' });
+    assert.equal(result.rejected, true);
+  });
+
+  test('digits in an underscore-delimited segment are still NOT exempted — the segment character class never gained digit support', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'Acme2_Http_ClientFactory is the class.' });
+    assert.equal(result.rejected, true);
+  });
+
+  test('control: a single PascalCase word with no underscore or slash at all is unaffected — sanity check that this fix does not widen the plain ordinary-word/looksRandom scope', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'ClientFactoryForTekionSubmissionHandler was mentioned once.' });
+    assert.equal(result.rejected, true, 'a single un-delimited token was already a full reject before this fix and must stay one — this fix only recognizes _ and / delimited multi-segment shapes');
+  });
+
+  test('security regression: a genuinely random letters-only secret disguised as underscore-delimited segments is downgraded to a warning, never silently exempted', () => {
+    // Same bypass class the looksLikeCodeFilename/looksLikeCodeSyntax security
+    // reviews already closed: fully exempting this shape would let an
+    // attacker dodge rejection by inserting underscores into any all-letters
+    // secret at <=15-char intervals. Must still surface a warning.
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'XqZkTmWpLbNvRc_YsHjFgAbCdEfGh was mentioned once.' });
+    assert.equal(result.rejected, false);
+    assert.match(result.warnings.join(' '), /code-identifier-or-path-shaped/, 'must never pass through with zero trace, even though it is not hard-blocked');
+  });
+
+  test('security regression: a genuinely random letters-only secret disguised as a slash-delimited path is downgraded to a warning, never silently exempted', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'Found it in XqZkTmWpLbNvRc/YsHjFgAbCdEfGh today.' });
+    assert.equal(result.rejected, false);
+    assert.match(result.warnings.join(' '), /code-identifier-or-path-shaped/, 'must never pass through with zero trace, even though it is not hard-blocked');
+  });
+
+  test('known accepted gap (security review): a uniform-case secret needs only one inserted underscore to downgrade, no camouflage required — still never silent, always a warning', () => {
+    // Flagged by security review: unlike isHyphenatedWordCompound, this
+    // check has no whole-token case-switch guard (see UNDERSCORE_COMPOUND_RE's
+    // comment for why one can't be added without rejecting real
+    // Zend_Http_Client-shaped identifiers). A lower bar than
+    // looksLikeCodeFilename (which needs a whitelisted extension too), but
+    // still never a fully silent pass — same accepted-trade-off class as
+    // CODE_SYNTAX_RE's even less-constrained bracket/paren downgrade.
+    const lower = scanForSecrets({ title: 'x', tags: [], body: 'abcdefghijklmno_pqrstuvwxyzabc was mentioned once.' });
+    assert.equal(lower.rejected, false);
+    assert.match(lower.warnings.join(' '), /code-identifier-or-path-shaped/, 'must never pass through with zero trace');
+
+    const upper = scanForSecrets({ title: 'x', tags: [], body: 'ABCDEFGHIJKLMNO_PQRSTUVWXYZABC was mentioned once.' });
+    assert.equal(upper.rejected, false);
+    assert.match(upper.warnings.join(' '), /code-identifier-or-path-shaped/, 'must never pass through with zero trace');
+  });
+});
+
 describe('scanForSecrets — documented accepted gap: entropy join no longer spans a field boundary', () => {
   test('a secret split exactly across a tag and the body is not caught by the entropy join — hard-reject shapes still are, this is entropy-only and deliberate', () => {
     // Trade-off accepted alongside the Trigger-3 field-boundary fix above:
