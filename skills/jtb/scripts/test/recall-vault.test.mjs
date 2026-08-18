@@ -640,3 +640,109 @@ describe('patchNoteBody — overwrites an existing local note\'s body in place',
     assert.equal(dirEntries.some(name => name.includes('.tmp')), false);
   });
 });
+
+describe('patchNoteBody — attachments (backlog #21)', () => {
+  test('LOCK: preserves existing attachments when patched with no new --attach (regression — patch used to silently drop the attachments: key)', () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const { id } = writeNote(
+      { title: 'x', ticketKeys: ['PROD-1'], author: 'ralph', body: 'Original body here.', attachments: [{ filename: 'shot.png', buffer: png }] },
+      { configDir },
+    );
+
+    const result = patchNoteBody({ id, ticketKeys: ['PROD-1'], body: 'Patched body, no new attachments.' }, { configDir });
+
+    assert.equal(result.patched, true);
+    const [note] = listNotes({ ticketKey: 'PROD-1' }, { configDir });
+    assert.deepEqual(note.attachments, ['shot.png']);
+  });
+
+  test('appends new --attach files to existing attachments rather than replacing them', () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const log = Buffer.from('log line');
+    const { id } = writeNote(
+      { title: 'x', ticketKeys: ['PROD-1'], author: 'ralph', body: 'Original body here.', attachments: [{ filename: 'shot.png', buffer: png }] },
+      { configDir },
+    );
+
+    const result = patchNoteBody(
+      { id, ticketKeys: ['PROD-1'], body: 'Patched body with a new attachment.', attachments: [{ filename: 'log.txt', buffer: log }] },
+      { configDir },
+    );
+
+    assert.equal(result.patched, true);
+    const [note] = listNotes({ ticketKey: 'PROD-1' }, { configDir });
+    assert.deepEqual(note.attachments, ['shot.png', 'log.txt']);
+    assert.deepEqual(fs.readFileSync(path.join(note.attachmentsDir, 'log.txt')), log);
+  });
+
+  test('attaches files to a note that had none before', () => {
+    const { id } = writeNote({ title: 'x', ticketKeys: ['PROD-1'], author: 'ralph', body: 'Original body here.' }, { configDir });
+    const log = Buffer.from('log line');
+
+    const result = patchNoteBody(
+      { id, ticketKeys: ['PROD-1'], body: 'Patched body.', attachments: [{ filename: 'log.txt', buffer: log }] },
+      { configDir },
+    );
+
+    assert.equal(result.patched, true);
+    const [note] = listNotes({ ticketKey: 'PROD-1' }, { configDir });
+    assert.deepEqual(note.attachments, ['log.txt']);
+  });
+
+  test('a same-named attachment on patch is deduped against what already exists on disk, not just this call\'s batch', () => {
+    const shotV1 = Buffer.from([1]);
+    const shotV2 = Buffer.from([2]);
+    const { id } = writeNote(
+      { title: 'x', ticketKeys: ['PROD-1'], author: 'ralph', body: 'Original body here.', attachments: [{ filename: 'shot.png', buffer: shotV1 }] },
+      { configDir },
+    );
+
+    patchNoteBody(
+      { id, ticketKeys: ['PROD-1'], body: 'Patched body with a colliding filename.', attachments: [{ filename: 'shot.png', buffer: shotV2 }] },
+      { configDir },
+    );
+
+    const [note] = listNotes({ ticketKey: 'PROD-1' }, { configDir });
+    assert.deepEqual(note.attachments, ['shot.png', 'shot-2.png']);
+    assert.deepEqual(fs.readFileSync(path.join(note.attachmentsDir, 'shot.png')), shotV1);
+    assert.deepEqual(fs.readFileSync(path.join(note.attachmentsDir, 'shot-2.png')), shotV2);
+  });
+
+  test('LOCK: a failed patch (note not found) never writes attachment files to disk', () => {
+    const result = patchNoteBody(
+      { id: '1999999999999-abcdef.md', ticketKeys: ['PROD-1'], body: 'x', attachments: [{ filename: 'shot.png', buffer: Buffer.from([1]) }] },
+      { configDir },
+    );
+
+    assert.equal(result.patched, false);
+    assert.equal(fs.existsSync(path.join(configDir, 'recall', 'PROD', '1999999999999-abcdef')), false);
+  });
+
+  test('LOCK: a failed patch (stale expectedMtimeMs) never writes attachment files to disk', () => {
+    const { id, path: notePath } = writeNote({ title: 'x', ticketKeys: ['PROD-1'], author: 'ralph', body: 'Original body here.' }, { configDir });
+    const staleMtime = fs.statSync(notePath).mtimeMs;
+    fs.utimesSync(notePath, new Date(), new Date(Date.now() + 5000));
+
+    const result = patchNoteBody(
+      { id, ticketKeys: ['PROD-1'], body: 'x', expectedMtimeMs: staleMtime, attachments: [{ filename: 'shot.png', buffer: Buffer.from([1]) }] },
+      { configDir },
+    );
+
+    assert.equal(result.patched, false);
+    assert.equal(fs.existsSync(path.join(path.dirname(notePath), id.replace(/\.md$/, ''))), false);
+  });
+
+  test('LOCK: a failed patch (externalId mismatch) never writes attachment files to disk', () => {
+    const { id, path: notePath } = writeNote({ title: 'x', ticketKeys: ['PROD-1'], author: 'ralph', body: 'Original body here.' }, { configDir });
+    const raw = fs.readFileSync(notePath, 'utf8').replace(`externalId: ${id}`, 'externalId: 9999999999999-000000.md');
+    fs.writeFileSync(notePath, raw);
+
+    const result = patchNoteBody(
+      { id, ticketKeys: ['PROD-1'], body: 'x', attachments: [{ filename: 'shot.png', buffer: Buffer.from([1]) }] },
+      { configDir },
+    );
+
+    assert.equal(result.patched, false);
+    assert.equal(fs.existsSync(path.join(path.dirname(notePath), id.replace(/\.md$/, ''))), false);
+  });
+});

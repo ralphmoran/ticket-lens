@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.42.5 -->
+<!-- jtb-skill-version: 0.42.6 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -397,7 +397,9 @@ When it does apply, run up to 3 rounds:
    ```
    `--expect-mtime` is what keeps this safe: if the file changed since step 1 (the user hand-edited it while you were drafting), the patch silently no-ops and prints "not found or already changed" — the user's own edit always wins, never gets clobbered by a stale background draft.
 
-   If this harness has TicketLens's MCP server configured (a tool named `recall_update` — often shown as `mcp__ticketlens__recall_update` — visible in your tool list), prefer it over the bash form: same license gate, same structural/secret-scan checks, same optimistic-concurrency behavior via `expectMtime` — just no shell command or stdin piping to construct. It accepts `id`/`body`/`ticket`/`expectMtime`.
+   `note patch` also takes `--attach=path1,path2` (Pro), same caps and secret-scan treatment as `note add`'s — new files are appended to whatever the note already has, never replacing existing attachments.
+
+   If this harness has TicketLens's MCP server configured (a tool named `recall_update` — often shown as `mcp__ticketlens__recall_update` — visible in your tool list), prefer it over the bash form: same license gate, same structural/secret-scan checks, same optimistic-concurrency behavior via `expectMtime` — just no shell command or stdin piping to construct. It accepts `id`/`body`/`ticket`/`expectMtime`/`attachments`.
 5. Repeat from step 1 (re-capture mtime/body fresh each round) up to 3 total rounds. If no round ever produces a fully-passing draft, patch in whichever round scored highest across all attempts, and let the "not found or already changed" message stand if that patch itself loses a late race — don't retry past round 3.
 
 This never calls any external API or bills any tokens beyond the session you already have open — the generator and validator are subagents inside your own Claude Code session, not a TicketLens server call.

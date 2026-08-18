@@ -1027,6 +1027,36 @@ describe('mcp-server', () => {
       assert.equal(seenArgs.length, 1, 'the forged flag must not become a second array element');
       assert.equal(seenArgs[0], '--id=--ticket=EVIL-999');
     });
+
+    it('backlog #21: forwards attachments as a comma-joined --attach flag, same as recall_add', async () => {
+      let seenArgs;
+      const runNotePatchFn = async (cmdArgs) => { seenArgs = cmdArgs; return { patched: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_update', arguments: { id: 'fake-id.md', body: 'x', attachments: ['/a/shot.png', '/b/log.txt'] } } }],
+        { configDir, runNotePatchFn },
+      );
+      assert.ok(seenArgs.includes('--attach=/a/shot.png,/b/log.txt'));
+    });
+
+    it('LOCK: omitting attachments produces no --attach flag at all', async () => {
+      let seenArgs;
+      const runNotePatchFn = async (cmdArgs) => { seenArgs = cmdArgs; return { patched: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_update', arguments: { id: 'fake-id.md', body: 'x' } } }],
+        { configDir, runNotePatchFn },
+      );
+      assert.equal(seenArgs.some(a => a.startsWith('--attach=')), false);
+    });
+
+    it('an empty attachments array produces no --attach flag', async () => {
+      let seenArgs;
+      const runNotePatchFn = async (cmdArgs) => { seenArgs = cmdArgs; return { patched: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_update', arguments: { id: 'fake-id.md', body: 'x', attachments: [] } } }],
+        { configDir, runNotePatchFn },
+      );
+      assert.equal(seenArgs.some(a => a.startsWith('--attach=')), false);
+    });
   });
 
   describe('tools/call recall_delete', () => {

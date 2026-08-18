@@ -677,6 +677,81 @@ describe('runNotePatch — delegates to patchNoteBodyFn with the right shape', (
   });
 });
 
+describe('runNotePatch — --attach (local file attachments, backlog #21)', () => {
+  test('LOCK: without --attach, readAttachmentsFn is never called and the update confirmation is unchanged', async () => {
+    let readCalls = 0;
+    const deps = basePatchDeps({
+      readAttachmentsFn: () => { readCalls++; return { files: [], droppedCount: 0 }; },
+    });
+    await runNotePatch(['--id=note-1.md'], deps);
+    assert.equal(readCalls, 0);
+    assert.equal(deps.stream.lines.join(''), '  Updated note (note-1.md)\n');
+  });
+
+  test('with --attach, parses comma-separated paths and passes them to readAttachmentsFn', async () => {
+    let capturedPaths;
+    const deps = basePatchDeps({
+      readAttachmentsFn: (paths) => { capturedPaths = paths; return { files: [], droppedCount: 0 }; },
+    });
+    await runNotePatch(['--id=note-1.md', '--attach=/a/shot.png, /b/log.txt'], deps);
+    assert.deepEqual(capturedPaths, ['/a/shot.png', '/b/log.txt']);
+  });
+
+  test('valid attachments are passed to patchNoteBodyFn as {filename, buffer} pairs', async () => {
+    let captured;
+    const buf = Buffer.from([1, 2, 3]);
+    const deps = basePatchDeps({
+      readAttachmentsFn: () => ({ files: [{ ok: true, filename: 'shot.png', buffer: buf, size: 3 }], droppedCount: 0 }),
+      patchNoteBodyFn: (note) => { captured = note; return { patched: true, path: 'x' }; },
+    });
+    await runNotePatch(['--id=note-1.md', '--attach=/a/shot.png'], deps);
+    assert.deepEqual(captured.attachments, [{ filename: 'shot.png', buffer: buf }]);
+  });
+
+  test('an invalid attachment path warns but the patch still proceeds (best-effort, same philosophy as note add)', async () => {
+    const deps = basePatchDeps({
+      readAttachmentsFn: () => ({ files: [{ ok: false, path: '/missing.png', error: 'not-found' }], droppedCount: 0 }),
+    });
+    const result = await runNotePatch(['--id=note-1.md', '--attach=/missing.png'], deps);
+    assert.equal(result.patched, true);
+    assert.match(deps.stream.lines.join(''), /\/missing\.png.*not found/i);
+  });
+
+  test('the update confirmation includes the saved attachment count', async () => {
+    const deps = basePatchDeps({
+      readAttachmentsFn: () => ({
+        files: [
+          { ok: true, filename: 'a.png', buffer: Buffer.from([1]), size: 1 },
+          { ok: true, filename: 'b.png', buffer: Buffer.from([1]), size: 1 },
+        ],
+        droppedCount: 0,
+      }),
+    });
+    await runNotePatch(['--id=note-1.md', '--attach=/a.png,/b.png'], deps);
+    assert.match(deps.stream.lines.join(''), /2 attachment\(s\)/);
+  });
+
+  test('a rejected patch (secret scan fail) never reads attachments from disk', async () => {
+    let readCalls = 0;
+    const deps = basePatchDeps({
+      scanForSecretsFn: () => ({ rejected: true, reasons: ['x'], warnings: [] }),
+      readAttachmentsFn: () => { readCalls++; return { files: [], droppedCount: 0 }; },
+    });
+    await runNotePatch(['--id=note-1.md', '--attach=/a.png'], deps);
+    assert.equal(readCalls, 0);
+  });
+
+  test('a no-op patch (note gone or changed) reports no attachment count even if --attach was passed', async () => {
+    const deps = basePatchDeps({
+      readAttachmentsFn: () => ({ files: [{ ok: true, filename: 'a.png', buffer: Buffer.from([1]), size: 1 }], droppedCount: 0 }),
+      patchNoteBodyFn: () => ({ patched: false, path: null }),
+    });
+    await runNotePatch(['--id=note-1.md', '--attach=/a.png'], deps);
+    assert.match(deps.stream.lines.join(''), /not updated/i);
+    assert.doesNotMatch(deps.stream.lines.join(''), /attachment/i);
+  });
+});
+
 describe('runNoteAdd — team sync (push after local write)', () => {
   test('with a cliToken, pushes the note carrying the same externalId as the local write, using the backend wire field names', async () => {
     let capturedNote;

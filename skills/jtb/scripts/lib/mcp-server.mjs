@@ -393,11 +393,14 @@ async function callRecallAdd(args, { configDir, runNoteAddFn }) {
  * as buildNoteAddArgs above. `expectMtime` is optimistic-concurrency: a
  * caller that fetched a note via recall_search and wants to refine it
  * without racing a concurrent edit passes back the mtime it observed.
+ * `attachments` (backlog #21) is appended to whatever the note already has,
+ * same as buildNoteAddArgs's — never a replace.
  */
-function buildNotePatchArgs({ id, ticket, expectMtime }) {
+function buildNotePatchArgs({ id, ticket, expectMtime, attachments }) {
   const args = [`--id=${id}`];
   if (ticket) args.push(`--ticket=${ticket}`);
   if (expectMtime !== undefined) args.push(`--expect-mtime=${expectMtime}`);
+  if (Array.isArray(attachments) && attachments.length > 0) args.push(`--attach=${attachments.join(',')}`);
   return args;
 }
 

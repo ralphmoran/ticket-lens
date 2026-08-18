@@ -180,6 +180,7 @@ export const TOOLS = [
         body: { type: 'string', description: 'The replacement note body — brief, not a paragraph. ~20 (strict), 30 (balanced), or 50 (loose) words max — scales with recallStrictness — going over doesn\'t block the update, but prints a non-blocking warning.' },
         ticket: { type: 'string', description: 'Ticket key the note is about, e.g. PROJ-123. Optional — narrows the search when omitted, the vault is searched across all ticket prefixes.' },
         expectMtime: { type: 'number', description: 'The note file\'s mtime (ms) last observed by the caller. If the note changed since then, the patch is a no-op rather than an overwrite — optimistic concurrency, not a hard requirement.' },
+        attachments: { type: 'array', items: { type: 'string' }, description: 'Local file paths to attach (screenshots, logs, etc.) — appended to whatever the note already has, never replacing existing attachments. Same 10MB/file, 50MB/call, 20-file caps as recall_add. Local vault only — recall_update never syncs to a team backend, so this never pushes.' },
       },
       required: ['id', 'body'],
     },

@@ -228,7 +228,9 @@ export async function runNoteAdd(cmdArgs, {
  * meant to be typed by hand): the loop's generator subagent produces a body,
  * SKILL.md's orchestration pipes it through this command, and the new body
  * gets exactly the same structural and secret gates a user-typed body gets —
- * there is no weaker path here for AI-authored content.
+ * there is no weaker path here for AI-authored content. `--attach` works the
+ * same as `note add`'s — files are appended to whatever the note already has,
+ * never replacing them.
  *
  * @param {string[]} cmdArgs
  * @returns {Promise<{ patched: boolean }>}
@@ -245,6 +247,7 @@ export async function runNotePatch(cmdArgs, {
   resolveEffectiveRecallStrictnessFn = resolveEffectiveRecallStrictness,
   scanForSecretsFn = scanForSecrets,
   patchNoteBodyFn = patchNoteBody,
+  readAttachmentsFn = readAttachments,
 } = {}) {
   if (!isLicensedFn('pro', configDir)) {
     showUpgradePrompt('pro', 'ticketlens note', { stream });
@@ -253,7 +256,7 @@ export async function runNotePatch(cmdArgs, {
 
   const id = parseFlag(cmdArgs, 'id');
   if (!id) {
-    stream.write('Usage: ticketlens note patch --id="..." [--ticket=KEY]\n');
+    stream.write('Usage: ticketlens note patch --id="..." [--ticket=KEY] [--attach=path1,path2]\n');
     return { patched: false };
   }
 
@@ -288,11 +291,18 @@ export async function runNotePatch(cmdArgs, {
     stream.write(`  Warning: ${warning}\n`);
   }
 
+  const attachPaths = parseAttachPaths(cmdArgs);
+  const { saved: attachments, warnings: attachWarnings } = attachPaths.length > 0
+    ? summarizeAttachments(readAttachmentsFn(attachPaths))
+    : { saved: [], warnings: [] };
+  for (const warning of attachWarnings) stream.write(warning);
+
   const ticketKeys = ticketKey ? [ticketKey] : [];
   const expectMtimeArg = parseFlag(cmdArgs, 'expect-mtime');
   const expectedMtimeMs = expectMtimeArg !== undefined ? Number(expectMtimeArg) : undefined;
-  const { patched } = patchNoteBodyFn({ id, ticketKeys, body, expectedMtimeMs }, { configDir });
-  stream.write(patched ? `  Updated note (${id})\n` : `  Note not updated — (${id}) not found or already changed.\n`);
+  const { patched } = patchNoteBodyFn({ id, ticketKeys, body, expectedMtimeMs, attachments }, { configDir });
+  const attachSuffix = patched && attachments.length > 0 ? ` + ${attachments.length} attachment(s)` : '';
+  stream.write(patched ? `  Updated note (${id})${attachSuffix}\n` : `  Note not updated — (${id}) not found or already changed.\n`);
   return { patched };
 }
 

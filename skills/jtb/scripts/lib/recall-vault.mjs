@@ -90,7 +90,10 @@ function writeAttachments(noteDir, id, attachments) {
   if (attachments.length === 0) return [];
   const attachDir = attachmentsDirFor(noteDir, id);
   fs.mkdirSync(attachDir, { recursive: true });
-  const used = new Set();
+  // Seeded from what's already on disk, not just this call's batch — patchNoteBody
+  // can call this a second time against the same note id, and a same-named file
+  // from an earlier add/patch must count toward uniqueness too.
+  const used = new Set(fs.readdirSync(attachDir));
   const saved = [];
   for (const { filename, buffer } of attachments) {
     const uniqueName = uniquifyFilename(filename, used);
@@ -248,8 +251,10 @@ export function deleteNoteAnyPrefix(externalId, { configDir = DEFAULT_CONFIG_DIR
  * Overwrites an existing local note's body in place — used by the jtb skill's
  * generator/validator quality loop to swap in a better draft after `note add`
  * already saved the original. Patch-only: never creates a note, and every
- * frontmatter field except body is carried over unchanged, so this can never
- * become a covert way to retitle/retag/re-tie a note to a different ticket.
+ * frontmatter field except body and attachments is carried over unchanged, so
+ * this can never become a covert way to retitle/retag/re-tie a note to a
+ * different ticket. New attachments are appended to whatever the note already
+ * has — a patch refines a note, it never discards what's already attached.
  *
  * Guards, same failure-mode split as deleteNote: a malformed id or ticket key
  * is a caller bug (throw); a missing file, an externalId that doesn't match
@@ -257,17 +262,18 @@ export function deleteNoteAnyPrefix(externalId, { configDir = DEFAULT_CONFIG_DIR
  * (expectedMtimeMs) are all best-effort no-ops, not errors — the original
  * note is always left exactly as-is on any of these.
  *
- * @param {{ id: string, ticketKeys?: string[], body: string, expectedMtimeMs?: number }} params
+ * @param {{ id: string, ticketKeys?: string[], body: string, expectedMtimeMs?: number, attachments?: Array<{ filename: string, buffer: Buffer }> }} params
  * @param {{ configDir?: string }} [opts]
  * @returns {{ patched: boolean, path: string|null }}
  */
-export function patchNoteBody({ id, ticketKeys = [], body, expectedMtimeMs }, { configDir = DEFAULT_CONFIG_DIR } = {}) {
+export function patchNoteBody({ id, ticketKeys = [], body, expectedMtimeMs, attachments = [] }, { configDir = DEFAULT_CONFIG_DIR } = {}) {
   if (!EXTERNAL_ID_PATTERN.test(id)) {
     throw new Error(`Invalid note id: "${id}"`);
   }
 
   const prefix = resolvePrefix(ticketKeys[0]);
-  const notePath = path.join(prefixDir(configDir, prefix), id);
+  const dir = prefixDir(configDir, prefix);
+  const notePath = path.join(dir, id);
 
   if (!fs.existsSync(notePath)) {
     return { patched: false, path: null };
@@ -281,6 +287,13 @@ export function patchNoteBody({ id, ticketKeys = [], body, expectedMtimeMs }, { 
     return { patched: false, path: notePath };
   }
 
+  // existing.attachments is the full list already on disk (from add and/or a
+  // prior patch) — carried forward here, or the drop bug returns: patch would
+  // silently strip the attachments: key, orphaning files that stay on disk but
+  // become permanently unlisted and unpushable.
+  const savedAttachments = writeAttachments(dir, id, attachments);
+  const mergedAttachments = [...existing.attachments, ...savedAttachments];
+
   const data = {
     title: existing.title,
     aliases: existing.aliases,
@@ -291,6 +304,7 @@ export function patchNoteBody({ id, ticketKeys = [], body, expectedMtimeMs }, { 
     status: existing.status,
     sources: existing.sources,
     externalId: existing.externalId,
+    ...(mergedAttachments.length > 0 ? { attachments: mergedAttachments } : {}),
   };
 
   writeFileAtomically(notePath, serializeFrontmatter(data, body));
