@@ -718,6 +718,24 @@ describe('patchNoteBody — attachments (backlog #21)', () => {
     assert.equal(fs.existsSync(path.join(configDir, 'recall', 'PROD', '1999999999999-abcdef')), false);
   });
 
+  test('red-team: --attach works on a note written via upsertPulledNote (team-pulled, never had an attachments key at all)', () => {
+    const id = '1700000000000-abcdef.md';
+    upsertPulledNote(
+      { external_id: id, title: 'Team note', tickets: ['PROD-1'], author: 'teammate', body: 'From the team.' },
+      { configDir },
+    );
+    const log = Buffer.from('local addendum');
+
+    const result = patchNoteBody(
+      { id, ticketKeys: ['PROD-1'], body: 'Refined locally.', attachments: [{ filename: 'addendum.txt', buffer: log }] },
+      { configDir },
+    );
+
+    assert.equal(result.patched, true);
+    const [note] = listNotes({ ticketKey: 'PROD-1' }, { configDir });
+    assert.deepEqual(note.attachments, ['addendum.txt']);
+  });
+
   test('LOCK: a failed patch (stale expectedMtimeMs) never writes attachment files to disk', () => {
     const { id, path: notePath } = writeNote({ title: 'x', ticketKeys: ['PROD-1'], author: 'ralph', body: 'Original body here.' }, { configDir });
     const staleMtime = fs.statSync(notePath).mtimeMs;

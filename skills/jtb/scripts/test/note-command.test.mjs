@@ -531,6 +531,17 @@ describe('runNotePatch — license gate fires before anything else', () => {
     assert.equal(stdinCalls, 0);
     assert.equal(patchCalls, 0);
   });
+
+  test('red-team: unlicensed with --attach present never reads attachment paths from disk either', async () => {
+    let readCalls = 0;
+    const deps = basePatchDeps({
+      isLicensedFn: () => false,
+      readAttachmentsFn: () => { readCalls++; return { files: [], droppedCount: 0 }; },
+    });
+    const result = await runNotePatch(['--id=note-1.md', '--attach=/a.png'], deps);
+    assert.equal(result.patched, false);
+    assert.equal(readCalls, 0);
+  });
 });
 
 describe('runNotePatch — usage validation', () => {
@@ -749,6 +760,15 @@ describe('runNotePatch — --attach (local file attachments, backlog #21)', () =
     await runNotePatch(['--id=note-1.md', '--attach=/a.png'], deps);
     assert.match(deps.stream.lines.join(''), /not updated/i);
     assert.doesNotMatch(deps.stream.lines.join(''), /attachment/i);
+  });
+
+  test('red-team: a too-large attachment on patch is reported with the same "exceeds 10 MB" wording used by note add', async () => {
+    const deps = basePatchDeps({
+      readAttachmentsFn: () => ({ files: [{ ok: false, path: '/huge.zip', error: 'too-large' }], droppedCount: 0 }),
+    });
+    const result = await runNotePatch(['--id=note-1.md', '--attach=/huge.zip'], deps);
+    assert.equal(result.patched, true);
+    assert.match(deps.stream.lines.join(''), /exceeds 10 MB/);
   });
 });
 

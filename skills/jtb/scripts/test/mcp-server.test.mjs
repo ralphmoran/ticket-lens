@@ -1057,6 +1057,24 @@ describe('mcp-server', () => {
       );
       assert.equal(seenArgs.some(a => a.startsWith('--attach=')), false);
     });
+
+    it('red-team: a non-string attachments[] element never crashes the server or forges a second flag', async () => {
+      let seenArgs;
+      const runNotePatchFn = async (cmdArgs) => { seenArgs = cmdArgs; return { patched: true }; };
+      // A function property (e.g. a crafted toString) can't survive the real JSON-RPC
+      // transport — drive() round-trips every request through JSON.stringify/parse,
+      // same as a real client, so this arrives server-side as a plain {} with no
+      // custom toString. Worst case is the harmless literal string below, never a
+      // forged flag or a crash.
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'recall_update', arguments: { id: 'fake-id.md', body: 'x', attachments: [{ toString: () => '--ticket=EVIL-999' }] } } }],
+        { configDir, runNotePatchFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      // The coerced string lands inside the single --attach= array element, never as a new element.
+      assert.equal(seenArgs.length, 2);
+      assert.equal(seenArgs[1], '--attach=[object Object]');
+    });
   });
 
   describe('tools/call recall_delete', () => {
