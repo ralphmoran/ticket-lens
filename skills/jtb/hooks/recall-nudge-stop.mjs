@@ -26,9 +26,12 @@
  * again after the next compaction/resume rollover, since that dismissal
  * was never recorded anywhere — only a real capture was.
  *
- * Which of the two cases above actually blocks is governed by the active
- * profile's recallStrictness — see recall-nudge-lib.mjs's shouldNag() doc
- * comment for the calibration and why strict doesn't widen this further.
+ * Which of the two cases above actually blocks is governed by the effective
+ * recallStrictness — the active profile's own explicit config-set value, or
+ * else the team's Console-set default (backlog #20), resolved entirely from
+ * local state via resolveEffectiveRecallStrictness() so this hook never
+ * touches the network. See recall-nudge-lib.mjs's shouldNag() doc comment
+ * for the calibration and why strict doesn't widen this further.
  *
  * resolveProfile() below is given scanTranscript()'s matched ticket key (not
  * null), so it resolves by ticket-key prefix the same way the brief-injection
@@ -40,7 +43,8 @@
  */
 
 import { readStdinJson, readState, writeState, scanTranscript, hasRecentCapture, writeLastCaptureAt, hasRecentNag, writeLastNagAt, shouldNag } from './recall-nudge-lib.mjs';
-import { resolveProfile, normalizeRecallStrictness } from '../scripts/lib/profile-resolver.mjs';
+import { resolveProfile, resolveEffectiveRecallStrictness } from '../scripts/lib/profile-resolver.mjs';
+import { readCliToken } from '../scripts/lib/cli-auth.mjs';
 
 const input = readStdinJson();
 const sessionId = input?.session_id;
@@ -60,7 +64,8 @@ const state = readState(sessionId);
 if (state.stopChecked) process.exit(0); // already asked once this session — respect the answer
 
 const profile = resolveProfile(ticketKey, { cwd });
-const recallStrictness = normalizeRecallStrictness(profile?.recallStrictness);
+const cliToken = readCliToken();
+const recallStrictness = resolveEffectiveRecallStrictness({ profile, cliToken });
 
 if (!shouldNag({ sawFetch, sawRecallFlag, sawNoteAdd, recallStrictness })) {
   process.exit(0); // nothing this strictness level requires a capture for

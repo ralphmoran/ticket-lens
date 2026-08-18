@@ -8,6 +8,10 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { sanitizeUntrustedText } from './ansi.mjs';
+import { readEffectiveRecallSettings } from './recall-settings-sync.mjs';
+import { RECALL_STRICTNESS_LEVELS, DEFAULT_RECALL_STRICTNESS } from './recall-strictness.mjs';
+
+export { RECALL_STRICTNESS_LEVELS, DEFAULT_RECALL_STRICTNESS };
 
 /** Simple Levenshtein distance for "did you mean" suggestions. */
 function levenshtein(a, b) {
@@ -100,11 +104,30 @@ export function saveProfile(name, profileData, credData, configDir = DEFAULT_CON
   invalidateProfilesCache(configDir);
 }
 
-export const RECALL_STRICTNESS_LEVELS = ['loose', 'balanced', 'strict'];
-export const DEFAULT_RECALL_STRICTNESS = 'balanced';
-
 export function normalizeRecallStrictness(value) {
   return RECALL_STRICTNESS_LEVELS.includes(value) ? value : DEFAULT_RECALL_STRICTNESS;
+}
+
+/**
+ * Effective recallStrictness for a profile (backlog #20) — an explicit local
+ * `config set recallStrictness` always wins; only falls back to the team's
+ * Console-set default (read from the same local, network-free settings cache
+ * queue-settings already uses) when the profile has none. Synchronous and
+ * local-only by design — this is what the Stop hook calls, and it must never
+ * touch the network on every session end.
+ *
+ * @param {object} [opts]
+ * @param {{recallStrictness?: string}} [opts.profile]
+ * @param {string} [opts.configDir]
+ * @param {string} [opts.cliToken]
+ * @returns {string}
+ */
+export function resolveEffectiveRecallStrictness({ profile, configDir = DEFAULT_CONFIG_DIR, cliToken } = {}) {
+  if (profile?.recallStrictness && RECALL_STRICTNESS_LEVELS.includes(profile.recallStrictness)) {
+    return profile.recallStrictness;
+  }
+  const cached = readEffectiveRecallSettings(configDir, { cliToken });
+  return normalizeRecallStrictness(cached.recall_strictness);
 }
 
 export function saveProfileRecallStrictness(name, level, configDir = DEFAULT_CONFIG_DIR) {

@@ -53,7 +53,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} note delete ${s.dim('--id=... [--ticket=KEY]')}  Remove a note from your local vault  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} recall ${s.dim('<query|TICKET-KEY>')}   Search your saved Recall notes  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} recall sync                 Retry any notes stuck in the local queue  ${s.dim('[Team+]')}`,
-    `    ${s.brand('ticketlens')} recall settings             Show effective retry-queue settings, fetched live  ${s.dim('[Team+]')}`,
+    `    ${s.brand('ticketlens')} recall settings             Show effective retry-queue settings + capture strictness, fetched live  ${s.dim('[Team+]')}`,
     `    ${s.brand('ticketlens')} mcp                         Start the MCP stdio server (Recall + ticket writes)  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} comment ${s.dim('<TICKET-KEY> --body=... [--attach=...]')}  Post a comment to the tracker  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} transition ${s.dim('<TICKET-KEY> [--target=... --confirm]')}  Move ticket status  ${s.dim('[Pro]')}`,

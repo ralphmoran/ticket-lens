@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.42.4 -->
+<!-- jtb-skill-version: 0.42.5 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -62,7 +62,7 @@ Fetches a Jira ticket and produces a structured brief with code references, then
 /jtb note add --title="..." --attach=./shot.png,./log.txt # attach local files to a Recall note (Pro, local vault only — see note below)
 /jtb recall PROD-1234                  # search saved Recall notes (Pro)
 /jtb recall sync                       # retry any notes stuck in the local queue (Team+)
-/jtb recall settings                   # show effective retry-queue settings, fetched live (Team+)
+/jtb recall settings                   # show effective retry-queue settings + Recall capture strictness, fetched live (Team+)
 /jtb comment PROD-1234 --body="..."    # post a comment to the tracker (Pro)
 /jtb transition PROD-1234              # list the tracker's current valid transitions (Pro)
 /jtb transition PROD-1234 --target="Done" --confirm  # execute the transition (Pro)

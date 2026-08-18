@@ -230,6 +230,33 @@ describe('runNoteAdd — word-count warning (backlog #18)', () => {
     await runNoteAdd(['--title=x'], deps);
     assert.equal(capturedMaxWords, 30);
   });
+
+  test('backlog #20: a team Console default is used via resolveEffectiveRecallStrictnessFn when the profile has no local override', async () => {
+    let capturedMaxWords;
+    let capturedArgs;
+    const deps = baseDeps({
+      resolveProfileFn: () => ({ name: 'prod' }),
+      resolveEffectiveRecallStrictnessFn: (args) => { capturedArgs = args; return 'loose'; },
+      checkWordCountFn: (input, opts) => { capturedMaxWords = opts.maxWords; return { warnings: [] }; },
+    });
+    await runNoteAdd(['--title=x'], deps);
+    assert.equal(capturedMaxWords, 50);
+    assert.deepEqual(capturedArgs.profile, { name: 'prod' });
+  });
+
+  test('backlog #20: a local profile override still wins even when resolveEffectiveRecallStrictnessFn is wired', async () => {
+    // Not a real assertion on precedence logic itself (that's covered in
+    // profile-resolver.test.mjs) — this only proves runNoteAdd delegates the
+    // decision entirely to the injected resolver rather than re-deriving it.
+    let capturedMaxWords;
+    const deps = baseDeps({
+      resolveProfileFn: () => ({ name: 'prod', recallStrictness: 'strict' }),
+      resolveEffectiveRecallStrictnessFn: ({ profile }) => profile.recallStrictness,
+      checkWordCountFn: (input, opts) => { capturedMaxWords = opts.maxWords; return { warnings: [] }; },
+    });
+    await runNoteAdd(['--title=x'], deps);
+    assert.equal(capturedMaxWords, 20);
+  });
 });
 
 describe('runNoteAdd — structural check gate', () => {
@@ -579,6 +606,19 @@ describe('runNotePatch — word-count warning (backlog #18)', () => {
     });
     await runNotePatch(['--id=note-1.md'], deps);
     assert.equal(capturedMaxWords, 20);
+  });
+
+  test('backlog #20: delegates to resolveEffectiveRecallStrictnessFn for a team Console default', async () => {
+    let capturedMaxWords;
+    let capturedArgs;
+    const deps = basePatchDeps({
+      resolveProfileFn: () => ({ name: 'prod' }),
+      resolveEffectiveRecallStrictnessFn: (args) => { capturedArgs = args; return 'loose'; },
+      checkWordCountFn: (input, opts) => { capturedMaxWords = opts.maxWords; return { warnings: [] }; },
+    });
+    await runNotePatch(['--id=note-1.md'], deps);
+    assert.equal(capturedMaxWords, 50);
+    assert.deepEqual(capturedArgs.profile, { name: 'prod' });
   });
 });
 

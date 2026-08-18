@@ -129,6 +129,126 @@ describe('recall-nudge-stop hook (subprocess)', () => {
     assert.equal(result.status, 2);
   });
 
+  describe('backlog #20: team Console default, via the local settings cache', () => {
+    function writeCliToken(home, token) {
+      const configDir = join(home, '.ticketlens');
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, 'cli-token.json'), JSON.stringify({ token }));
+    }
+
+    function writeSettingsCache(home, values, tokenHash) {
+      const configDir = join(home, '.ticketlens');
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, 'recall-settings-cache.json'), JSON.stringify({
+        values, tokenHash, fetchedAt: new Date().toISOString(),
+      }));
+    }
+
+    it('applies the cached team default when the profile has no local override', async () => {
+      const { hashToken } = await import('../lib/recall-sync.mjs');
+      writeCliToken(home, 'tl_key');
+      writeSettingsCache(home, { recall_strictness: 'loose' }, hashToken('tl_key'));
+      // No writeProfile() call — profile has no recallStrictness of its own.
+      // fetch ran, nothing flagged, no note: loose exits 0, balanced/strict exit 2
+      // (see the sibling tests above) — this is the discriminating scenario that
+      // proves the cached 'loose' value was actually applied, not just defaulted.
+      writeFileSync(transcriptPath, transcriptWith([
+        assistantText('Looking at PROD-1234 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      ]));
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+      assert.equal(result.status, 0);
+    });
+
+    it('a local profile override still wins over the cached team default', async () => {
+      const { hashToken } = await import('../lib/recall-sync.mjs');
+      writeCliToken(home, 'tl_key');
+      writeSettingsCache(home, { recall_strictness: 'loose' }, hashToken('tl_key'));
+      writeProfile(home, 'strict'); // explicit local override
+      writeFileSync(transcriptPath, transcriptWith([
+        assistantText('Looking at PROD-1234 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      ]));
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+      assert.equal(result.status, 2); // strict, not the cached loose
+    });
+
+    // ── Red-team pass (Scenario C: CLI offline resolution) ─────────────────
+
+    it('attack: a cache written under a different account\'s tokenHash is ignored, even reached through the real hook subprocess', async () => {
+      const { hashToken } = await import('../lib/recall-sync.mjs');
+      writeCliToken(home, 'attacker_key');
+      // Cache was legitimately written for a DIFFERENT account (e.g. a shared
+      // machine, or a stale cache surviving an account switch).
+      writeSettingsCache(home, { recall_strictness: 'loose' }, hashToken('victim_key'));
+      // fetch ran, nothing flagged, no note — loose would exit 0; balanced (the
+      // safe fallback) exits 2. A mismatched-tokenHash cache must NOT apply.
+      writeFileSync(transcriptPath, transcriptWith([
+        assistantText('Looking at PROD-1234 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      ]));
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+      assert.equal(result.status, 2);
+    });
+
+    it('attack: a garbage/malicious recall_strictness value in the cache file never crashes the hook or gets used as-is', async () => {
+      const { hashToken } = await import('../lib/recall-sync.mjs');
+      writeCliToken(home, 'tl_key');
+      writeSettingsCache(home, { recall_strictness: "'; process.exit(1); //__proto__" }, hashToken('tl_key'));
+      writeFileSync(transcriptPath, transcriptWith([
+        assistantText('Looking at PROD-1234 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      ]));
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+      // Must fall through to the safe default (balanced → exit 2), not crash
+      // (a non-0/non-2 status, e.g. from an uncaught exception, would fail this).
+      assert.equal(result.status, 2);
+      assert.equal(result.signal, null);
+    });
+
+    it('attack: a corrupted (non-JSON) cache file degrades to platform default instead of crashing the hook', () => {
+      const configDir = join(home, '.ticketlens');
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, 'cli-token.json'), JSON.stringify({ token: 'tl_key' }));
+      writeFileSync(join(configDir, 'recall-settings-cache.json'), '{not valid json at all');
+      writeFileSync(transcriptPath, transcriptWith([
+        assistantText('Looking at PROD-1234 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      ]));
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+      assert.equal(result.status, 2); // balanced default, not a crash
+      assert.equal(result.signal, null);
+    });
+
+    it('attack: a maliciously large cache file (10MB) does not hang or crash the hook that runs on every session end', () => {
+      const configDir = join(home, '.ticketlens');
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, 'cli-token.json'), JSON.stringify({ token: 'tl_key' }));
+      // A 10MB junk value in an otherwise-valid JSON shape — proves the hook
+      // doesn't choke on file size alone (it must complete well under any
+      // reasonable session-end timeout).
+      writeFileSync(join(configDir, 'recall-settings-cache.json'), JSON.stringify({
+        values: { recall_strictness: 'x'.repeat(10 * 1024 * 1024) },
+        tokenHash: 'irrelevant',
+        fetchedAt: new Date().toISOString(),
+      }));
+      writeFileSync(transcriptPath, transcriptWith([
+        assistantText('Looking at PROD-1234 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      ]));
+      const start = Date.now();
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+      assert.ok(Date.now() - start < 5000, 'hook must not hang on an oversized cache file');
+      assert.equal(result.signal, null);
+    });
+  });
+
+  it('LOCK: the hook source never imports the live/async settings-fetch path — it must stay network-free on every session end', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(fileURLToPath(new URL('../../hooks/recall-nudge-stop.mjs', import.meta.url)), 'utf8');
+    assert.doesNotMatch(source, /fetchRecallSettings|getEffectiveRecallSettings\b/);
+  });
+
   it('LOCK: never blocks a second time for the same session_id, at every strictness level', () => {
     const transcriptByLevel = {
       loose: transcriptWith([

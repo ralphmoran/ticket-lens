@@ -15,7 +15,7 @@ import { TICKET_KEY_PATTERN } from './cli.mjs';
 import { isLicensed, showUpgradePrompt } from './license.mjs';
 import { listNotes } from './recall-vault.mjs';
 import { readCliToken } from './cli-auth.mjs';
-import { resolveProfile, loadProfileRecallTeamId } from './profile-resolver.mjs';
+import { resolveProfile, loadProfileRecallTeamId, resolveEffectiveRecallStrictness, RECALL_STRICTNESS_LEVELS } from './profile-resolver.mjs';
 import { pullNotes } from './recall-sync.mjs';
 import { maybeAutoFlush, flushQueue, readQueue } from './recall-queue.mjs';
 import { getEffectiveRecallSettingsWithSource } from './recall-settings-sync.mjs';
@@ -128,7 +128,9 @@ export async function runRecallSettings(cmdArgs, {
   stream = process.stdout,
   isLicensedFn = isLicensed,
   readCliTokenFn = readCliToken,
+  resolveProfileFn = resolveProfile,
   getEffectiveRecallSettingsWithSourceFn = getEffectiveRecallSettingsWithSource,
+  resolveEffectiveRecallStrictnessFn = resolveEffectiveRecallStrictness,
 } = {}) {
   if (!isLicensedFn('pro', configDir)) {
     showUpgradePrompt('pro', 'ticketlens recall', { stream });
@@ -143,5 +145,16 @@ export async function runRecallSettings(cmdArgs, {
   stream.write(`  Max queued notes:    ${settings.max_queue_size}\n`);
   stream.write(`  Queued note expiry:  ${settings.max_entry_age_ms / 86_400_000} days\n`);
   stream.write(`  Source: ${SOURCE_LABELS[source]}\n`);
+
+  // recall_strictness has its own precedence, separate from the queue
+  // settings above: an explicit local `config set recallStrictness` always
+  // wins over the team's Console default (backlog #20) — so its effective
+  // value and source are reported independently rather than reusing `source`.
+  const profile = resolveProfileFn(null, { configDir, cwd: process.cwd() });
+  const hasLocalOverride = RECALL_STRICTNESS_LEVELS.includes(profile?.recallStrictness);
+  const recallStrictness = resolveEffectiveRecallStrictnessFn({ profile, configDir, cliToken });
+  const strictnessSource = hasLocalOverride ? 'your local `config set recallStrictness`' : SOURCE_LABELS[source];
+  stream.write(`  Recall capture strictness: ${recallStrictness}\n`);
+  stream.write(`  Source: ${strictnessSource}\n`);
   return { ok: true };
 }

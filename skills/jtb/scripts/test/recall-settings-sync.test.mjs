@@ -44,9 +44,16 @@ describe('readEffectiveRecallSettings', () => {
 
   it('returns a cached team override within bounds as-is when cliToken matches the cache', () => {
     const configDir = freshConfigDir();
-    const override = { flush_cooldown_ms: 300_000, timeout_ms: 8_000, max_queue_size: 50, max_entry_age_ms: 604_800_000 };
+    const override = { flush_cooldown_ms: 300_000, timeout_ms: 8_000, max_queue_size: 50, max_entry_age_ms: 604_800_000, recall_strictness: 'strict' };
     writeCache(configDir, override, { tokenHash: hashToken('tl_key') });
     assert.deepEqual(readEffectiveRecallSettings(configDir, { cliToken: 'tl_key' }), override);
+  });
+
+  it('falls back to the default recall_strictness when the cache value is not a recognized level', () => {
+    const configDir = freshConfigDir();
+    writeCache(configDir, { ...DEFAULT_RECALL_SETTINGS, recall_strictness: 'bogus' });
+    const effective = readEffectiveRecallSettings(configDir, { cliToken: 'tl_key' });
+    assert.equal(effective.recall_strictness, 'balanced');
   });
 
   it('returns platform defaults — not the cache — when the cache belongs to a different account', () => {

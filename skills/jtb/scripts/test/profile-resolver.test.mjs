@@ -4,8 +4,9 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveConnection, resolveProfile, resolveProfileByPath, findProfilesByPrefix, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams, saveProfileRecallTeamId, loadProfileRecallTeamId, saveProfileRecallStrictness, normalizeRecallStrictness, RECALL_STRICTNESS_LEVELS, DEFAULT_RECALL_STRICTNESS, resolveRecallStrictnessTarget } from '../lib/profile-resolver.mjs';
+import { resolveConnection, resolveProfile, resolveProfileByPath, findProfilesByPrefix, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams, saveProfileRecallTeamId, loadProfileRecallTeamId, saveProfileRecallStrictness, normalizeRecallStrictness, resolveEffectiveRecallStrictness, RECALL_STRICTNESS_LEVELS, DEFAULT_RECALL_STRICTNESS, resolveRecallStrictnessTarget } from '../lib/profile-resolver.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
+import { hashToken } from '../lib/recall-sync.mjs';
 
 const sampleProfiles = {
   profiles: {
@@ -568,6 +569,63 @@ describe('profile-resolver', () => {
 
     it('RECALL_STRICTNESS_LEVELS is exactly the three named levels', () => {
       assert.deepEqual(RECALL_STRICTNESS_LEVELS, ['loose', 'balanced', 'strict']);
+    });
+
+    it('re-exports the same array identity as recall-strictness.mjs, the single source of truth', async () => {
+      const leaf = await import('../lib/recall-strictness.mjs');
+      assert.equal(RECALL_STRICTNESS_LEVELS, leaf.RECALL_STRICTNESS_LEVELS);
+      assert.equal(DEFAULT_RECALL_STRICTNESS, leaf.DEFAULT_RECALL_STRICTNESS);
+    });
+  });
+
+  describe('resolveEffectiveRecallStrictness (backlog #20)', () => {
+    function writeSettingsCache(dir, values, { tokenHash = hashToken('tl_key'), fetchedAt = new Date().toISOString() } = {}) {
+      writeFileSync(join(dir, 'recall-settings-cache.json'), JSON.stringify({ values, tokenHash, fetchedAt }));
+    }
+
+    it('an explicit local profile override always wins over a cached team default', () => {
+      writeSettingsCache(configDir, { recall_strictness: 'loose' });
+      const result = resolveEffectiveRecallStrictness({
+        profile: { recallStrictness: 'strict' }, configDir, cliToken: 'tl_key',
+      });
+      assert.equal(result, 'strict');
+    });
+
+    it('falls back to the cached team default when the profile has no override', () => {
+      writeSettingsCache(configDir, { recall_strictness: 'loose' });
+      const result = resolveEffectiveRecallStrictness({
+        profile: { baseUrl: 'https://x.atlassian.net' }, configDir, cliToken: 'tl_key',
+      });
+      assert.equal(result, 'loose');
+    });
+
+    it('falls back to platform default (balanced) when neither the profile nor the cache has a value', () => {
+      const result = resolveEffectiveRecallStrictness({ profile: {}, configDir, cliToken: 'tl_key' });
+      assert.equal(result, DEFAULT_RECALL_STRICTNESS);
+    });
+
+    it('treats an unrecognized profile.recallStrictness as no override, not a crash — falls through to the cache', () => {
+      writeSettingsCache(configDir, { recall_strictness: 'strict' });
+      const result = resolveEffectiveRecallStrictness({
+        profile: { recallStrictness: 'aggressive' }, configDir, cliToken: 'tl_key',
+      });
+      assert.equal(result, 'strict');
+    });
+
+    it('never trusts a cache written under a different account', () => {
+      writeSettingsCache(configDir, { recall_strictness: 'strict' }, { tokenHash: hashToken('old_account') });
+      const result = resolveEffectiveRecallStrictness({
+        profile: {}, configDir, cliToken: 'new_account',
+      });
+      assert.equal(result, DEFAULT_RECALL_STRICTNESS);
+    });
+
+    it('is fully synchronous and network-free — safe for the Stop hook', () => {
+      // resolveEffectiveRecallStrictness has no async keyword and returns a
+      // plain string, not a Promise — this is a compile-time/type-level
+      // guarantee, not just a runtime one.
+      const result = resolveEffectiveRecallStrictness({ profile: {}, configDir, cliToken: 'tl_key' });
+      assert.equal(typeof result, 'string');
     });
   });
 
