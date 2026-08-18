@@ -31,3 +31,39 @@ export function checkNoteStructure({ body = '' } = {}) {
 
   return { rejected: false, reason: null };
 }
+
+// Backlog #18 — mandatory brevity cap, one entry per recallStrictness level.
+// Warning-only: a rambling note still saves, it just gets flagged so the
+// caller can tighten it, same non-blocking pattern scanForSecrets uses for
+// its `warnings` array.
+export const WORD_LIMITS = { strict: 20, balanced: 30, loose: 50 };
+
+function countWords(text) {
+  const trimmed = text.trim();
+  return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;
+}
+
+/**
+ * Warning-only companion to checkNoteStructure: flags a title/body that runs
+ * long instead of rejecting it. `maxWords` is a plain number so this stays
+ * dependency-free — the caller maps recallStrictness to a number.
+ *
+ * @param {{ title?: string, body?: string }} note
+ * @param {{ maxWords?: number }} opts
+ * @returns {{ warnings: string[] }}
+ */
+export function checkWordCount({ title = '', body = '' } = {}, { maxWords = WORD_LIMITS.balanced } = {}) {
+  const warnings = [];
+
+  const titleWords = countWords(title);
+  if (titleWords > maxWords) {
+    warnings.push(`Note title is ${titleWords} words (recommended max: ${maxWords}).`);
+  }
+
+  const bodyWords = countWords(body);
+  if (bodyWords > maxWords) {
+    warnings.push(`Note body is ${bodyWords} words (recommended max: ${maxWords}).`);
+  }
+
+  return { warnings };
+}

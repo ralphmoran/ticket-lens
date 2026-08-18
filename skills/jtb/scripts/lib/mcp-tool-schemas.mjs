@@ -161,10 +161,10 @@ export const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        title: { type: 'string', description: 'Short one-line title.' },
+        title: { type: 'string', description: 'Short one-line title, ~20 (strict), 30 (balanced), or 50 (loose) words max — scales with recallStrictness — going over doesn\'t block the save, but prints a non-blocking warning.' },
         ticket: { type: 'string', description: 'Optional ticket key, e.g. PROJ-123.' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags derived from this note\'s actual content — the specific technology, error type, root cause, or affected component (e.g. "retry-backoff", "null-pointer", "auth-middleware"). Never the project name or a generic category word like "gotcha" or "bug" — those provide no search signal to someone else looking for this note later. A tag that just restates the title in different words, or one you cannot trace to a specific sentence in the body, gives that same zero signal — if you cannot point to the exact phrase that justifies it, drop it.' },
-        body: { type: 'string', description: 'The note body — one or more paragraphs.' },
+        body: { type: 'string', description: 'The note body — brief, not a paragraph. ~20 (strict), 30 (balanced), or 50 (loose) words max — scales with recallStrictness — going over doesn\'t block the save, but prints a non-blocking warning.' },
         attachments: { type: 'array', items: { type: 'string' }, description: 'Local file paths to attach (screenshots, logs, etc.), saved next to the note in the local vault. Same 10MB/file, 50MB/call, 20-file caps as ticket_comment/ticket_create for the local save. If this account is entitled and the note syncs to a team, attachments sync too — visible and downloadable from Console > Admin > Recall — but the sync path has a lower 12MB/call cap than the local save (backend request-size limit). Going over it fails the WHOLE push (note text included), not just the attachment; the note stays saved locally either way.' },
       },
       required: ['title', 'body'],
@@ -177,7 +177,7 @@ export const TOOLS = [
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Note id to patch, as printed by recall_add or recall_search.' },
-        body: { type: 'string', description: 'The replacement note body.' },
+        body: { type: 'string', description: 'The replacement note body — brief, not a paragraph. ~20 (strict), 30 (balanced), or 50 (loose) words max — scales with recallStrictness — going over doesn\'t block the update, but prints a non-blocking warning.' },
         ticket: { type: 'string', description: 'Ticket key the note is about, e.g. PROJ-123. Optional — narrows the search when omitted, the vault is searched across all ticket prefixes.' },
         expectMtime: { type: 'number', description: 'The note file\'s mtime (ms) last observed by the caller. If the note changed since then, the patch is a no-op rather than an overwrite — optimistic concurrency, not a hard requirement.' },
       },

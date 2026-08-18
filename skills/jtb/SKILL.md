@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.42.3 -->
+<!-- jtb-skill-version: 0.42.4 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -356,6 +356,8 @@ Example that qualifies: an undocumented schema quirk found only by reading raw D
 
 Do not capture: routine/obvious information, anything already fully covered by the ticket description or comments, or content shaped like a credential or API key — the tool rejects those outright at save time.
 
+**Length:** keep both the title and body brief — a sharp one- or two-sentence takeaway, not a paragraph. The recommended max scales with the same strictness level as the section above: 20 words (strict), 30 words (balanced, default), 50 words (loose). Going over doesn't block the save — the CLI/MCP tool prints a non-blocking warning so you can tighten it, the same way it prints warnings for a detected email address or similar low-severity secret-scan hit.
+
 Capture **at the moment you confirm the insight**, not deferred to the end of the session — don't ask the user first, just do it. It requires a Pro license; on a Free account it will no-op with an upgrade hint on stderr, which is fine to ignore. It never blocks or fails the session.
 
 Immediately before dispatching the call, say one line in your response: `🔖 Recall-flag: <one-line reason>`. This is a fixed marker some harness setups scan for to confirm captures are actually happening — always emit it right when you decide to capture, even if you go on to call `note add` in the same breath.
@@ -365,7 +367,7 @@ Immediately before dispatching the call, say one line in your response: `🔖 Re
 If your environment lets you dispatch a tool call without waiting for its result — a background task, an async subagent, a fire-and-forget job — try it **once**. If it errors for any reason, don't retry the background path — fall back to calling it synchronously immediately. It's fast and never blocks or fails your session either way, so the synchronous fallback costs nothing; repeatedly retrying a broken background mechanism only adds visible noise for no benefit.
 
 ```bash
-echo "The body text of the note, one or more paragraphs." | \
+echo "Retry client swallowed 429s silently; added backoff and a warning log on the third failure." | \
   ticketlens note add --title="Short title" --ticket=TICKET-KEY --tags=a,b
 ```
 

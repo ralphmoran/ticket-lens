@@ -10,10 +10,10 @@ import path from 'node:path';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { isLicensed, showUpgradePrompt } from './license.mjs';
 import { scanForSecrets } from './secret-scanner.mjs';
-import { checkNoteStructure } from './note-structural-check.mjs';
+import { checkNoteStructure, checkWordCount, WORD_LIMITS } from './note-structural-check.mjs';
 import { writeNote, patchNoteBody, deleteNote, deleteNoteAnyPrefix, rebuildIndex } from './recall-vault.mjs';
 import { readCliToken } from './cli-auth.mjs';
-import { resolveProfile, loadProfileRecallTeamId } from './profile-resolver.mjs';
+import { resolveProfile, loadProfileRecallTeamId, normalizeRecallStrictness } from './profile-resolver.mjs';
 import { pushNote } from './recall-sync.mjs';
 import { enqueueNote, isRetryableFailure, maybeAutoFlush } from './recall-queue.mjs';
 import { incrementDraftKept, incrementDraftDeleted } from './activity-counter.mjs';
@@ -103,6 +103,7 @@ export async function runNoteAdd(cmdArgs, {
   readStdin = defaultReadStdin,
   isLicensedFn = isLicensed,
   checkNoteStructureFn = checkNoteStructure,
+  checkWordCountFn = checkWordCount,
   scanForSecretsFn = scanForSecrets,
   writeNoteFn = writeNote,
   readCliTokenFn = readCliToken,
@@ -153,6 +154,16 @@ export async function runNoteAdd(cmdArgs, {
     return { written: false };
   }
 
+  // Resolved once here (not just inside the push block below) so the
+  // word-count warning below can read this profile's recallStrictness
+  // regardless of whether a CLI token is configured for pushing.
+  const profile = resolveProfileFn(ticketKey || null, { configDir, cwd: process.cwd() });
+  const strictness = normalizeRecallStrictness(profile?.recallStrictness);
+  const wordCount = checkWordCountFn({ title, body }, { maxWords: WORD_LIMITS[strictness] });
+  for (const warning of wordCount.warnings) {
+    stream.write(`  Warning: ${warning}\n`);
+  }
+
   const scan = scanForSecretsFn({ title, tags, body });
   if (scan.rejected) {
     stream.write(`  Note not saved — ${scan.reasons.join(' ')}\n`);
@@ -187,7 +198,7 @@ export async function runNoteAdd(cmdArgs, {
     const warn = (s) => stream.write(s);
     // Field names match PushRequest's validation rules (external_id, tickets) —
     // the backend wire contract, not the local vault's internal camelCase shape.
-    const profile = resolveProfileFn(ticketKey || null, { configDir, cwd: process.cwd() });
+    // `profile` was already resolved above (needed there for the word-count check).
     const recallTeamId = profile ? loadProfileRecallTeamIdFn(profile.name, configDir) : null;
     const payload = { external_id: id, title, tickets: ticketKeys, tags, author, sources: [], body, captured_at: capturedAt.toISOString() };
     if (recallTeamId !== null) payload.group_id = recallTeamId;
@@ -225,6 +236,8 @@ export async function runNotePatch(cmdArgs, {
   readStdin = defaultReadStdin,
   isLicensedFn = isLicensed,
   checkNoteStructureFn = checkNoteStructure,
+  checkWordCountFn = checkWordCount,
+  resolveProfileFn = resolveProfile,
   scanForSecretsFn = scanForSecrets,
   patchNoteBodyFn = patchNoteBody,
 } = {}) {
@@ -251,6 +264,13 @@ export async function runNotePatch(cmdArgs, {
   if (structural.rejected) {
     stream.write(`  Note not updated — ${structural.reason}\n`);
     return { patched: false };
+  }
+
+  const profile = resolveProfileFn(ticketKey || null, { configDir, cwd: process.cwd() });
+  const strictness = normalizeRecallStrictness(profile?.recallStrictness);
+  const wordCount = checkWordCountFn({ body }, { maxWords: WORD_LIMITS[strictness] });
+  for (const warning of wordCount.warnings) {
+    stream.write(`  Warning: ${warning}\n`);
   }
 
   const scan = scanForSecretsFn({ title: '', tags: [], body });

@@ -14,6 +14,8 @@ function baseDeps(overrides = {}) {
     readStdin: async () => 'Body text.',
     isLicensedFn: () => true,
     checkNoteStructureFn: () => ({ rejected: false, reason: null }),
+    checkWordCountFn: () => ({ warnings: [] }),
+    resolveProfileFn: () => null,
     scanForSecretsFn: () => ({ rejected: false, reasons: [], warnings: [] }),
     writeNoteFn: () => ({ id: 'note-1.md', path: '/fake/config/recall/PROD/note-1.md' }),
     enqueueNoteFn: () => {},
@@ -156,6 +158,77 @@ describe('runNoteAdd — secret scanner gate', () => {
     assert.equal(captured.title, 'My title');
     assert.deepEqual(captured.tags, ['a', 'b']);
     assert.equal(captured.body, 'body text');
+  });
+});
+
+describe('runNoteAdd — word-count warning (backlog #18)', () => {
+  test('a body/title within limits produces no word-count warning (regression lock)', async () => {
+    const deps = baseDeps({
+      checkWordCountFn: () => ({ warnings: [] }),
+    });
+    const result = await runNoteAdd(['--title=x'], deps);
+    assert.equal(result.written, true);
+    assert.doesNotMatch(deps.stream.lines.join(''), /Warning:/);
+  });
+
+  test('a word-count warning does not block the write, but is shown', async () => {
+    const deps = baseDeps({
+      checkWordCountFn: () => ({ warnings: ['Note body is 40 words (recommended max: 30).'] }),
+    });
+    const result = await runNoteAdd(['--title=x'], deps);
+    assert.equal(result.written, true);
+    assert.match(deps.stream.lines.join(''), /40 words/);
+  });
+
+  test('the word-count checker is given title and body together', async () => {
+    let captured;
+    const deps = baseDeps({
+      checkWordCountFn: (input) => { captured = input; return { warnings: [] }; },
+      readStdin: async () => 'body text',
+    });
+    await runNoteAdd(['--title=My title'], deps);
+    assert.equal(captured.title, 'My title');
+    assert.equal(captured.body, 'body text');
+  });
+
+  test('default strictness (no profile resolved) maps to the balanced word limit', async () => {
+    let capturedMaxWords;
+    const deps = baseDeps({
+      resolveProfileFn: () => null,
+      checkWordCountFn: (input, opts) => { capturedMaxWords = opts.maxWords; return { warnings: [] }; },
+    });
+    await runNoteAdd(['--title=x'], deps);
+    assert.equal(capturedMaxWords, 30);
+  });
+
+  test('a resolved profile with recallStrictness=strict maps to the strict word limit', async () => {
+    let capturedMaxWords;
+    const deps = baseDeps({
+      resolveProfileFn: () => ({ name: 'prod', recallStrictness: 'strict' }),
+      checkWordCountFn: (input, opts) => { capturedMaxWords = opts.maxWords; return { warnings: [] }; },
+    });
+    await runNoteAdd(['--title=x'], deps);
+    assert.equal(capturedMaxWords, 20);
+  });
+
+  test('a resolved profile with recallStrictness=loose maps to the loose word limit', async () => {
+    let capturedMaxWords;
+    const deps = baseDeps({
+      resolveProfileFn: () => ({ name: 'prod', recallStrictness: 'loose' }),
+      checkWordCountFn: (input, opts) => { capturedMaxWords = opts.maxWords; return { warnings: [] }; },
+    });
+    await runNoteAdd(['--title=x'], deps);
+    assert.equal(capturedMaxWords, 50);
+  });
+
+  test('an invalid/unset recallStrictness value falls back to balanced', async () => {
+    let capturedMaxWords;
+    const deps = baseDeps({
+      resolveProfileFn: () => ({ name: 'prod', recallStrictness: 'nonsense' }),
+      checkWordCountFn: (input, opts) => { capturedMaxWords = opts.maxWords; return { warnings: [] }; },
+    });
+    await runNoteAdd(['--title=x'], deps);
+    assert.equal(capturedMaxWords, 30);
   });
 });
 
@@ -396,6 +469,8 @@ function basePatchDeps(overrides = {}) {
     readStdin: async () => 'Improved, actionable draft body.',
     isLicensedFn: () => true,
     checkNoteStructureFn: () => ({ rejected: false, reason: null }),
+    checkWordCountFn: () => ({ warnings: [] }),
+    resolveProfileFn: () => null,
     scanForSecretsFn: () => ({ rejected: false, reasons: [], warnings: [] }),
     patchNoteBodyFn: () => ({ patched: true, path: '/fake/config/recall/PROD/note-1.md' }),
     ...overrides,
@@ -472,6 +547,38 @@ describe('runNotePatch — new body gets the same gates as note add', () => {
     assert.equal(result.patched, false);
     assert.equal(patchCalls, 0);
     assert.match(deps.stream.lines.join(''), /AWS access key/);
+  });
+});
+
+describe('runNotePatch — word-count warning (backlog #18)', () => {
+  test('a word-count warning does not block the patch, but is shown', async () => {
+    const deps = basePatchDeps({
+      checkWordCountFn: () => ({ warnings: ['Note body is 40 words (recommended max: 30).'] }),
+    });
+    const result = await runNotePatch(['--id=note-1.md'], deps);
+    assert.equal(result.patched, true);
+    assert.match(deps.stream.lines.join(''), /40 words/);
+  });
+
+  test('the word-count checker is given only the body — patch has no title', async () => {
+    let captured;
+    const deps = basePatchDeps({
+      checkWordCountFn: (input) => { captured = input; return { warnings: [] }; },
+      readStdin: async () => 'the patched body',
+    });
+    await runNotePatch(['--id=note-1.md'], deps);
+    assert.equal(captured.body, 'the patched body');
+    assert.equal(captured.title, undefined);
+  });
+
+  test('a resolved profile with recallStrictness=strict maps to the strict word limit', async () => {
+    let capturedMaxWords;
+    const deps = basePatchDeps({
+      resolveProfileFn: () => ({ name: 'prod', recallStrictness: 'strict' }),
+      checkWordCountFn: (input, opts) => { capturedMaxWords = opts.maxWords; return { warnings: [] }; },
+    });
+    await runNotePatch(['--id=note-1.md'], deps);
+    assert.equal(capturedMaxWords, 20);
   });
 });
 
