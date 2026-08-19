@@ -33,6 +33,7 @@ import { apiBase } from './lib/api-utils.mjs';
 import { isLicensed, showUpgradePrompt, readLicense } from './lib/license.mjs';
 import { detectVcs } from './lib/vcs-detector.mjs';
 import { runComplianceCheck } from './lib/compliance-checker.mjs';
+import { runConsensusCheck } from './lib/consensus-checker.mjs';
 import { fetchRemoteLinks, buildAuthHeader } from './lib/jira-client.mjs';
 import { fetchConfluencePage } from './lib/confluence-client.mjs';
 
@@ -683,13 +684,18 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const codeRefsC = extractCodeReferences(allTextC);
     const briefC = assembleBrief(ticketC, codeRefsC);
 
-    const complianceRunner = opts.runComplianceCheck ?? runComplianceCheck;
+    const useConsensus = args.includes('--consensus');
+    const forceYes = args.includes('--yes') || args.includes('-y');
+    const complianceRunner = useConsensus
+      ? (opts.runConsensusCheck ?? runConsensusCheck)
+      : (opts.runComplianceCheck ?? runComplianceCheck);
     const complianceResult = await complianceRunner({
       brief: briefC,
       description: ticketC.description,
       ticketKey: ticketKeyArg,
       configDir: resolvedConfigDir,
       stream: errStream,
+      ...(useConsensus ? { forceYes } : {}),
     });
 
     if (complianceResult === null) {

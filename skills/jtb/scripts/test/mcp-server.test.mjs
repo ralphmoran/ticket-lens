@@ -236,6 +236,32 @@ describe('mcp-server', () => {
       assert.deepEqual(seen, ['compliance', 'PROJ-1']);
     });
 
+    it('consensus: true appends --consensus and --yes — MCP has no TTY to answer the interactive cost prompt', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('report\n');
+      };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'compliance', arguments: { ticket: 'PROJ-1', consensus: true } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.deepEqual(seen, ['compliance', 'PROJ-1', '--consensus', '--yes']);
+    });
+
+    it('omits --consensus/--yes when consensus is false or absent', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => {
+        seen = cmdArgs;
+        opts.print('report\n');
+      };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'compliance', arguments: { ticket: 'PROJ-1', consensus: false } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.deepEqual(seen, ['compliance', 'PROJ-1']);
+    });
+
     it('missing ticket returns a JSON-RPC tool error without ever calling the real function', async () => {
       let called = false;
       const runFetchTicketFn = async () => { called = true; };

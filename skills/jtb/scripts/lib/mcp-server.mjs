@@ -174,9 +174,12 @@ async function callTriage(args, { configDir, runTriageFn }) {
  * printErr through it before this tool existed — see the fetch tool's own
  * shipping notes for why that treatment was deferred per-tool).
  */
-function buildComplianceArgs({ ticket, profile }) {
+function buildComplianceArgs({ ticket, profile, consensus }) {
   const args = ['compliance', ticket];
   if (profile) args.push(`--profile=${profile}`);
+  // MCP has no TTY to answer the interactive cost-confirmation prompt, so --consensus
+  // always implies --yes here — the caller already opted in by setting consensus: true.
+  if (consensus) args.push('--consensus', '--yes');
   return args;
 }
 

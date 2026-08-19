@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.42.6 -->
+<!-- jtb-skill-version: 0.42.7 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -529,12 +529,20 @@ Use this evaluation order:
 3. **Manual checklist** — list each requirement for the developer to verify manually
 
 ### Privacy
-`--compliance` never sends data anywhere. The diff stays local. All analysis is performed by Claude Code within your session context.
+`--compliance` never sends data anywhere. The diff stays local. All analysis is performed by Claude Code within your session context. (The standalone command's `--consensus` opt-in below is the one exception — see that section.)
 
 ### Standalone command
 The same tier-gated check also runs as its own command — `ticketlens compliance PROJ-123` — independent of a full ticket fetch. This is what `ticketlens install-hooks` wires into a pre-push git hook (`ticketlens compliance "$KEY" || exit 1`, gated on a configurable coverage threshold). It shares the same `FREE_LIMIT`/Pro gate and the same compliance ledger as the `--compliance` flag above.
 
-If this harness has TicketLens's MCP server configured (a tool named `compliance` — often shown as `mcp__ticketlens__compliance` — visible in your tool list), prefer it over the bash form: same tier gate (Free: 3 checks/month, Pro: unlimited), same report — just no shell command to construct or stdout to parse. It accepts `ticket`/`profile`, matching the standalone command's arguments above.
+If this harness has TicketLens's MCP server configured (a tool named `compliance` — often shown as `mcp__ticketlens__compliance` — visible in your tool list), prefer it over the bash form: same tier gate (Free: 3 checks/month, Pro: unlimited), same report — just no shell command to construct or stdout to parse. It accepts `ticket`/`profile`/`consensus`, matching the standalone command's arguments below.
+
+### --consensus: Multi-Agent AI Review (standalone command only, Pro)
+`ticketlens compliance PROJ-123 --consensus` replaces the local deterministic keyword-diff matcher with a multi-agent AI review, for a higher-confidence check on requirements that plain keyword matching tends to misjudge (paraphrased requirements, negative conditions, cross-file logic).
+
+- **This is the one path in TicketLens that sends your diff off-machine** — directly to each AI provider you've configured (never to TicketLens's own servers). Requires **2+** of `anthropicApiKey`/`openaiApiKey`/`groqApiKey` set in `~/.ticketlens/credentials.json` (the same local BYOK file `ticketlens summarize` uses — set up via `ticketlens init` or manually). Before anything is sent, the diff runs through the same secret scanner Recall notes use (`secret-scanner.mjs`) — a detected secret blocks the run entirely, before any network call.
+- Each configured provider independently reviews every requirement; where agents disagree, a second refinement round shows each agent its peers' (anonymized) verdicts and lets it reconsider; final verdicts are reconciled by majority vote, ties broken toward the stricter verdict. The report always shows the full per-agent breakdown, including any round-1→round-2 change.
+- Prompts for confirmation before making any API calls (real cost against your own provider keys) unless `-y`/`--yes` is passed. Over MCP, `consensus: true` always implies yes (no TTY to prompt).
+- `Phase 2` (not yet built): GLM/Kimi/DeepSeek/Qwen/Devstral/Gemini/Gemma providers. `Phase 1.5` (not yet built): scored iterative refinement with a stronger-model arbiter judging consensus acceptability, instead of plain majority vote.
 
 ### Ledger export
 `ticketlens ledger [--format=json|csv]` exports the same local, signed compliance ledger these checks write to — entirely local, no network call. `[Pro]`. If this harness has TicketLens's MCP server configured (a tool named `ledger` — often shown as `mcp__ticketlens__ledger` — visible in your tool list), prefer it over the bash form: same tier gate, same export, just no shell command to construct or stdout to parse. It accepts `format` (`json`/`csv`, defaults to `json`).

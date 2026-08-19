@@ -19,7 +19,7 @@ export function statusColor(status, s) {
 // Shared with matchColor in ticket-command.mjs (duplicates' match-confidence
 // tiers) — same 70/50 thresholds, same green/yellow/dim vocabulary, applied
 // here to overall requirement coverage instead of a single match score.
-function coverageColor(pct, s) {
+export function coverageColor(pct, s) {
   if (pct >= 70) return s.green;
   if (pct >= 50) return s.yellow;
   return s.dim;

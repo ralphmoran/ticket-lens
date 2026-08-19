@@ -1019,6 +1019,112 @@ describe('compliance subcommand', () => {
     assert.equal(receivedStream.isTTY, true, 'stream must carry isTTY — showUpgradePrompt reads it to decide styling');
     assert.ok(errChunks.join('').includes('upgrade prompt text'), 'stream.write must route through the injected printErr');
   });
+
+  // Regression lock — the bare `compliance` path (no --consensus) must never touch
+  // runConsensusCheck. All prior tests in this describe block exercise that path
+  // already; this test makes the invariant explicit and would fail loudly if a
+  // future change accidentally always routed through consensus.
+  it('never calls runConsensusCheck when --consensus is not passed', async () => {
+    const runConsensusCheck = () => { throw new Error('must not be called without --consensus'); };
+    await run(['compliance', 'PROD-1234'], {
+      env: validEnv,
+      fetcher: mockFetcher,
+      configDir: NO_CONFIG,
+      print: () => {},
+      runComplianceCheck: async () => ({ report: '  Coverage: 90%', coveragePercent: 90 }),
+      runConsensusCheck,
+    });
+    process.exitCode = undefined;
+  });
+
+  describe('--consensus flag', () => {
+    it('routes to runConsensusCheck instead of runComplianceCheck', async () => {
+      const runComplianceCheck = () => { throw new Error('must not be called with --consensus'); };
+      const output = [];
+      await run(['compliance', 'PROD-1234', '--consensus'], {
+        env: validEnv,
+        fetcher: mockFetcher,
+        configDir: NO_CONFIG,
+        print: (chunk) => output.push(chunk),
+        runComplianceCheck,
+        runConsensusCheck: async () => ({ report: '  Consensus Compliance Check — PROD-1234\n  Coverage: 90%', coveragePercent: 90 }),
+      });
+      process.exitCode = undefined;
+      assert.ok(output.join('').includes('Consensus Compliance Check'));
+    });
+
+    it('passes forceYes: true when --yes is present', async () => {
+      let receivedForceYes;
+      await run(['compliance', 'PROD-1234', '--consensus', '--yes'], {
+        env: validEnv,
+        fetcher: mockFetcher,
+        configDir: NO_CONFIG,
+        print: () => {},
+        runConsensusCheck: async ({ forceYes }) => {
+          receivedForceYes = forceYes;
+          return { report: '  Coverage: 90%', coveragePercent: 90 };
+        },
+      });
+      process.exitCode = undefined;
+      assert.equal(receivedForceYes, true);
+    });
+
+    it('passes forceYes: true when -y is present', async () => {
+      let receivedForceYes;
+      await run(['compliance', 'PROD-1234', '--consensus', '-y'], {
+        env: validEnv,
+        fetcher: mockFetcher,
+        configDir: NO_CONFIG,
+        print: () => {},
+        runConsensusCheck: async ({ forceYes }) => {
+          receivedForceYes = forceYes;
+          return { report: '  Coverage: 90%', coveragePercent: 90 };
+        },
+      });
+      process.exitCode = undefined;
+      assert.equal(receivedForceYes, true);
+    });
+
+    it('defaults forceYes to false when -y/--yes is absent', async () => {
+      let receivedForceYes;
+      await run(['compliance', 'PROD-1234', '--consensus'], {
+        env: validEnv,
+        fetcher: mockFetcher,
+        configDir: NO_CONFIG,
+        print: () => {},
+        runConsensusCheck: async ({ forceYes }) => {
+          receivedForceYes = forceYes;
+          return { report: '  Coverage: 90%', coveragePercent: 90 };
+        },
+      });
+      process.exitCode = undefined;
+      assert.equal(receivedForceYes, false);
+    });
+
+    it('exits 1 when coverage is below threshold, same as the non-consensus path', async () => {
+      await run(['compliance', 'PROD-1234', '--consensus', '-y'], {
+        env: validEnv,
+        fetcher: mockFetcher,
+        configDir: NO_CONFIG,
+        print: () => {},
+        runConsensusCheck: async () => ({ report: '  Coverage: 50%', coveragePercent: 50 }),
+      });
+      assert.equal(process.exitCode, 1);
+      process.exitCode = undefined;
+    });
+
+    it('exits 1 when runConsensusCheck returns null (license gate or declined confirmation)', async () => {
+      await run(['compliance', 'PROD-1234', '--consensus'], {
+        env: validEnv,
+        fetcher: mockFetcher,
+        configDir: NO_CONFIG,
+        print: () => {},
+        runConsensusCheck: async () => null,
+      });
+      assert.equal(process.exitCode, 1);
+      process.exitCode = undefined;
+    });
+  });
 });
 
 describe('pr subcommand', () => {

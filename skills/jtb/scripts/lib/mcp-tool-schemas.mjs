@@ -42,12 +42,13 @@ export const TOOLS = [
   },
   {
     name: 'compliance',
-    description: 'Check a ticket\'s acceptance-criteria coverage against the current git diff — extracts requirements from the ticket description, matches them against code changes, and reports a coverage percentage plus what\'s missing. Read-only; the same check `ticketlens install-hooks` runs automatically. Free tier: 3 checks per month; TicketLens Pro removes the limit.',
+    description: 'Check a ticket\'s acceptance-criteria coverage against the current git diff — extracts requirements from the ticket description, matches them against code changes, and reports a coverage percentage plus what\'s missing. Read-only; the same check `ticketlens install-hooks` runs automatically. Free tier: 3 checks per month; TicketLens Pro removes the limit. Set `consensus: true` (TicketLens Pro) to replace the local matcher with a multi-agent AI review — routes the same check through every AI provider configured in ~/.ticketlens/credentials.json (2+ required), calling each directly (never TicketLens\'s own servers). Requires 2+ of anthropic/openai/groq keys configured via `cloud-keys` or credentials.json; automatically skips the interactive cost-confirmation prompt since MCP has no TTY.',
     inputSchema: {
       type: 'object',
       properties: {
         ticket: { type: 'string', description: 'Ticket key, e.g. PROJ-123.' },
         profile: { type: 'string', description: 'Connection profile to target, overriding folder-based inference and the default profile.' },
+        consensus: { type: 'boolean', description: 'Use multi-agent AI consensus instead of the local deterministic matcher. Requires TicketLens Pro and 2+ configured AI provider keys.' },
       },
       required: ['ticket'],
     },
