@@ -116,7 +116,10 @@ async function callGroq({ brief, apiKey, fetcher, timeoutMs, prompt, maxTokens }
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'llama-3.1-8b-instant',
+      // llama-3.1-8b-instant was decommissioned by Groq 2026-08-16 (HTTP 404 on
+      // every call since) — openai/gpt-oss-20b is Groq's own recommended
+      // replacement. See console.groq.com/docs/deprecations.
+      model: 'openai/gpt-oss-20b',
       max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt + brief }],
     }),

@@ -1,82 +1,29 @@
+/**
+ * ticketlens compliance TICKET --consensus — thin client over POST /v1/consensus.
+ *
+ * Superseded local-BYOK version (0.38.48): read ~/.ticketlens/credentials.json,
+ * called Anthropic/OpenAI/Groq directly from the CLI. Deprecated same session it
+ * shipped — provider keys now live in the group-shared, dynamic AiProviderPool
+ * registry (Console > Admin > AI Provider Pool / AI Roles), encrypted server-side
+ * and never sent to the CLI, so the actual AI calls must happen on the backend.
+ * The diff and requirements still only ever leave the machine to reach
+ * TicketLens's own backend now (not straight to each vendor) — see
+ * ConsensusController.php for the round-1/round-2/reconcile algorithm, a direct
+ * port of what used to run here.
+ */
 import { isLicensed, showUpgradePrompt } from './license.mjs';
 import { extractRequirements } from './requirement-extractor.mjs';
 import { findLinkedCommits } from './commit-linker.mjs';
-import { loadCredentials } from './profile-resolver.mjs';
-import { summarize } from './summarizer.mjs';
+import { readCliToken } from './cli-auth.mjs';
+import { apiBase } from './api-utils.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { createStyler } from './ansi.mjs';
 import { STATUS_ICON, statusColor, coverageColor } from './compliance-checker.mjs';
-import { scanForSecrets } from './secret-scanner.mjs';
 
-const PROVIDER_ORDER = ['anthropic', 'openai', 'groq'];
-const PROVIDER_KEY_FIELD = { anthropic: 'anthropicApiKey', openai: 'openaiApiKey', groq: 'groqApiKey' };
-// Lower = stricter (less coverage claimed). Drives tie-break in reconcileRequirement.
-const STRICTNESS = { NOT_FOUND: 0, PARTIAL: 1, FOUND: 2 };
-const MAX_TOKENS = 512;
-// Each "requirement text | STATUS" response line runs ~20-40 tokens — scale the
-// floor up for tickets with many acceptance criteria so the model's per-requirement
-// list doesn't get cut off mid-response (a truncated response silently reads as
-// NOT_FOUND for every unparsed requirement via parseVerdicts, not as an error).
-const TOKENS_PER_REQUIREMENT = 40;
-
-export function getConfiguredProviders(credentials) {
-  if (!credentials) return [];
-  return PROVIDER_ORDER.filter(p => !!credentials[PROVIDER_KEY_FIELD[p]]);
-}
-
-/** Ports ComplianceController::parseAnalysis's line-matching convention to JS. */
-export function parseVerdicts(requirements, rawAnalysis) {
-  const lines = (rawAnalysis ?? '').split('\n');
-  return requirements.map(req => {
-    const needle = req.slice(0, 20).toLowerCase();
-    let status = 'NOT_FOUND';
-    for (const line of lines) {
-      if (!line.toLowerCase().includes(needle)) continue;
-      const upper = line.toUpperCase();
-      if (upper.includes('PARTIAL')) status = 'PARTIAL';
-      else if (upper.includes('FOUND') && !upper.includes('NOT_FOUND')) status = 'FOUND';
-      break;
-    }
-    return status;
-  });
-}
-
-/** Majority vote across agents' final verdicts for one requirement; ties go to the stricter verdict. */
-export function reconcileRequirement(verdicts) {
-  const counts = new Map();
-  for (const v of verdicts) counts.set(v, (counts.get(v) ?? 0) + 1);
-  const maxCount = Math.max(...counts.values());
-  const topStatuses = [...counts.entries()].filter(([, c]) => c === maxCount).map(([status]) => status);
-  if (topStatuses.length === 1) return topStatuses[0];
-  return topStatuses.reduce((strictest, s) => (STRICTNESS[s] < STRICTNESS[strictest] ? s : strictest));
-}
-
-function buildRound1Prompt(diff, requirements) {
-  return 'You are a compliance checker. Given this code diff, evaluate whether each requirement listed is addressed.\n\n'
-    + `Diff:\n${diff || '(no diff available)'}\n\n`
-    + 'Requirements to check:\n'
-    + requirements.map(r => `- ${r}`).join('\n')
-    + "\n\nFor each requirement, respond with: FOUND, PARTIAL, or NOT_FOUND. One per line, format: '<requirement> | <status>'.";
-}
-
-function buildRound2Prompt(diff, disagreedItems, selfProvider, successful1) {
-  const peers = successful1.filter(r => r.provider !== selfProvider);
-  const lines = [
-    'You previously reviewed a code diff against a set of requirements. Other independent',
-    'reviewers disagreed with you on some items below. Reconsider only these, in light of',
-    "their assessments, and respond again in the same format.",
-    '',
-    `Diff:\n${diff || '(no diff available)'}`,
-    '',
-  ];
-  for (const { requirement, index } of disagreedItems) {
-    lines.push(`Requirement: ${requirement}`);
-    peers.forEach((peer, i) => lines.push(`  Reviewer ${i + 1} said: ${peer.verdicts[index]}`));
-    lines.push('');
-  }
-  lines.push("For each requirement above, respond with: FOUND, PARTIAL, or NOT_FOUND. One per line, format: '<requirement> | <status>'.");
-  return lines.join('\n');
-}
+const ROLES_PATH = '/v1/ai-provider-roles';
+const CONSENSUS_PATH = '/v1/consensus';
+const ROLES_TIMEOUT_MS = 10_000;
+const CONSENSUS_TIMEOUT_MS = 90_000; // two AI rounds across N providers — real work, not a quick API call
 
 /** Interactive y/N cost-confirmation gate — same non-interactive fallback shape as confirmDestructive. */
 async function confirmCost(providerCount, { stream = process.stderr, stdin = process.stdin } = {}) {
@@ -84,7 +31,7 @@ async function confirmCost(providerCount, { stream = process.stderr, stdin = pro
     stream.write('  Non-interactive mode: pass --yes/-y to run --consensus without a prompt.\n');
     return false;
   }
-  stream.write(`  --consensus will make ${providerCount} AI API call(s) using your configured keys. Continue?  y/N  `);
+  stream.write(`  --consensus will run ${providerCount} AI review(s) via your team's provider pool. Continue?  y/N  `);
   return new Promise(resolve => {
     stdin.setRawMode(true);
     stdin.resume();
@@ -110,12 +57,12 @@ function formatNoCriteriaReport(ticketKey, s) {
   ].join('\n');
 }
 
-function formatConsensusReport({ ticketKey, results, coveragePercent, finalVerdictsByAgent, disagreedCount, s }) {
+function formatConsensusReport({ ticketKey, results, perAgent, disagreedCount, s }) {
   const lines = [
     '',
     `  Consensus Compliance Check — ${s.brand(s.bold(ticketKey))}`,
     `  ${s.dim('─'.repeat(50))}`,
-    `  ${s.dim(`${finalVerdictsByAgent.length} agents: ${finalVerdictsByAgent.map(a => a.provider).join(', ')}`)}`,
+    `  ${s.dim(`${perAgent.length} agents: ${perAgent.map(a => a.title).join(', ')}`)}`,
     '',
   ];
 
@@ -126,19 +73,27 @@ function formatConsensusReport({ ticketKey, results, coveragePercent, finalVerdi
 
   lines.push('');
   const found = results.filter(r => r.status === 'FOUND').length;
+  const coveragePercent = Math.round(((found + results.filter(r => r.status === 'PARTIAL').length * 0.5) / results.length) * 100);
   lines.push(`  Coverage: ${coverageColor(coveragePercent, s)(`${coveragePercent}%`)}  (${found}/${results.length} requirements found)`);
   if (disagreedCount > 0) {
     lines.push(`  ${s.dim(`${disagreedCount} requirement(s) needed a refinement round (agents initially disagreed).`)}`);
   }
   lines.push('');
   lines.push(`  ${s.bold('Per-agent breakdown:')}`);
-  for (const { provider, verdicts, round1Verdicts } of finalVerdictsByAgent) {
+  for (const { title, verdicts, round1Verdicts } of perAgent) {
     const parts = verdicts.map((v, i) => (round1Verdicts[i] !== v ? `${round1Verdicts[i]}→${v}` : v));
-    lines.push(`  ${s.dim(provider)}: ${parts.join(', ')}`);
+    lines.push(`  ${s.dim(title)}: ${parts.join(', ')}`);
   }
   lines.push('');
 
-  return lines.join('\n');
+  return { report: lines.join('\n'), coveragePercent };
+}
+
+async function fetchJson(url, { fetcher, timeoutMs, ...init }) {
+  const res = await fetcher(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  let body = null;
+  try { body = await res.json(); } catch { /* non-JSON error page — body stays null */ }
+  return { ok: res.ok, status: res.status, body };
 }
 
 export async function runConsensusCheck({
@@ -150,14 +105,14 @@ export async function runConsensusCheck({
   outStream = process.stdout,
   forceYes = false,
   stdin = process.stdin,
+  cliToken,
   isLicensedFn = isLicensed,
   showUpgradeFn = showUpgradePrompt,
   extractRequirementsFn = extractRequirements,
   findLinkedCommitsFn = findLinkedCommits,
-  loadCredentialsFn = loadCredentials,
-  summarizeFn = summarize,
   confirmCostFn = confirmCost,
-  scanForSecretsFn = scanForSecrets,
+  readCliTokenFn = readCliToken,
+  fetcher = globalThis.fetch,
 }) {
   if (!isLicensedFn('pro', configDir)) {
     showUpgradeFn('pro', '--consensus', { stream });
@@ -171,101 +126,67 @@ export async function runConsensusCheck({
     return { report: formatNoCriteriaReport(ticketKey, s), results: [], coveragePercent: 0, noCriteria: true };
   }
 
-  const { diff } = findLinkedCommitsFn(ticketKey, { cwd: process.cwd() });
-
-  // --consensus is the only compliance path that sends the diff off-machine (to each
-  // configured AI vendor directly) — scan it before anything else touches the network,
-  // the same gate note-command.mjs applies to Recall note bodies before they leave the vault.
-  const scan = scanForSecretsFn({ body: diff ?? '' });
-  if (scan.rejected) {
-    stream.write(`  ✖ --consensus blocked — the diff looks like it contains a secret: ${scan.reasons.join(' ')}\n`);
+  const token = cliToken ?? readCliTokenFn(configDir);
+  if (!token) {
+    stream.write('  ✖ --consensus requires a login. Run: ticketlens login\n');
     return null;
   }
-  for (const warning of scan.warnings) {
-    stream.write(`  Warning: ${warning}\n`);
+
+  // Pre-flight: know the provider count before prompting for cost, and give a
+  // specific, actionable error before ever touching /v1/consensus — the
+  // backend re-validates all of this too, this is purely a faster/clearer UX path.
+  const rolesRes = await fetchJson(`${apiBase()}${ROLES_PATH}`, {
+    fetcher, timeoutMs: ROLES_TIMEOUT_MS,
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+  }).catch(err => ({ ok: false, status: 0, body: null, networkError: err }));
+
+  if (!rolesRes.ok) {
+    stream.write('  ✖ Could not reach TicketLens to check your consensus role. Try again, or check your connection.\n');
+    return null;
   }
 
-  const credentials = loadCredentialsFn(configDir);
-  const providers = getConfiguredProviders(credentials);
-  if (providers.length < 2) {
-    stream.write(
-      '  ✖ --consensus needs at least 2 configured AI providers. Configure with: ' +
-      'ticketlens cloud-keys add <provider> <key>, or add anthropicApiKey/openaiApiKey/groqApiKey ' +
-      'to ~/.ticketlens/credentials.json.\n'
-    );
+  const consensusRole = (rolesRes.body?.roles ?? []).find(r => r.kind === 'consensus');
+  if (!consensusRole) {
+    stream.write('  ✖ No consensus role configured. Set one up in Console > Admin > AI Providers.\n');
+    return null;
+  }
+  if (consensusRole.providers.length < 2) {
+    stream.write(`  ✖ Your consensus role needs at least 2 providers — currently has ${consensusRole.providers.length}. Add more in Console > Admin > AI Roles.\n`);
     return null;
   }
 
   if (!forceYes) {
-    const proceed = await confirmCostFn(providers.length, { stream, stdin });
+    const proceed = await confirmCostFn(consensusRole.providers.length, { stream, stdin });
     if (!proceed) {
-      stream.write('  Aborted — no API calls made.\n');
+      stream.write('  Aborted — no request made.\n');
       return null;
     }
   }
 
-  const round1Prompt = buildRound1Prompt(diff, requirements);
-  const round1MaxTokens = Math.max(MAX_TOKENS, requirements.length * TOKENS_PER_REQUIREMENT);
+  const { diff } = findLinkedCommitsFn(ticketKey, { cwd: process.cwd() });
 
-  const round1 = await Promise.all(providers.map(async provider => {
-    try {
-      const raw = await summarizeFn({ mode: 'byok', credentials, provider, prompt: round1Prompt, brief: '', maxTokens: round1MaxTokens });
-      return { provider, verdicts: parseVerdicts(requirements, raw), error: null };
-    } catch (err) {
-      return { provider, verdicts: null, error: err.message };
-    }
-  }));
+  const runRes = await fetchJson(`${apiBase()}${CONSENSUS_PATH}`, {
+    fetcher, timeoutMs: CONSENSUS_TIMEOUT_MS,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    body: JSON.stringify({ ticketKey, diff, requirements }),
+  }).catch(err => ({ ok: false, status: 0, body: null, networkError: err }));
 
-  const successful1 = round1.filter(r => !r.error);
-  if (successful1.length < 2) {
-    stream.write(`  ✖ Only ${successful1.length} provider(s) responded successfully — need at least 2 for consensus.\n`);
-    for (const r of round1) if (r.error) stream.write(`    ${r.provider}: ${r.error}\n`);
+  if (!runRes.ok) {
+    const msg = runRes.body?.error
+      ?? (runRes.networkError?.name === 'TimeoutError' ? 'Request timed out.' : runRes.networkError?.message)
+      ?? `HTTP ${runRes.status}`;
+    stream.write(`  ✖ ${msg}\n`);
     return null;
   }
 
-  const disagreedIndexes = requirements
-    .map((_, i) => i)
-    .filter(i => new Set(successful1.map(r => r.verdicts[i])).size > 1);
-
-  let round2 = [];
-  if (disagreedIndexes.length > 0) {
-    const disagreedItems = disagreedIndexes.map(i => ({ requirement: requirements[i], index: i }));
-    const round2MaxTokens = Math.max(MAX_TOKENS, disagreedItems.length * TOKENS_PER_REQUIREMENT);
-    round2 = await Promise.all(successful1.map(async ({ provider }) => {
-      const prompt = buildRound2Prompt(diff, disagreedItems, provider, successful1);
-      try {
-        const raw = await summarizeFn({ mode: 'byok', credentials, provider, prompt, brief: '', maxTokens: round2MaxTokens });
-        const refined = parseVerdicts(disagreedItems.map(d => d.requirement), raw);
-        return { provider, refined: Object.fromEntries(disagreedItems.map((d, idx) => [d.index, refined[idx]])) };
-      } catch (err) {
-        stream.write(`  ⚠ ${provider}: refinement round failed (${err.message}) — keeping its round-1 verdict.\n`);
-        return { provider, refined: {} }; // degrade — keep the round-1 verdict for this agent
-      }
-    }));
+  for (const warning of runRes.body.warnings ?? []) {
+    stream.write(`  Warning: ${warning}\n`);
   }
 
-  const finalVerdictsByAgent = successful1.map(r1 => {
-    const r2 = round2.find(r => r.provider === r1.provider);
-    return {
-      provider: r1.provider,
-      round1Verdicts: r1.verdicts,
-      verdicts: requirements.map((_, i) => r2?.refined[i] ?? r1.verdicts[i]),
-    };
+  const { report, coveragePercent } = formatConsensusReport({
+    ticketKey, results: runRes.body.results, perAgent: runRes.body.perAgent, disagreedCount: runRes.body.disagreedCount, s,
   });
 
-  const results = requirements.map((requirement, i) => ({
-    requirement,
-    status: reconcileRequirement(finalVerdictsByAgent.map(a => a.verdicts[i])),
-    evidence: null,
-  }));
-
-  const found = results.filter(r => r.status === 'FOUND').length;
-  const partial = results.filter(r => r.status === 'PARTIAL').length;
-  const coveragePercent = Math.round(((found + partial * 0.5) / results.length) * 100);
-
-  const report = formatConsensusReport({
-    ticketKey, results, coveragePercent, finalVerdictsByAgent, disagreedCount: disagreedIndexes.length, s,
-  });
-
-  return { report, results, coveragePercent, noCriteria: false };
+  return { report, results: runRes.body.results, coveragePercent, noCriteria: false };
 }

@@ -1,11 +1,6 @@
 import { describe, it, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  runConsensusCheck,
-  getConfiguredProviders,
-  parseVerdicts,
-  reconcileRequirement,
-} from '../lib/consensus-checker.mjs';
+import { runConsensusCheck } from '../lib/consensus-checker.mjs';
 
 const BRIEF = `
 ## Description
@@ -15,19 +10,39 @@ Acceptance Criteria:
 - Must handle empty fields
 `;
 
-const CREDENTIALS_ALL = { anthropicApiKey: 'sk-ant-1', openaiApiKey: 'sk-1', groqApiKey: 'gsk-1' };
+const TWO_PROVIDER_ROLE = {
+  roles: [{ id: 1, label: 'Consensus', kind: 'consensus', providers: [{ id: 1, title: 'A' }, { id: 2, title: 'B' }] }],
+};
+
+const CONSENSUS_RESULT_BODY = {
+  results: [
+    { requirement: 'Must validate email', status: 'FOUND', evidence: null },
+    { requirement: 'Must handle empty fields', status: 'NOT_FOUND', evidence: null },
+  ],
+  perAgent: [
+    { title: 'A', round1Verdicts: ['FOUND', 'NOT_FOUND'], verdicts: ['FOUND', 'NOT_FOUND'] },
+    { title: 'B', round1Verdicts: ['NOT_FOUND', 'NOT_FOUND'], verdicts: ['FOUND', 'NOT_FOUND'] },
+  ],
+  disagreedCount: 1,
+  warnings: [],
+};
+
+function jsonResponse(status, body) {
+  return { ok: status >= 200 && status < 300, status, json: async () => body };
+}
+
+/** Routes GET /v1/ai-provider-roles and POST /v1/consensus to injectable responses. */
+function fakeFetcher({ rolesResponse = jsonResponse(200, TWO_PROVIDER_ROLE), consensusResponse = jsonResponse(200, CONSENSUS_RESULT_BODY) } = {}) {
+  return async (url) => {
+    if (url.includes('/v1/ai-provider-roles')) return rolesResponse;
+    if (url.includes('/v1/consensus')) return consensusResponse;
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+}
 
 function fakeStream() {
   const lines = [];
   return { write: (s) => lines.push(s), lines, isTTY: false };
-}
-
-// Round-1 responder that always agrees: both requirements FOUND, all providers.
-function agreeingSummarizeFn() {
-  return async ({ prompt }) => {
-    if (prompt.includes('Reviewer')) throw new Error('round 2 should not be called when agents agree');
-    return "Must validate email | FOUND\nMust handle empty fields | FOUND";
-  };
 }
 
 function makeOpts(overrides = {}) {
@@ -38,86 +53,21 @@ function makeOpts(overrides = {}) {
     stream: fakeStream(),
     outStream: { write: () => {}, isTTY: false },
     forceYes: true,
+    cliToken: 'tl_test_token',
     isLicensedFn: () => true,
     showUpgradeFn: () => {},
     extractRequirementsFn: () => ['Must validate email', 'Must handle empty fields'],
-    findLinkedCommitsFn: () => ({ commits: [], branches: [], diff: '+validate(email)\n+handleEmpty()' }),
-    loadCredentialsFn: () => CREDENTIALS_ALL,
-    summarizeFn: agreeingSummarizeFn(),
-    scanForSecretsFn: () => ({ rejected: false, reasons: [], warnings: [] }),
+    findLinkedCommitsFn: () => ({ commits: [], branches: [], diff: '+validate(email)' }),
+    fetcher: fakeFetcher(),
     ...overrides,
   };
 }
 
-describe('getConfiguredProviders', () => {
-  it('returns all three when all keys present', () => {
-    assert.deepEqual(getConfiguredProviders(CREDENTIALS_ALL), ['anthropic', 'openai', 'groq']);
-  });
-
-  it('returns only providers with a key present', () => {
-    assert.deepEqual(getConfiguredProviders({ anthropicApiKey: 'x' }), ['anthropic']);
-  });
-
-  it('returns empty array for no credentials', () => {
-    assert.deepEqual(getConfiguredProviders({}), []);
-    assert.deepEqual(getConfiguredProviders(null), []);
-  });
-
-  it('ignores empty-string keys', () => {
-    assert.deepEqual(getConfiguredProviders({ anthropicApiKey: '', openaiApiKey: 'x' }), ['openai']);
-  });
-});
-
-describe('parseVerdicts', () => {
-  it('parses FOUND, PARTIAL, NOT_FOUND per requirement', () => {
-    const raw = 'Must validate email | FOUND\nMust handle empty fields | NOT_FOUND';
-    assert.deepEqual(
-      parseVerdicts(['Must validate email', 'Must handle empty fields'], raw),
-      ['FOUND', 'NOT_FOUND']
-    );
-  });
-
-  it('defaults to NOT_FOUND when a requirement is not mentioned', () => {
-    assert.deepEqual(parseVerdicts(['Must validate email'], 'unrelated text'), ['NOT_FOUND']);
-  });
-
-  it('is case-insensitive', () => {
-    assert.deepEqual(parseVerdicts(['Must validate email'], 'must validate email | found'), ['FOUND']);
-  });
-
-  it('does not read NOT_FOUND as FOUND', () => {
-    assert.deepEqual(parseVerdicts(['Must validate email'], 'Must validate email | NOT_FOUND'), ['NOT_FOUND']);
-  });
-
-  it('recognizes PARTIAL', () => {
-    assert.deepEqual(parseVerdicts(['Must validate email'], 'Must validate email | PARTIAL'), ['PARTIAL']);
-  });
-});
-
-describe('reconcileRequirement', () => {
-  it('picks the majority verdict', () => {
-    assert.equal(reconcileRequirement(['FOUND', 'FOUND', 'NOT_FOUND']), 'FOUND');
-  });
-
-  it('breaks a 2-way tie toward the stricter verdict', () => {
-    assert.equal(reconcileRequirement(['FOUND', 'NOT_FOUND']), 'NOT_FOUND');
-    assert.equal(reconcileRequirement(['FOUND', 'PARTIAL']), 'PARTIAL');
-    assert.equal(reconcileRequirement(['PARTIAL', 'NOT_FOUND']), 'NOT_FOUND');
-  });
-
-  it('breaks a 3-way tie toward the strictest verdict', () => {
-    assert.equal(reconcileRequirement(['FOUND', 'PARTIAL', 'NOT_FOUND']), 'NOT_FOUND');
-  });
-
-  it('returns the sole verdict when all agents agree', () => {
-    assert.equal(reconcileRequirement(['FOUND', 'FOUND', 'FOUND']), 'FOUND');
-  });
-});
-
 describe('runConsensusCheck — license gate', () => {
-  it('returns null and shows the Pro upsell when not licensed', async () => {
+  it('returns null and shows the Pro upsell when not licensed, without any network call', async () => {
     const showUpgradeFn = mock.fn();
-    const result = await runConsensusCheck(makeOpts({ isLicensedFn: () => false, showUpgradeFn }));
+    const fetcher = mock.fn(async () => { throw new Error('must not be called'); });
+    const result = await runConsensusCheck(makeOpts({ isLicensedFn: () => false, showUpgradeFn, fetcher }));
     assert.equal(result, null);
     assert.equal(showUpgradeFn.mock.calls.length, 1);
     assert.equal(showUpgradeFn.mock.calls[0].arguments[0], 'pro');
@@ -125,201 +75,154 @@ describe('runConsensusCheck — license gate', () => {
 });
 
 describe('runConsensusCheck — no acceptance criteria', () => {
-  it('returns a no-criteria report without making any AI calls', async () => {
-    const summarizeFn = mock.fn(async () => 'unused');
-    const result = await runConsensusCheck(makeOpts({ extractRequirementsFn: () => [], summarizeFn }));
+  it('returns a no-criteria report without making any network calls', async () => {
+    const fetcher = mock.fn(async () => { throw new Error('must not be called'); });
+    const result = await runConsensusCheck(makeOpts({ extractRequirementsFn: () => [], fetcher }));
     assert.equal(result.noCriteria, true);
-    assert.equal(summarizeFn.mock.calls.length, 0);
+    assert.equal(fetcher.mock.calls.length, 0);
   });
 });
 
-describe('runConsensusCheck — secret scan on the diff before it leaves the machine', () => {
-  it('blocks and makes no API calls when the diff scan is rejected', async () => {
+describe('runConsensusCheck — auth', () => {
+  it('returns null when no CLI token is available', async () => {
     const stream = fakeStream();
-    const summarizeFn = mock.fn(async () => 'unused');
-    const confirmCostFn = mock.fn(async () => true);
-    const scanForSecretsFn = () => ({ rejected: true, reasons: ['Looks like an AWS secret key.'], warnings: [] });
-    const result = await runConsensusCheck(makeOpts({ stream, summarizeFn, confirmCostFn, scanForSecretsFn, forceYes: false }));
+    const result = await runConsensusCheck(makeOpts({ cliToken: undefined, readCliTokenFn: () => null, stream }));
     assert.equal(result, null);
-    assert.equal(summarizeFn.mock.calls.length, 0);
-    assert.equal(confirmCostFn.mock.calls.length, 0, 'must fail fast before even asking about cost');
-    assert.ok(stream.lines.some(l => l.includes('AWS secret key')));
-  });
-
-  it('surfaces warnings but proceeds when the scan only warns', async () => {
-    const stream = fakeStream();
-    const summarizeFn = mock.fn(agreeingSummarizeFn());
-    const scanForSecretsFn = () => ({ rejected: false, reasons: [], warnings: ['Contains an email address.'] });
-    const result = await runConsensusCheck(makeOpts({ stream, summarizeFn, scanForSecretsFn }));
-    assert.notEqual(result, null);
-    assert.equal(summarizeFn.mock.calls.length, 3);
-    assert.ok(stream.lines.some(l => l.includes('email address')));
-  });
-
-  it('scans the diff content, not the requirements text', async () => {
-    let receivedBody;
-    const scanForSecretsFn = ({ body }) => {
-      receivedBody = body;
-      return { rejected: false, reasons: [], warnings: [] };
-    };
-    await runConsensusCheck(makeOpts({
-      findLinkedCommitsFn: () => ({ diff: '+const AWS_KEY = "leaked"' }),
-      scanForSecretsFn,
-    }));
-    assert.equal(receivedBody, '+const AWS_KEY = "leaked"');
+    assert.ok(stream.lines.some(l => l.includes('ticketlens login')));
   });
 });
 
-describe('runConsensusCheck — provider prerequisites', () => {
-  it('returns null when fewer than 2 providers are configured', async () => {
+describe('runConsensusCheck — pre-flight role check', () => {
+  it('returns null with an actionable message when no consensus role exists', async () => {
     const stream = fakeStream();
-    const result = await runConsensusCheck(makeOpts({ loadCredentialsFn: () => ({ anthropicApiKey: 'x' }), stream }));
+    const fetcher = fakeFetcher({ rolesResponse: jsonResponse(200, { roles: [] }) });
+    const result = await runConsensusCheck(makeOpts({ fetcher, stream }));
     assert.equal(result, null);
-    assert.ok(stream.lines.some(l => l.includes('at least 2')));
+    assert.ok(stream.lines.some(l => l.includes('No consensus role configured')));
+  });
+
+  it('returns null when the consensus role has fewer than 2 providers', async () => {
+    const stream = fakeStream();
+    const fetcher = fakeFetcher({
+      rolesResponse: jsonResponse(200, { roles: [{ id: 1, label: 'Consensus', kind: 'consensus', providers: [{ id: 1, title: 'A' }] }] }),
+    });
+    const result = await runConsensusCheck(makeOpts({ fetcher, stream }));
+    assert.equal(result, null);
+    assert.ok(stream.lines.some(l => l.includes('needs at least 2 providers')));
+  });
+
+  it('returns null when the roles pre-flight request itself fails', async () => {
+    const stream = fakeStream();
+    const fetcher = fakeFetcher({ rolesResponse: jsonResponse(500, {}) });
+    const result = await runConsensusCheck(makeOpts({ fetcher, stream }));
+    assert.equal(result, null);
+    assert.ok(stream.lines.some(l => l.includes('Could not reach TicketLens')));
   });
 });
 
 describe('runConsensusCheck — cost confirmation', () => {
-  it('declines automatically in non-interactive mode without --yes', async () => {
-    const summarizeFn = mock.fn(async () => 'unused');
-    const stdin = { isTTY: false };
-    const result = await runConsensusCheck(makeOpts({ forceYes: false, stdin, summarizeFn }));
+  it('declines automatically in non-interactive mode without --yes, before the consensus call', async () => {
+    const consensusResponse = mock.fn();
+    const fetcher = async (url) => {
+      if (url.includes('/v1/ai-provider-roles')) return jsonResponse(200, TWO_PROVIDER_ROLE);
+      consensusResponse();
+      throw new Error('must not reach /v1/consensus without confirmation');
+    };
+    const result = await runConsensusCheck(makeOpts({ forceYes: false, stdin: { isTTY: false }, fetcher }));
     assert.equal(result, null);
-    assert.equal(summarizeFn.mock.calls.length, 0);
+    assert.equal(consensusResponse.mock.calls.length, 0);
   });
 
   it('skips the prompt entirely when forceYes is true', async () => {
-    const summarizeFn = mock.fn(agreeingSummarizeFn());
-    const result = await runConsensusCheck(makeOpts({ forceYes: true, summarizeFn }));
+    const result = await runConsensusCheck(makeOpts({ forceYes: true }));
     assert.notEqual(result, null);
+  });
+
+  it('passes the real provider count from the pre-flight roles response to the confirm prompt', async () => {
+    const confirmCostFn = mock.fn(async () => true);
+    await runConsensusCheck(makeOpts({ forceYes: false, confirmCostFn }));
+    assert.equal(confirmCostFn.mock.calls[0].arguments[0], 2);
   });
 });
 
-describe('runConsensusCheck — agreement (no refinement needed)', () => {
-  it('makes exactly one call per provider and skips round 2 when all agents agree', async () => {
-    const summarizeFn = mock.fn(agreeingSummarizeFn());
-    const result = await runConsensusCheck(makeOpts({ summarizeFn }));
-    assert.equal(summarizeFn.mock.calls.length, 3); // one per provider, no round 2
-    assert.equal(result.coveragePercent, 100);
+describe('runConsensusCheck — happy path', () => {
+  it('sends ticketKey, diff, and requirements to /v1/consensus', async () => {
+    let sentBody;
+    const fetcher = async (url, opts) => {
+      if (url.includes('/v1/ai-provider-roles')) return jsonResponse(200, TWO_PROVIDER_ROLE);
+      sentBody = JSON.parse(opts.body);
+      return jsonResponse(200, CONSENSUS_RESULT_BODY);
+    };
+    await runConsensusCheck(makeOpts({ fetcher }));
+    assert.equal(sentBody.ticketKey, 'PROJ-123');
+    assert.equal(sentBody.diff, '+validate(email)');
+    assert.deepEqual(sentBody.requirements, ['Must validate email', 'Must handle empty fields']);
+  });
+
+  it('sends the Authorization bearer header with the CLI token', async () => {
+    let sentHeaders;
+    const fetcher = async (url, opts) => {
+      if (url.includes('/v1/ai-provider-roles')) return jsonResponse(200, TWO_PROVIDER_ROLE);
+      sentHeaders = opts.headers;
+      return jsonResponse(200, CONSENSUS_RESULT_BODY);
+    };
+    await runConsensusCheck(makeOpts({ cliToken: 'tl_abc123', fetcher }));
+    assert.equal(sentHeaders.Authorization, 'Bearer tl_abc123');
+  });
+
+  it('returns the reconciled results and coverage percent from the server response', async () => {
+    const result = await runConsensusCheck(makeOpts());
+    assert.equal(result.noCriteria, false);
+    assert.equal(result.coveragePercent, 50); // 1 FOUND, 1 NOT_FOUND out of 2
     assert.equal(result.results[0].status, 'FOUND');
   });
-});
 
-describe('runConsensusCheck — disagreement triggers refinement', () => {
-  it('runs a second round only for disagreed requirements, only against successful agents', async () => {
-    let round = 0;
-    const seenRound2Prompts = [];
-    const summarizeFn = async ({ provider, prompt }) => {
-      if (prompt.includes('Reviewer')) {
-        seenRound2Prompts.push(prompt);
-        // Every agent flips to FOUND on refinement
-        return 'Must validate email | FOUND';
-      }
-      round++;
-      // Round 1: anthropic says FOUND, openai says NOT_FOUND, groq says FOUND — disagreement
-      if (provider === 'openai') return 'Must validate email | NOT_FOUND\nMust handle empty fields | FOUND';
-      return 'Must validate email | FOUND\nMust handle empty fields | FOUND';
-    };
-    const result = await runConsensusCheck(makeOpts({ summarizeFn }));
-    assert.equal(seenRound2Prompts.length, 3, 'all 3 successful round-1 agents should get a refinement call');
-    assert.ok(seenRound2Prompts[0].includes('Must validate email'));
-    assert.ok(!seenRound2Prompts[0].includes('Must handle empty fields'), 'round 2 must only re-ask disagreed requirements');
-    assert.equal(result.results.find(r => r.requirement === 'Must validate email').status, 'FOUND');
-  });
-
-  it('shows the round-1 → round-2 verdict change per agent in the report (approved-design transparency requirement)', async () => {
-    const summarizeFn = async ({ provider, prompt }) => {
-      if (prompt.includes('Reviewer')) return 'Must validate email | FOUND'; // everyone converges to FOUND
-      if (provider === 'openai') return 'Must validate email | NOT_FOUND\nMust handle empty fields | FOUND';
-      return 'Must validate email | FOUND\nMust handle empty fields | FOUND';
-    };
-    const result = await runConsensusCheck(makeOpts({ summarizeFn }));
-    assert.match(result.report, /openai:.*NOT_FOUND→FOUND/, 'openai flipped its verdict on refinement — must be visible, not hidden behind the final-only verdict');
-    assert.doesNotMatch(
-      result.report.split('anthropic:')[1]?.split('\n')[0] ?? '',
-      /→/,
-      'anthropic never changed its verdict — must not show a spurious arrow'
-    );
-  });
-});
-
-describe('runConsensusCheck — graceful degradation on partial provider failure', () => {
-  it('still succeeds when one of three providers errors in round 1', async () => {
-    const summarizeFn = async ({ provider }) => {
-      if (provider === 'groq') throw new Error('groq: HTTP 401');
-      return 'Must validate email | FOUND\nMust handle empty fields | FOUND';
-    };
-    const result = await runConsensusCheck(makeOpts({ summarizeFn }));
-    assert.notEqual(result, null);
-    assert.equal(result.coveragePercent, 100);
-  });
-
-  it('returns null when fewer than 2 providers succeed in round 1', async () => {
-    const stream = fakeStream();
-    const summarizeFn = async ({ provider }) => {
-      if (provider !== 'anthropic') throw new Error(`${provider}: HTTP 500`);
-      return 'Must validate email | FOUND\nMust handle empty fields | FOUND';
-    };
-    const result = await runConsensusCheck(makeOpts({ summarizeFn, stream }));
-    assert.equal(result, null);
-    assert.ok(stream.lines.some(l => l.includes('at least 2')));
-  });
-
-  it('falls back to the round-1 verdict for an agent whose round-2 refinement call fails, and tells the user why', async () => {
-    const stream = fakeStream();
-    const summarizeFn = async ({ provider, prompt }) => {
-      if (prompt.includes('Reviewer')) {
-        if (provider === 'groq') throw new Error('groq round 2 timeout');
-        return 'Must validate email | FOUND';
-      }
-      if (provider === 'openai') return 'Must validate email | NOT_FOUND\nMust handle empty fields | FOUND';
-      return 'Must validate email | FOUND\nMust handle empty fields | FOUND';
-    };
-    const result = await runConsensusCheck(makeOpts({ summarizeFn, stream }));
-    assert.notEqual(result, null); // must not throw or crash despite the round-2 failure
-    assert.ok(
-      stream.lines.some(l => l.includes('groq') && l.includes('refinement')),
-      'a round-2 failure must be surfaced to the user the same way round-1 failures are, not swallowed silently'
-    );
-  });
-});
-
-describe('runConsensusCheck — response token budget scales with requirement count', () => {
-  it('requests more than the 512-token floor when there are many requirements, to avoid truncating the per-requirement verdict list', async () => {
-    const manyRequirements = Array.from({ length: 30 }, (_, i) => `Must handle case ${i}`);
-    const seenMaxTokens = [];
-    const summarizeFn = async ({ prompt, maxTokens }) => {
-      seenMaxTokens.push(maxTokens);
-      return manyRequirements.map(r => `${r} | FOUND`).join('\n');
-    };
-    await runConsensusCheck(makeOpts({ extractRequirementsFn: () => manyRequirements, summarizeFn }));
-    assert.ok(seenMaxTokens.every(m => m > 512), `expected maxTokens scaled above the 512 floor for 30 requirements, got ${seenMaxTokens}`);
-  });
-
-  it('uses the 512 floor for a small requirement list', async () => {
-    const seenMaxTokens = [];
-    const summarizeFn = async ({ maxTokens }) => {
-      seenMaxTokens.push(maxTokens);
-      return 'Must validate email | FOUND\nMust handle empty fields | FOUND';
-    };
-    await runConsensusCheck(makeOpts({ summarizeFn }));
-    assert.ok(seenMaxTokens.every(m => m === 512), `expected the 512 floor for 2 requirements, got ${seenMaxTokens}`);
-  });
-});
-
-describe('runConsensusCheck — report content', () => {
-  it('includes a per-agent breakdown section', async () => {
-    const summarizeFn = mock.fn(agreeingSummarizeFn());
-    const result = await runConsensusCheck(makeOpts({ summarizeFn }));
+  it('report includes the per-agent breakdown with round-1 to round-2 change annotation', async () => {
+    const result = await runConsensusCheck(makeOpts());
     assert.match(result.report, /Per-agent breakdown/i);
-    assert.match(result.report, /anthropic/);
-    assert.match(result.report, /openai/);
-    assert.match(result.report, /groq/);
+    assert.match(result.report, /B:.*NOT_FOUND→FOUND/);
   });
 
   it('report is plain (no ANSI) when outStream is not a TTY', async () => {
-    const summarizeFn = mock.fn(agreeingSummarizeFn());
-    const result = await runConsensusCheck(makeOpts({ summarizeFn }));
+    const result = await runConsensusCheck(makeOpts());
     assert.doesNotMatch(result.report, /\x1b\[/);
+  });
+
+  it('surfaces server-reported warnings to the stream', async () => {
+    const stream = fakeStream();
+    const fetcher = fakeFetcher({
+      consensusResponse: jsonResponse(200, { ...CONSENSUS_RESULT_BODY, warnings: ['B: refinement round failed — keeping its round-1 verdict.'] }),
+    });
+    await runConsensusCheck(makeOpts({ fetcher, stream }));
+    assert.ok(stream.lines.some(l => l.includes('refinement round failed')));
+  });
+});
+
+describe('runConsensusCheck — server error handling', () => {
+  it('surfaces the server error message on a 422 (e.g. secret-scan block)', async () => {
+    const stream = fakeStream();
+    const fetcher = fakeFetcher({ consensusResponse: jsonResponse(422, { error: 'Blocked — the diff looks like it contains a secret: x.' }) });
+    const result = await runConsensusCheck(makeOpts({ fetcher, stream }));
+    assert.equal(result, null);
+    assert.ok(stream.lines.some(l => l.includes('Blocked')));
+  });
+
+  it('surfaces the server error message on a 503 (not enough providers succeeded)', async () => {
+    const stream = fakeStream();
+    const fetcher = fakeFetcher({ consensusResponse: jsonResponse(503, { error: 'Error: No AI provider is available or an unknown error has occurred.' }) });
+    const result = await runConsensusCheck(makeOpts({ fetcher, stream }));
+    assert.equal(result, null);
+    assert.ok(stream.lines.some(l => l.includes('No AI provider is available')));
+  });
+
+  it('handles a network failure gracefully without throwing', async () => {
+    const stream = fakeStream();
+    const fetcher = async (url) => {
+      if (url.includes('/v1/ai-provider-roles')) return jsonResponse(200, TWO_PROVIDER_ROLE);
+      throw new Error('fetch failed: ECONNREFUSED');
+    };
+    const result = await runConsensusCheck(makeOpts({ fetcher, stream }));
+    assert.equal(result, null);
+    assert.ok(stream.lines.some(l => l.includes('ECONNREFUSED')));
   });
 });
