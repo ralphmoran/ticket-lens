@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.43.0 -->
+<!-- jtb-skill-version: 0.43.1 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -424,6 +424,8 @@ ticketlens assign PROD-1234 --to=me                          # assign to yoursel
 ticketlens duplicates PROD-1234                               # find likely duplicates — read-only
 ticketlens link PROD-1234 PROD-5678                            # list valid link types — read-only
 ticketlens link PROD-1234 PROD-5678 --type="Duplicate" --confirm  # execute the link
+# Jira's list shows the real resulting sentence per type (e.g. "Blocks — PROD-1234 blocks PROD-5678")
+# so direction is never a guess — GitHub/Linear show just the type name (single relation, no ambiguity)
 ticketlens update PROD-1234 --title="Fix login on mobile"     # update title/description/labels/priority
 ticketlens update PROD-1234 --add-labels=urgent --remove-labels=stale
 ticketlens create --project=PROD --type="Task" --summary="Fix login on mobile"  # create a new ticket
