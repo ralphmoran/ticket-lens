@@ -1139,12 +1139,12 @@ describe('getIssueLinkTypes', () => {
 describe('postIssueLink', () => {
   const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
 
-  it('POSTs the link with source as outwardIssue and target as inwardIssue', async () => {
+  it('POSTs source as inwardIssue and target as outwardIssue — backlog #31: live-verified twice against real Jira Cloud (Blocks + Duplicate, both argument orders, cross-checked from both linked issues) that sending source-as-outwardIssue produces the INVERSE real relationship, despite matching the GET-response self-referential convention', async () => {
     let captured;
     const fetcher = async (url, opts) => { captured = { url, method: opts.method, body: JSON.parse(opts.body) }; return { ok: true, status: 204 }; };
     await postIssueLink('PROJ-1', 'PROJ-2', 'Duplicate', { env: ENV, fetcher });
     assert.equal(captured.method, 'POST');
-    assert.deepEqual(captured.body, { type: { name: 'Duplicate' }, outwardIssue: { key: 'PROJ-1' }, inwardIssue: { key: 'PROJ-2' } });
+    assert.deepEqual(captured.body, { type: { name: 'Duplicate' }, outwardIssue: { key: 'PROJ-2' }, inwardIssue: { key: 'PROJ-1' } });
     assert.ok(captured.url.includes('/issueLink'));
   });
 

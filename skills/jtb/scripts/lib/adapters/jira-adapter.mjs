@@ -125,7 +125,10 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
      * Always re-fetches link types fresh and resolves `typeName` against
      * them before executing — a caller can never blind-POST a stale or
      * guessed type name, same principle as transition().
-     * sourceKey is the outwardIssue, targetKey is the inwardIssue — direction matters.
+     * sourceKey ends up performing the type's outward verb onto targetKey
+     * (e.g. "sourceKey duplicates targetKey") — see postIssueLink's own
+     * doc comment in jira-client.mjs for why its POST body's field names
+     * don't map the way you'd guess from Jira's GET-response convention.
      */
     async linkTo(sourceKey, targetKey, typeName, opts = {}) {
       const types = await getIssueLinkTypes({ ...base, ...opts });

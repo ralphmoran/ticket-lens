@@ -329,7 +329,7 @@ describe('createJiraAdapter — getLinkTypes', () => {
 });
 
 describe('createJiraAdapter — linkTo', () => {
-  it('resolves the type name against a fresh live list, then POSTs with source as outward, target as inward', async () => {
+  it('resolves the type name against a fresh live list, then POSTs targetKey as outwardIssue / sourceKey as inwardIssue — verified live against real Jira Cloud (backlog #31): sending source-as-outward, the documented-looking convention, actually produces the INVERSE real relationship', async () => {
     const calls = [];
     const fetcher = async (url, opts) => {
       calls.push({ url, method: opts.method, body: opts.body });
@@ -339,7 +339,7 @@ describe('createJiraAdapter — linkTo', () => {
     const adapter = createJiraAdapter(CONN, { fetcher });
     const result = await adapter.linkTo('TEST-1', 'TEST-2', 'duplicate');
     assert.equal(calls.length, 2);
-    assert.deepEqual(JSON.parse(calls[1].body), { type: { name: 'Duplicate' }, outwardIssue: { key: 'TEST-1' }, inwardIssue: { key: 'TEST-2' } });
+    assert.deepEqual(JSON.parse(calls[1].body), { type: { name: 'Duplicate' }, outwardIssue: { key: 'TEST-2' }, inwardIssue: { key: 'TEST-1' } });
     assert.match(calls[1].url, /\/issueLink$/);
     assert.deepEqual(result, { executed: true });
   });

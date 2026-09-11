@@ -544,10 +544,20 @@ export async function getIssueLinkTypes(opts = {}) {
 }
 
 /**
- * Creates a link between two issues. `sourceKey` is the outwardIssue (the
- * subject of the type's outward verb, e.g. "Duplicates"), `targetKey` is
- * the inwardIssue — direction matters and is the caller's responsibility
- * to get right (ticket-command.mjs documents the convention).
+ * Creates a link between two issues so `sourceKey` performs the type's
+ * outward verb onto `targetKey` (e.g. "sourceKey duplicates targetKey").
+ *
+ * The POST body's `outwardIssue`/`inwardIssue` keys are the REVERSE of what
+ * you'd expect from the GET /issue response's self-referential convention
+ * (where an issue's OWN `issuelinks` entry uses `outwardIssue` to mean "I am
+ * the outward/performing side") — sending `outwardIssue: sourceKey` there
+ * produces the OPPOSITE real relationship. Live-verified against two real
+ * Jira Cloud instances, cross-checked from both linked issues' own GET
+ * responses, reproduced twice independently (Blocks and Duplicate types,
+ * both argument orders) — not a guess, not doc-derived. This is backlog
+ * #31's actual root cause: every prior "direction inverted" report was
+ * real, and no unit test caught it because mocked HTTP calls can only
+ * assert the request shape, never Jira's real interpretation of it.
  */
 export async function postIssueLink(sourceKey, targetKey, typeName, opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
@@ -558,7 +568,7 @@ export async function postIssueLink(sourceKey, targetKey, typeName, opts = {}) {
   const fetchOpts = {
     method: 'POST',
     headers: { ...buildAuthHeader(env), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: { name: typeName }, outwardIssue: { key: sourceKey }, inwardIssue: { key: targetKey } }),
+    body: JSON.stringify({ type: { name: typeName }, outwardIssue: { key: targetKey }, inwardIssue: { key: sourceKey } }),
   };
   if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
 
