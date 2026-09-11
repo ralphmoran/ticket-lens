@@ -109,12 +109,16 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
     /**
      * Always fetched fresh — link type names are per-instance customizable
      * in Jira, same "never trust a stale list" principle as getTransitions.
-     * Returns just names (matches GitHub/Linear's plain-string shape) so
-     * runTicketLinkList can render any tracker's list uniformly.
+     * Returns name+inward+outward (backlog #31), not just the bare name:
+     * a bare name forces the caller to guess which end gets which phrase,
+     * which is exactly what produced 5 recurring "direction inverted"
+     * reports despite linkTo()'s own outward/inward mapping being correct
+     * and tested. GitHub/Linear keep returning plain strings — single
+     * relation type, no phrase ambiguity there.
      */
     async getLinkTypes(opts = {}) {
       const types = await getIssueLinkTypes({ ...base, ...opts });
-      return types.map(t => t.name);
+      return types.map(t => ({ name: t.name, inward: t.inward, outward: t.outward }));
     },
 
     /**

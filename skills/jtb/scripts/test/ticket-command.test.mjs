@@ -1010,6 +1010,34 @@ describe('runTicketLinkList — happy path', () => {
     assert.match(deps.stream.lines.join(''), /--type="<name>" --confirm/);
   });
 
+  test('backlog #31 fix: shows the real resulting sentence per type when the adapter exposes inward/outward phrases (Jira) — not just a bare type name a caller must guess the direction of', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        getLinkTypes: async () => [{ name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }],
+      }),
+    });
+    const result = await runTicketLinkList(['PROJ-1', 'PROJ-2'], deps);
+    assert.equal(result.ok, true);
+    assert.match(deps.stream.lines.join(''), /PROJ-1 blocks PROJ-2/);
+  });
+
+  test('backlog #31 fix: a tracker that still returns bare strings (GitHub/Linear) renders just the name, no phrase guess fabricated', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ getLinkTypes: async () => ['duplicate'] }),
+    });
+    await runTicketLinkList(['PROJ-1', 'PROJ-2'], deps);
+    assert.match(deps.stream.lines.join(''), /●\s*duplicate\s*\n/);
+  });
+
+  test('backlog #31 fix: a type object missing outward falls back to its name instead of printing literal "undefined"', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ getLinkTypes: async () => [{ name: 'Weird Type' }] }),
+    });
+    const output = await runTicketLinkList(['PROJ-1', 'PROJ-2'], deps).then(() => deps.stream.lines.join(''));
+    assert.doesNotMatch(output, /undefined/);
+    assert.match(output, /Weird Type — PROJ-1 Weird Type PROJ-2/);
+  });
+
   test('cliHints:false prints MCP-shaped hint (named args, not CLI flags) in the discovery hint', async () => {
     const deps = baseDeps();
     const result = await runTicketLinkList(['PROJ-1', 'PROJ-2'], { ...deps, cliHints: false });

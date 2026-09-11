@@ -577,7 +577,7 @@ export async function runTicketDuplicates(cmdArgs, {
  *
  * @param {string[]} cmdArgs - [sourceKey, targetKey]
  * @param {boolean} [cliHints] - see runTicketTransitionList's cliHints doc
- * @returns {Promise<{ ok: boolean, types?: string[] }>}
+ * @returns {Promise<{ ok: boolean, types?: (string|{name: string, inward: string, outward: string})[] }>}
  */
 export async function runTicketLinkList(cmdArgs, {
   configDir = DEFAULT_CONFIG_DIR,
@@ -607,7 +607,14 @@ export async function runTicketLinkList(cmdArgs, {
       return { ok: true, types: [] };
     }
     stream.write(`  Available link types for ${s.brand(s.bold(sourceKey))} → ${s.brand(s.bold(targetKey))} (${adapter.type}):\n\n`);
-    for (const t of types) stream.write(`    ${s.brand('●')} ${t}\n`);
+    for (const t of types) {
+      // Backlog #31: a bare type name (e.g. "Blocks") hides which end gets
+      // which phrase — show the real resulting sentence so the caller
+      // doesn't have to guess direction. GitHub/Linear still hand back
+      // plain strings (no inward/outward phrase pair to show).
+      const line = typeof t === 'string' ? t : `${t.name} — ${sourceKey} ${t.outward ?? t.name} ${targetKey}`;
+      stream.write(`    ${s.brand('●')} ${line}\n`);
+    }
     stream.write('\n');
     if (adapter.type === 'github') {
       stream.write(`  Note: GitHub has no generic link relationship — linking will CLOSE ${sourceKey} as a duplicate of ${targetKey}.\n`);

@@ -306,17 +306,20 @@ describe('findCandidates — duplicate-detection candidate search', () => {
 });
 
 describe('createJiraAdapter — getLinkTypes', () => {
-  it('returns just the type names — matches GitHub/Linear\'s plain-string shape so runTicketLinkList can render any tracker uniformly', async () => {
+  it('returns name+inward+outward per type — bare names hid which phrase applies to which end, the root cause of backlog #31\'s recurring direction-inversion reports', async () => {
     const adapter = createJiraAdapter(CONN, {
       fetcher: jsonFetcher({
         issueLinkTypes: [
-          { id: '1000', name: 'Duplicate', inward: 'Duplicated by', outward: 'Duplicates' },
-          { id: '1010', name: 'Blocks', inward: 'Blocked by', outward: 'Blocks' },
+          { id: '1000', name: 'Duplicate', inward: 'is duplicated by', outward: 'duplicates' },
+          { id: '1010', name: 'Blocks', inward: 'is blocked by', outward: 'blocks' },
         ],
       }),
     });
     const types = await adapter.getLinkTypes();
-    assert.deepEqual(types, ['Duplicate', 'Blocks']);
+    assert.deepEqual(types, [
+      { name: 'Duplicate', inward: 'is duplicated by', outward: 'duplicates' },
+      { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' },
+    ]);
   });
 
   it('threads conn.allowPrivateIp into getLinkTypes', async () => {
