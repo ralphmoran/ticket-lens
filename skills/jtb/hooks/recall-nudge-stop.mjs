@@ -40,11 +40,42 @@
  * multi-profile user. When no ticket key was seen, or it matches no profile's
  * ticketPrefixes, this falls through to cwd/projectPaths then the default
  * profile, same as before (backlog #12, design spec §6).
+ *
+ * Autonomous background auto-capture (D1): independent of the blocking nag
+ * logic below, a Stop check also fire-and-forgets a detached child
+ * (recall-auto-capture.mjs) that judges and captures without any Claude/user
+ * involvement — Pro+ only, silently no-ops otherwise (see that file). Spawned
+ * detached+unref'd so it survives this process exiting and never counts
+ * against this hook's own 5s timeout (hooks-setup.mjs). The two mechanisms
+ * can't see each other's outcome (the child hasn't run yet when the sync nag
+ * decision below is made) — an occasional double-fire (nag fires, then the
+ * background capture lands moments later anyway) is a known, accepted
+ * overlap, not a bug: suppressing the sync nag whenever a background attempt
+ * is merely *made* would remove the only safety net if that attempt silently
+ * fails (network down, no AI provider configured, malformed response).
+ *
+ * Gated on isLicensed('pro') + a real cliToken, checked HERE (cheap, local,
+ * synchronous) rather than only inside the child — avoids forking a Node
+ * process for every Stop check for the majority free-tier/logged-out
+ * population (code review, 2026-09-15). Also gated on
+ * !hasRecentAutoCaptureAttempt(cwd): Stop fires on every turn-end, not once
+ * per session, so without this a single multi-turn session would spawn the
+ * background judge — and its AI-provider spend — once per turn (same code
+ * review). The spawn's own `cwd` option is set to the real session cwd
+ * (distinct from this hook process's own cwd) so runNoteAdd()'s internal
+ * profile/team resolution — which always reads process.cwd(), no override
+ * param exists — resolves correctly inside the child, not just when the two
+ * happen to coincide.
  */
 
-import { readStdinJson, readState, writeState, scanTranscript, hasRecentCapture, writeLastCaptureAt, hasRecentNag, writeLastNagAt, shouldNag } from './recall-nudge-lib.mjs';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { readStdinJson, readState, writeState, scanTranscript, hasRecentCapture, writeLastCaptureAt, hasRecentNag, writeLastNagAt, hasRecentAutoCaptureAttempt, writeLastAutoCaptureAttemptAt, shouldNag } from './recall-nudge-lib.mjs';
 import { resolveProfile, resolveEffectiveRecallStrictness } from '../scripts/lib/profile-resolver.mjs';
 import { readCliToken } from '../scripts/lib/cli-auth.mjs';
+import { isLicensed } from '../scripts/lib/license.mjs';
+
+const AUTO_CAPTURE_SCRIPT = fileURLToPath(new URL('./recall-auto-capture.mjs', import.meta.url));
 
 const input = readStdinJson();
 const sessionId = input?.session_id;
@@ -53,7 +84,20 @@ const cwd = input?.cwd ?? process.cwd();
 
 if (!sessionId || !transcriptPath) process.exit(0);
 
-const { sawFetch, sawRecallFlag, sawNoteAdd, ticketKey } = scanTranscript(transcriptPath);
+const { sawFetch, sawMutatingAction, sawRecallFlag, sawNoteAdd, ticketKey } = scanTranscript(transcriptPath);
+const cliToken = readCliToken();
+
+if (isLicensed('pro') && cliToken && !hasRecentAutoCaptureAttempt(cwd)) {
+  try {
+    writeLastAutoCaptureAttemptAt(cwd, Date.now());
+    const child = spawn(process.execPath, [AUTO_CAPTURE_SCRIPT, transcriptPath, ticketKey ?? ''], {
+      cwd,
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+  } catch { /* best-effort — never block Stop over this */ }
+}
 
 // Refreshed on every check, independent of the once-per-session gate below —
 // a capture that happens AFTER this session already nagged once must still
@@ -64,10 +108,9 @@ const state = readState(sessionId);
 if (state.stopChecked) process.exit(0); // already asked once this session — respect the answer
 
 const profile = resolveProfile(ticketKey, { cwd });
-const cliToken = readCliToken();
 const recallStrictness = resolveEffectiveRecallStrictness({ profile, cliToken });
 
-if (!shouldNag({ sawFetch, sawRecallFlag, sawNoteAdd, recallStrictness })) {
+if (!shouldNag({ sawFetch, sawMutatingAction, sawRecallFlag, sawNoteAdd, recallStrictness })) {
   process.exit(0); // nothing this strictness level requires a capture for
 }
 

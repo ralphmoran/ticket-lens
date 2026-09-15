@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { summarize } from '../lib/summarizer.mjs';
+import { summarize, autoCapture } from '../lib/summarizer.mjs';
 
 const MOCK_BRIEF = '# PROJ-123: Fix empty cart\n**Status:** Code Review\n\nValidate empty cart on checkout.';
 
@@ -260,6 +260,63 @@ describe('summarize — cloud mode', () => {
     await assert.rejects(
       () => summarize({ brief: MOCK_BRIEF, mode: 'cloud', cliToken: 'cli-tok', fetcher }),
       { message: /ticketlens api error 402/i }
+    );
+  });
+});
+
+describe('autoCapture (backlog #24 — autonomous Recall capture, D1)', () => {
+  const MOCK_EXCERPT = 'Discovered the migration-date boundary while reading linked tickets.';
+
+  it('calls /v1/recall/auto-capture with CLI token as Bearer, excerpt + ticket_key in body', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => {
+      calls.push({ url, auth: opts.headers['Authorization'], body: JSON.parse(opts.body) });
+      return { ok: true, json: async () => ({ decision: 'skip' }) };
+    };
+    await autoCapture({ excerpt: MOCK_EXCERPT, ticketKey: 'PROD-1234', cliToken: 'cli-tok-test', fetcher });
+    assert.ok(calls[0].url.includes('/v1/recall/auto-capture'));
+    assert.equal(calls[0].auth, 'Bearer cli-tok-test');
+    assert.equal(calls[0].body.transcript_excerpt, MOCK_EXCERPT);
+    assert.equal(calls[0].body.ticket_key, 'PROD-1234');
+  });
+
+  it('omits ticket_key from the body when not provided', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => {
+      calls.push(JSON.parse(opts.body));
+      return { ok: true, json: async () => ({ decision: 'skip' }) };
+    };
+    await autoCapture({ excerpt: MOCK_EXCERPT, cliToken: 'cli-tok-test', fetcher });
+    assert.equal(calls[0].ticket_key, undefined);
+  });
+
+  it('returns the parsed decision object as-is on a capture decision (no .summary unwrap)', async () => {
+    const fetcher = async () => ({
+      ok: true,
+      json: async () => ({ decision: 'capture', title: 'Migration boundary gotcha', body: 'x', tags: ['migration'] }),
+    });
+    const result = await autoCapture({ excerpt: MOCK_EXCERPT, cliToken: 'cli-tok', fetcher });
+    assert.deepEqual(result, { decision: 'capture', title: 'Migration boundary gotcha', body: 'x', tags: ['migration'] });
+  });
+
+  it('returns the parsed decision object as-is on a skip decision', async () => {
+    const fetcher = async () => ({ ok: true, json: async () => ({ decision: 'skip' }) });
+    const result = await autoCapture({ excerpt: MOCK_EXCERPT, cliToken: 'cli-tok', fetcher });
+    assert.deepEqual(result, { decision: 'skip' });
+  });
+
+  it('throws when no cliToken provided', async () => {
+    await assert.rejects(
+      () => autoCapture({ excerpt: MOCK_EXCERPT, cliToken: null, fetcher: async () => ({}) }),
+      { message: /not logged in/i }
+    );
+  });
+
+  it('throws on a non-ok endpoint response', async () => {
+    const fetcher = async () => ({ ok: false, status: 500, json: async () => ({}) });
+    await assert.rejects(
+      () => autoCapture({ excerpt: MOCK_EXCERPT, cliToken: 'cli-tok', fetcher }),
+      { message: /ticketlens api error 500|server error/i }
     );
   });
 });

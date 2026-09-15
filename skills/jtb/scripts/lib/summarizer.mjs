@@ -162,3 +162,52 @@ async function cloud({ brief, cliToken, fetcher, timeoutMs }) {
   const data = await res.json();
   return data.summary;
 }
+
+/**
+ * Autonomous Recall-capture judgment (backlog #24, D1) — cloud-mode only, no
+ * BYOK equivalent: the whole point is using the account's existing login
+ * token, never a personally-configured API key. Server owns the judgment
+ * prompt (mirrors SKILL.md's 3-part capture rule) — this function never
+ * sends one, only the raw transcript excerpt, so there's no client-supplied-
+ * prompt injection surface on this endpoint.
+ *
+ * Unlike summarize()/cloud() above, the return value is the raw parsed
+ * `{decision, title?, body?, tags?}` object, not unwrapped to a single
+ * string — the caller (recall-auto-capture.mjs) needs the structured shape
+ * to either no-op (`skip`) or feed straight into runNoteAdd (`capture`).
+ *
+ * @param {object} opts
+ * @param {string} opts.excerpt - bounded assistant-text excerpt (buildCaptureExcerpt)
+ * @param {string} [opts.ticketKey]
+ * @param {string} opts.cliToken - required, cloud-mode only
+ * @param {Function} [opts.fetcher]
+ * @param {number} [opts.timeoutMs]
+ * @returns {Promise<{decision: 'capture'|'skip', title?: string, body?: string, tags?: string[]}>}
+ */
+export async function autoCapture({ excerpt, ticketKey, cliToken, fetcher = globalThis.fetch, timeoutMs = 30_000 }) {
+  if (!cliToken) throw new Error('Not logged in. Run `ticketlens login` first.');
+  const payload = { transcript_excerpt: excerpt };
+  if (ticketKey) payload.ticket_key = ticketKey;
+
+  const res = await fetcher(`${apiBase()}/v1/recall/auto-capture`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(timeoutMs),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${cliToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    let detail = '';
+    try { detail = (await res.json()).error ?? ''; } catch {}
+    if (!detail && res.status === 503) detail = 'No AI provider configured on the backend.';
+    if (!detail && res.status === 500) detail = 'Server error (the backend may need `php artisan migrate` after a recent update)';
+    const err = new Error(detail || `TicketLens API error ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+
+  return res.json();
+}

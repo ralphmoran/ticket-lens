@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.43.1 -->
+<!-- jtb-skill-version: 0.43.2 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -405,6 +405,12 @@ When it does apply, run up to 3 rounds:
 This never calls any external API or bills any tokens beyond the session you already have open — the generator and validator are subagents inside your own Claude Code session, not a TicketLens server call.
 
 **Known limitation:** `note patch` only updates the local vault copy. If `note add` already pushed the original draft to a team (Team Recall enabled), a later refinement from this loop is *not* re-pushed — teammates who already pulled the note keep the original draft until this is addressed in a future iteration.
+
+### Autonomous background capture (Pro+, independent of you)
+
+TicketLens also judges and captures on its own, in the background, after this session ends — a second, independent path alongside everything above. It reuses your existing `ticketlens login` token (no new key, no new setup) and applies the same three-part rule this section already describes. On a `capture` decision it saves through the exact same gate as a normal `note add` — license check, secret scan, structural/word-cap check, vault write, team push.
+
+This means a note can appear in a future brief that you never called `note add` for — that's expected, not a bug. It also means you should keep capturing proactively as this section instructs: the background path is a safety net for what gets missed, not a reason to skip capturing something you've already confirmed is worth saving. It only runs when a real fetch plus real mutating ticket work happened this session (a pure read-only lookup produces nothing to capture either way) and is throttled to at most once per working directory within a short window, so it won't re-fire on every turn of a long session.
 
 ### Privacy
 Recall notes are stored locally at `~/.ticketlens/recall/`. On a Pro account with no Team Recall entitlement, they never leave the machine — no network calls (Free tier can't use Recall at all). On Team/Enterprise, Recall's team sync is included by default (Pro accounts can get it too, as a separate add-on); notes also sync to the team's shared pool in the background so teammates can benefit from them too, and a team manager reviews and verifies each incoming note before it's marked trusted. If a team push fails for a transient reason (network error, timeout, 5xx), the note is queued locally and retried automatically in the background, or on demand with `ticketlens recall sync` [Team+] — a session-expired or not-entitled push is never queued, since retrying those can't succeed without the user acting first.

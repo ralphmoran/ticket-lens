@@ -31,6 +31,15 @@ export const NOTE_ADD_MCP_RE = /^mcp__.+__recall_add$/;
 // uppercase ticket-key class required immediately after the command name.
 export const FETCH_RE = /\bticketlens\s+(?:get\s+)?[A-Z][A-Z0-9]{1,9}-\d+\b|\btl\s+(?:get\s+)?[A-Z][A-Z0-9]{1,9}-\d+\b|\/jtb\s+(?:get\s+)?[A-Z][A-Z0-9]{1,9}-\d+\b/;
 export const FETCH_MCP_RE = /^mcp__.+__fetch$/;
+// Matches a real ticket-mutating CLI subcommand (comment/transition/assign/
+// update, each confirmed in cli.mjs's parseCommand() to take TICKET-KEY as
+// the immediate next positional arg, same shape FETCH_RE already assumes),
+// across the ticketlens/tl/jtb invocation forms. Distinguishes real ticket
+// work from a read-only fetch — backlog #24's 6th report: a pure multi-
+// ticket status listing (fetch only, no mutation) still nagged, even though
+// nothing about it could ever satisfy SKILL.md's own capture rule.
+export const MUTATING_ACTION_RE = /\bticketlens\s+(?:comment|transition|assign|update)\s+[A-Z][A-Z0-9]{1,9}-\d+\b|\btl\s+(?:comment|transition|assign|update)\s+[A-Z][A-Z0-9]{1,9}-\d+\b|\/jtb\s+(?:comment|transition|assign|update)\s+[A-Z][A-Z0-9]{1,9}-\d+\b/;
+export const MUTATING_ACTION_MCP_RE = /^mcp__.+__(ticket_comment|ticket_transition|ticket_assign|ticket_update)$/;
 
 export function readStdinJson() {
   const raw = fs.readFileSync(0, 'utf8');
@@ -79,7 +88,7 @@ export const CAPTURE_FRESHNESS_MS = 2 * 60 * 60 * 1000;
  * predictable path directly in shared tmp could be pre-planted by another
  * local user on a shared box.
  */
-function privateTmpDir() {
+export function privateTmpDir() {
   const owner = typeof process.getuid === 'function' ? process.getuid() : os.userInfo().username;
   const dir = path.join(os.tmpdir(), `ticketlens-recall-nudge-${owner}`);
   try {
@@ -157,6 +166,42 @@ export function hasRecentNag(cwd, now = Date.now()) {
 }
 
 /**
+ * Cross-session/cross-turn AUTO-CAPTURE-ATTEMPT marker — same shape as
+ * lastNagPath/hasRecentNag above, but throttles the autonomous background
+ * spawn (recall-auto-capture.mjs) itself, independent of the sync nag below.
+ * Needed because Stop fires on every turn-end, not once per session (see
+ * recall-nudge-stop.mjs's own doc comment) — without this, a single
+ * multi-turn session would spawn the background judge, and its AI-provider
+ * spend, once per turn (code review, 2026-09-15). Written optimistically at
+ * spawn time, before the child's own outcome is known — a failed/skipped
+ * attempt still counts against the window, same accepted trade-off as
+ * hasRecentNag's own doc comment above.
+ */
+export function lastAutoCaptureAttemptPath(cwd) {
+  const hash = crypto.createHash('sha256').update(cwd || 'unknown').digest('hex').slice(0, 16);
+  return path.join(privateTmpDir(), `lastautocapture-${hash}.json`);
+}
+
+export function readLastAutoCaptureAttemptAt(cwd) {
+  try {
+    return JSON.parse(fs.readFileSync(lastAutoCaptureAttemptPath(cwd), 'utf8')).lastAttemptAt ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function writeLastAutoCaptureAttemptAt(cwd, timestamp) {
+  try {
+    fs.writeFileSync(lastAutoCaptureAttemptPath(cwd), JSON.stringify({ lastAttemptAt: timestamp }));
+  } catch { /* best-effort — losing this marker only costs one extra spawn next window */ }
+}
+
+export function hasRecentAutoCaptureAttempt(cwd, now = Date.now()) {
+  const lastAttemptAt = readLastAutoCaptureAttemptAt(cwd);
+  return lastAttemptAt > 0 && (now - lastAttemptAt) < CAPTURE_FRESHNESS_MS;
+}
+
+/**
  * Reads the transcript (JSONL) and returns simple booleans about what
  * happened this session. Best-effort: any read/parse failure returns all
  * false rather than throwing — a broken transcript must never block Claude.
@@ -195,7 +240,7 @@ export function hasRecentNag(cwd, now = Date.now()) {
  * jtb's fetch was used," so the hook now checks the same thing it backstops.
  */
 export function scanTranscript(transcriptPath) {
-  const result = { sawTicketKey: false, sawRecallFlag: false, sawNoteAdd: false, sawFetch: false, ticketKey: null };
+  const result = { sawTicketKey: false, sawRecallFlag: false, sawNoteAdd: false, sawFetch: false, sawMutatingAction: false, ticketKey: null };
   let lines;
   try {
     lines = fs.readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
@@ -244,6 +289,11 @@ export function scanTranscript(transcriptPath) {
         const isCliFetch = block.name === 'Bash' && FETCH_RE.test(block.input?.command ?? '');
         const isMcpFetch = FETCH_MCP_RE.test(block.name ?? '');
         if (isCliFetch || isMcpFetch) result.sawFetch = true;
+
+        const isCliMutation = block.name === 'Bash' && MUTATING_ACTION_RE.test(block.input?.command ?? '');
+        const isMcpMutation = MUTATING_ACTION_MCP_RE.test(block.name ?? '');
+        const isCodeEdit = block.name === 'Edit' || block.name === 'Write';
+        if (isCliMutation || isMcpMutation || isCodeEdit) result.sawMutatingAction = true;
       }
     }
   }
@@ -270,9 +320,64 @@ export function scanTranscript(transcriptPath) {
  * matching SKILL.md's own capture-guidance scope exactly ("unconditionally
  * whenever jtb's fetch was used"), instead of firing on any incidental
  * ticket-key-shaped string.
+ *
+ * Also gated on `sawMutatingAction` (backlog #24, 6th report) — a pure
+ * read-only session (multi-ticket status listing, a report, a lookup) can
+ * never satisfy SKILL.md's own 3-part capture rule ("generalizes beyond
+ * this diff", "cost real effort to discover") no matter how many fetches
+ * ran, so gating on `sawFetch` alone false-positived on exactly that shape.
+ * Applies uniformly across all three strictness levels, same blanket
+ * treatment as the `sawFetch` gate above — a session with zero mutation
+ * has nothing any strictness level would ever ask to capture.
  */
-export function shouldNag({ sawFetch, sawRecallFlag, sawNoteAdd, recallStrictness = 'balanced' }) {
+export function shouldNag({ sawFetch, sawMutatingAction, sawRecallFlag, sawNoteAdd, recallStrictness = 'balanced' }) {
   if (!sawFetch || sawNoteAdd) return false;
+  if (!sawMutatingAction) return false;
   if (recallStrictness === 'loose') return sawRecallFlag; // only the broken-promise case
   return true; // balanced and strict: a fetch with no note is enough
+}
+
+/**
+ * Builds a bounded excerpt of this session's assistant-authored text, for
+ * the autonomous background auto-capture path (recall-auto-capture.mjs) to
+ * hand to the server-side capture-judgment prompt — same assistant-text-only
+ * filter scanTranscript() already uses for sawRecallFlag, so this can never
+ * leak a user's own pasted content (secrets, unrelated files) that only
+ * ever appeared in a user-role transcript entry.
+ *
+ * Capped at 8000 chars, truncated from the START (keeps the END of the
+ * session) — the final synthesized insight is far more likely to be near
+ * the end of a session than the beginning, and an unbounded excerpt risks
+ * an oversized request body for no benefit.
+ *
+ * Best-effort: any read/parse failure, or a session with no assistant text
+ * at all, returns '' rather than throwing — this runs in a detached
+ * background process with nothing watching for an unhandled rejection.
+ */
+export function buildCaptureExcerpt(transcriptPath) {
+  let lines;
+  try {
+    lines = fs.readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
+  } catch {
+    return '';
+  }
+
+  const texts = [];
+  for (const line of lines) {
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (entry.type !== 'assistant') continue;
+    const blocks = entry.message?.content;
+    if (!Array.isArray(blocks)) continue;
+    for (const block of blocks) {
+      if (block.type === 'text' && block.text) texts.push(block.text);
+    }
+  }
+
+  const joined = texts.join('\n\n');
+  return joined.length > 8000 ? joined.slice(-8000) : joined;
 }
