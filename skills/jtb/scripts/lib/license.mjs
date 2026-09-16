@@ -130,17 +130,23 @@ export function showUpgradePrompt(requiredTier, featureFlag, { stream = process.
 const LEMONSQUEEZY_ACTIVATE_URL = 'https://api.lemonsqueezy.com/v1/licenses/activate';
 const LEMONSQUEEZY_VALIDATE_URL = 'https://api.lemonsqueezy.com/v1/licenses/validate';
 
-function resolveLicenseUrl(action, fallback) {
+// TL- keys are issued by TicketLens itself (LicenseIssuanceService::KEY_PREFIX), never by
+// LemonSqueezy — sending one to the LemonSqueezy fallback always fails, confusingly (backlog #30).
+const TL_ISSUED_KEY_RE = /^TL-/i;
+
+function resolveLicenseUrl(action, fallback, key) {
   const base = process.env.TICKETLENS_API_URL;
-  return base ? `${base.replace(/\/$/, '')}/v1/licenses/${action}` : fallback;
+  if (base) return `${base.replace(/\/$/, '')}/v1/licenses/${action}`;
+  if (TL_ISSUED_KEY_RE.test(key)) return null;
+  return fallback;
 }
 
-function resolveActivateUrl() {
-  return resolveLicenseUrl('activate', LEMONSQUEEZY_ACTIVATE_URL);
+function resolveActivateUrl(key) {
+  return resolveLicenseUrl('activate', LEMONSQUEEZY_ACTIVATE_URL, key);
 }
 
-function resolveValidateUrl() {
-  return resolveLicenseUrl('validate', LEMONSQUEEZY_VALIDATE_URL);
+function resolveValidateUrl(key) {
+  return resolveLicenseUrl('validate', LEMONSQUEEZY_VALIDATE_URL, key);
 }
 
 function extractTier(meta) {
@@ -154,8 +160,16 @@ export async function activateLicense(key, opts = {}) {
   const { configDir = DEFAULT_CONFIG_DIR, fetcher = globalThis.fetch, instanceName } = opts;
   const instance = instanceName || os.hostname();
 
+  const url = resolveActivateUrl(key);
+  if (url === null) {
+    return {
+      success: false,
+      error: 'TICKETLENS_API_URL is not set — required to activate a TicketLens-issued (TL-) license key. Set it to your TicketLens backend URL and try again.',
+    };
+  }
+
   try {
-    const res = await fetcher(resolveActivateUrl(), {
+    const res = await fetcher(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ license_key: key, instance_name: instance }),
@@ -194,8 +208,13 @@ export async function revalidateLicense(opts = {}) {
 
   const instance = instanceName || os.hostname();
 
+  const url = resolveValidateUrl(license.key);
+  if (url === null) {
+    return { success: true, tier: license.tier, cached: true };
+  }
+
   try {
-    const res = await fetcher(resolveValidateUrl(), {
+    const res = await fetcher(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ license_key: license.key, instance_name: instance }),

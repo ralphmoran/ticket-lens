@@ -213,6 +213,72 @@ describe('activateLicense', () => {
     assert.equal(result.tier, 'pro');
   });
 
+  it('LOCK: still activates a non-TL- key against LemonSqueezy when TICKETLENS_API_URL is unset', async () => {
+    const original = process.env.TICKETLENS_API_URL;
+    delete process.env.TICKETLENS_API_URL;
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, status: 200, json: async () => ({ activated: true, valid: true, license_key: { key: 'AAAA-BBBB-CCCC-DDDD' }, instance: {}, meta: {} }) };
+    };
+    try {
+      const result = await activateLicense('AAAA-BBBB-CCCC-DDDD', { configDir: tmpDir, fetcher, instanceName: 'test-host' });
+      assert.equal(result.success, true);
+      assert.equal(capturedUrl, 'https://api.lemonsqueezy.com/v1/licenses/activate');
+    } finally {
+      if (original !== undefined) process.env.TICKETLENS_API_URL = original;
+    }
+  });
+
+  it('refuses to activate a TL- key against LemonSqueezy when TICKETLENS_API_URL is unset (backlog #30)', async () => {
+    const original = process.env.TICKETLENS_API_URL;
+    delete process.env.TICKETLENS_API_URL;
+    let fetcherCalled = false;
+    const fetcher = async () => { fetcherCalled = true; throw new Error('fetcher should never be called'); };
+    try {
+      const result = await activateLicense('TL-1234-5678', { configDir: tmpDir, fetcher, instanceName: 'test-host' });
+      assert.equal(result.success, false);
+      assert.match(result.error, /TICKETLENS_API_URL/);
+      assert.equal(fetcherCalled, false);
+      assert.equal(readLicense(tmpDir), null);
+    } finally {
+      if (original !== undefined) process.env.TICKETLENS_API_URL = original;
+    }
+  });
+
+  it('refuses a lowercase tl- key the same way, case-insensitively (code review finding)', async () => {
+    const original = process.env.TICKETLENS_API_URL;
+    delete process.env.TICKETLENS_API_URL;
+    let fetcherCalled = false;
+    const fetcher = async () => { fetcherCalled = true; throw new Error('fetcher should never be called'); };
+    try {
+      const result = await activateLicense('tl-lowercase-typo-5678', { configDir: tmpDir, fetcher, instanceName: 'test-host' });
+      assert.equal(result.success, false);
+      assert.match(result.error, /TICKETLENS_API_URL/);
+      assert.equal(fetcherCalled, false);
+    } finally {
+      if (original !== undefined) process.env.TICKETLENS_API_URL = original;
+    }
+  });
+
+  it('activates a TL- key against TICKETLENS_API_URL when it is set', async () => {
+    const original = process.env.TICKETLENS_API_URL;
+    process.env.TICKETLENS_API_URL = 'http://localhost';
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, status: 200, json: async () => ({ activated: true, valid: true, license_key: { key: 'TL-1234-5678' }, instance: {}, meta: {} }) };
+    };
+    try {
+      const result = await activateLicense('TL-1234-5678', { configDir: tmpDir, fetcher, instanceName: 'test-host' });
+      assert.equal(result.success, true);
+      assert.equal(capturedUrl, 'http://localhost/v1/licenses/activate');
+    } finally {
+      if (original === undefined) delete process.env.TICKETLENS_API_URL;
+      else process.env.TICKETLENS_API_URL = original;
+    }
+  });
+
   it('stores expiresAt when subscription has end date', async () => {
     const endsAt = '2027-03-12T00:00:00Z';
     const fetcher = mockFetcher({
@@ -270,6 +336,22 @@ describe('revalidateLicense', () => {
     const fetcher = mockFetcher({ valid: true });
     const result = await revalidateLicense({ configDir: tmpDir, fetcher, instanceName: 'test-host' });
     assert.equal(result.success, false);
+  });
+
+  it('returns cached tier without a network call for a TL- key when TICKETLENS_API_URL is unset (backlog #30)', async () => {
+    writeLicense({ ...validLicense, key: 'TL-1234-5678' }, tmpDir);
+    const original = process.env.TICKETLENS_API_URL;
+    delete process.env.TICKETLENS_API_URL;
+    let fetcherCalled = false;
+    const fetcher = async () => { fetcherCalled = true; throw new Error('fetcher should never be called'); };
+    try {
+      const result = await revalidateLicense({ configDir: tmpDir, fetcher, instanceName: 'test-host' });
+      assert.equal(result.success, true);
+      assert.equal(result.cached, true);
+      assert.equal(fetcherCalled, false);
+    } finally {
+      if (original !== undefined) process.env.TICKETLENS_API_URL = original;
+    }
   });
 });
 
