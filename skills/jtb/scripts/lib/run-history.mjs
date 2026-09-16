@@ -2,6 +2,7 @@ import { queryTicketHistory, DEFAULT_CONFIG_DIR } from './triage-history.mjs';
 import { isLicensed as defaultIsLicensed, showUpgradePrompt } from './license.mjs';
 import { createStyler } from './ansi.mjs';
 import { printHistoryHelp } from './help.mjs';
+import { normalizeTicketKey } from './cli.mjs';
 
 /**
  * Prints a ticket's local triage-history timeline. Extracted from
@@ -26,12 +27,13 @@ export async function runHistory(args = [], opts = {}) {
     return;
   }
 
-  const ticketKey = args[0];
+  let ticketKey = args[0];
   if (!ticketKey || ticketKey.startsWith('-')) {
     warn('Usage: ticketlens history TICKET-KEY\n');
     process.exitCode = 1;
     return;
   }
+  ticketKey = normalizeTicketKey(ticketKey, { stream: { write: warn } });
 
   const entries = queryFn(ticketKey, { configDir });
   if (entries.length === 0) {

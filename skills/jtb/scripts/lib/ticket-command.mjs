@@ -18,7 +18,7 @@ import { checkCooldown, recordAction } from './ticket-action-cooldown.mjs';
 import { logAction } from './ticket-action-log.mjs';
 import { readMetadataCache, writeMetadataCache } from './ticket-metadata-cache.mjs';
 import { detectProjectOrTypeError, enrichCreateFailure } from './ticket-create-enrichment.mjs';
-import { TICKET_KEY_PATTERN } from './cli.mjs';
+import { TICKET_KEY_PATTERN, normalizeTicketKey } from './cli.mjs';
 import { scoreCandidates } from './duplicate-scorer.mjs';
 import { MAX_ATTACHMENTS } from './attachment-uploader.mjs';
 import { createStyler } from './ansi.mjs';
@@ -209,11 +209,17 @@ function requireLicense(isLicensedFn, configDir, commandName, stream) {
 
 function requireTicketKey(cmdArgs, usage, stream) {
   const ticketKey = cmdArgs[0];
-  if (!ticketKey || ticketKey.startsWith('--') || !TICKET_KEY_PATTERN.test(ticketKey)) {
+  if (!ticketKey || ticketKey.startsWith('--')) {
     stream.write(usage);
     return null;
   }
-  return ticketKey;
+  const normalized = normalizeTicketKey(ticketKey);
+  if (!TICKET_KEY_PATTERN.test(normalized)) {
+    stream.write(usage);
+    return null;
+  }
+  if (normalized !== ticketKey) normalizeTicketKey(ticketKey, { stream });
+  return normalized;
 }
 
 /**

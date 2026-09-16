@@ -5,6 +5,20 @@
 
 export const TICKET_KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/;
 
+/**
+ * Jira/Linear project and team keys are always created uppercase, so any
+ * lowercase input is a typo, never a distinct real key — safe to correct
+ * silently before TICKET_KEY_PATTERN ever sees it.
+ */
+export function normalizeTicketKey(ticketKey, { stream } = {}) {
+  if (!ticketKey) return ticketKey;
+  const upper = ticketKey.toUpperCase();
+  if (upper !== ticketKey && stream) {
+    stream.write(`  Note: normalized "${ticketKey}" to "${upper}"\n`);
+  }
+  return upper;
+}
+
 export function parseCommand(args) {
   const first = args[0];
 

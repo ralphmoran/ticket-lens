@@ -19,7 +19,7 @@ import { enqueueNote, isRetryableFailure, maybeAutoFlush } from './recall-queue.
 import { incrementDraftKept, incrementDraftDeleted } from './activity-counter.mjs';
 import { extractText } from './attachment-text.mjs';
 import { readAttachments, MAX_ATTACHMENTS } from './attachment-uploader.mjs';
-import { TICKET_KEY_PATTERN } from './cli.mjs';
+import { TICKET_KEY_PATTERN, normalizeTicketKey } from './cli.mjs';
 import { createStyler } from './ansi.mjs';
 import { confirmDestructive } from './confirm.mjs';
 
@@ -135,10 +135,15 @@ export async function runNoteAdd(cmdArgs, {
   // to forge a fake "## heading" line when the note is later injected into a brief.
   const title = rawTitle.replace(/[\r\n]+/g, ' ');
 
-  const ticketKey = parseFlag(cmdArgs, 'ticket');
-  if (ticketKey && !TICKET_KEY_PATTERN.test(ticketKey)) {
-    stream.write(`  Invalid --ticket value "${ticketKey}" — expected a ticket key like PROJ-123.\n`);
-    return { written: false };
+  let ticketKey = parseFlag(cmdArgs, 'ticket');
+  if (ticketKey) {
+    const normalized = normalizeTicketKey(ticketKey);
+    if (!TICKET_KEY_PATTERN.test(normalized)) {
+      stream.write(`  Invalid --ticket value "${ticketKey}" — expected a ticket key like PROJ-123.\n`);
+      return { written: false };
+    }
+    if (normalized !== ticketKey) normalizeTicketKey(ticketKey, { stream });
+    ticketKey = normalized;
   }
   const tagsArg = parseFlag(cmdArgs, 'tags');
   const tags = tagsArg ? tagsArg.split(',').map(t => t.trim()).filter(Boolean) : [];
@@ -260,10 +265,15 @@ export async function runNotePatch(cmdArgs, {
     return { patched: false };
   }
 
-  const ticketKey = parseFlag(cmdArgs, 'ticket');
-  if (ticketKey && !TICKET_KEY_PATTERN.test(ticketKey)) {
-    stream.write(`  Invalid --ticket value "${ticketKey}" — expected a ticket key like PROJ-123.\n`);
-    return { patched: false };
+  let ticketKey = parseFlag(cmdArgs, 'ticket');
+  if (ticketKey) {
+    const normalized = normalizeTicketKey(ticketKey);
+    if (!TICKET_KEY_PATTERN.test(normalized)) {
+      stream.write(`  Invalid --ticket value "${ticketKey}" — expected a ticket key like PROJ-123.\n`);
+      return { patched: false };
+    }
+    if (normalized !== ticketKey) normalizeTicketKey(ticketKey, { stream });
+    ticketKey = normalized;
   }
 
   const body = await readStdin();
@@ -339,10 +349,15 @@ export async function runNoteDelete(cmdArgs, {
     return { deleted: false };
   }
 
-  const ticketKey = parseFlag(cmdArgs, 'ticket');
-  if (ticketKey && !TICKET_KEY_PATTERN.test(ticketKey)) {
-    stream.write(`  Invalid --ticket value "${ticketKey}" — expected a ticket key like PROJ-123.\n`);
-    return { deleted: false };
+  let ticketKey = parseFlag(cmdArgs, 'ticket');
+  if (ticketKey) {
+    const normalized = normalizeTicketKey(ticketKey);
+    if (!TICKET_KEY_PATTERN.test(normalized)) {
+      stream.write(`  Invalid --ticket value "${ticketKey}" — expected a ticket key like PROJ-123.\n`);
+      return { deleted: false };
+    }
+    if (normalized !== ticketKey) normalizeTicketKey(ticketKey, { stream });
+    ticketKey = normalized;
   }
 
   const forceYes = cmdArgs.includes('--yes') || cmdArgs.includes('-y');

@@ -76,6 +76,13 @@ describe('runRecall — dispatches by argument shape', () => {
     await runRecall(['backoff strategy'], deps);
     assert.deepEqual(captured, { query: 'backoff strategy' });
   });
+
+  test('a lowercase ticket-key-shaped argument is normalized and searched by ticket key, not treated as free text', async () => {
+    let captured;
+    const deps = baseDeps({ listNotesFn: (filter) => { captured = filter; return []; } });
+    await runRecall(['prod-123'], deps);
+    assert.deepEqual(captured, { ticketKey: 'PROD-123' });
+  });
 });
 
 describe('runRecall — output', () => {

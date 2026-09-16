@@ -11,7 +11,7 @@
  */
 
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
-import { TICKET_KEY_PATTERN } from './cli.mjs';
+import { TICKET_KEY_PATTERN, normalizeTicketKey } from './cli.mjs';
 import { isLicensed, showUpgradePrompt } from './license.mjs';
 import { listNotes } from './recall-vault.mjs';
 import { readCliToken } from './cli-auth.mjs';
@@ -48,17 +48,23 @@ export async function runRecall(cmdArgs, {
     return { ok: false };
   }
 
-  const isTicketKey = TICKET_KEY_PATTERN.test(arg);
+  // A lowercase-typed ticket key (e.g. "proj-123") must not be mistaken for a
+  // free-text search phrase — normalize before classifying, but never touch
+  // a genuine search query's own casing.
+  const normalizedArg = normalizeTicketKey(arg);
+  const isTicketKey = TICKET_KEY_PATTERN.test(normalizedArg);
+  if (isTicketKey && normalizedArg !== arg) normalizeTicketKey(arg, { stream: errorStream });
+  const key = isTicketKey ? normalizedArg : arg;
 
   const cliToken = readCliTokenFn(configDir);
   if (cliToken) {
-    const profile = resolveProfileFn(isTicketKey ? arg : null, { configDir, cwd: process.cwd() });
+    const profile = resolveProfileFn(isTicketKey ? key : null, { configDir, cwd: process.cwd() });
     const recallTeamId = profile ? loadProfileRecallTeamIdFn(profile.name, configDir) : null;
     await pullNotesFn({ cliToken, configDir, ttlMs: 0, groupId: recallTeamId ?? undefined });
     await maybeAutoFlushFn({ cliToken, configDir });
   }
 
-  const filter = isTicketKey ? { ticketKey: arg } : { query: arg };
+  const filter = isTicketKey ? { ticketKey: key } : { query: key };
   const results = listNotesFn(filter, { configDir });
 
   const styled = !cmdArgs.includes('--plain') && !!stream.isTTY;

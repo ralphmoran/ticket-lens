@@ -1,6 +1,44 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCommand } from '../lib/cli.mjs';
+import { parseCommand, normalizeTicketKey } from '../lib/cli.mjs';
+
+describe('normalizeTicketKey', () => {
+  it('uppercases a lowercase ticket key', () => {
+    assert.equal(normalizeTicketKey('proj-123'), 'PROJ-123');
+  });
+
+  it('uppercases a mixed-case ticket key', () => {
+    assert.equal(normalizeTicketKey('PrOj-123'), 'PROJ-123');
+  });
+
+  it('leaves an already-uppercase key unchanged', () => {
+    assert.equal(normalizeTicketKey('PROJ-123'), 'PROJ-123');
+  });
+
+  it('passes through falsy input unchanged', () => {
+    assert.equal(normalizeTicketKey(undefined), undefined);
+    assert.equal(normalizeTicketKey(''), '');
+  });
+
+  it('writes a one-line notice to the given stream when the key changed', () => {
+    const lines = [];
+    const stream = { write: (s) => lines.push(s) };
+    normalizeTicketKey('proj-123', { stream });
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], /proj-123.*PROJ-123/);
+  });
+
+  it('writes no notice when the key was already uppercase', () => {
+    const lines = [];
+    const stream = { write: (s) => lines.push(s) };
+    normalizeTicketKey('PROJ-123', { stream });
+    assert.equal(lines.length, 0);
+  });
+
+  it('does not throw when no stream is given', () => {
+    assert.doesNotThrow(() => normalizeTicketKey('proj-123'));
+  });
+});
 
 describe('parseCommand', () => {
   it('routes ticket key to fetch command', () => {

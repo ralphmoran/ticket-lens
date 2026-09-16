@@ -197,6 +197,17 @@ describe('runTicketComment — happy path', () => {
     await runTicketComment(['PROJ-1', '--body=Looks good'], deps);
     assert.doesNotMatch(deps.stream.lines.join(''), /\x1b\[/, 'MCP/non-TTY callers must never receive raw ANSI escape codes');
   });
+
+  test('normalizes a lowercase ticket key instead of rejecting it', async () => {
+    let recorded;
+    const deps = baseDeps({
+      recordActionFn: (key, action) => { recorded = { key, action }; },
+    });
+    const result = await runTicketComment(['proj-1', '--body=Looks good'], deps);
+    assert.equal(result.ok, true);
+    assert.deepEqual(recorded, { key: 'PROJ-1', action: 'comment' });
+    assert.match(deps.stream.lines.join(''), /Comment posted to PROJ-1/);
+  });
 });
 
 describe('runTicketComment — write failure', () => {

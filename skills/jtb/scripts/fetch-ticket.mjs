@@ -21,7 +21,7 @@ import { promptSelect } from './lib/select-prompt.mjs';
 import { printFetchHelp } from './lib/help.mjs';
 import { readTextAttachments } from './lib/handoff-assembler.mjs';
 import { handleUnknownFlags } from './lib/arg-validator.mjs';
-import { TICKET_KEY_PATTERN } from './lib/cli.mjs';
+import { TICKET_KEY_PATTERN, normalizeTicketKey } from './lib/cli.mjs';
 import { downloadAttachments } from './lib/attachment-downloader.mjs';
 import { readBriefCache, writeBriefCache, readSummaryCache, writeSummaryCache, briefCacheAge, BRIEF_TTL_MS } from './lib/brief-cache.mjs';
 import { recordTokensSaved } from './lib/activity-counter.mjs';
@@ -552,17 +552,19 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
 
   if (args[0] === 'pr') {
     const { assemblePr } = await import('./lib/pr-assembler.mjs');
-    const ticketKeyArg = args[1];
+    let ticketKeyArg = args[1];
     if (!ticketKeyArg) {
       printErrFn('Error: "pr" requires a ticket key. Usage: ticketlens pr PROJ-123\n');
       process.exitCode = 1;
       return;
     }
-    if (!TICKET_KEY_PATTERN.test(ticketKeyArg)) {
+    const normalizedPr = normalizeTicketKey(ticketKeyArg);
+    if (!TICKET_KEY_PATTERN.test(normalizedPr)) {
       printErrFn(`Error: "${ticketKeyArg}" is not a valid ticket key. Expected format: PROJ-123\n`);
       process.exitCode = 1;
       return;
     }
+    ticketKeyArg = normalizeTicketKey(ticketKeyArg, { stream: errStream });
     const resolvedConfigDir = configDir ?? (await import('./lib/config.mjs')).DEFAULT_CONFIG_DIR;
 
     // Resolve connection (same pattern as compliance dispatch)
@@ -627,17 +629,19 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   }
 
   if (args[0] === 'compliance') {
-    const ticketKeyArg = args[1];
+    let ticketKeyArg = args[1];
     if (!ticketKeyArg) {
       printErrFn('Error: "compliance" requires a ticket key. Usage: ticketlens compliance PROJ-123\n');
       process.exitCode = 1;
       return;
     }
-    if (!TICKET_KEY_PATTERN.test(ticketKeyArg)) {
+    const normalizedCompliance = normalizeTicketKey(ticketKeyArg);
+    if (!TICKET_KEY_PATTERN.test(normalizedCompliance)) {
       printErrFn(`Error: "${ticketKeyArg}" is not a valid ticket key. Expected format: PROJ-123\n`);
       process.exitCode = 1;
       return;
     }
+    ticketKeyArg = normalizeTicketKey(ticketKeyArg, { stream: errStream });
 
     const resolvedConfigDir = configDir ?? (await import('./lib/config.mjs')).DEFAULT_CONFIG_DIR;
 
@@ -1005,17 +1009,19 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     return;
   }
 
-  const ticketKey = args.find(a => !a.startsWith('--'));
+  let ticketKey = args.find(a => !a.startsWith('--'));
   if (!ticketKey) {
     printFetchHelp({ stream: errStream });
     process.exitCode = 1;
     return;
   }
-  if (!TICKET_KEY_PATTERN.test(ticketKey)) {
+  const normalizedFetch = normalizeTicketKey(ticketKey);
+  if (!TICKET_KEY_PATTERN.test(normalizedFetch)) {
     printErrFn(`Error: "${ticketKey}" is not a valid ticket key. Expected format: PROJ-123\n`);
     process.exitCode = 1;
     return;
   }
+  ticketKey = normalizeTicketKey(ticketKey, { stream: errStream });
 
   // Normalize --project= alias once at entry so all recursive calls only see --profile=
   const projectArg = args.find(a => a.startsWith('--project='));

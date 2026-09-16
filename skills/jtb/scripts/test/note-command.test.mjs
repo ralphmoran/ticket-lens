@@ -103,6 +103,16 @@ describe('runNoteAdd — happy path', () => {
     assert.deepEqual(capturedKeys, ['PROD-1']);
   });
 
+  test('normalizes a lowercase --ticket value instead of rejecting it', async () => {
+    let capturedKeys;
+    const deps = baseDeps({
+      writeNoteFn: (note) => { capturedKeys = note.ticketKeys; return { id: 'x', path: 'x' }; },
+    });
+    const result = await runNoteAdd(['--title=x', '--ticket=prod-1'], deps);
+    assert.equal(result.written, true);
+    assert.deepEqual(capturedKeys, ['PROD-1']);
+  });
+
   test('no --ticket means an empty ticketKeys array (general bucket)', async () => {
     let capturedKeys;
     const deps = baseDeps({
@@ -646,6 +656,17 @@ describe('runNotePatch — delegates to patchNoteBodyFn with the right shape', (
     assert.equal(captured.body, 'A genuinely improved note body.');
   });
 
+  test('normalizes a lowercase --ticket value instead of rejecting it', async () => {
+    let captured;
+    const deps = basePatchDeps({
+      readStdin: async () => 'A genuinely improved note body.',
+      patchNoteBodyFn: (note) => { captured = note; return { patched: true, path: 'x' }; },
+    });
+    const result = await runNotePatch(['--id=note-1.md', '--ticket=prod-1'], deps);
+    assert.equal(result.patched, true);
+    assert.deepEqual(captured.ticketKeys, ['PROD-1']);
+  });
+
   test('no --ticket means an empty ticketKeys array', async () => {
     let captured;
     const deps = basePatchDeps({
@@ -1056,6 +1077,16 @@ describe('runNoteDelete — --ticket present dispatches to deleteNoteFn', () => 
     assert.equal(captured.external_id, 'note-1.md');
     assert.deepEqual(captured.tickets, ['PROD-1']);
     assert.equal(anyPrefixCalls, 0);
+  });
+
+  test('normalizes a lowercase --ticket value instead of rejecting it', async () => {
+    let captured;
+    const deps = baseDeleteDeps({
+      deleteNoteFn: (note) => { captured = note; return { deleted: true, prefix: 'PROD' }; },
+    });
+    const result = await runNoteDelete(['--id=note-1.md', '--ticket=prod-1'], deps);
+    assert.equal(result.deleted, true);
+    assert.deepEqual(captured.tickets, ['PROD-1']);
   });
 });
 

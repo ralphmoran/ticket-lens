@@ -70,12 +70,15 @@ describe('fetch-ticket integration', () => {
     }
   });
 
-  it('rejects lowercase ticket key', async () => {
+  it('normalizes a lowercase ticket key and proceeds instead of rejecting it', async () => {
+    const mockFetch = async () => ({ ok: true, json: async () => cloudFixture });
     const out = captureOutput();
     try {
-      await run(['proj-123'], validEnv, undefined, NO_CONFIG);
-      assert.ok(out.stderr.includes('not a valid ticket key'), `should reject lowercase key, got: ${out.stderr}`);
-      assert.equal(process.exitCode, 1);
+      await run(['prod-1234', '--depth=0'], validEnv, mockFetch, NO_CONFIG);
+      assert.ok(!out.stderr.includes('not a valid ticket key'), `should not reject, got: ${out.stderr}`);
+      assert.ok(out.stderr.includes('normalized "prod-1234" to "PROD-1234"'), `should notice the normalization, got: ${out.stderr}`);
+      assert.ok(out.stdout.includes('# PROD-1234: Fix payment validation on checkout'));
+      assert.equal(process.exitCode, undefined);
     } finally {
       out.restore();
     }

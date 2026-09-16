@@ -210,4 +210,21 @@ describe('runHistory — formatted output (lock)', () => {
       rmSync(configDir, { recursive: true, force: true });
     }
   });
+
+  it('normalizes a lowercase ticket key before querying, instead of silently finding nothing', async () => {
+    const configDir = freshConfigDir();
+    let seenKey;
+    const queryTicketHistoryFn = (ticketKey) => {
+      seenKey = ticketKey;
+      return [{ date: '2026-08-05', profile: 'x', urgency: 'clear', status: '', reason: 'ok', bounced: false }];
+    };
+    const print = capture();
+    try {
+      await runHistory(['abc-1'], { configDir, isLicensed: () => true, print: print.write, queryTicketHistoryFn });
+      assert.equal(seenKey, 'ABC-1');
+      assert.match(print.text, /History for ABC-1 \(1 entries\)/);
+    } finally {
+      rmSync(configDir, { recursive: true, force: true });
+    }
+  });
 });
