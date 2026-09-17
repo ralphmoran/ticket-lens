@@ -1099,14 +1099,16 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
-- **Prefix & status pickers** (`ticketlens init` / `config`, v0.12.0) — ticket prefixes and triage statuses are picked from your Jira instance's live project/status lists via multi-select; editing pre-selects current values, unchecking removes them, and stale entries are flagged `(not on server)`
-- **Collision detection** (`ticketlens collisions`) — shows which files your branch shares with teammates' in-flight branches; `--push` auto-sends git branch data to the team snapshot. Team tier
-- **Shareable triage snapshot** (`ticketlens triage --share`) — generates a 24h signed URL; recipients open it in any browser, no account needed. Team tier
-- **Compliance push** (`ticketlens triage --push`) — enriches the team snapshot with per-ticket compliance status and coverage from the local ledger. Pro tier
-- **"TicketLens for PRs"** (`ticketlens review`) — assembles a code-review context brief from your current branch: linked tickets, changed files, and ticket context in one brief
-- **Confluence pages** — linked Confluence pages fetched automatically and included in the brief; origin-validated, non-fatal, capped at 10 pages
-- **Linear support** — `ticketlens init` → Linear; connects via GraphQL API key, fetches tickets, triage, and statuses
-- **GitHub Issues support** — `ticketlens init` → GitHub Issues; PAT-based, same normalized ticket shape
+- **Multi-agent AI consensus compliance** (`ticketlens compliance TICKET --consensus`) — routes requirements-vs-diff review through your team's AI provider pool, majority vote after a refinement round. Pro tier
+- **Dynamic AI Provider Registry** (Console > Admin > AI Provider Pool / AI Roles) — manage arbitrary AI providers and role-based routing, no fixed vendor list
+- **Full MCP tool coverage** (`ticketlens mcp`) — every CLI action (fetch, triage, compliance, recall, ticket writes) has a matching MCP tool
+- **`ticketlens issue-types`** — pre-fetches and caches a project's valid issue types, speeds up `ticket_create`
+- **Recall team sync** (`note add` / `recall`) — shared notes with Console verification, attachments, configurable capture strictness. Pro/Team tier
+- **`ticketlens doctor`** — diagnoses profile/connection/license/MCP problems; `--fix` for common issues
+- **Ticket write-back** (`comment`/`transition`/`assign`/`duplicates`/`link`/`update`/`create`) — write directly to Jira/GitHub/Linear from the CLI. Pro tier
+- **Stale status detection** — flags tickets stuck in a status too long, team-configurable thresholds. Pro tier
+- **Shared team Jira config** (Console > Admin > Jira) — manager sets the connection once, team inherits it. Pro+ tier
+- **Slack/Teams alerts** — needs-response, aging, and compliance-gap alerts plus a weekly digest. Team tier
 
 ---
 
