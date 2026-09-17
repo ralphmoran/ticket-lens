@@ -100,10 +100,11 @@ describe('printHistoryHelp', () => {
 });
 
 describe('printIssueTypesHelp', () => {
-  it('documents --profile, --refresh, --format, and the Jira-only scope', () => {
+  it('documents --profile, --project, --refresh, --format, and the Jira-only scope', () => {
     const out = captureHelp(printIssueTypesHelp);
     assert.match(out, /issue-types/);
     assert.match(out, /--profile/);
+    assert.match(out, /--project/);
     assert.match(out, /--refresh/);
     assert.match(out, /--format/);
     assert.match(out, /Jira only/i);

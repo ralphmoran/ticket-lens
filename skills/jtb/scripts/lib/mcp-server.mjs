@@ -312,9 +312,10 @@ async function callStats(args, { configDir, runStatsFn }) {
   return callPrintWarnRun(buildStatsArgs, args, { configDir, runFn: runStatsFn }, 'stats failed');
 }
 
-function buildIssueTypesArgs({ profile, refresh, format }) {
+function buildIssueTypesArgs({ profile, project, refresh, format }) {
   const args = [];
   if (profile) args.push(`--profile=${profile}`);
+  if (project) args.push(`--project=${project}`);
   if (refresh === true) args.push('--refresh');
   if (format) args.push(`--format=${format}`);
   return args;

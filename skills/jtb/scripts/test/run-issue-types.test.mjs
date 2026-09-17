@@ -162,14 +162,17 @@ describe('runIssueTypes — live fetch (no usable cache)', () => {
 
 describe('runIssueTypes — cache reuse', () => {
   function completeCache() {
+    const now = new Date().toISOString();
     return {
       projects: [{ key: 'PROD', name: 'Product' }],
       issueTypesByProject: { PROD: [{ id: '1', name: 'Task' }] },
-      fetchedAt: '2026-08-01T00:00:00.000Z',
+      issueTypesFetchedAt: { PROD: now },
+      projectsFetchedAt: now,
+      fetchedAt: now,
     };
   }
 
-  test('a complete cache is used without calling any adapter method', async () => {
+  test('a complete, fresh cache is used without calling any adapter method', async () => {
     let listCalls = 0;
     const opts = baseOpts({
       readMetadataCacheFn: () => completeCache(),
@@ -183,6 +186,27 @@ describe('runIssueTypes — cache reuse', () => {
     assert.equal(result.ok, true);
     assert.equal(listCalls, 0);
     assert.match(opts._print.lines.join(''), /PROD/);
+  });
+
+  test('a cache written before issueTypesFetchedAt/projectsFetchedAt existed (old schema) is treated as stale, not complete', async () => {
+    // Migration safety: a file from before this feature has neither field.
+    // isFresh(undefined, ...) is false, so this must trigger a live fetch
+    // rather than silently reusing possibly-ancient data forever.
+    let listCalls = 0;
+    const opts = baseOpts({
+      readMetadataCacheFn: () => ({
+        projects: [{ key: 'PROD', name: 'Product' }],
+        issueTypesByProject: { PROD: [{ id: '1', name: 'Task' }] },
+        fetchedAt: '2026-08-01T00:00:00.000Z',
+      }),
+      resolveAdapterFn: () => ({
+        type: 'jira',
+        listCreatableProjects: async () => { listCalls++; return [{ key: 'PROD', name: 'Product' }]; },
+        listIssueTypes: async () => { listCalls++; return [{ id: '1', name: 'Task' }]; },
+      }),
+    });
+    await runIssueTypes([], opts);
+    assert.ok(listCalls > 0);
   });
 
   test('--refresh forces a live fetch even when a complete cache exists', async () => {
@@ -205,11 +229,14 @@ describe('runIssueTypes — cache reuse', () => {
     // ever populates one project at a time — never a reason to show a table
     // that silently omits the rest of the profile's projects.
     let listCalls = 0;
+    const now = new Date().toISOString();
     const opts = baseOpts({
       readMetadataCacheFn: () => ({
         projects: [{ key: 'PROD', name: 'Product' }, { key: 'INFRA', name: 'Infra' }],
         issueTypesByProject: { PROD: [{ id: '1', name: 'Task' }] }, // INFRA missing
-        fetchedAt: '2026-08-01T00:00:00.000Z',
+        issueTypesFetchedAt: { PROD: now },
+        projectsFetchedAt: now,
+        fetchedAt: now,
       }),
       resolveAdapterFn: () => ({
         type: 'jira',
@@ -219,5 +246,196 @@ describe('runIssueTypes — cache reuse', () => {
     });
     await runIssueTypes([], opts);
     assert.ok(listCalls > 0);
+  });
+
+  test('a project whose issue-types entry is older than 7 days is treated as incomplete, even if the file itself survived GC', async () => {
+    let listCalls = 0;
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+    const now = new Date().toISOString();
+    const opts = baseOpts({
+      readMetadataCacheFn: () => ({
+        projects: [{ key: 'PROD', name: 'Product' }],
+        issueTypesByProject: { PROD: [{ id: '1', name: 'Task' }] },
+        issueTypesFetchedAt: { PROD: eightDaysAgo },
+        projectsFetchedAt: now,
+        fetchedAt: now,
+      }),
+      resolveAdapterFn: () => ({
+        type: 'jira',
+        listCreatableProjects: async () => { listCalls++; return [{ key: 'PROD', name: 'Product' }]; },
+        listIssueTypes: async () => { listCalls++; return [{ id: '1', name: 'Task' }]; },
+      }),
+    });
+    await runIssueTypes([], opts);
+    assert.ok(listCalls > 0);
+  });
+});
+
+describe('runIssueTypes — --project=KEY (single-project lookup)', () => {
+  test('skips the full project scan and only fetches the one project', async () => {
+    let scanCalls = 0;
+    let requestedKey;
+    const opts = baseOpts({
+      readMetadataCacheFn: () => null,
+      resolveAdapterFn: () => ({
+        type: 'jira',
+        listCreatableProjects: async () => { scanCalls++; return []; },
+        listIssueTypes: async (key) => { requestedKey = key; return [{ id: '1', name: 'Bug' }]; },
+      }),
+    });
+    const result = await runIssueTypes(['--project=PROD'], opts);
+    assert.equal(result.ok, true);
+    assert.equal(scanCalls, 0);
+    assert.equal(requestedKey, 'PROD');
+  });
+
+  test('renders a single-row table for just that project', async () => {
+    const opts = baseOpts({
+      readMetadataCacheFn: () => null,
+      resolveAdapterFn: () => ({
+        type: 'jira',
+        listCreatableProjects: async () => [],
+        listIssueTypes: async () => [{ id: '1', name: 'Bug' }, { id: '2', name: 'Story' }],
+      }),
+    });
+    await runIssueTypes(['--project=PROD'], opts);
+    const output = opts._print.lines.join('');
+    assert.match(output, /PROD/);
+    assert.match(output, /Bug, Story/);
+    assert.match(output, /3 days/);
+  });
+
+  test('merge-writes just this project into the cache, preserving existing entries untouched', async () => {
+    let written;
+    const now = new Date().toISOString();
+    const opts = baseOpts({
+      readMetadataCacheFn: () => ({
+        projects: [{ key: 'OTHER', name: 'Other' }],
+        issueTypesByProject: { OTHER: [{ id: '9', name: 'Epic' }] },
+        issueTypesFetchedAt: { OTHER: now },
+        projectsFetchedAt: now,
+        fetchedAt: now,
+      }),
+      resolveAdapterFn: () => ({
+        type: 'jira',
+        listCreatableProjects: async () => [],
+        listIssueTypes: async () => [{ id: '1', name: 'Bug' }],
+      }),
+      writeMetadataCacheFn: (profileName, data) => { written = { profileName, data }; },
+    });
+    await runIssueTypes(['--project=PROD'], opts);
+    assert.deepEqual(written.data.issueTypesByProject.OTHER.map(t => t.name), ['Epic'], 'untouched project preserved');
+    assert.deepEqual(written.data.issueTypesByProject.PROD.map(t => t.name), ['Bug']);
+    assert.ok(written.data.issueTypesFetchedAt.PROD);
+    assert.equal(written.data.issueTypesFetchedAt.OTHER, now, 'untouched project timestamp preserved');
+  });
+
+  test('a fresh cached entry (within 3 days) is served from cache, no live fetch', async () => {
+    let listCalls = 0;
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const opts = baseOpts({
+      readMetadataCacheFn: () => ({
+        projects: [],
+        issueTypesByProject: { PROD: [{ id: '1', name: 'Bug' }] },
+        issueTypesFetchedAt: { PROD: oneDayAgo },
+        projectsFetchedAt: null,
+        fetchedAt: oneDayAgo,
+      }),
+      resolveAdapterFn: () => ({
+        type: 'jira',
+        listCreatableProjects: async () => [],
+        listIssueTypes: async () => { listCalls++; return []; },
+      }),
+    });
+    const result = await runIssueTypes(['--project=PROD'], opts);
+    assert.equal(result.ok, true);
+    assert.equal(listCalls, 0);
+    assert.match(opts._print.lines.join(''), /Bug/);
+  });
+
+  test('a stale cached entry (older than 3 days) triggers a live fetch even though it exists', async () => {
+    let listCalls = 0;
+    const fourDaysAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString();
+    const opts = baseOpts({
+      readMetadataCacheFn: () => ({
+        projects: [],
+        issueTypesByProject: { PROD: [{ id: '1', name: 'Bug' }] },
+        issueTypesFetchedAt: { PROD: fourDaysAgo },
+        projectsFetchedAt: null,
+        fetchedAt: fourDaysAgo,
+      }),
+      resolveAdapterFn: () => ({
+        type: 'jira',
+        listCreatableProjects: async () => [],
+        listIssueTypes: async () => { listCalls++; return [{ id: '1', name: 'Bug' }]; },
+      }),
+    });
+    await runIssueTypes(['--project=PROD'], opts);
+    assert.equal(listCalls, 1);
+  });
+
+  test('--refresh forces a live fetch even when a fresh cached entry exists', async () => {
+    let listCalls = 0;
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const opts = baseOpts({
+      readMetadataCacheFn: () => ({
+        projects: [],
+        issueTypesByProject: { PROD: [{ id: '1', name: 'Bug' }] },
+        issueTypesFetchedAt: { PROD: oneDayAgo },
+        projectsFetchedAt: null,
+        fetchedAt: oneDayAgo,
+      }),
+      resolveAdapterFn: () => ({
+        type: 'jira',
+        listCreatableProjects: async () => [],
+        listIssueTypes: async () => { listCalls++; return [{ id: '1', name: 'Bug' }]; },
+      }),
+    });
+    await runIssueTypes(['--project=PROD', '--refresh'], opts);
+    assert.equal(listCalls, 1);
+  });
+
+  test('a fetch error for an unknown project warns with the Jira error and never writes the cache', async () => {
+    let writeCalls = 0;
+    const opts = baseOpts({
+      readMetadataCacheFn: () => null,
+      resolveAdapterFn: () => ({
+        type: 'jira',
+        listCreatableProjects: async () => [],
+        listIssueTypes: async () => { throw new Error('Jira API error 404 fetching issue types for BADKEY'); },
+      }),
+      writeMetadataCacheFn: () => { writeCalls++; },
+    });
+    const result = await runIssueTypes(['--project=BADKEY'], opts);
+    assert.equal(result.ok, false);
+    assert.equal(process.exitCode, 1);
+    assert.equal(writeCalls, 0);
+    assert.match(opts._warn.lines.join(''), /404/);
+    process.exitCode = 0;
+  });
+
+  test('--project= with an empty value is rejected before resolving a connection', async () => {
+    let calls = 0;
+    const opts = baseOpts({ resolveConnectionFn: () => { calls++; return jiraConn(); } });
+    await runIssueTypes(['--project='], opts);
+    assert.equal(process.exitCode, 1);
+    assert.equal(calls, 0);
+    process.exitCode = 0;
+  });
+
+  test('--project=KEY with --format=json returns a single-entry projects array with name: null', async () => {
+    const opts = baseOpts({
+      readMetadataCacheFn: () => null,
+      resolveAdapterFn: () => ({
+        type: 'jira',
+        listCreatableProjects: async () => [],
+        listIssueTypes: async () => [{ id: '1', name: 'Bug' }],
+      }),
+    });
+    await runIssueTypes(['--project=PROD', '--format=json'], opts);
+    const parsed = JSON.parse(opts._print.lines.join(''));
+    assert.deepEqual(parsed.projects, [{ key: 'PROD', name: null }]);
+    assert.deepEqual(parsed.issueTypesByProject.PROD.map(t => t.name), ['Bug']);
+    assert.equal(parsed.cached, false);
   });
 });

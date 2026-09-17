@@ -6,6 +6,8 @@
  * of ticket-command.mjs's routing logic.
  */
 
+import { SINGLE_PROJECT_TTL_MS, isFresh, mergeProjectIssueTypes } from './ticket-metadata-cache.mjs';
+
 /**
  * Detects whether a create failure is shaped like a project/issuetype
  * mismatch — the only case cache-refresh enrichment applies to. Jira
@@ -45,22 +47,34 @@ export async function enrichCreateFailure(err, { adapter, project, profileName, 
   // hit as fully sufficient silently drops the other half of a later,
   // differently-shaped error's enrichment (caught via live-instance
   // testing, not by unit tests alone).
+  //
+  // This is a targeted, single-project fetch — "on purpose," same pattern
+  // as `issue-types --project=KEY` — so issue-types presence alone isn't
+  // enough: it must also be fresh within SINGLE_PROJECT_TTL_MS (3 days),
+  // not the longer full-scan bar.
+  const hasFreshIssueTypes = cached?.issueTypesByProject?.[project]?.length
+    && isFresh(cached?.issueTypesFetchedAt?.[project], SINGLE_PROJECT_TTL_MS);
   const needsProjects = shape.project && !cached?.projects?.length;
-  const needsIssueTypes = shape.type && adapter.type === 'jira' && project && !cached?.issueTypesByProject?.[project]?.length;
+  const needsIssueTypes = shape.type && adapter.type === 'jira' && project && !hasFreshIssueTypes;
 
   if (needsProjects || needsIssueTypes) {
     try {
       const projects = needsProjects ? await adapter.listCreatableProjects() : (cached?.projects ?? []);
-      // Object.create(null), not {} — `project` is an unvalidated CLI value
-      // reaching this key position. On a plain {}, assigning to a key like
-      // "__proto__" redirects into the object's own prototype slot instead
-      // of creating a real entry, silently losing this project's cache
-      // write. A null-prototype target has no such accessor to intercept.
-      const issueTypesByProject = Object.assign(Object.create(null), cached?.issueTypesByProject ?? {});
+      // Object.create(null), not {} — preserves any existing entries when
+      // this pass only needed `projects`, not a new issue-type fetch. See
+      // mergeProjectIssueTypes' own doc for why a null-prototype target
+      // matters once `project` (an unvalidated CLI value) reaches a key.
+      let issueTypesByProject = Object.assign(Object.create(null), cached?.issueTypesByProject ?? {});
+      let issueTypesFetchedAt = Object.assign(Object.create(null), cached?.issueTypesFetchedAt ?? {});
       if (needsIssueTypes) {
-        issueTypesByProject[project] = await adapter.listIssueTypes(project);
+        ({ issueTypesByProject, issueTypesFetchedAt } = mergeProjectIssueTypes(cached, project, await adapter.listIssueTypes(project)));
       }
-      cached = { projects, issueTypesByProject };
+      cached = {
+        projects,
+        issueTypesByProject,
+        issueTypesFetchedAt,
+        projectsFetchedAt: needsProjects ? new Date().toISOString() : (cached?.projectsFetchedAt ?? null),
+      };
       writeMetadataCacheFn(profileName, cached, configDir);
     } catch {
       return '';

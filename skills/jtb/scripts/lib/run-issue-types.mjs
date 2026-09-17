@@ -1,7 +1,7 @@
 import { DEFAULT_CONFIG_DIR, timeAgo } from './config.mjs';
 import { resolveConnection } from './profile-resolver.mjs';
 import { resolveAdapter } from './resolve-adapter.mjs';
-import { readMetadataCache, writeMetadataCache } from './ticket-metadata-cache.mjs';
+import { readMetadataCache, writeMetadataCache, METADATA_TTL_MS, SINGLE_PROJECT_TTL_MS, isFresh, mergeProjectIssueTypes } from './ticket-metadata-cache.mjs';
 import { createStyler } from './ansi.mjs';
 import { handleUnknownFlags } from './arg-validator.mjs';
 import { printIssueTypesHelp } from './help.mjs';
@@ -11,12 +11,23 @@ import { formatTable } from './table-formatter.mjs';
 // ticket-create-enrichment.mjs's reactive path (one project at a time, on a
 // create failure) can have projects with no recorded issue types yet. Showing
 // that as "the" answer would silently omit the rest of the profile's projects.
+// Recency is checked per-project (not just the whole file's own GC marker) —
+// a project's entry can be older than the file itself if only OTHER projects
+// were refreshed since (e.g. by an intervening --project=KEY fetch). A cache
+// written before issueTypesFetchedAt/projectsFetchedAt existed has neither
+// field, so isFresh(undefined, ...) correctly treats it as stale — one live
+// full scan repopulates both, then reuse resumes as normal.
 function isCacheComplete(cached) {
   if (!cached || cached.projects.length === 0) return false;
-  return cached.projects.every(p => (cached.issueTypesByProject[p.key] || []).length > 0);
+  if (!isFresh(cached.projectsFetchedAt, METADATA_TTL_MS)) return false;
+  return cached.projects.every(p => {
+    const types = cached.issueTypesByProject[p.key];
+    if (!types || types.length === 0) return false;
+    return isFresh(cached.issueTypesFetchedAt?.[p.key], METADATA_TTL_MS);
+  });
 }
 
-function render({ print, format, projects, issueTypesByProject, fetchedAt, cached }) {
+function render({ print, format, projects, issueTypesByProject, fetchedAt, cached, ttlLabel }) {
   if (format === 'json') {
     print(JSON.stringify({ projects, issueTypesByProject, fetchedAt, cached }, null, 2) + '\n');
     return;
@@ -38,7 +49,61 @@ function render({ print, format, projects, issueTypesByProject, fetchedAt, cache
   print(formatTable(['Project', 'Issue Types'], rows) + '\n');
   print(`\n  ${s.dim(cached
     ? `Cached ${timeAgo(fetchedAt)} — pass --refresh to force a live fetch.`
-    : 'Fetched live and cached for 24h.')}\n\n`);
+    : `Fetched live and cached for ${ttlLabel}.`)}\n\n`);
+}
+
+/**
+ * A targeted `--project=KEY` lookup — "on purpose," so it trusts a shorter
+ * SINGLE_PROJECT_TTL_MS (3d) than a full scan's 7d, and merge-writes just
+ * this one project into the shared cache instead of replacing it (same
+ * read-merge-write pattern ticket-create-enrichment.mjs already uses for
+ * its own single-project reactive path). No display name is available
+ * without the full project-list scan, so `name` is honestly null rather
+ * than guessed.
+ */
+async function runSingleProject({ print, warn, format, projectKey, forceRefresh, adapter, profileName, configDir, readMetadataCacheFn, writeMetadataCacheFn }) {
+  const cached = !forceRefresh ? readMetadataCacheFn(profileName, configDir) : null;
+  const cachedTypes = cached?.issueTypesByProject?.[projectKey];
+
+  if (cachedTypes?.length && isFresh(cached.issueTypesFetchedAt?.[projectKey], SINGLE_PROJECT_TTL_MS)) {
+    render({
+      print, format,
+      projects: [{ key: projectKey, name: null }],
+      issueTypesByProject: { [projectKey]: cachedTypes },
+      fetchedAt: cached.issueTypesFetchedAt[projectKey],
+      cached: true,
+    });
+    return { ok: true };
+  }
+
+  let types;
+  try {
+    types = await adapter.listIssueTypes(projectKey);
+  } catch (err) {
+    warn(`  Could not fetch issue types: ${err.message}\n`);
+    process.exitCode = 1;
+    return { ok: false };
+  }
+
+  const now = new Date().toISOString();
+  const { issueTypesByProject, issueTypesFetchedAt } = mergeProjectIssueTypes(cached, projectKey, types, now);
+
+  writeMetadataCacheFn(profileName, {
+    projects: cached?.projects ?? [],
+    issueTypesByProject,
+    issueTypesFetchedAt,
+    projectsFetchedAt: cached?.projectsFetchedAt ?? null,
+  }, configDir);
+
+  render({
+    print, format,
+    projects: [{ key: projectKey, name: null }],
+    issueTypesByProject: { [projectKey]: types },
+    fetchedAt: now,
+    cached: false,
+    ttlLabel: '3 days',
+  });
+  return { ok: true };
 }
 
 /**
@@ -48,6 +113,7 @@ function render({ print, format, projects, issueTypesByProject, fetchedAt, cache
  * attempt instead of only learning them from a failed create's error.
  * Writes through the same ticket-metadata-cache.mjs file/TTL that enrichment
  * reads, so a create failure right after this command is a pure cache hit.
+ * `--project=KEY` narrows to a single project — see runSingleProject above.
  *
  * @param {string[]} args
  * @returns {Promise<{ ok: boolean }>}
@@ -68,18 +134,26 @@ export async function runIssueTypes(args = [], opts = {}) {
 
   const validated = await handleUnknownFlags(
     args,
-    ['--help', '-h', '--profile=', '--refresh', '--format='],
+    ['--help', '-h', '--profile=', '--refresh', '--format=', '--project='],
     { hints: [] },
   );
   if (validated === null) { process.exitCode = 1; return { ok: false }; }
 
   const profileArg = args.find(a => a.startsWith('--profile='));
   const formatArg  = args.find(a => a.startsWith('--format='));
+  const projectArg = args.find(a => a.startsWith('--project='));
   const forceRefresh = args.includes('--refresh');
 
   const format = formatArg ? formatArg.split('=')[1] : 'plain';
   if (format !== 'plain' && format !== 'json') {
     warn(`Error: --format must be plain or json, got: ${format}\n`);
+    process.exitCode = 1;
+    return { ok: false };
+  }
+
+  const projectKey = projectArg ? projectArg.split('=')[1] : undefined;
+  if (projectArg && !projectKey) {
+    warn('Error: --project requires a value, e.g. --project=PROJ\n');
     process.exitCode = 1;
     return { ok: false };
   }
@@ -107,10 +181,14 @@ export async function runIssueTypes(args = [], opts = {}) {
 
   const profileName = conn.profileName ?? 'default';
 
+  if (projectKey) {
+    return runSingleProject({ print, warn, format, projectKey, forceRefresh, adapter, profileName, configDir, readMetadataCacheFn, writeMetadataCacheFn });
+  }
+
   if (!forceRefresh) {
     const cached = readMetadataCacheFn(profileName, configDir);
     if (isCacheComplete(cached)) {
-      render({ print, format, projects: cached.projects, issueTypesByProject: cached.issueTypesByProject, fetchedAt: cached.fetchedAt, cached: true });
+      render({ print, format, projects: cached.projects, issueTypesByProject: cached.issueTypesByProject, fetchedAt: cached.projectsFetchedAt, cached: true });
       return { ok: true };
     }
   }
@@ -128,7 +206,11 @@ export async function runIssueTypes(args = [], opts = {}) {
     return { ok: false };
   }
 
-  writeMetadataCacheFn(profileName, { projects, issueTypesByProject }, configDir);
-  render({ print, format, projects, issueTypesByProject, fetchedAt: new Date().toISOString(), cached: false });
+  const now = new Date().toISOString();
+  const issueTypesFetchedAt = Object.create(null);
+  for (const p of projects) issueTypesFetchedAt[p.key] = now;
+
+  writeMetadataCacheFn(profileName, { projects, issueTypesByProject, issueTypesFetchedAt, projectsFetchedAt: now }, configDir);
+  render({ print, format, projects, issueTypesByProject, fetchedAt: now, cached: false, ttlLabel: '7 days' });
   return { ok: true };
 }

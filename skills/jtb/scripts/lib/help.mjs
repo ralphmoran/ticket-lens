@@ -1335,7 +1335,7 @@ export function printIssueTypesHelp({ stream = process.stdout } = {}) {
   const s = createStyler({ isTTY: stream.isTTY });
   const lines = [
     '',
-    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('issue-types')} ${s.dim('[--profile=NAME] [--refresh] [--format=plain|json]')}`,
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('issue-types')} ${s.dim('[--profile=NAME] [--project=KEY] [--refresh] [--format=plain|json]')}`,
     '',
     `  Pre-fetch and cache a profile's real creatable projects and their valid`,
     `  Jira issue types, ahead of a ${s.brand('ticketlens create')} attempt — a ready lookup`,
@@ -1343,12 +1343,14 @@ export function printIssueTypesHelp({ stream = process.stdout } = {}) {
     `  Jira only — Linear has no per-project issue-type concept and GitHub has`,
     `  neither, so both report a clear "not available" instead of an empty result.`,
     `  Shares its cache with ${s.brand('ticketlens create')}'s own failure-message enrichment`,
-    `  (${s.dim('~/.ticketlens/cache/PROFILE/ticket-metadata.json')}, 24h TTL).`,
+    `  (${s.dim('~/.ticketlens/cache/PROFILE/ticket-metadata.json')}).`,
     '',
     `  ${s.bold('OPTIONS')}`,
     '',
     `    ${s.brand('--profile')}=${s.dim('NAME')}   Use a specific tracker profile`,
-    `    ${s.brand('--refresh')}         Force a live fetch even if a complete cache exists`,
+    `    ${s.brand('--project')}=${s.dim('KEY')}     Only this project — skips the full scan, 3-day cache TTL`,
+    `                        ${s.dim('(no --project: every project this connection sees, 7-day TTL)')}`,
+    `    ${s.brand('--refresh')}         Force a live fetch even if a fresh cache entry exists`,
     `    ${s.brand('--format')}=${s.dim('plain')}    Human-readable table ${s.dim('(default)')}`,
     `    ${s.brand('--format')}=${s.dim('json')}     JSON output for scripting/piping`,
     `    ${s.brand('-h')}, ${s.brand('--help')}      Show this help`,
@@ -1357,6 +1359,7 @@ export function printIssueTypesHelp({ stream = process.stdout } = {}) {
     '',
     `    ${s.dim('$')} ticketlens issue-types`,
     `    ${s.dim('$')} ticketlens issue-types --profile=myteam --refresh`,
+    `    ${s.dim('$')} ticketlens issue-types --project=PROJ`,
     `    ${s.dim('$')} ticketlens issue-types --format=json | jq .`,
     '',
   ];

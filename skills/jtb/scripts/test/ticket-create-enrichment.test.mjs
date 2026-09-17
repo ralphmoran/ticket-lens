@@ -81,6 +81,7 @@ describe('enrichCreateFailure', () => {
 
   test('a fresh cache hit for both projects and this project\'s issue types makes zero adapter calls', async () => {
     let anyCalled = false;
+    const now = new Date().toISOString();
     const err = Object.assign(new Error('x'), { details: { errors: { project: 'bad', issuetype: 'bad' } } });
     const result = await enrichCreateFailure(err, {
       adapter: fakeAdapter({
@@ -90,12 +91,39 @@ describe('enrichCreateFailure', () => {
       project: 'PROJ',
       profileName: 'work',
       configDir: '/fake',
-      readMetadataCacheFn: () => ({ projects: [{ key: 'PROJ', name: 'x' }], issueTypesByProject: { PROJ: [{ id: '1', name: 'Task' }] } }),
+      readMetadataCacheFn: () => ({
+        projects: [{ key: 'PROJ', name: 'x' }],
+        issueTypesByProject: { PROJ: [{ id: '1', name: 'Task' }] },
+        issueTypesFetchedAt: { PROJ: now },
+      }),
       writeMetadataCacheFn: () => {},
     });
     assert.equal(anyCalled, false);
     assert.match(result, /Known creatable projects: PROJ/);
     assert.match(result, /Known issue types for PROJ: Task/);
+  });
+
+  test('a stale issue-types entry (older than 3 days) is refetched even though the project itself is still known', async () => {
+    let issueTypesCalled = false, written;
+    const fourDaysAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString();
+    const err = Object.assign(new Error('x'), { details: { errors: { issuetype: 'bad' } } });
+    const result = await enrichCreateFailure(err, {
+      adapter: fakeAdapter({
+        listIssueTypes: async () => { issueTypesCalled = true; return [{ id: '2', name: 'Bug' }]; },
+      }),
+      project: 'PROJ',
+      profileName: 'work',
+      configDir: '/fake',
+      readMetadataCacheFn: () => ({
+        projects: [{ key: 'PROJ', name: 'x' }],
+        issueTypesByProject: { PROJ: [{ id: '1', name: 'Task' }] },
+        issueTypesFetchedAt: { PROJ: fourDaysAgo },
+      }),
+      writeMetadataCacheFn: (profile, data) => { written = data; },
+    });
+    assert.equal(issueTypesCalled, true, 'a 4-day-old entry exceeds the 3-day bar, so it must be refetched');
+    assert.match(result, /Known issue types for PROJ: Bug/);
+    assert.ok(written.issueTypesFetchedAt.PROJ);
   });
 
   test('when listCreatableProjects succeeds but the sibling listIssueTypes throws, nothing is written to the cache (all-or-nothing, no partial state)', async () => {

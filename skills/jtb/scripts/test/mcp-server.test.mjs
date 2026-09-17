@@ -719,6 +719,16 @@ describe('mcp-server', () => {
       assert.deepEqual(seen, []);
     });
 
+    it('forwards project as --project=KEY', async () => {
+      let seen;
+      const runIssueTypesFn = async (cmdArgs, opts) => { seen = cmdArgs; opts.print('ok\n'); };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'issue_types', arguments: { project: 'PROD' } } }],
+        { configDir, runIssueTypesFn },
+      );
+      assert.deepEqual(seen, ['--project=PROD']);
+    });
+
     it('a failure (print never receives a report) maps to a JSON-RPC tool error carrying the warn message', async () => {
       const runIssueTypesFn = async (cmdArgs, opts) => {
         opts.warn('  Issue types are not available for this tracker (linear) — only Jira exposes per-project issue types.\n');

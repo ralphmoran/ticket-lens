@@ -8,6 +8,7 @@ import {
   readMetadataCache,
   writeMetadataCache,
   METADATA_TTL_MS,
+  SINGLE_PROJECT_TTL_MS,
 } from '../lib/ticket-metadata-cache.mjs';
 
 function makeTmpDir() {
@@ -89,7 +90,7 @@ describe('writeMetadataCache + readMetadataCache', () => {
     }
   });
 
-  it('respects a custom ttlMs override — a shorter override treats an entry as stale sooner than the 24h default would', () => {
+  it('respects a custom ttlMs override — a shorter override treats an entry as stale sooner than the 7-day default would', () => {
     const dir = makeTmpDir();
     try {
       const filePath = join(dir, 'cache', 'work', 'ticket-metadata.json');
@@ -97,7 +98,7 @@ describe('writeMetadataCache + readMetadataCache', () => {
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
       writeFileSync(filePath, JSON.stringify({ fetchedAt: oneHourAgo, projects: [{ key: 'CNV1', name: 'x' }], issueTypesByProject: {} }));
 
-      assert.notEqual(readMetadataCache('work', dir), null, 'still fresh under the 24h default TTL');
+      assert.notEqual(readMetadataCache('work', dir), null, 'still fresh under the 7-day default TTL');
       assert.equal(readMetadataCache('work', dir, 30 * 60 * 1000), null, 'stale under a 30-minute override, since it is 1 hour old');
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -121,5 +122,42 @@ describe('writeMetadataCache + readMetadataCache', () => {
     assert.doesNotThrow(() => {
       writeMetadataCache('work', { projects: [{ key: 'X', name: 'x' }] }, '/nonexistent-root-only-path/definitely-not-writable');
     });
+  });
+
+  it('round-trips issueTypesFetchedAt and projectsFetchedAt', () => {
+    const dir = makeTmpDir();
+    try {
+      writeMetadataCache('work', {
+        projects: [{ key: 'CNV1', name: 'Corenexus v1.0' }],
+        issueTypesByProject: { CNV1: [{ id: '10001', name: 'Task' }] },
+        issueTypesFetchedAt: { CNV1: '2026-09-01T00:00:00.000Z' },
+        projectsFetchedAt: '2026-09-01T00:00:00.000Z',
+      }, dir);
+      const result = readMetadataCache('work', dir);
+      assert.deepEqual(result.issueTypesFetchedAt, { CNV1: '2026-09-01T00:00:00.000Z' });
+      assert.equal(result.projectsFetchedAt, '2026-09-01T00:00:00.000Z');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('defaults issueTypesFetchedAt to {} and projectsFetchedAt to null when omitted (old cache file shape)', () => {
+    const dir = makeTmpDir();
+    try {
+      writeMetadataCache('work', { projects: [{ key: 'CNV1', name: 'x' }], issueTypesByProject: {} }, dir);
+      const result = readMetadataCache('work', dir);
+      assert.deepEqual(result.issueTypesFetchedAt, {});
+      assert.equal(result.projectsFetchedAt, null);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('SINGLE_PROJECT_TTL_MS', () => {
+  it('is shorter than the full-scan METADATA_TTL_MS — a targeted project request expects fresher data', () => {
+    assert.ok(SINGLE_PROJECT_TTL_MS < METADATA_TTL_MS);
+    assert.equal(SINGLE_PROJECT_TTL_MS, 3 * 24 * 60 * 60 * 1000);
+    assert.equal(METADATA_TTL_MS, 7 * 24 * 60 * 60 * 1000);
   });
 });
