@@ -178,4 +178,67 @@ describe('runAutoCapture (backlog #24, D1 — autonomous background capture)', (
     const log = readLog();
     assert.match(log, /error: boom/);
   });
+
+  describe('backlog #33 — attribute failures to a backend URL + status, log had neither', () => {
+    let originalUrl;
+    beforeEach(() => { originalUrl = process.env.TICKETLENS_API_URL; });
+    afterEach(() => {
+      if (originalUrl === undefined) delete process.env.TICKETLENS_API_URL;
+      else process.env.TICKETLENS_API_URL = originalUrl;
+    });
+
+    it('includes the resolved API URL on a "not logged in" skip', async () => {
+      process.env.TICKETLENS_API_URL = 'https://test-tunnel.ngrok-free.app';
+      await runAutoCapture({
+        transcriptPath: 'x', configDir: dir,
+        ...deps({ readCliTokenFn: () => null }),
+      });
+      const log = readLog();
+      assert.match(log, /skipped: not logged in.*api=https:\/\/test-tunnel\.ngrok-free\.app/);
+    });
+
+    it('includes the resolved API URL on an error outcome', async () => {
+      process.env.TICKETLENS_API_URL = 'https://test-tunnel.ngrok-free.app';
+      await runAutoCapture({
+        transcriptPath: 'x', configDir: dir,
+        ...deps({ autoCaptureFn: async () => { throw new Error('Unauthorized'); } }),
+      });
+      const log = readLog();
+      assert.match(log, /error: Unauthorized.*api=https:\/\/test-tunnel\.ngrok-free\.app/);
+    });
+
+    it('includes the HTTP status on an error outcome when the thrown error carries one', async () => {
+      await runAutoCapture({
+        transcriptPath: 'x', configDir: dir,
+        ...deps({
+          autoCaptureFn: async () => {
+            const err = new Error('Unauthorized');
+            err.status = 401;
+            throw err;
+          },
+        }),
+      });
+      const log = readLog();
+      assert.match(log, /error: Unauthorized \(status=401\)/);
+    });
+
+    it('omits the status suffix when the thrown error carries none — e.g. a network failure', async () => {
+      await runAutoCapture({
+        transcriptPath: 'x', configDir: dir,
+        ...deps({ autoCaptureFn: async () => { throw new Error('fetch failed'); } }),
+      });
+      const log = readLog();
+      assert.match(log, /error: fetch failed(?! \(status=)/);
+    });
+
+    it('falls back to the default local API base when TICKETLENS_API_URL is unset', async () => {
+      delete process.env.TICKETLENS_API_URL;
+      await runAutoCapture({
+        transcriptPath: 'x', configDir: dir,
+        ...deps({ readCliTokenFn: () => null }),
+      });
+      const log = readLog();
+      assert.match(log, /api=http:\/\/api\.ticketlens\.test/);
+    });
+  });
 });

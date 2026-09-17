@@ -33,6 +33,7 @@ import { buildCaptureExcerpt, privateTmpDir } from './recall-nudge-lib.mjs';
 import { autoCapture } from '../scripts/lib/summarizer.mjs';
 import { runNoteAdd } from '../scripts/lib/note-command.mjs';
 import { DEFAULT_CONFIG_DIR } from '../scripts/lib/config.mjs';
+import { apiBase } from '../scripts/lib/api-utils.mjs';
 
 /** Buffers stream.write() calls instead of touching a real stream — same shape mcp-server.mjs's own capturingStream() uses, this process has no real stdout/stderr worth writing to. */
 function capturingStream() {
@@ -40,9 +41,12 @@ function capturingStream() {
   return { write(s) { parts.push(s); return true; }, get text() { return parts.join(''); } };
 }
 
+// backlog #33: every outcome logs its resolved backend URL — "Unauthorized"/
+// "not logged in" reports had no way to attribute which backend was hit
+// (ngrok tunnel rotation and local-dev fallback both silently swap it).
 function logLine(message) {
   try {
-    const line = `${new Date().toISOString()} ${message}\n`;
+    const line = `${new Date().toISOString()} ${message} [api=${apiBase()}]\n`;
     appendFileSync(join(privateTmpDir(), 'auto-capture.log'), line);
   } catch { /* best-effort — losing a debug log line is not worth failing over */ }
 }
@@ -85,7 +89,7 @@ export async function runAutoCapture({
   try {
     result = await autoCaptureFn({ excerpt, ticketKey, cliToken });
   } catch (err) {
-    logLine(`error: ${err.message}`);
+    logLine(`error: ${err.message}${err.status ? ` (status=${err.status})` : ''}`);
     return { outcome: 'error', error: err.message };
   }
 
