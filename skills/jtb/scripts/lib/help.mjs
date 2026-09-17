@@ -62,7 +62,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} link ${s.dim('<SOURCE> <TARGET> [--type=... --confirm]')}  Link two tickets  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} update ${s.dim('<TICKET-KEY> [--title=... --description=... --priority=... --add-labels=... --remove-labels=...]')}  Update fields  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} create ${s.dim('--project=... [--type=...] --summary=... [--description=...] [--attach=...]')}  Create a new ticket  ${s.dim('[Pro]')}`,
-    `    ${s.brand('ticketlens')} issue-types ${s.dim('[--profile=NAME] [--refresh]')}   Pre-fetch valid Jira issue types  ${s.dim('[Jira only]')}`,
+    `    ${s.brand('ticketlens')} issue-types ${s.dim('[--profile=NAME] [--project=KEY] [--refresh]')}   Pre-fetch valid Jira issue types  ${s.dim('[Jira only]')}`,
     '',
     `    ${s.brand('ticketlens')} delete ${s.dim('<PROFILE-NAME>')}       Remove a profile`,
     `    ${s.brand('ticketlens')} activate ${s.dim('<KEY>')}              Activate a license key`,

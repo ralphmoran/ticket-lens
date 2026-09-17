@@ -167,7 +167,7 @@ Pre-fetches and caches a profile's real creatable projects and their valid Jira 
 
 Display the script's stdout directly. No plan mode. Stop here.
 
-If this harness has TicketLens's MCP server configured (a tool named `issue_types` — often shown as `mcp__ticketlens__issue_types` — visible in your tool list), prefer it over the bash form: same Jira-only scope, same shared cache, no shell command to construct. It accepts `profile`/`refresh`/`format`.
+If this harness has TicketLens's MCP server configured (a tool named `issue_types` — often shown as `mcp__ticketlens__issue_types` — visible in your tool list), prefer it over the bash form: same Jira-only scope, same shared cache, no shell command to construct. It accepts `profile`/`project`/`refresh`/`format`.
 
 ---
 
