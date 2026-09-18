@@ -1099,6 +1099,7 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
+- **Autonomous Recall capture** — TicketLens judges and saves a note after a session, no `note add` call, reusing your login. Pro+ tier
 - **Multi-agent AI consensus compliance** (`ticketlens compliance TICKET --consensus`) — routes requirements-vs-diff review through your team's AI provider pool, majority vote after a refinement round. Pro tier
 - **Dynamic AI Provider Registry** (Console > Admin > AI Provider Pool / AI Roles) — manage arbitrary AI providers and role-based routing, no fixed vendor list
 - **Full MCP tool coverage** (`ticketlens mcp`) — every CLI action (fetch, triage, compliance, recall, ticket writes) has a matching MCP tool
