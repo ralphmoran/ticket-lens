@@ -119,6 +119,26 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     **REOPENED — 7th independent report, 2026-09-17**, `ECNT-5761` (advent) session, after the 2026-09-15 fix shipped. New distinguishing evidence: 18 stop hooks ran, hook blocked claiming "nothing was ever captured to Recall" — but 2 `recall_add` MCP calls succeeded in that same session (1 rejected twice by secret scanner, reworded, saved). Real capture happened; hook still nagged as if it hadn't. Different from the 6th report's class (pure read-only query, no mutation) — this session had real `sawMutatingAction` signals (note saves). Not yet investigated — filed for a future pass, not actioned this session.
     **Scoping pass, 2026-09-17, `personal/solopreneur` session.** Read `recall-nudge-lib.mjs`/`recall-nudge-stop.mjs` source: `shouldNag()` already returns `false` whenever `sawNoteAdd` is true, and `sawNoteAdd` matches ANY `recall_add` tool_use (even a rejected attempt), so a real fix here should already have suppressed the nag. Found the real on-disk marker files for that exact advent session (cwd hash `cc45c44383d991ea`, `/var/folders/.../T/ticketlens-recall-nudge-501/`): `lastnag` at 19:48:46 UTC, `lastcapture` at 19:52:35 UTC — **nag fired 3m49s BEFORE capture**, matching the designed nag-then-comply flow, not a new bug. User could not confirm the actual in-session order from memory. **Root cause not confirmed** — evidence available on this machine contradicts the report's framing but doesn't disprove it (no stored transcript to check real turn-by-turn ordering). Needs a live repro next occurrence: capture the exact stderr nag text timestamp + the `recall_add` tool_use timestamp from the transcript, not memory. Left open, not closed.
 
+    **FIXED 2026-09-18 — root cause confirmed from real transcripts**, local commit, not published.
+    - Transcripts exist at `~/.claude-work/projects/<cwd>/*.jsonl`; the scoping pass missed them.
+    - Timeline: sibling session's last capturing Stop 17:48:13Z; nag 19:48:46Z, 33s after 2h expiry.
+    - 23 earlier Stops in that session stayed silent; first `recall_add` came after the nag.
+    - Root cause: `CAPTURE_FRESHNESS_MS` marker was a fixed window, renewed only by capturing sessions.
+    - Continuous ticket work past 2h let it lapse mid-stream, then "nothing was ever captured".
+    - Not a clock bug: expiry math matched to the second.
+    - Fix: markers slide. Stops with fetch + mutation renew a still-fresh capture/nag marker.
+    - Lapsed markers never revive; non-ticket and read-only sessions never renew.
+    - Code review: 0 CRITICAL/HIGH. MEDIUM read-only renewal fixed; flag-bypass declined (locked by existing test).
+    - Accepted LOW: non-atomic marker writes; concurrent same-cwd Stops could rarely double-nag.
+    - Real-incident replay, fake clock: old code nags at 19:48:46; new code never, 24 Stops.
+    - CLI 3531→3538 tests, 0 failures.
+
+24b. **`sawMutatingAction` counts any `Edit`/`Write`, including scratch drafts and memory files.** Filed 2026-09-18, found during #24. Not scoped.
+    - Evidence: one session nagged 11s after a single `Write` to a scratch draft.
+    - `isCodeEdit` in `scanTranscript()` (`recall-nudge-lib.mjs`) never checks the path.
+    - Weakens #24's read-only gate: drafting a comment file counts as real work.
+    - Not fixed here: separate root cause, needs a path-scoping decision.
+
 25. ~~**`ticketlens <TICKET-KEY> --recalls=<all|N>` flag**~~ CLOSED INVALID 2026-09-17. Filed 2026-09-02 on a stale premise: `MAX_INJECTED_RECALL_NOTES=3` cap already shipped `203d565` on 2026-07-15, 7 weeks before filing — "no cap" was already false at filing time. Also redundant even if the cap didn't exist: `ticketlens recall <TICKET-KEY>` already returns the identical candidate pool (same-prefix general notes + notes tagged to that ticket, via `listNotes({ticketKey})`), unranked by recency, uncapped in practice (`DEFAULT_LIMIT=150`). A `--recalls=N` flag would only save one extra command call — no new capability. No code change made.
 
 26a. ~~**Ticket-key arguments are case-sensitive across the whole CLI**~~ FIXED 2026-09-16, `ticket-lens@0f064bc`, `ticketlens-api@cff6dbf`, published `ticketlens@0.38.54` (beta), installed + self-tested.
