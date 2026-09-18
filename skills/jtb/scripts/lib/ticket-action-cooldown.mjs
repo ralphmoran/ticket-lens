@@ -70,3 +70,74 @@ export function recordAction(ticketKey, action, { configDir = DEFAULT_CONFIG_DIR
   cooldowns[cooldownKey(ticketKey, action)] = new Date(now()).toISOString();
   writeFileAtomically(cooldownPath(configDir), JSON.stringify(cooldowns));
 }
+
+const LOCK_STALE_MS = 5_000;
+const LOCK_POLL_MS = 15;
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Cross-process mutex around the cooldown file's read-modify-write, via an
+ * O_EXCL lock file. Fails closed: if the lock cannot be taken in `lockWaitMs`
+ * the caller gets an error, never an unguarded claim. A lock older than
+ * LOCK_STALE_MS belongs to a crashed process and is cleared.
+ */
+function withLock(configDir, lockWaitMs, fn) {
+  fs.mkdirSync(configDir, { recursive: true });
+  const lockPath = `${cooldownPath(configDir)}.lock`;
+  const deadline = Date.now() + lockWaitMs;
+  let fd;
+  while (fd === undefined) {
+    try {
+      fd = fs.openSync(lockPath, 'wx');
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      try {
+        if (Date.now() - fs.statSync(lockPath).mtimeMs > LOCK_STALE_MS) { fs.rmSync(lockPath, { force: true }); continue; }
+      } catch { /* lock vanished between exists-check and stat — just retry */ }
+      if (Date.now() > deadline) throw new Error('cooldown lock busy — another ticketlens process holds it');
+      sleepSync(LOCK_POLL_MS);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    fs.closeSync(fd);
+    fs.rmSync(lockPath, { force: true });
+  }
+}
+
+/**
+ * Atomic check-and-set: unlike checkCooldown-then-recordAction, two processes
+ * cannot both pass the check. Use before a write that must never double-fire
+ * (billable time) — claim BEFORE the network call, `releaseAction` on a
+ * definite failure so a corrected retry isn't blocked.
+ *
+ * @returns {{ claimed: boolean, remainingMs: number }}
+ */
+export function claimAction(ticketKey, action, {
+  configDir = DEFAULT_CONFIG_DIR,
+  cooldownMs = DEFAULT_COOLDOWN_MS,
+  now = () => Date.now(),
+  lockWaitMs = 2_000,
+} = {}) {
+  return withLock(configDir, lockWaitMs, () => {
+    const status = checkCooldown(ticketKey, action, { configDir, cooldownMs, now });
+    if (status.active) return { claimed: false, remainingMs: status.remainingMs };
+    recordAction(ticketKey, action, { configDir, now });
+    return { claimed: true, remainingMs: 0 };
+  });
+}
+
+/** Frees a claim. A key that was never claimed is a no-op. */
+export function releaseAction(ticketKey, action, { configDir = DEFAULT_CONFIG_DIR, lockWaitMs = 2_000 } = {}) {
+  withLock(configDir, lockWaitMs, () => {
+    const cooldowns = readCooldowns(configDir);
+    const key = cooldownKey(ticketKey, action);
+    if (!(key in cooldowns)) return;
+    const { [key]: _released, ...rest } = cooldowns;
+    writeFileAtomically(cooldownPath(configDir), JSON.stringify(rest));
+  });
+}

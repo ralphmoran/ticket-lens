@@ -32,6 +32,8 @@ function baseDeps(overrides = {}) {
     resolveConnectionFn: () => ({ baseUrl: 'https://jira.example.com' }),
     resolveAdapterFn: () => adapter,
     checkCooldownFn: () => ({ active: false, remainingMs: 0 }),
+    claimActionFn: () => ({ claimed: true, remainingMs: 0 }),
+    releaseActionFn: () => {},
     recordActionFn: () => {},
     logActionFn: () => {},
     actor: 'ralph',
@@ -500,6 +502,56 @@ describe('runTicketWorklogEntries — partial failure (time entries must never b
     await runTicketWorklogEntries([ENTRY], recent);
     assert.match(recent.stream.text(), /blocked 4s more/);
     assert.doesNotMatch(recent.stream.text(), /\bago\b/);
+  });
+
+  test('the cooldown is claimed atomically BEFORE the POST, so a parallel process cannot also write (live break test 5 race)', async () => {
+    const order = [];
+    const adapter = fakeAdapter({ logWork: async () => { order.push('post'); return { id: '1' }; } });
+    const deps = baseDeps({ adapter, claimActionFn: (key, action) => { order.push(`claim:${key}:${action}`); return { claimed: true, remainingMs: 0 }; } });
+    await runTicketWorklogEntries([ENTRY], deps);
+    assert.deepEqual(order, ['claim:PROJ-1:worklog', 'post']);
+  });
+
+  test('losing the claim race means no POST and a skip that names it already logged', async () => {
+    let attempts = 0;
+    const adapter = fakeAdapter({ logWork: async () => { attempts++; return { id: '1' }; } });
+    const deps = baseDeps({ adapter, claimActionFn: () => ({ claimed: false, remainingMs: 8000 }) });
+    const result = await runTicketWorklogEntries([ENTRY, { ticket: 'PROJ-2', time: '1h' }], deps);
+    assert.equal(attempts, 0);
+    assert.deepEqual(result.results.map(r => [r.status, r.reason]), [['skipped', 'recent'], ['skipped', 'recent']]);
+    assert.match(deps.stream.text(), /PROJ-1.*already logged.*8s more/i);
+    assert.doesNotMatch(deps.stream.text(), /Retry only/, 'a ticket skipped as already logged must never be offered for retry');
+  });
+
+  test('a definite failure (403) releases the claim so a corrected retry is not blocked', async () => {
+    const released = [];
+    const adapter = fakeAdapter({ logWork: async () => { throw Object.assign(new Error('no'), { status: 403 }); } });
+    await runTicketWorklogEntries([ENTRY], baseDeps({ adapter, releaseActionFn: (key, action) => released.push([key, action]) }));
+    assert.deepEqual(released, [['PROJ-1', 'worklog']]);
+  });
+
+  test('an ambiguous failure (timeout) KEEPS the claim — the write may have landed', async () => {
+    const released = [];
+    const adapter = fakeAdapter({ logWork: async () => { throw new Error('The operation was aborted due to timeout'); } });
+    await runTicketWorklogEntries([ENTRY], baseDeps({ adapter, releaseActionFn: (key) => released.push(key) }));
+    assert.deepEqual(released, []);
+  });
+
+  test('a successful write keeps the claim (that IS the 10s double-fire debounce)', async () => {
+    const released = [];
+    await runTicketWorklogEntries([ENTRY], baseDeps({ releaseActionFn: (key) => released.push(key) }));
+    assert.deepEqual(released, []);
+  });
+
+  test('if the claim lock cannot be taken, nothing is written and the entry is safe to retry', async () => {
+    let attempts = 0;
+    const adapter = fakeAdapter({ logWork: async () => { attempts++; return { id: '1' }; } });
+    const deps = baseDeps({ adapter, claimActionFn: () => { throw new Error('cooldown lock busy'); } });
+    const result = await runTicketWorklogEntries([ENTRY, { ticket: 'PROJ-2', time: '1h' }], deps);
+    assert.equal(attempts, 0, 'fail closed — never write billable time without the atomic claim');
+    assert.deepEqual(result.results.map(r => r.status), ['skipped', 'skipped']);
+    assert.match(deps.stream.text(), /PROJ-1.*not written.*lock/i);
+    assert.match(deps.stream.text(), /Retry only: PROJ-1, PROJ-2/);
   });
 
   test('the audit line records where the call came from (cli vs mcp)', async () => {

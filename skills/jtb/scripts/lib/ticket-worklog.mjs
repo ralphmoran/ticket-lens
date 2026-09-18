@@ -20,7 +20,7 @@ import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { isLicensed } from './license.mjs';
 import { resolveConnection } from './profile-resolver.mjs';
 import { resolveAdapter } from './resolve-adapter.mjs';
-import { checkCooldown, recordAction } from './ticket-action-cooldown.mjs';
+import { checkCooldown, recordAction, claimAction, releaseAction } from './ticket-action-cooldown.mjs';
 import { logAction } from './ticket-action-log.mjs';
 import { TICKET_KEY_PATTERN, normalizeTicketKey } from './cli.mjs';
 import { createStyler, sanitizeUntrustedText } from './ansi.mjs';
@@ -38,6 +38,9 @@ export const MAX_COMMENT_CHARS = 2000;
 const UNCONFIRMED_WINDOW_MS = 10 * 60 * 1000;
 const USAGE = 'Usage: ticketlens worklog KEY=DURATION [KEY=DURATION ...] [--comment="..."] [--started=ISO] [--profile=NAME] --confirm\n';
 const COMMENT_PREVIEW_CHARS = 60;
+
+/** Outcomes where the POST may have landed even though the caller saw a failure. */
+const AMBIGUOUS_KINDS = new Set(['network-or-timeout', 'server-error']);
 
 const invalid = (error) => ({ error });
 const refused = (reason) => ({ ok: false, reason, results: [] });
@@ -167,6 +170,11 @@ function recordBookkeeping(item, result, { configDir, recordActionFn, logActionF
 /** Tracker text is untrusted: strip terminal control characters per line, keeping the line structure. */
 const safeLines = (text) => text.split('\n').map(sanitizeUntrustedText).join('\n');
 
+const recentSkip = (ticket, remainingMs) => ({
+  reason: 'recent',
+  text: `  Skipped ${ticket} — a worklog was already logged just now and is not repeated (blocked ${Math.ceil(remainingMs / 1000)}s more). Check the ticket before logging again.\n`,
+});
+
 /** Checked before every write: a recent worklog, or a recent write whose outcome is still unknown. */
 function skipReason(item, { configDir, checkCooldownFn }) {
   const unconfirmed = checkCooldownFn(item.ticket, 'worklog-unconfirmed', { configDir, cooldownMs: UNCONFIRMED_WINDOW_MS });
@@ -175,14 +183,13 @@ function skipReason(item, { configDir, checkCooldownFn }) {
   }
   const recent = checkCooldownFn(item.ticket, 'worklog', { configDir });
   if (recent.active) {
-    return { reason: 'recent', text: `  Skipped ${item.ticket} — a worklog was already logged just now and is not repeated (blocked ${Math.ceil(recent.remainingMs / 1000)}s more). Check the ticket before logging again.\n` };
+    return recentSkip(item.ticket, recent.remainingMs);
   }
   return null;
 }
 
 /** Timeout / 5xx: the POST may have landed. Leave a long cooldown and an audit line so a retry can't silently double-bill. */
 function recordUnconfirmed(item, classification, { configDir, recordActionFn, logActionFn, actor, stream, source }) {
-  if (classification.kind !== 'network-or-timeout' && classification.kind !== 'server-error') return;
   try {
     logActionFn({ ticketKey: item.ticket, action: 'worklog-unconfirmed', actor, tracker: item.adapter.type, detail: { seconds: item.seconds, started: item.started, kind: classification.kind, source } }, { configDir });
     recordActionFn(item.ticket, 'worklog-unconfirmed', { configDir });
@@ -191,9 +198,28 @@ function recordUnconfirmed(item, classification, { configDir, recordActionFn, lo
   }
 }
 
+/**
+ * Claims the ticket's cooldown atomically BEFORE the POST — a check-then-write
+ * lets two parallel processes both pass the check and both bill the time.
+ * @returns {{ reason: string, text: string } | null} a skip, or null when the claim is ours
+ */
+function claimOrSkip(item, { configDir, claimActionFn }) {
+  try {
+    const claim = claimActionFn(item.ticket, 'worklog', { configDir });
+    return claim.claimed ? null : recentSkip(item.ticket, claim.remainingMs);
+  } catch (err) {
+    return { reason: 'lock', text: `  ${item.ticket} not written — could not take the cooldown lock (${sanitizeUntrustedText(String(err.message))}). Nothing was sent; safe to retry.\n` };
+  }
+}
+
+/** A definite rejection sent nothing that landed: free the claim so a corrected retry isn't blocked. */
+function releaseClaim(item, { configDir, releaseActionFn }) {
+  try { releaseActionFn(item.ticket, 'worklog', { configDir }); } catch { /* best effort — the claim expires by itself */ }
+}
+
 async function logOne(item, ctx) {
   const { stream } = ctx;
-  const skip = skipReason(item, ctx);
+  const skip = skipReason(item, ctx) ?? claimOrSkip(item, ctx);
   if (skip) {
     stream.write(skip.text);
     return { ticket: item.ticket, status: 'skipped', reason: skip.reason };
@@ -205,7 +231,8 @@ async function logOne(item, ctx) {
   } catch (err) {
     const classification = classifyWriteFailure(err);
     stream.write(safeLines(formatWriteFailure(item.ticket, err)));
-    recordUnconfirmed(item, classification, ctx);
+    if (AMBIGUOUS_KINDS.has(classification.kind)) recordUnconfirmed(item, classification, ctx);
+    else releaseClaim(item, ctx);
     return { ticket: item.ticket, status: 'failed', error: sanitizeUntrustedText(String(err.message)), kind: classification.kind, httpStatus: err.status };
   }
   const s = createStyler({ isTTY: stream.isTTY });
@@ -220,8 +247,6 @@ function haltReason(result) {
   if (result.httpStatus === 401) return 'an authentication failure (401)';
   return null;
 }
-
-const AMBIGUOUS_KINDS = new Set(['network-or-timeout', 'server-error']);
 
 /**
  * Sorts every result into exactly one of three actions for the caller (often an
@@ -278,6 +303,8 @@ export async function runTicketWorklogEntries(entries, {
   resolveConnectionFn = resolveConnection,
   resolveAdapterFn = resolveAdapter,
   checkCooldownFn = checkCooldown,
+  claimActionFn = claimAction,
+  releaseActionFn = releaseAction,
   recordActionFn = recordAction,
   logActionFn = logAction,
   actor = os.userInfo().username,
@@ -294,7 +321,7 @@ export async function runTicketWorklogEntries(entries, {
     writePreview(resolved, { stream, cliHints });
     return refused('confirm-required');
   }
-  return logAll(resolved, { configDir, checkCooldownFn, recordActionFn, logActionFn, actor, stream, source: cliHints ? 'cli' : 'mcp' });
+  return logAll(resolved, { configDir, checkCooldownFn, claimActionFn, releaseActionFn, recordActionFn, logActionFn, actor, stream, source: cliHints ? 'cli' : 'mcp' });
 }
 
 function parsePair(arg) {
