@@ -1,4 +1,5 @@
 import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue, DEFAULT_SEARCH_FIELDS } from '../jira-client.mjs';
+import { postWorklog } from '../jira-worklog-client.mjs';
 import { uploadAttachment, resolveMediaId } from '../jira-attachment-client.mjs';
 import { readAttachments } from '../attachment-uploader.mjs';
 import { buildMediaNode } from '../adf-converter.mjs';
@@ -39,6 +40,12 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
     searchTickets: (query, opts = {}) => searchTickets(query, { ...base, ...opts }),
     fetchStatuses: (opts = {}) => fetchStatuses({ ...base, ...opts }),
     addComment: (key, body, opts = {}) => postComment(key, body, { ...base, ...opts }),
+    /**
+     * Jira-only — GitHub and Linear have no worklog API, so their adapters
+     * deliberately lack this method and ticket-worklog.mjs refuses them
+     * before any write. Always logs as the authenticated user.
+     */
+    logWork: (key, entry, opts = {}) => postWorklog(key, entry, { ...base, ...opts }),
     getTransitions: (key, opts = {}) => getTransitions(key, { ...base, ...opts }),
     /**
      * Always re-fetches transitions fresh and resolves `target` against

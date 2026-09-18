@@ -85,6 +85,40 @@ describe('createJiraAdapter — addComment', () => {
   });
 });
 
+describe('createJiraAdapter — logWork', () => {
+  const ENTRY = { timeSpentSeconds: 5400, started: '2026-09-18T10:00:00.000+0000', comment: 'Fixed login' };
+
+  it('delegates to postWorklog with the bound env, PAT auth, and v2 plain-string comment for Server/DC', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = { url, opts, body: JSON.parse(opts.body) }; return { ok: true, status: 201, json: async () => ({ id: '77', timeSpent: '1h 30m' }) }; };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.logWork('TEST-1', ENTRY);
+    assert.match(captured.url, /\/rest\/api\/2\/issue\/TEST-1\/worklog$/);
+    assert.equal(captured.opts.headers.Authorization, 'Bearer tok');
+    assert.equal(captured.body.comment, 'Fixed login');
+    assert.equal(result.id, '77');
+  });
+
+  it('sends an ADF comment for a Cloud connection (apiVersion 3)', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = { url, body: JSON.parse(opts.body) }; return { ok: true, status: 201, json: async () => ({ id: '78' }) }; };
+    const adapter = createJiraAdapter({ baseUrl: 'https://x.atlassian.net', auth: 'cloud', email: 'a@b.c', apiToken: 't' }, { fetcher });
+    await adapter.logWork('TEST-1', ENTRY);
+    assert.match(captured.url, /\/rest\/api\/3\/issue\/TEST-1\/worklog$/);
+    assert.equal(captured.body.comment.type, 'doc');
+  });
+
+  it('threads conn.allowPrivateIp into logWork', async () => {
+    const adapter = createJiraAdapter({ ...CONN, allowPrivateIp: true }, { fetcher: jsonFetcher({ id: '79' }) });
+    await assert.doesNotReject(() => adapter.logWork('TEST-1', ENTRY, { lookup: privateLookup }));
+  });
+
+  it('still blocks a private-IP-resolving host by default (regression)', async () => {
+    const adapter = createJiraAdapter({ ...CONN }, { fetcher: jsonFetcher({ id: '79' }) });
+    await assert.rejects(() => adapter.logWork('TEST-1', ENTRY, { lookup: privateLookup }), /blocked address/);
+  });
+});
+
 describe('createJiraAdapter — getTransitions', () => {
   it('returns the normalized transitions list', async () => {
     const adapter = createJiraAdapter(CONN, { fetcher: jsonFetcher({ transitions: [{ id: '11', name: 'Start', to: { name: 'In Progress' } }] }) });

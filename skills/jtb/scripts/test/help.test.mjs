@@ -7,7 +7,7 @@ import {
   printProfilesHelp, printScheduleHelp,
   printInitHelp, printSwitchHelp, printConfigHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
-  printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
+  printCommentHelp, printTransitionHelp, printAssignHelp, printWorklogHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
   printCloudKeysHelp, printIssueTypesHelp,
 } from '../lib/help.mjs';
 
@@ -423,6 +423,16 @@ describe('printHelp — Recall commands', () => {
     assert.ok(idx !== -1 && idx > usageIdx, '"ticketlens assign" must appear in USAGE');
   });
 
+  it('USAGE section documents ticketlens worklog command with its Pro tier and Jira-only scope', () => {
+    const out = captureHelp(printHelp);
+    const usageIdx = out.indexOf('USAGE');
+    const idx = out.indexOf('ticketlens worklog');
+    assert.ok(idx !== -1 && idx > usageIdx, '"ticketlens worklog" must appear in USAGE');
+    const line = out.split('\n').find(l => l.includes('ticketlens') && l.includes('worklog'));
+    assert.match(line, /\[Pro\]/);
+    assert.match(line, /Jira/);
+  });
+
   it('USAGE section documents ticketlens duplicates command', () => {
     const out = captureHelp(printHelp);
     const usageIdx = out.indexOf('USAGE');
@@ -540,6 +550,44 @@ describe('printAssignHelp', () => {
     assert.match(out, /assign/);
     assert.match(out, /--to/);
     assert.match(out, /\[Pro\]/);
+  });
+});
+
+describe('printWorklogHelp', () => {
+  it('documents KEY=DURATION, the mandatory --confirm, shared --comment/--started, and the Pro tier', () => {
+    const out = captureHelp(printWorklogHelp);
+    assert.match(out, /KEY=DURATION/);
+    assert.match(out, /--confirm/);
+    assert.match(out, /--comment/);
+    assert.match(out, /--started/);
+    assert.match(out, /\[Pro\]/);
+  });
+
+  it('states the Jira-only scope and that logging always happens as the authenticated user', () => {
+    const out = captureHelp(printWorklogHelp);
+    assert.match(out, /Jira only/i);
+    assert.match(out, /as you|authenticated user/i);
+  });
+
+  it('states hours/minutes only (no d/w), the 24h cap, and that all entries are validated before any is written', () => {
+    const out = captureHelp(printWorklogHelp);
+    assert.match(out, /hours and minutes/i);
+    assert.match(out, /24h/);
+    assert.match(out, /before any/i);
+  });
+
+  it('states there is no delete, so a preview-first flow is the safety net', () => {
+    const out = captureHelp(printWorklogHelp);
+    assert.match(out, /no delete|cannot be deleted|no way to delete/i);
+  });
+});
+
+describe('printMcpHelp — ticket_worklog', () => {
+  it('lists ticket_worklog among the tools and notes it is Jira-only and confirm-gated', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /\bticket_worklog\b/);
+    assert.match(out, /ticket_worklog.*Jira.only/s);
+    assert.match(out, /ticket_worklog.*confirm: true/s);
   });
 });
 

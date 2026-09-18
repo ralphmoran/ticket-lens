@@ -25,6 +25,7 @@ import { runDoctor } from './doctor-command.mjs';
 import { runNoteAdd, runNotePatch, runNoteDelete } from './note-command.mjs';
 import { runRecall } from './recall-command.mjs';
 import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate, runTicketCreate } from './ticket-command.mjs';
+import { runTicketWorklogEntries } from './ticket-worklog.mjs';
 import { run as runFetchTicket } from '../fetch-ticket.mjs';
 import { run as runTriage } from '../fetch-my-tickets.mjs';
 import { runStats } from './run-stats.mjs';
@@ -526,6 +527,22 @@ async function callTicketAssign(args, { configDir, runTicketAssignFn }) {
   return ok ? { content } : { isError: true, content };
 }
 
+/**
+ * `entries` goes to the runner as structured data, never re-serialized into
+ * an argv — a comment reading `--confirm` cannot become a flag because no
+ * flag parsing happens on this path. Confirmation is the boolean `true`
+ * exactly; a truthy string like "yes" is not consent to write billable time.
+ */
+async function callTicketWorklog(args, { configDir, runTicketWorklogFn }) {
+  if (!Array.isArray(args.entries) || args.entries.length === 0) {
+    return { isError: true, content: [{ type: 'text', text: 'Missing required argument: entries (a non-empty array of { ticket, time })' }] };
+  }
+  const capture = capturingStream();
+  const { ok } = await runTicketWorklogFn(args.entries, { configDir, stream: capture, confirm: args.confirm === true, cliHints: false });
+  const content = [{ type: 'text', text: capture.text }];
+  return ok ? { content } : { isError: true, content };
+}
+
 async function callTicketDuplicates(args, { configDir, runTicketDuplicatesFn }) {
   if (!args.ticket) {
     return { isError: true, content: [{ type: 'text', text: 'Missing required argument: ticket' }] };
@@ -647,6 +664,7 @@ async function handleToolsCall(params, deps) {
   if (name === 'ticket_comment') return callTicketComment(args, deps);
   if (name === 'ticket_transition') return callTicketTransition(args, deps);
   if (name === 'ticket_assign') return callTicketAssign(args, deps);
+  if (name === 'ticket_worklog') return callTicketWorklog(args, deps);
   if (name === 'ticket_duplicates') return callTicketDuplicates(args, deps);
   if (name === 'ticket_link') return callTicketLink(args, deps);
   if (name === 'ticket_update') return callTicketUpdate(args, deps);
@@ -720,6 +738,7 @@ export function runMcpServer({
   runTicketTransitionListFn = runTicketTransitionList,
   runTicketTransitionFn = runTicketTransition,
   runTicketAssignFn = runTicketAssign,
+  runTicketWorklogFn = runTicketWorklogEntries,
   runTicketDuplicatesFn = runTicketDuplicates,
   runTicketLinkListFn = runTicketLinkList,
   runTicketLinkFn = runTicketLink,
@@ -736,7 +755,7 @@ export function runMcpServer({
   // Assembled once and passed straight through handleMessage to handleToolsCall,
   // which is the only place the individual functions are read — so a new tool
   // needs its dependency named here and in the parameter list above, nowhere else.
-  const deps = { configDir, runFetchTicketFn, runTriageFn, runDoctorFn, runStatsFn, runIssueTypesFn, runHistoryFn, runCollisionsFn, runNoteAddFn, runNotePatchFn, runNoteDeleteFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn };
+  const deps = { configDir, runFetchTicketFn, runTriageFn, runDoctorFn, runStatsFn, runIssueTypesFn, runHistoryFn, runCollisionsFn, runNoteAddFn, runNotePatchFn, runNoteDeleteFn, runRecallFn, runTicketCommentFn, runTicketTransitionListFn, runTicketTransitionFn, runTicketAssignFn, runTicketWorklogFn, runTicketDuplicatesFn, runTicketLinkListFn, runTicketLinkFn, runTicketUpdateFn, runTicketCreateFn };
 
   const rl = readline.createInterface({ input: stdin, terminal: false });
   let queue = Promise.resolve();

@@ -30,7 +30,7 @@ import {
   printCollisionsHelp, printStatsHelp, printIssueTypesHelp, printDoctorHelp,
   printCloudKeysHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
-  printCommentHelp, printTransitionHelp, printAssignHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
+  printCommentHelp, printTransitionHelp, printAssignHelp, printWorklogHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { runStats } from '../skills/jtb/scripts/lib/run-stats.mjs';
 import { runIssueTypes } from '../skills/jtb/scripts/lib/run-issue-types.mjs';
@@ -827,6 +827,18 @@ switch (command) {
     if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printAssignHelp(); break; }
     const { runTicketAssign } = await import('../skills/jtb/scripts/lib/ticket-command.mjs');
     runTicketAssign(cmdArgs).then(({ ok }) => {
+      if (!ok) process.exitCode = 1;
+    }).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+    });
+    break;
+  }
+
+  case 'worklog': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printWorklogHelp(); break; }
+    const { runTicketWorklog } = await import('../skills/jtb/scripts/lib/ticket-worklog.mjs');
+    runTicketWorklog(cmdArgs).then(({ ok }) => {
       if (!ok) process.exitCode = 1;
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);

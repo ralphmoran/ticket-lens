@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.43.3 -->
+<!-- jtb-skill-version: 0.44.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -418,9 +418,9 @@ Recall notes are stored locally at `~/.ticketlens/recall/`. On a Pro account wit
 
 ---
 
-## Comment, Transition, Assign, Duplicates, Link, Update & Create — write back to the tracker (Pro)
+## Comment, Transition, Assign, Duplicates, Link, Update, Create & Worklog — write back to the tracker (Pro)
 
-Unlike Recall (a local note about a ticket), these seven commands write directly to the ticket's real tracker — Jira, GitHub, or Linear. Only dispatch a write when the user has actually asked for it — never as a routine end-of-session action the way Recall capture is. `duplicates` is read-only and safe to run more freely — it never mutates anything.
+Unlike Recall (a local note about a ticket), these eight commands write directly to the ticket's real tracker — Jira, GitHub, or Linear (`worklog` is Jira only). Only dispatch a write when the user has actually asked for it — never as a routine end-of-session action the way Recall capture is. `duplicates` is read-only and safe to run more freely — it never mutates anything.
 
 ```bash
 ticketlens comment PROD-1234 --body="Fixed in a2f9c1, deployed to staging."
@@ -436,6 +436,8 @@ ticketlens link PROD-1234 PROD-5678 --type="Duplicate" --confirm  # execute the 
 ticketlens update PROD-1234 --title="Fix login on mobile"     # update title/description/labels/priority
 ticketlens update PROD-1234 --add-labels=urgent --remove-labels=stale
 ticketlens create --project=PROD --type="Task" --summary="Fix login on mobile"  # create a new ticket
+ticketlens worklog PROD-1234=1h30m                             # preview what would be logged — writes nothing
+ticketlens worklog PROD-1234=1h30m PROD-5678=45m --comment="Sprint work" --confirm  # log time on several tickets (Jira only)
 ```
 
 `transition` called with just a ticket key never mutates anything — it lists the tracker's current valid options (Jira: real workflow transitions for that issue; GitHub: open/closed; Linear: team-scoped workflow states). Only add `--target` **and** `--confirm` once the target has actually been confirmed with the user — `--confirm` is a deliberate two-step gate, not a formality to route around. Never guess a `--target` value; always list first, then use one of the names shown.
@@ -450,15 +452,17 @@ ticketlens create --project=PROD --type="Task" --summary="Fix login on mobile"  
 
 `create` makes a brand-new ticket — there's no existing ticket to target, so `--project` (Jira project key / Linear team key) and `--type` (Jira issue type, ignored elsewhere) pick the destination instead of a ticket key. This is the highest-blast-radius command in the family: a bad `--project`/`--type` fabricates a real, hard-to-walk-back item in a live tracker. No `--confirm` gate — double-check the values with the user before calling it, since an invalid value surfaces the tracker's own error rather than a silent guess.
 
+`worklog KEY=DURATION [KEY=DURATION ...]` logs time worked on one or several tickets, always as the authenticated user — logging for someone else isn't supported, so don't attempt a workaround. Jira only: GitHub and Linear have no worklog API and are refused. Durations are hours and minutes only (`2h`, `90m`, `1h30m`, up to 24h each) — days and weeks are rejected because Jira defines them per instance; never guess a conversion, ask the user. `--started=` takes ISO 8601 with a time (default now; not in the future, not older than a year). Every entry's format and tracker are checked before any is written, so a malformed entry blocks the whole call; Jira-side failures (unknown ticket, no permission, time tracking off) are reported per ticket while writing, and a partial result names which tickets already landed — retry only the rest, never repeat them. A rate limit or 401 stops the batch. The same ticket twice in one call is refused, total time per call is capped at 24h, and comments at 2000 characters. A write that times out or gets a server error leaves a 10-minute hold on that ticket, because it may have landed — check Jira before logging it again. A worklog cannot be deleted through TicketLens, so without `--confirm` it only prints a preview — add `--confirm` only once the user has confirmed the durations and tickets, never as a formality to route around. Jira applies its own remaining-estimate and watcher-notification defaults. The MCP tool takes an `entries` array with a per-ticket `comment`/`started`; the CLI applies one `--comment`/`--started` to every ticket.
+
 `--attach=path1,path2` (comma-separated local file paths) is available on `comment` and `create` only. Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
 
-The six write actions (comment/transition/assign/link/update/create) have a short local debounce (10s) against an accidental double-fire, and every write is appended to a local audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — surface the failure to the user rather than silently re-attempting, since a ticket write isn't naturally idempotent the way a Recall note save is. `duplicates` has neither, since nothing is written.
+The write actions (comment/transition/assign/link/update/create/worklog) have a short local debounce (10s) against an accidental double-fire, and every write is appended to a local audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — surface the failure to the user rather than silently re-attempting, since a ticket write isn't naturally idempotent the way a Recall note save is. `duplicates` has neither, since nothing is written.
 
-**Pick exactly one path per action — never both.** If this harness has TicketLens's MCP server configured (tools named `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create` — often shown as `mcp__ticketlens__ticket_comment` etc. — visible in your tool list), **use those tools, not the bash commands above** — same license gate, same cooldown, same audit log. Only fall back to the bash form when the MCP tools are genuinely absent from your tool list; if that's because this project has never registered the server, see the `ticketlens mcp install` note above (Recall section) — same guidance applies here.
+**Pick exactly one path per action — never both.** If this harness has TicketLens's MCP server configured (tools named `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create`/`ticket_worklog` — often shown as `mcp__ticketlens__ticket_comment` etc. — visible in your tool list), **use those tools, not the bash commands above** — same license gate, same cooldown, same audit log. Only fall back to the bash form when the MCP tools are genuinely absent from your tool list; if that's because this project has never registered the server, see the `ticketlens mcp install` note above (Recall section) — same guidance applies here.
 
 The same stale-schema caveat applies here — if a call rejects a parameter this document says exists (e.g. `attachments` on `ticket_comment`/`ticket_create`) right after an upgrade, see the MCP tool-cache staleness note above (Recall section).
 
-Requires a Pro license — on Free, all seven no-op with an upgrade hint on stderr.
+Requires a Pro license — on Free, all eight no-op with an upgrade hint on stderr.
 
 ---
 

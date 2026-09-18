@@ -311,6 +311,17 @@ describe('parseCommand', () => {
     assert.equal(stillFetch.command, 'fetch');
   });
 
+  it('routes "worklog" to worklog command', () => {
+    const result = parseCommand(['worklog', 'PROJ-1=1h30m', '--confirm']);
+    assert.equal(result.command, 'worklog');
+    assert.deepEqual(result.args, ['PROJ-1=1h30m', '--confirm']);
+  });
+
+  it('lock — adding "worklog" does not change the ticket-key fallback for anything else', () => {
+    const stillFetch = parseCommand(['PROJ-999']);
+    assert.equal(stillFetch.command, 'fetch');
+  });
+
   it('routes "duplicates" to duplicates command', () => {
     const result = parseCommand(['duplicates', 'PROJ-1', '--threshold=0.5']);
     assert.equal(result.command, 'duplicates');

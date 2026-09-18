@@ -32,7 +32,7 @@ function logPath(configDir) {
 }
 
 /**
- * @param {{ ticketKey: string, action: 'comment'|'transition', actor: string, tracker: string, detail?: object }} entry
+ * @param {{ ticketKey: string, action: string, actor: string, tracker: string, detail?: object }} entry
  * @param {{ configDir?: string, now?: () => Date }} [opts]
  */
 export function logAction({ ticketKey, action, actor, tracker, detail = {} }, {

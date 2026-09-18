@@ -74,7 +74,7 @@ describe('mcp-server', () => {
     it('returns exactly fetch, recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const names = messages[0].result.tools.map((t) => t.name).sort();
-      assert.deepEqual(names, ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'issue_types', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
+      assert.deepEqual(names, ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'issue_types', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'ticket_worklog', 'triage']);
       for (const tool of messages[0].result.tools) {
         assert.equal(tool.inputSchema.type, 'object');
         assert.ok(tool.inputSchema.properties, `${tool.name} must declare input properties`);
@@ -1397,6 +1397,108 @@ describe('mcp-server', () => {
     });
   });
 
+  describe('tools/list ticket_worklog', () => {
+    async function worklogTool() {
+      const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
+      return messages[0].result.tools.find((t) => t.name === 'ticket_worklog');
+    }
+
+    it('description states Jira-only, self-only, destructive/no-delete, and the confirm preview behavior', async () => {
+      const { description } = await worklogTool();
+      assert.match(description, /Jira only/i);
+      assert.match(description, /as you|yourself/i);
+      assert.match(description, /destructive/i);
+      assert.match(description, /no delete/i);
+      assert.match(description, /confirm: true/);
+    });
+
+    it('declares entries as a bounded array of {ticket, time, started?, comment?} with confirm alongside it', async () => {
+      const { inputSchema } = await worklogTool();
+      assert.deepEqual(inputSchema.required, ['entries']);
+      assert.equal(inputSchema.properties.entries.type, 'array');
+      assert.equal(inputSchema.properties.entries.minItems, 1);
+      assert.equal(inputSchema.properties.entries.maxItems, 20);
+      assert.deepEqual(inputSchema.properties.entries.items.required, ['ticket', 'time']);
+      assert.deepEqual(Object.keys(inputSchema.properties.entries.items.properties).sort(), ['comment', 'started', 'ticket', 'time']);
+      assert.equal(inputSchema.properties.confirm.type, 'boolean');
+    });
+  });
+
+  describe('tools/call ticket_worklog', () => {
+    const call = (args) => [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_worklog', arguments: args } }];
+    const ENTRIES = [{ ticket: 'PROJ-1', time: '1h30m', comment: 'Fixed login' }, { ticket: 'PROJ-2', time: '45m', started: '2026-09-18T10:00:00-07:00' }];
+
+    it('happy path: hands the structured entries and confirm to the runner, returns a non-error result', async () => {
+      let seen;
+      const runTicketWorklogFn = async (entries, opts) => { seen = { entries, opts }; opts.stream.write('  Logged 2 of 2 worklogs.\n'); return { ok: true, results: [] }; };
+      const { messages } = await drive(call({ entries: ENTRIES, confirm: true }), { configDir, runTicketWorklogFn });
+      assert.equal(messages[0].result.isError, undefined);
+      assert.match(messages[0].result.content[0].text, /Logged 2 of 2/);
+      assert.deepEqual(seen.entries, ENTRIES);
+      assert.equal(seen.opts.confirm, true);
+      assert.equal(seen.opts.cliHints, false, 'MCP callers must see confirm: true wording, never --confirm');
+      assert.equal(seen.opts.configDir, configDir);
+    });
+
+    it('confirm defaults to false when absent', async () => {
+      let seen;
+      const runTicketWorklogFn = async (entries, opts) => { seen = opts; return { ok: false, reason: 'confirm-required', results: [] }; };
+      await drive(call({ entries: ENTRIES }), { configDir, runTicketWorklogFn });
+      assert.equal(seen.confirm, false);
+    });
+
+    for (const bad of ['true', 'yes', 1, {}, [], null]) {
+      it(`confirm=${JSON.stringify(bad)} is not confirmation — only the boolean true is`, async () => {
+        let seen;
+        const runTicketWorklogFn = async (entries, opts) => { seen = opts; return { ok: false, results: [] }; };
+        await drive(call({ entries: ENTRIES, confirm: bad }), { configDir, runTicketWorklogFn });
+        assert.equal(seen.confirm, false);
+      });
+    }
+
+    for (const [label, args] of [
+      ['no arguments', {}],
+      ['entries as a string', { entries: 'PROJ-1=1h' }],
+      ['entries as an object', { entries: { ticket: 'PROJ-1', time: '1h' } }],
+      ['an empty entries array', { entries: [] }],
+    ]) {
+      it(`${label} returns a tool error without ever calling the runner`, async () => {
+        let called = false;
+        const runTicketWorklogFn = async () => { called = true; return { ok: true, results: [] }; };
+        const { messages } = await drive(call(args), { configDir, runTicketWorklogFn });
+        assert.equal(called, false);
+        assert.equal(messages[0].result.isError, true);
+        assert.match(messages[0].result.content[0].text, /entries/i);
+      });
+    }
+
+    it('flag-shaped text in a comment stays inert inside its entry — there is no argv to forge', async () => {
+      let seen;
+      const runTicketWorklogFn = async (entries, opts) => { seen = { entries, opts }; return { ok: false, results: [] }; };
+      await drive(call({ entries: [{ ticket: 'PROJ-1', time: '1h', comment: '--confirm --profile=evil' }] }), { configDir, runTicketWorklogFn });
+      assert.equal(seen.opts.confirm, false);
+      assert.equal(seen.opts.profile, undefined);
+      assert.equal(seen.entries[0].comment, '--confirm --profile=evil');
+    });
+
+    it('a runner result of {ok:false} (partial failure, preview, refusal) maps to a tool error that still carries the full text', async () => {
+      const runTicketWorklogFn = async (entries, opts) => { opts.stream.write('  PROJ-1 logged 1h\n  Failed to write to PROJ-2: boom\n'); return { ok: false, results: [] }; };
+      const { messages } = await drive(call({ entries: ENTRIES, confirm: true }), { configDir, runTicketWorklogFn });
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /PROJ-1 logged 1h/);
+      assert.match(messages[0].result.content[0].text, /PROJ-2: boom/);
+    });
+
+    it('a runner that throws surfaces as a JSON-RPC-level tool error, never a crash of the server', async () => {
+      const runTicketWorklogFn = async () => { throw new Error('unexpected'); };
+      const { messages } = await drive([...call({ entries: ENTRIES, confirm: true }), { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }], { configDir, runTicketWorklogFn });
+      assert.equal(messages.length, 2, 'the server must survive and answer the next request');
+      assert.equal(messages[0].error?.code, -32603);
+      assert.match(messages[0].error.message, /unexpected/);
+      assert.equal(messages[1].result.tools.some((t) => t.name === 'ticket_worklog'), true);
+    });
+  });
+
   describe('tools/call ticket_transition', () => {
     it('no target dispatches to the read-only list function, never the executing one', async () => {
       let listCalled = false, executeCalled = false;
@@ -1871,7 +1973,7 @@ describe('mcp-server', () => {
       assert.equal(messages.length, 2, 'both the parse-error response and the valid tools/list response must appear');
       assert.ok(messages[0].error, 'first message must be a JSON-RPC error for the malformed line');
       assert.equal(messages[1].id, 2);
-      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'issue_types', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'triage']);
+      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'issue_types', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'ticket_worklog', 'triage']);
     });
 
     it('a syntactically-valid-but-non-object JSON line (e.g. bare "null") does not crash the server or drop later messages', async () => {

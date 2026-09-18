@@ -69,6 +69,12 @@ describe('SKILL.md — skill version marker', () => {
     assert.notEqual(m[1], '0.31.0', 'marker must move past the pre-fix version');
   });
 
+  it('is bumped past 0.43.3 so update-skill propagates the ticket_worklog docs', () => {
+    const m = SKILL_MD.match(/jtb-skill-version:\s*([\d.]+)/);
+    assert.ok(m, 'expected a jtb-skill-version marker on line 1');
+    assert.notEqual(m[1], '0.43.3', 'marker must move past the pre-worklog version');
+  });
+
   it('is bumped past 0.32.0 so update-skill propagates the L-12 tag-quality guidance fix', () => {
     const m = SKILL_MD.match(/jtb-skill-version:\s*([\d.]+)/);
     assert.ok(m, 'expected a jtb-skill-version marker on line 1');
@@ -101,6 +107,31 @@ describe('SKILL.md — write-back section documents link/update/create (H-6)', (
   it('does not undercount the write-command family as "all four"', () => {
     const section = writeBackSection();
     assert.doesNotMatch(section, /all four/i, 'the family has seven commands now, not four');
+  });
+});
+
+describe('SKILL.md — write-back section documents worklog', () => {
+  it('lists ticketlens worklog in the bash example block, in both preview and --confirm forms', () => {
+    const section = writeBackSection();
+    assert.match(section, /ticketlens worklog \S+=\S+ *#[^\n]*preview/i, 'expected a preview-form example');
+    assert.match(section, /ticketlens worklog [^\n]*--confirm/, 'expected a --confirm example');
+  });
+
+  it('states Jira-only, hours/minutes only, and that --confirm follows the user confirming the durations', () => {
+    const section = writeBackSection();
+    assert.match(section, /`worklog`[^\n]*Jira only/i);
+    assert.match(section, /hours and minutes/i);
+    assert.match(section, /cannot be deleted/i);
+    assert.match(section, /--confirm[^\n]*(user|confirm(ed|ing) with)/i);
+  });
+
+  it('names the ticket_worklog MCP tool in the use-MCP-not-bash callout', () => {
+    const section = writeBackSection();
+    assert.match(section, /`ticket_worklog`/);
+  });
+
+  it('counts the write family as eight, never a stale "seven"', () => {
+    assert.doesNotMatch(writeBackSection(), /\bseven\b/i);
   });
 });
 

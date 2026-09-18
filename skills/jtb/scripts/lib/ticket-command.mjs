@@ -23,7 +23,7 @@ import { scoreCandidates } from './duplicate-scorer.mjs';
 import { MAX_ATTACHMENTS } from './attachment-uploader.mjs';
 import { createStyler } from './ansi.mjs';
 
-function parseFlag(cmdArgs, name) {
+export function parseFlag(cmdArgs, name) {
   return cmdArgs.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 }
 
@@ -77,7 +77,7 @@ export function classifyWriteFailure(err) {
   return { kind: 'terminal', status: err.status, details: err.details };
 }
 
-function formatWriteFailure(ticketKey, err) {
+export function formatWriteFailure(ticketKey, err) {
   const classification = classifyWriteFailure(err);
   switch (classification.kind) {
     case 'rate-limited': {
@@ -201,7 +201,7 @@ function formatUpdateResult(ticketKey, { applied, errors }, s) {
   return `  Nothing updated on ${ticketKey}. Failed: ${errorText}.\n`;
 }
 
-function requireLicense(isLicensedFn, configDir, commandName, stream) {
+export function requireLicense(isLicensedFn, configDir, commandName, stream) {
   if (isLicensedFn('pro', configDir)) return true;
   showUpgradePrompt('pro', commandName, { stream });
   return false;
@@ -236,7 +236,7 @@ function requireTicketKey(cmdArgs, usage, stream) {
  * `runTicketCreate`'s profile/project mismatch safety net — have it without
  * re-resolving.
  */
-function resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream }) {
+export function resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream }) {
   const profileName = parseFlag(cmdArgs, 'profile');
   const conn = resolveConnectionFn(ticketKey, {
     configDir,

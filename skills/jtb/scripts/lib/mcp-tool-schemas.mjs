@@ -250,6 +250,33 @@ export const TOOLS = [
     },
   },
   {
+    name: 'ticket_worklog',
+    description: 'Log time worked on one or more tickets in their tracker. Jira only — GitHub and Linear have no worklog API and are refused. Always logs as you, the authenticated user; logging for someone else is not supported. Destructive — writes directly to the live tracker, and there is no delete tool. Every entry\'s format and tracker are checked before any is written, so a malformed entry blocks the whole call; Jira-side failures (unknown ticket, no permission, time tracking off) are reported per ticket while writing, and a partial result names which tickets already landed — retry only the rest. A rate limit or 401 stops the batch. Called without `confirm: true` it writes nothing and returns a preview of what would be logged; call again with `confirm: true` to log. Jira applies its own remaining-estimate and watcher-notification defaults. Requires a TicketLens Pro license.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entries: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 20,
+          description: 'One entry per ticket, at most 20 per call, at most 24h in total per call. The same ticket twice in one call is refused.',
+          items: {
+            type: 'object',
+            properties: {
+              ticket: { type: 'string', description: 'Ticket key, e.g. PROJ-123.' },
+              time: { type: 'string', description: 'Time spent as hours and minutes — "1h30m", "90m", "2h". Up to 24h. Days and weeks are not accepted (Jira defines them per instance).' },
+              started: { type: 'string', description: 'When the work started, ISO 8601 with a time, e.g. "2026-09-18T10:00:00-07:00". Defaults to now. Cannot be in the future or older than a year.' },
+              comment: { type: 'string', description: 'Optional note attached to the worklog, up to 2000 characters.' },
+            },
+            required: ['ticket', 'time'],
+          },
+        },
+        confirm: { type: 'boolean', description: 'Must be true to actually log the time. Omit it to get a preview with nothing written.' },
+      },
+      required: ['entries'],
+    },
+  },
+  {
     name: 'ticket_duplicates',
     description: 'Find likely duplicate tickets in the same project (Jira/GitHub/Linear). Read-only — never links or changes anything. On Jira, any ticket already linked as a "Duplicate" is always included first (a confirmed relationship, not a guess); everything else comes from a local, approximate title/description overlap score, since no tracker scores similarity server-side. That scorer can miss real duplicates as easily as it over-matches, so an empty result means none were found, not a guarantee that none exist. Requires a TicketLens Pro license.',
     inputSchema: {

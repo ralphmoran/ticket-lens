@@ -168,6 +168,10 @@ export function parseCommand(args) {
     return { command: 'assign', args: args.slice(1) };
   }
 
+  if (first === 'worklog') {
+    return { command: 'worklog', args: args.slice(1) };
+  }
+
   if (first === 'duplicates') {
     return { command: 'duplicates', args: args.slice(1) };
   }
