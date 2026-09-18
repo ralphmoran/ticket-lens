@@ -68,8 +68,10 @@ export function writeState(sessionId, state) {
   } catch { /* best-effort — a lost nudge counter is not worth failing the hook over */ }
 }
 
-// Two hours — how long a real capture in one directory counts as "recent
-// enough" to skip the Stop hook's nag, even from a brand-new session_id.
+// Two hours of IDLE time — how long a real capture in one directory counts as
+// "recent enough" to skip the Stop hook's nag, even from a brand-new session_id.
+// Sliding, not fixed: ongoing ticket work renews the marker (see
+// recall-nudge-stop.mjs, backlog #24), so only a full idle window lets it lapse.
 export const CAPTURE_FRESHNESS_MS = 2 * 60 * 60 * 1000;
 
 /**

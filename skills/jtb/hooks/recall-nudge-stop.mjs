@@ -24,7 +24,9 @@
  * the same boundary for a DISMISSED nag: without it, a session that already
  * got its one nag and was told "genuinely nothing qualified" would nag
  * again after the next compaction/resume rollover, since that dismissal
- * was never recorded anywhere — only a real capture was.
+ * was never recorded anywhere — only a real capture was. Both markers slide:
+ * ongoing ticket work renews them while fresh, so only a full idle window
+ * (CAPTURE_FRESHNESS_MS) lets either lapse (backlog #24).
  *
  * Which of the two cases above actually blocks is governed by the effective
  * recallStrictness — the active profile's own explicit config-set value, or
@@ -102,7 +104,19 @@ if (isLicensed('pro') && cliToken && !hasRecentAutoCaptureAttempt(cwd)) {
 // Refreshed on every check, independent of the once-per-session gate below —
 // a capture that happens AFTER this session already nagged once must still
 // update the marker, or a later session_id rollover would find it stale.
-if (sawNoteAdd) writeLastCaptureAt(cwd, Date.now());
+//
+// Sliding window (backlog #24, 7th report): ongoing ticket work also renews a
+// marker that is still fresh, so it measures idle time, not time since the
+// last capture/nag. A fixed window expired mid-work (capture 17:48, nag 19:48
+// in a session with 23 silent Stops before it) and falsely claimed "nothing
+// was ever captured". Only a session that could itself nag (fetch + mutation)
+// renews, so non-ticket work and read-only lookups in the same cwd can't keep
+// a marker alive; a lapsed marker is never revived. Accepted trade-off: such
+// sessions chained in one cwd with gaps under the window keep suppressing.
+const now = Date.now();
+const isActiveTicketWork = sawFetch && sawMutatingAction;
+if (sawNoteAdd || (isActiveTicketWork && hasRecentCapture(cwd, now))) writeLastCaptureAt(cwd, now);
+if (isActiveTicketWork && hasRecentNag(cwd, now)) writeLastNagAt(cwd, now);
 
 const state = readState(sessionId);
 if (state.stopChecked) process.exit(0); // already asked once this session — respect the answer

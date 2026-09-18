@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, statSync, existsSync } f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { statePath, writeLastCaptureAt, lastCapturePath, lastNagPath, lastAutoCaptureAttemptPath } from '../../hooks/recall-nudge-lib.mjs';
+import { statePath, writeLastCaptureAt, readLastCaptureAt, lastCapturePath, writeLastNagAt, readLastNagAt, lastNagPath, lastAutoCaptureAttemptPath, CAPTURE_FRESHNESS_MS } from '../../hooks/recall-nudge-lib.mjs';
 
 const HOOK_PATH = fileURLToPath(new URL('../../hooks/recall-nudge-stop.mjs', import.meta.url));
 
@@ -375,6 +375,95 @@ describe('recall-nudge-stop hook (subprocess)', () => {
       try { rmSync(statePath(sidA)); } catch { /* fine */ }
       try { rmSync(statePath(sidB)); } catch { /* fine */ }
     }
+  });
+
+  describe('sliding marker window (backlog #24, 7th report)', () => {
+    // Real incident: a capture in one session at 17:48 kept the marker fresh,
+    // but a later session with ongoing ticket work never renewed it, so it
+    // expired mid-work at 19:48 and the hook nagged "nothing was ever captured".
+    const NEARLY_EXPIRED_MS = CAPTURE_FRESHNESS_MS - 60_000;
+    const JUST_EXPIRED_MS = CAPTURE_FRESHNESS_MS + 60_000;
+
+    const ticketWorkTranscript = () => transcriptWith([
+      assistantText('Looking at PROD-1234 now.'),
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      assistantToolUse('mcp__ticketlens__ticket_comment', { ticket: 'PROD-1234', body: 'x' }),
+    ]);
+
+    function runStop(label) {
+      const sid = `${sessionId}-${label}`;
+      const result = runHook({ sessionId: sid, transcriptPath, cwd: dir, home });
+      try { rmSync(statePath(sid)); } catch { /* not written this run — fine */ }
+      return result;
+    }
+
+    it('LOCK: a capture marker past the window does not suppress the nag and is not revived', () => {
+      writeFileSync(transcriptPath, ticketWorkTranscript());
+      const staleAt = Date.now() - JUST_EXPIRED_MS;
+      writeLastCaptureAt(dir, staleAt);
+
+      assert.equal(runStop('stale-capture').status, 2, 'idle past the window must allow a nag');
+      assert.equal(readLastCaptureAt(dir), staleAt, 'a lapsed marker must stay lapsed');
+    });
+
+    it('LOCK: a nag marker past the window does not suppress a repeat nag', () => {
+      writeFileSync(transcriptPath, ticketWorkTranscript());
+      writeLastNagAt(dir, Date.now() - JUST_EXPIRED_MS);
+
+      assert.equal(runStop('stale-nag').status, 2, 'idle past the window must allow a nag');
+    });
+
+    it('LOCK: a Stop with no marker ever recorded nags and never invents a capture marker', () => {
+      writeFileSync(transcriptPath, ticketWorkTranscript());
+
+      assert.equal(runStop('no-marker').status, 2, 'first session with real ticket work and no capture must nag');
+      assert.equal(readLastCaptureAt(dir), 0, 'only a real note-add may create the capture marker');
+    });
+
+    it('LOCK: a Stop with no ticket work does not renew an aging marker', () => {
+      writeFileSync(transcriptPath, transcriptWith([assistantText('Refactoring a helper, no ticket involved.')]));
+      const agingAt = Date.now() - NEARLY_EXPIRED_MS;
+      writeLastCaptureAt(dir, agingAt);
+      writeLastNagAt(dir, agingAt);
+
+      assert.equal(runStop('non-ticket').status, 0);
+      assert.equal(readLastCaptureAt(dir), agingAt, 'unrelated work in the same cwd must not keep the capture marker alive');
+      assert.equal(readLastNagAt(dir), agingAt, 'unrelated work in the same cwd must not keep the nag marker alive');
+    });
+
+    it('ongoing ticket work renews a still-fresh capture marker, so it cannot expire mid-work', () => {
+      writeFileSync(transcriptPath, ticketWorkTranscript());
+      writeLastCaptureAt(dir, Date.now() - NEARLY_EXPIRED_MS);
+      const before = Date.now();
+
+      assert.equal(runStop('renew-capture').status, 0);
+      assert.ok(readLastCaptureAt(dir) >= before, 'marker must restart its window from this Stop');
+    });
+
+    it('ongoing ticket work renews a still-fresh nag marker, so a dismissed nag stays dismissed', () => {
+      writeFileSync(transcriptPath, ticketWorkTranscript());
+      writeLastNagAt(dir, Date.now() - NEARLY_EXPIRED_MS);
+      const before = Date.now();
+
+      assert.equal(runStop('renew-nag').status, 0);
+      assert.ok(readLastNagAt(dir) >= before, 'marker must restart its window from this Stop');
+    });
+
+    it('a read-only lookup (fetch, no mutation) does not renew an aging marker', () => {
+      // Such a session could never nag itself (backlog #24, 6th report), so it
+      // must not extend the suppression of a later session that could.
+      writeFileSync(transcriptPath, transcriptWith([
+        assistantText('Looking at PROD-1234 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      ]));
+      const agingAt = Date.now() - NEARLY_EXPIRED_MS;
+      writeLastCaptureAt(dir, agingAt);
+      writeLastNagAt(dir, agingAt);
+
+      assert.equal(runStop('read-only').status, 0);
+      assert.equal(readLastCaptureAt(dir), agingAt, 'lookups must not keep the capture marker alive');
+      assert.equal(readLastNagAt(dir), agingAt, 'lookups must not keep the nag marker alive');
+    });
   });
 
   describe('multi-profile resolution by matched ticket key (backlog #12)', () => {
