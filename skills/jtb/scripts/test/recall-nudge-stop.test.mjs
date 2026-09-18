@@ -1,13 +1,31 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it, beforeEach, afterEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { statePath, writeLastCaptureAt, readLastCaptureAt, lastCapturePath, writeLastNagAt, readLastNagAt, lastNagPath, lastAutoCaptureAttemptPath, CAPTURE_FRESHNESS_MS } from '../../hooks/recall-nudge-lib.mjs';
+import { isolateHookEnv } from './helpers/isolate-hook-env.mjs';
+import { statePath, writeLastCaptureAt, readLastCaptureAt, lastCapturePath, writeLastNagAt, readLastNagAt, lastNagPath, lastAutoCaptureAttemptPath, privateTmpDir, CAPTURE_FRESHNESS_MS } from '../../hooks/recall-nudge-lib.mjs';
 
 const HOOK_PATH = fileURLToPath(new URL('../../hooks/recall-nudge-stop.mjs', import.meta.url));
+
+// Resolved before any TMPDIR isolation — the machine-wide log real Stop hooks write to.
+const REAL_AUTO_CAPTURE_LOG = join(privateTmpDir(), 'auto-capture.log');
+after(isolateHookEnv());
+
+function fingerprint(path) {
+  return existsSync(path) ? statSync(path).size : null;
+}
+
+async function waitFor(predicate, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  return false;
+}
 
 function transcriptWith(entries) {
   return entries.map(e => JSON.stringify(e)).join('\n') + '\n';
@@ -551,6 +569,19 @@ describe('recall-nudge-stop hook (subprocess)', () => {
       try { rmSync(statePath(`${sessionId}-a`)); } catch { /* fine */ }
       try { rmSync(statePath(`${sessionId}-b`)); } catch { /* fine */ }
       try { rmSync(lastNagPath(dir)); } catch { /* fine */ }
+    });
+
+    it('the detached auto-capture child never writes to the real machine-wide auto-capture.log (backlog #33)', async () => {
+      const isolatedLog = join(privateTmpDir(), 'auto-capture.log');
+      assert.notEqual(isolatedLog, REAL_AUTO_CAPTURE_LOG, 'this suite must run against an isolated TMPDIR');
+      const realLogBefore = fingerprint(REAL_AUTO_CAPTURE_LOG);
+      const isolatedLogBefore = fingerprint(isolatedLog) ?? 0;
+      writeCliTokenFile(home, 'tl_key');
+      runHook({ sessionId, transcriptPath, cwd: dir, home, env: { TICKETLENS_SKIP_LICENSE: 'true' } });
+      // Growth, not existence: earlier tests' children may already have created the isolated log.
+      const childLogged = await waitFor(() => (fingerprint(isolatedLog) ?? 0) > isolatedLogBefore);
+      assert.equal(childLogged, true, 'the spawned child must log into the test-isolated tmp dir');
+      assert.equal(fingerprint(REAL_AUTO_CAPTURE_LOG), realLogBefore, 'real log must be untouched by the test suite');
     });
 
     it('a different cwd gets its own independent throttle window', () => {

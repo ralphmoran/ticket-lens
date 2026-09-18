@@ -1,10 +1,14 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it, beforeEach, afterEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runAutoCapture } from '../../hooks/recall-auto-capture.mjs';
 import { privateTmpDir } from '../../hooks/recall-nudge-lib.mjs';
+import { isolateHookEnv } from './helpers/isolate-hook-env.mjs';
+
+// Isolated TMPDIR: this file's afterEach deletes auto-capture.log, which must never be the real one.
+after(isolateHookEnv());
 
 function deps(overrides = {}) {
   return {
