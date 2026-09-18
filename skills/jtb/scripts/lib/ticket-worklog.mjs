@@ -171,11 +171,11 @@ const safeLines = (text) => text.split('\n').map(sanitizeUntrustedText).join('\n
 function skipReason(item, { configDir, checkCooldownFn }) {
   const unconfirmed = checkCooldownFn(item.ticket, 'worklog-unconfirmed', { configDir, cooldownMs: UNCONFIRMED_WINDOW_MS });
   if (unconfirmed.active) {
-    return `  Skipped ${item.ticket} — an earlier write to it ended without a confirmed result (timeout or server error) ${Math.ceil(unconfirmed.remainingMs / 60000)}m ago and may have already landed. Check the ticket in Jira before logging again.\n`;
+    return { reason: 'unconfirmed', text: `  Skipped ${item.ticket} — an earlier write to it ended without a confirmed result (timeout or server error) and may have already landed (blocked ${Math.ceil(unconfirmed.remainingMs / 60000)}m more). Check the ticket in Jira before logging again.\n` };
   }
   const recent = checkCooldownFn(item.ticket, 'worklog', { configDir });
   if (recent.active) {
-    return `  Skipped ${item.ticket} — a worklog was already logged ${Math.ceil(recent.remainingMs / 1000)}s ago and is not repeated. Check the ticket before logging again.\n`;
+    return { reason: 'recent', text: `  Skipped ${item.ticket} — a worklog was already logged just now and is not repeated (blocked ${Math.ceil(recent.remainingMs / 1000)}s more). Check the ticket before logging again.\n` };
   }
   return null;
 }
@@ -195,8 +195,8 @@ async function logOne(item, ctx) {
   const { stream } = ctx;
   const skip = skipReason(item, ctx);
   if (skip) {
-    stream.write(skip);
-    return { ticket: item.ticket, status: 'skipped', reason: 'cooldown' };
+    stream.write(skip.text);
+    return { ticket: item.ticket, status: 'skipped', reason: skip.reason };
   }
   const entry = { timeSpentSeconds: item.seconds, started: item.started, ...(item.comment !== undefined && { comment: item.comment }) };
   let result;
@@ -221,13 +221,25 @@ function haltReason(result) {
   return null;
 }
 
-/** Names what landed and what to retry, so a caller (often an AI) never re-sends a worklog that already went through. */
+const AMBIGUOUS_KINDS = new Set(['network-or-timeout', 'server-error']);
+
+/**
+ * Sorts every result into exactly one of three actions for the caller (often an
+ * AI): already landed (never repeat), unknown outcome (check Jira first), or
+ * safe to retry. A ticket skipped as "already logged" must never land under
+ * retry — a blind retry after the 10s debounce would double-bill it.
+ */
 function writeBatchSummary(results, stream) {
-  const logged = results.filter(r => r.status === 'logged').map(r => r.ticket);
-  const pending = results.filter(r => r.status !== 'logged').map(r => r.ticket);
-  stream.write(`\n  Logged ${logged.length} of ${results.length} worklogs.\n`);
-  if (logged.length && pending.length) stream.write(`  Already logged (do not repeat): ${logged.join(', ')}.\n`);
-  if (pending.length) stream.write(`  Retry only: ${pending.join(', ')}.\n`);
+  const isLanded = (r) => r.status === 'logged' || r.reason === 'recent';
+  const isUnknown = (r) => r.reason === 'unconfirmed' || (r.status === 'failed' && AMBIGUOUS_KINDS.has(r.kind));
+  const names = (pick) => results.filter(pick).map(r => r.ticket).join(', ');
+  const landed = names(isLanded);
+  const unknown = names(isUnknown);
+  const retry = names(r => !isLanded(r) && !isUnknown(r));
+  stream.write(`\n  Logged ${results.filter(r => r.status === 'logged').length} of ${results.length} worklogs.\n`);
+  if (landed && (unknown || retry)) stream.write(`  Already logged (do not repeat): ${landed}.\n`);
+  if (unknown) stream.write(`  Check in Jira before logging again (may have landed): ${unknown}.\n`);
+  if (retry) stream.write(`  Retry only: ${retry}.\n`);
 }
 
 async function logAll(items, ctx) {

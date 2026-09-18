@@ -358,6 +358,48 @@ describe('runTicketWorklogEntries — partial failure (time entries must never b
     assert.match(out, /Retry only: PROJ-2/);
   });
 
+  test('a blind retry: a ticket skipped as already logged is NEVER listed under "Retry only" (found by live break test 4)', async () => {
+    const adapter = fakeAdapter({ logWork: async () => { throw Object.assign(new Error('nope'), { status: 404 }); } });
+    const deps = baseDeps({ adapter, checkCooldownFn: (key, action) => ({ active: key === 'PROJ-1' && action === 'worklog', remainingMs: 9000 }) });
+    await runTicketWorklogEntries([ENTRY, { ticket: 'PROJ-2', time: '1h' }], deps);
+    const out = deps.stream.text();
+    assert.match(out, /Already logged \(do not repeat\): PROJ-1/);
+    assert.match(out, /Retry only: PROJ-2\./);
+    assert.doesNotMatch(out, /Retry only:[^\n]*PROJ-1/);
+  });
+
+  test('an ambiguous failure (timeout / 5xx) is listed under "check Jira first", never under "Retry only"', async () => {
+    const adapter = fakeAdapter({
+      logWork: async (key) => {
+        if (key === 'PROJ-2') throw new Error('The operation was aborted due to timeout');
+        if (key === 'PROJ-3') throw Object.assign(new Error('no'), { status: 403 });
+        return { id: key };
+      },
+    });
+    const deps = baseDeps({ adapter });
+    await runTicketWorklogEntries([ENTRY, { ticket: 'PROJ-2', time: '1h' }, { ticket: 'PROJ-3', time: '1h' }], deps);
+    const out = deps.stream.text();
+    assert.match(out, /Already logged \(do not repeat\): PROJ-1\./);
+    assert.match(out, /Check in Jira before logging again \(may have landed\): PROJ-2\./);
+    assert.match(out, /Retry only: PROJ-3\./);
+    assert.doesNotMatch(out, /Retry only:[^\n]*PROJ-2/);
+  });
+
+  test('a ticket skipped by the unconfirmed hold is listed under "check Jira first"', async () => {
+    const deps = baseDeps({ checkCooldownFn: (key, action) => ({ active: key === 'PROJ-1' && action === 'worklog-unconfirmed', remainingMs: 120_000 }) });
+    await runTicketWorklogEntries([ENTRY, { ticket: 'PROJ-2', time: '1h' }], deps);
+    const out = deps.stream.text();
+    assert.match(out, /Check in Jira before logging again \(may have landed\): PROJ-1\./);
+    assert.doesNotMatch(out, /Retry only:[^\n]*PROJ-1/);
+  });
+
+  test('entries never attempted because the batch halted ARE listed under "Retry only"', async () => {
+    const adapter = fakeAdapter({ logWork: async () => { throw Object.assign(new Error('401'), { status: 401 }); } });
+    const deps = baseDeps({ adapter });
+    await runTicketWorklogEntries([ENTRY, { ticket: 'PROJ-2', time: '1h' }, { ticket: 'PROJ-3', time: '1h' }], deps);
+    assert.match(deps.stream.text(), /Retry only: PROJ-1, PROJ-2, PROJ-3\./);
+  });
+
   test('a fully successful batch prints no retry guidance', async () => {
     const deps = baseDeps();
     await runTicketWorklogEntries([ENTRY, { ticket: 'PROJ-2', time: '1h' }], deps);
@@ -447,6 +489,17 @@ describe('runTicketWorklogEntries — partial failure (time entries must never b
     assert.match(deps.stream.text(), /PROJ-1.*may have already landed.*check the ticket/is);
     const unconfirmed = seenWindows.find(([action]) => action === 'worklog-unconfirmed');
     assert.ok(unconfirmed[1] >= 10 * 60 * 1000, 'the ambiguous-outcome window must be minutes, not the 10s double-fire debounce');
+  });
+
+  test('skip messages report the remaining hold, never remaining time as if it were elapsed time (found by live break test 5)', async () => {
+    const unconfirmed = baseDeps({ checkCooldownFn: (key, action) => ({ active: action === 'worklog-unconfirmed', remainingMs: 120_000 }) });
+    await runTicketWorklogEntries([ENTRY], unconfirmed);
+    assert.match(unconfirmed.stream.text(), /blocked 2m more/);
+    assert.doesNotMatch(unconfirmed.stream.text(), /\bago\b/);
+    const recent = baseDeps({ checkCooldownFn: (key, action) => ({ active: action === 'worklog', remainingMs: 4000 }) });
+    await runTicketWorklogEntries([ENTRY], recent);
+    assert.match(recent.stream.text(), /blocked 4s more/);
+    assert.doesNotMatch(recent.stream.text(), /\bago\b/);
   });
 
   test('the audit line records where the call came from (cli vs mcp)', async () => {
