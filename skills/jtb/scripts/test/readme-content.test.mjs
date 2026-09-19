@@ -53,9 +53,41 @@ describe('README — M-7 free commands are not mis-badged as Pro', () => {
   });
 });
 
+const WRITE_BACK_HEADING = '### Comment, Transition, Assign, Duplicates, Link, Update, Create & Worklog';
+
 describe('README — M-8 documents --attach for comment/create', () => {
   it('the write-back section mentions --attach', () => {
-    assert.match(section('### Comment, Transition, Assign, Duplicates, Link, Update & Create'), /--attach/);
+    assert.match(section(WRITE_BACK_HEADING), /--attach/);
+  });
+});
+
+describe('README — worklog is documented (ROADMAP 56)', () => {
+  it('the write-back section shows preview and --confirm examples and points at worklog --help', () => {
+    const body = section(WRITE_BACK_HEADING);
+    assert.match(body, /ticketlens worklog \S+=\S+ +#[^\n]*[Pp]review/);
+    assert.match(body, /ticketlens worklog [^\n]*--confirm/);
+    assert.match(body, /ticketlens worklog --help/);
+  });
+
+  it('states Jira-only, hours/minutes only, and the confirm-or-preview rule', () => {
+    const body = section(WRITE_BACK_HEADING);
+    assert.match(body, /no worklog API/i);
+    assert.match(body, /hours and minutes only/i);
+    assert.match(body, /Nothing is written without `--confirm`/);
+  });
+
+  it('the Contents TOC links to the renamed write-back heading', () => {
+    assert.match(README, /\]\(#comment-transition-assign-duplicates-link-update-create--worklog\)/);
+  });
+
+  it('every command block that lists the write family also lists worklog --help or a worklog example', () => {
+    assert.ok((README.match(/ticketlens worklog /g) ?? []).length >= 6, 'expected worklog in all three example blocks');
+  });
+
+  it('Recently shipped lists Worklog', () => {
+    const start = README.indexOf('Recently shipped:');
+    assert.notEqual(start, -1);
+    assert.match(README.slice(start, start + 600), /\*\*Worklog\*\*/);
   });
 });
 

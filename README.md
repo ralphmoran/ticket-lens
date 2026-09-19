@@ -42,7 +42,7 @@
   - [Schedule](#schedule)
   - [History](#history)
   - [Recall](#recall)
-  - [Comment, Transition, Assign, Duplicates, Link, Update & Create](#comment-transition-assign-duplicates-link-update--create)
+  - [Comment, Transition, Assign, Duplicates, Link, Update, Create & Worklog](#comment-transition-assign-duplicates-link-update-create--worklog)
   - [Response-Time Stats](#response-time-stats)
   - [Pre-fetch Issue Types](#pre-fetch-issue-types)
   - [Doctor](#doctor)
@@ -474,7 +474,7 @@ Every note is scanned before saving — anything shaped like a real secret (API 
 
 ---
 
-### Comment, Transition, Assign, Duplicates, Link, Update & Create
+### Comment, Transition, Assign, Duplicates, Link, Update, Create & Worklog
 
 ```bash
 ticketlens comment PROJ-123 --body="Looks good, merging."   # Post a comment to the tracker
@@ -492,6 +492,7 @@ ticketlens create --project=ENG --summary="New Linear issue" --profile=linear-te
 ticketlens create --project=PROJ --type="Bug" --summary="Broken layout" --attach=./screenshot.png
 ticketlens worklog PROJ-123=1h30m                            # Preview a worklog — writes nothing (Jira only)
 ticketlens worklog PROJ-123=1h30m PROJ-456=45m --comment="Sprint work" --confirm  # Log time on several tickets
+ticketlens worklog --help                                    # All options, limits, and examples
 ```
 
 Write directly to the ticket in its real tracker — Jira, GitHub, or Linear — from your terminal or an AI session via `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create`/`ticket_worklog` MCP tools. Requires a Pro license.
@@ -500,7 +501,19 @@ Write directly to the ticket in its real tracker — Jira, GitHub, or Linear —
 
 `ticketlens assign` is self-assign only for now — `--to` must be `me`. Assigning to someone else needs a per-tracker user-lookup step this doesn't do yet, so it's deliberately out of scope until that's built.
 
-`ticketlens worklog` logs time on one or several **Jira** tickets, always as you — GitHub and Linear have no worklog API and are refused. Durations are hours and minutes only (`2h`, `90m`, `1h30m`, up to 24h each; days and weeks are rejected because Jira defines them per instance). Every entry's format and tracker are checked before any is written (Jira-side failures like an unknown ticket are reported per ticket, naming what already landed so a retry never repeats it), and since a worklog can't be deleted through TicketLens, nothing is written without `--confirm` — without it you get a preview. `--started=` takes ISO 8601 with a time (default now; not in the future, not older than a year). One call logs at most 24h in total, and a write that times out holds that ticket for 10 minutes because it may have landed. The `ticket_worklog` MCP tool takes an `entries` array with a per-ticket `comment`/`started`; the CLI applies one `--comment`/`--started` to every ticket.
+`ticketlens worklog` (or `tl worklog`) logs time on Jira tickets, always as you.
+
+- GitHub and Linear have no worklog API; they are refused.
+- Durations: hours and minutes only (`2h`, `90m`, `1h30m`), up to 24h each.
+- Days and weeks are rejected; Jira defines them per instance.
+- Limits per call: 20 tickets, one entry per ticket, 24h total.
+- `--started=` needs a time: not in the future, not older than a year.
+- Nothing is written without `--confirm`; without it you get a preview.
+- Formats and trackers are checked before any write; Jira-side failures are reported per ticket.
+- A partial result names what already landed, so a retry never repeats it.
+- A rate limit or 401 stops the batch; a timeout holds that ticket 10 minutes.
+- The MCP tool takes `entries[]` with per-ticket `comment`/`started`; the CLI shares one.
+- `ticketlens worklog --help` lists every option.
 
 `ticketlens duplicates` is read-only — it never links or changes anything, just lists likely matches in the same project. No tracker (Jira/GitHub/Linear) scores similarity server-side, so ranking happens locally from title/description word overlap; treat a match as a nudge to check manually, not a verdict. That local scoring can also miss a real duplicate — an empty result means none were found by this heuristic, not a confirmed absence. `--threshold=N` (0–1, default 0.35) controls how loose a match counts.
 
@@ -826,7 +839,7 @@ ticketlens mcp                                # Start the MCP stdio server (reca
 ticketlens mcp install                        # Register it into the current project's .mcp.json
 ticketlens mcp install --dry-run              # Preview the registration without writing
 
-# ── Comment, Transition, Assign, Duplicates, Link, Update & Create ──────────────
+# ── Comment, Transition, Assign, Duplicates, Link, Update, Create & Worklog ─────
 ticketlens comment CNV1-2 --body="Looks good, merging."     # Post a comment to the tracker [Pro]
 ticketlens comment CNV1-2 --body="See screenshot" --attach=./bug.png  # Attach local files [Pro]
 ticketlens transition CNV1-2                                # List valid transitions (read-only) [Pro]
@@ -843,6 +856,7 @@ ticketlens create --project=ENG --summary="New issue" --profile=linear-team  # C
 ticketlens create --project=CNV1 --type="Bug" --summary="Broken layout" --attach=./screenshot.png  # Create with an attachment [Pro]
 ticketlens worklog CNV1-2=1h30m                             # Preview a worklog — writes nothing (Jira only) [Pro]
 ticketlens worklog CNV1-2=1h30m CNV1-3=45m --confirm        # Log time on several tickets (Jira only) [Pro]
+ticketlens worklog --help                                  # Worklog help: options, limits, examples
 
 # ── Stats ──────────────────────────────────────────────────────────────────────
 ticketlens stats                              # Response-time metrics from local history
@@ -907,6 +921,7 @@ ticketlens --version                          # Show installed version
 ticketlens CNV1-2 --help                     # Fetch subcommand help
 ticketlens triage --help                      # Triage subcommand help
 ticketlens review --help                      # Review subcommand help
+ticketlens worklog --help                     # Worklog subcommand help
 ticketlens cache --help                       # Cache overview help
 ticketlens cache size --help                  # Cache size help
 ticketlens cache clear --help                 # Cache clear help
@@ -1106,7 +1121,7 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
-- **Worklog** (`ticketlens worklog KEY=DURATION ... --confirm` / `ticket_worklog` MCP tool) — log time on one or several Jira tickets, preview-first, all entries validated before any is written. Pro tier
+- **Worklog** (`ticketlens worklog`, `ticket_worklog` MCP) — log time on Jira tickets, preview first. Pro tier
 - **Autonomous Recall capture** — TicketLens judges and saves a note after a session, no `note add` call, reusing your login. Pro+ tier
 - **Multi-agent AI consensus compliance** (`ticketlens compliance TICKET --consensus`) — routes requirements-vs-diff review through your team's AI provider pool, majority vote after a refinement round. Pro tier
 - **Dynamic AI Provider Registry** (Console > Admin > AI Provider Pool / AI Roles) — manage arbitrary AI providers and role-based routing, no fixed vendor list

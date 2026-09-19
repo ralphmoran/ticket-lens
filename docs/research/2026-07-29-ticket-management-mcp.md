@@ -237,3 +237,13 @@ Real-instance verification: end-to-end against `corenexus` (Jira Cloud) — `tic
 **Code review: 0 CRITICAL, 0 HIGH.** 2 MEDIUM fixed before shipping: `ticket-command.mjs` had grown past the project's 800-line cap — extracted `detectProjectOrTypeError`/`enrichCreateFailure` into a new `ticket-create-enrichment.mjs` module (pure refactor, no behavior change); an unvalidated `--project` CLI value reaching `issueTypesByProject[project] = ...` on a plain `{}` meant `--project=__proto__` would redirect into the object's own prototype slot instead of creating a real entry, silently and permanently defeating the cache for that one input (contained, non-exploitable, but a real correctness bug) — fixed with `Object.create(null)`, confirmed via a dedicated regression test that a literal `"__proto__"` project name is now stored as a real own key.
 
 **Real-instance verification (2026-07-31):** three live checks against the corenexus Jira Cloud instance, all safe (guaranteed 400s, nothing created): (1) an invalid project correctly returns `Known creatable projects: CNV1.`; (2) a second failed attempt within the TTL reuses the cache unchanged (`fetchedAt` timestamp identical across both calls, confirmed no re-fetch); (3) an invalid issue type on the real CNV1 project correctly returns `Known issue types for CNV1: Epic, Subtask, Task, Story, Feature, Request, Bug.` — this third check is what caught the incremental-merge bug above.
+
+## `ticket_worklog` — shipped (2026-09-18, ROADMAP 56)
+
+- Shipped as `ticketlens worklog` and `ticket_worklog`, `ticketlens@0.39.2` beta.
+- Jira-only; GitHub and Linear have no worklog API.
+- Durations are hours/minutes only, sent as `timeSpentSeconds`; Jira requires `started`.
+- Confirm gate: preview without `confirm: true`; no delete path exists here.
+- Live break tests found three bugs: 429 never halted, parallel double-billing, misleading retry list.
+- Race fix: `claimAction` in `ticket-action-cooldown.mjs`; older write tools still check-then-record.
+- Verified live on `corenexus` (Jira Cloud). Advent Server/DC not yet: VPN was down.
