@@ -69,6 +69,12 @@ describe('SKILL.md — skill version marker', () => {
     assert.notEqual(m[1], '0.31.0', 'marker must move past the pre-fix version');
   });
 
+  it('is bumped past 0.44.0 so update-skill propagates the short-bullet worklog docs', () => {
+    const m = SKILL_MD.match(/jtb-skill-version:\s*([\d.]+)/);
+    assert.ok(m, 'expected a jtb-skill-version marker on line 1');
+    assert.notEqual(m[1], '0.44.0', 'marker must move past the long-prose worklog version');
+  });
+
   it('is bumped past 0.43.3 so update-skill propagates the ticket_worklog docs', () => {
     const m = SKILL_MD.match(/jtb-skill-version:\s*([\d.]+)/);
     assert.ok(m, 'expected a jtb-skill-version marker on line 1');
@@ -123,6 +129,19 @@ describe('SKILL.md — write-back section documents worklog', () => {
     assert.match(section, /hours and minutes/i);
     assert.match(section, /cannot be deleted/i);
     assert.match(section, /--confirm[^\n]*(user|confirm(ed|ing) with)/i);
+  });
+
+  it('documents worklog as short bullets — a lead line plus at least ten bullets of 15 words or fewer', () => {
+    const section = writeBackSection();
+    const start = section.indexOf('`worklog KEY=DURATION');
+    assert.notEqual(start, -1, 'expected the worklog lead line');
+    const block = section.slice(start).split('\n\n')[0];
+    const bullets = block.split('\n').filter((l) => l.startsWith('- '));
+    assert.ok(bullets.length >= 10, `expected a bullet list, found ${bullets.length} bullets`);
+    for (const bullet of bullets) {
+      const words = bullet.slice(2).trim().split(/\s+/).length;
+      assert.ok(words <= 15, `bullet has ${words} words: ${bullet}`);
+    }
   });
 
   it('names the ticket_worklog MCP tool in the use-MCP-not-bash callout', () => {

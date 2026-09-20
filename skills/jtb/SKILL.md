@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.44.0 -->
+<!-- jtb-skill-version: 0.44.1 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -452,7 +452,24 @@ ticketlens worklog PROD-1234=1h30m PROD-5678=45m --comment="Sprint work" --confi
 
 `create` makes a brand-new ticket — there's no existing ticket to target, so `--project` (Jira project key / Linear team key) and `--type` (Jira issue type, ignored elsewhere) pick the destination instead of a ticket key. This is the highest-blast-radius command in the family: a bad `--project`/`--type` fabricates a real, hard-to-walk-back item in a live tracker. No `--confirm` gate — double-check the values with the user before calling it, since an invalid value surfaces the tracker's own error rather than a silent guess.
 
-`worklog KEY=DURATION [KEY=DURATION ...]` logs time worked on one or several tickets, always as the authenticated user — logging for someone else isn't supported, so don't attempt a workaround. Jira only: GitHub and Linear have no worklog API and are refused. Durations are hours and minutes only (`2h`, `90m`, `1h30m`, up to 24h each) — days and weeks are rejected because Jira defines them per instance; never guess a conversion, ask the user. `--started=` takes ISO 8601 with a time (default now; not in the future, not older than a year). Every entry's format and tracker are checked before any is written, so a malformed entry blocks the whole call; Jira-side failures (unknown ticket, no permission, time tracking off) are reported per ticket while writing, and a partial result names which tickets already landed — retry only the rest, never repeat them. A rate limit or 401 stops the batch. The same ticket twice in one call is refused, total time per call is capped at 24h, and comments at 2000 characters. A write that times out or gets a server error leaves a 10-minute hold on that ticket, because it may have landed — check Jira before logging it again. A worklog cannot be deleted through TicketLens, so without `--confirm` it only prints a preview — add `--confirm` only once the user has confirmed the durations and tickets, never as a formality to route around. Jira applies its own remaining-estimate and watcher-notification defaults. The MCP tool takes an `entries` array with a per-ticket `comment`/`started`; the CLI applies one `--comment`/`--started` to every ticket.
+`worklog KEY=DURATION [KEY=DURATION ...]` logs time on one or several tickets.
+- `worklog` is Jira only; GitHub and Linear have no worklog API and are refused.
+- It always logs as the authenticated user; never attempt a workaround for someone else.
+- Durations are hours and minutes only: `2h`, `90m`, `1h30m`, up to 24h each.
+- Days and weeks are rejected; Jira defines them per instance. Ask the user.
+- `--started=` is ISO 8601 with a time; default now.
+- `started` must not be in the future or older than a year.
+- Per call: 20 tickets, one entry per ticket, 24h total; comments up to 2000 characters.
+- A worklog cannot be deleted through TicketLens, so nothing is written without `--confirm`.
+- Without `--confirm` it only previews; add it only after the user confirms the durations.
+- Formats and trackers are checked before any write; one malformed entry blocks the call.
+- Jira-side failures (unknown ticket, permissions) are reported per ticket while writing.
+- A partial result names what landed; retry only the rest, never repeat those.
+- A rate limit or 401 stops the batch.
+- A timeout or 5xx holds that ticket 10 minutes; check Jira before logging it again.
+- Jira applies its own remaining-estimate and watcher-notification defaults.
+- The MCP tool takes `entries[]` with per-ticket `comment`/`started`.
+- The CLI applies one `--comment`/`--started` to every ticket.
 
 `--attach=path1,path2` (comma-separated local file paths) is available on `comment` and `create` only. Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
 
