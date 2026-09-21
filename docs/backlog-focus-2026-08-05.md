@@ -206,12 +206,12 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Also: their skip messages print remaining hold time as "Ns ago"; worklog's do not.
     ROADMAP 57. Memory: `project_worklog_tool_roadmap56_2026_09_18.md`.
 
-35. **`ticket_worklog` not live-verified on Jira Server/DC (Advent).** Filed 2026-09-20; the VPN was down.
-    - Verified: Jira Cloud live (`corenexus`), a mock TLS server for the v2/PAT path, unit tests.
-    - Needs: VPN, plus a ticket the user allows logging time on; delete the worklog by REST afterwards.
-    - Risk to check: v2 `started` format and plain-string comment on Server/DC.
+35. ~~**`ticket_worklog` live check on Jira Server/DC.**~~ VERIFIED 2026-09-18 by the user (reported 2026-09-21). Filed 2026-09-20, closed 2026-09-21.
+    - The user logged time on a real Server/DC ticket on Friday 2026-09-18 and it worked.
+    - I did not observe it; build, ticket and output were not recorded.
+    - Earlier evidence: Jira Cloud live (`corenexus`), a mock TLS server for the v2/PAT path, unit tests.
 
-36. **Console: a menu click on the page you are already viewing re-requests that page.** Filed 2026-09-21, user report. Not scoped, not fixed.
+36. **Console: a menu click on the page you are already viewing re-requests that page.** Filed 2026-09-21, user report. BUILT 2026-09-21 in `ticketlens-api`, pushed to main, not deployed.
     - Report: every menu click re-requests the current page; the user wants no request.
     - Cause verified: Inertia 3.0.3 `Link` always calls `router.visit`; no same-URL guard.
     - Nav already uses Inertia `<Link>` (`ConsoleLayout.vue`), so this is an XHR visit, not a full reload.
@@ -227,7 +227,50 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
       - Needs feedback (focus, scroll-to-top) so the click does not feel dead.
       - Static-scan Inertia link tests must still pass.
     - Options: A) `onBefore` guard cancels a same-URL visit. B) Partial reload via `only`. C) `prefetch` with the 30 s cache. D) Do nothing.
+    - Decision: Option A, `onBefore` guard on sidebar links, header gear and Settings tabs; per-link, not global.
+    - Same URL = exact path + query; hash ignored; reordered query counts as different.
+    - Accepted: no click-to-refresh; F5 refreshes. Silent skip, no scroll or focus feedback.
+    - Out of scope: header dropdown links and the Cmd-K palette. The header gear was added on request.
+    - Before fix: same-URL click fired 1 XHR (36 ms, 1082 bytes, local).
+    - Verified in Chrome: same-URL 0 requests; cross-page 1; `?probe=1` to bare path requests.
+    - Verified: ctrl/meta/shift/alt/middle clicks not intercepted; 375px drawer closes on skipped click.
+    - Tests: `ConsoleNavLinksSkipSameUrlTest` (6), `tests/js/sameUrl.test.mjs` (33); full Pest green at 512M.
+    - Red-team: 32 seeded click storms with random latency; the last click always won.
+    - Found and fixed: a skipped click cancelled an in-flight form PATCH; now only nav visits are cancelled.
+    - Found and fixed: a skip inside the swap window (response in, lazy chunk loading) left the user on the wrong page.
+    - Fix: track `beforeUpdate`; past that point the click runs as a normal visit, so the last click wins.
+    - Visits are matched by `url` object identity, not by URL text; 7 mutants killed by the unit tests.
+    - Also verified: trusted click, double-click, Enter key, back/forward, hash, Slow 3G submit.
+    - Not exercised live: collapsed-sidebar flyout items (hover will not open under automation); static scan covers them.
+    - Accepted: an expired session or new deploy shows only on the next real visit or F5.
+    - Host `php` memory_limit is 128M; full Pest needs `-d memory_limit=512M`.
+    - At 128M the full run crashes or fails `PushControllerTest`; crashed without this change too.
     ROADMAP 58. Memory: `project_console_same_url_nav_backlog36_2026_09_21.md`.
+
+37. **Console: real-time store fed by the websocket.** Filed 2026-09-21, user request. Not scoped, not built.
+    - Goal: any data change reaches the open page live: charts, cards, lists, notifications.
+    - Today: `group.{id}` channel carries `rule.changed`, `triage.pushed`, `notification.updated` only.
+    - Consumers today: toasts, rule banner, layout notifications, `Queue.vue`, `Rules.vue`.
+    - Owners never subscribe unless impersonating (`useServerEvents.js:16`).
+    - Why: removes the staleness cost of #36 (skipped same-page clicks).
+    - Open: which events per page, payload versus refetch, owner channel design.
+    ROADMAP 59.
+
+38. **Recall Stop-hook nag fired again, 8th report (after #14, #15, #17, #24).** Filed 2026-09-21, user report. Not scoped, not fixed.
+    - Report: the user says this has recurred for a very long time despite repeated fixes.
+    - Seen 2026-09-21: nag fired while the assistant awaited plan approval, before any code.
+    - Message was the generic branch: "touched ticket work but nothing was ever captured".
+    - The assistant then saved two notes itself, so the nag did prompt real captures.
+    - Trigger (verified in code): `sawFetch` and `sawMutatingAction`, no note added, once per session.
+    - `sawMutatingAction` counts any `Edit` or `Write` tool call, not only ticket writes (`recall-nudge-lib.mjs:295-298`).
+    - Hypothesis, unverified: a plan, memory or scratch file write at the plan gate set it.
+    - Hypothesis, unverified: the first eligible Stop is the plan turn, before any insight exists.
+    - Accepted overlap by design: nag plus Pro+ background auto-capture can double-fire (`recall-nudge-stop.mjs:52-57`).
+    - Prior fixes: #14 rollover, #15 incidental key text, #20 strictness, #24 trigger and sliding markers.
+    - Also seen: 18 Stop hooks ran at that turn-end; this is one of them.
+    - Scoping needs: the real session transcript, replayed with the #24 method.
+    - Scoping question: should any Stop-time nag exist, given auto-capture and claude-mem #9065's autonomy decision?
+    ROADMAP 60. Memory: `project_recall_stop_nag_backlog38_2026_09_21.md`.
 
 ---
 **Status 2026-08-18**: #1, #1b, #1c, #1d, #1e, #2, #2b, #3, #4, #5, #6, #8, #8b, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #22 shipped/closed. #4 (ROADMAP 49b) fully complete 2026-08-14, 11 of 11 tools ported, MCP surface at 22 tools. #13 fully closed 2026-08-16 (PHP side shipped). #14 fully closed 2026-08-16 — necessity question resolved 2026-08-14 (keep hook + SKILL), bracket-literal scanner gap fixed 2026-08-16. #6 + #16 (Recall note attachments, CLI + MCP) fully CLOSED 2026-08-17 — shipped, pushed, published, self-tested. #17 fully CLOSED 2026-08-17. #18 fully CLOSED 2026-08-18 — non-blocking word-count warning shipped, pushed, published, installed, self-tested. #19 fully CLOSED 2026-08-17/18 — full attachment sync + Console preview shipped, one real security bug (extension-based scan bypass) found via live red-team and fixed same session. #22 fully CLOSED 2026-08-18 — recurring CI failure root-caused (stale audits + a hardcoded-date time bomb) and fixed durably. #20 fully CLOSED 2026-08-18 — Console-manageable strictness shipped, red-teamed (30-item pass, all attacks defended), pushed, published, installed, self-tested. #21 FULLY CLOSED 2026-08-18 (`note patch` attachment support, bundled a real attachment-drop bug fix, 15-attack red-team pass all defended) — pushed, published `ticketlens@0.38.47` (beta), installed, self-tested (real CLI + real MCP server, both paths). Remaining: scope #7.
