@@ -244,6 +244,7 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Not exercised live: collapsed-sidebar flyout items (hover will not open under automation); static scan covers them.
     - Accepted: an expired session or new deploy shows only on the next real visit or F5.
     - Docs synced 2026-09-21: README "Recently shipped", ROADMAP 58, Console design spec §7 and §8, `ticketlens-api` README.
+    - Publish: none. npm code unchanged; the README bullet reaches npm with the next release.
     - Host `php` memory_limit is 128M; full Pest needs `-d memory_limit=512M`.
     - At 128M the full run crashes or fails `PushControllerTest`; crashed without this change too.
     ROADMAP 58. Memory: `project_console_same_url_nav_backlog36_2026_09_21.md`.

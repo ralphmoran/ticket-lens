@@ -228,6 +228,13 @@ The Console must feel like an extension of the CLI. A heavy dashboard would cont
 
 **Admin landing state:** MRR waterfall prominently. Everything else (client list, license admin) one click away — not on the landing view.
 
+**Same-page nav clicks (backlog #36, 2026-09-21):** clicking a sidebar link, the header gear or a Settings tab for the page already shown makes no request.
+- Same URL means identical path and query; the hash is ignored.
+- The Cmd-K palette, notification items and the Upgrade link still request.
+- No click-to-refresh: reload the page (F5) to refresh; live updates are backlog #37.
+- Code: `resources/js/composables/sameUrl.js` in `ticketlens-api`; a same-page click during a slow nav visit cancels it.
+- It never cancels a form submit or any visit a nav click did not start.
+
 ---
 
 ## 8. Adding a New Module (2 Steps)
@@ -236,6 +243,9 @@ The Console must feel like an extension of the CLI. A heavy dashboard would cont
 2. Guard the route (`HasPermission::class(Permission::CLOUD_BACKUP)`) and component (`v-if="can(PERMISSIONS.CLOUD_BACKUP)"`)
 
 No migration required. Assign the bit to a tier constant or individual user: `user.permissions |= 1024`.
+
+**Nav link:** a sidebar link or Settings tab for the new module binds `:on-before="skipSameUrl"`.
+`ConsoleNavLinksSkipSameUrlTest` fails when a sidebar, gear or Settings-tab `<Link>` lacks it.
 
 ---
 

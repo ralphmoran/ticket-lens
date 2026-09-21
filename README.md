@@ -1121,6 +1121,7 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
+- **Console: no repeat request on same-page menu clicks** — sidebar links, the header gear and Settings tabs skip the request when they point at the page you are on
 - **Worklog** (`ticketlens worklog`, `ticket_worklog` MCP) — log time on Jira tickets, preview first. Pro tier
 - **Autonomous Recall capture** — TicketLens judges and saves a note after a session, no `note add` call, reusing your login. Pro+ tier
 - **Multi-agent AI consensus compliance** (`ticketlens compliance TICKET --consensus`) — routes requirements-vs-diff review through your team's AI provider pool, majority vote after a refinement round. Pro tier
