@@ -211,7 +211,7 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - I did not observe it; build, ticket and output were not recorded.
     - Earlier evidence: Jira Cloud live (`corenexus`), a mock TLS server for the v2/PAT path, unit tests.
 
-36. **Console: a menu click on the page you are already viewing re-requests that page.** Filed 2026-09-21, user report. BUILT 2026-09-21 in `ticketlens-api`, pushed to main, not deployed.
+36. ~~**Console: a menu click on the page you are already viewing re-requests that page.**~~ FIXED 2026-09-21, `ticketlens-api@1d17a27` (pushed to main, not deployed). Filed 2026-09-21, user report.
     - Report: every menu click re-requests the current page; the user wants no request.
     - Cause verified: Inertia 3.0.3 `Link` always calls `router.visit`; no same-URL guard.
     - Nav already uses Inertia `<Link>` (`ConsoleLayout.vue`), so this is an XHR visit, not a full reload.
@@ -243,6 +243,7 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Also verified: trusted click, double-click, Enter key, back/forward, hash, Slow 3G submit.
     - Not exercised live: collapsed-sidebar flyout items (hover will not open under automation); static scan covers them.
     - Accepted: an expired session or new deploy shows only on the next real visit or F5.
+    - Docs synced 2026-09-21: README "Recently shipped", ROADMAP 58, Console design spec §7 and §8, `ticketlens-api` README.
     - Host `php` memory_limit is 128M; full Pest needs `-d memory_limit=512M`.
     - At 128M the full run crashes or fails `PushControllerTest`; crashed without this change too.
     ROADMAP 58. Memory: `project_console_same_url_nav_backlog36_2026_09_21.md`.

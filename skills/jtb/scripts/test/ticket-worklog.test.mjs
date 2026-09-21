@@ -165,9 +165,9 @@ describe('runTicketWorklogEntries — tracker resolution (refused before any wri
 
   test('--profile is threaded to the connection resolver', async () => {
     let profileName;
-    const deps = baseDeps({ profile: 'advent', resolveConnectionFn: (key, opts) => { profileName = opts.profileName; return { baseUrl: 'https://jira.example.com' }; } });
+    const deps = baseDeps({ profile: 'acme', resolveConnectionFn: (key, opts) => { profileName = opts.profileName; return { baseUrl: 'https://jira.example.com' }; } });
     await runTicketWorklogEntries([ENTRY], deps);
-    assert.equal(profileName, 'advent');
+    assert.equal(profileName, 'acme');
   });
 });
 
@@ -659,7 +659,7 @@ describe('runTicketWorklog — CLI argument parsing', () => {
   test('--profile is parsed from the flags and threaded through', async () => {
     let profileName;
     const deps = baseDeps({ confirm: undefined, resolveConnectionFn: (k, opts) => { profileName = opts.profileName; return { baseUrl: 'https://jira.example.com' }; } });
-    await runTicketWorklog(['PROJ-1=1h', '--profile=advent', '--confirm'], deps);
-    assert.equal(profileName, 'advent');
+    await runTicketWorklog(['PROJ-1=1h', '--profile=acme', '--confirm'], deps);
+    assert.equal(profileName, 'acme');
   });
 });

@@ -246,4 +246,4 @@ Real-instance verification: end-to-end against `corenexus` (Jira Cloud) — `tic
 - Confirm gate: preview without `confirm: true`; no delete path exists here.
 - Live break tests found three bugs: 429 never halted, parallel double-billing, misleading retry list.
 - Race fix: `claimAction` in `ticket-action-cooldown.mjs`; older write tools still check-then-record.
-- Verified live on `corenexus` (Jira Cloud). Advent Server/DC not yet: VPN was down.
+- Verified live on `corenexus` (Jira Cloud). The user confirmed a Server/DC ticket on 2026-09-18.
