@@ -258,7 +258,7 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Open: which events per page, payload versus refetch, owner channel design.
     ROADMAP 59.
 
-38. ~~**Recall Stop-hook nag fired again, 8th report (after #14, #15, #17, #24).**~~ FIXED 2026-09-21, local commit, not published. Filed 2026-09-21, user report.
+38. ~~**Recall Stop-hook nag fired again, 8th report (after #14, #15, #17, #24).**~~ FIXED 2026-09-21, `ticket-lens@4359de3`, published `ticketlens@0.39.4` (beta), installed. Filed 2026-09-21, user report.
     - Report: the user says this has recurred for a very long time despite repeated fixes.
     - Seen 2026-09-21: nag fired while the assistant awaited plan approval, before any code.
     - Message was the generic branch: "touched ticket work but nothing was ever captured".
