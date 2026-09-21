@@ -211,5 +211,23 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Needs: VPN, plus a ticket the user allows logging time on; delete the worklog by REST afterwards.
     - Risk to check: v2 `started` format and plain-string comment on Server/DC.
 
+36. **Console: a menu click on the page you are already viewing re-requests that page.** Filed 2026-09-21, user report. Not scoped, not fixed.
+    - Report: every menu click re-requests the current page; the user wants no request.
+    - Cause verified: Inertia 3.0.3 `Link` always calls `router.visit`; no same-URL guard.
+    - Nav already uses Inertia `<Link>` (`ConsoleLayout.vue`), so this is an XHR visit, not a full reload.
+    - Each visit runs `HandleInertiaRequests::share()`: groups and feature-grant queries, then page queries.
+    - Measured locally (team-manager, in-process): 3–5 queries, ~2 ms, 1–10 KB JSON per visit.
+    - Not measured: browser render, production latency, real Inertia XHR over HTTP (my curl used a stale version header).
+    - Trade-offs of skipping the request, to weigh at scoping:
+      - Saves 3–5 queries and a JSON round trip per redundant click.
+      - Loses click-to-refresh: queue, alerts and team data stay stale.
+      - Same path with a query string (`?page=2`) is a different URL; define "same".
+      - Cmd/ctrl-click and middle-click must still open a new tab.
+      - Page-local state (filters, drawers) would persist instead of resetting (expected, unverified).
+      - Needs feedback (focus, scroll-to-top) so the click does not feel dead.
+      - Static-scan Inertia link tests must still pass.
+    - Options: A) `onBefore` guard cancels a same-URL visit. B) Partial reload via `only`. C) `prefetch` with the 30 s cache. D) Do nothing.
+    ROADMAP 58. Memory: `project_console_same_url_nav_backlog36_2026_09_21.md`.
+
 ---
 **Status 2026-08-18**: #1, #1b, #1c, #1d, #1e, #2, #2b, #3, #4, #5, #6, #8, #8b, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #22 shipped/closed. #4 (ROADMAP 49b) fully complete 2026-08-14, 11 of 11 tools ported, MCP surface at 22 tools. #13 fully closed 2026-08-16 (PHP side shipped). #14 fully closed 2026-08-16 — necessity question resolved 2026-08-14 (keep hook + SKILL), bracket-literal scanner gap fixed 2026-08-16. #6 + #16 (Recall note attachments, CLI + MCP) fully CLOSED 2026-08-17 — shipped, pushed, published, self-tested. #17 fully CLOSED 2026-08-17. #18 fully CLOSED 2026-08-18 — non-blocking word-count warning shipped, pushed, published, installed, self-tested. #19 fully CLOSED 2026-08-17/18 — full attachment sync + Console preview shipped, one real security bug (extension-based scan bypass) found via live red-team and fixed same session. #22 fully CLOSED 2026-08-18 — recurring CI failure root-caused (stale audits + a hardcoded-date time bomb) and fixed durably. #20 fully CLOSED 2026-08-18 — Console-manageable strictness shipped, red-teamed (30-item pass, all attacks defended), pushed, published, installed, self-tested. #21 FULLY CLOSED 2026-08-18 (`note patch` attachment support, bundled a real attachment-drop bug fix, 15-attack red-team pass all defended) — pushed, published `ticketlens@0.38.47` (beta), installed, self-tested (real CLI + real MCP server, both paths). Remaining: scope #7.
