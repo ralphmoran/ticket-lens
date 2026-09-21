@@ -122,6 +122,49 @@ describe('recall-nudge-stop hook (subprocess)', () => {
     assert.equal(result.status, 0);
   });
 
+  // Backlog #38 / #24b: all three real false-positive nags (2026-09-17 x2, 2026-09-21)
+  // were armed only by assistant Edit/Write of memory files or scratch comment drafts.
+  it('exits 0 when fetch ran and the only "work" was Write/Edit of assistant memory files (backlog #38, 2026-09-21 incident shape)', () => {
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      assistantToolUse('Write', { file_path: '/Users/u/.claude-work/projects/-proj/memory/attachment-digests/abc-digest.md', content: 'x' }),
+      assistantToolUse('Edit', { file_path: '/Users/u/.claude-work/projects/-proj/memory/MEMORY.md', old_string: 'a', new_string: 'b' }),
+      assistantText('Plan ready, awaiting approval.'),
+    ]));
+    const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+    assert.equal(result.status, 0);
+  });
+
+  it('exits 0 when fetch ran and the only "work" was a scratch Jira comment draft file (backlog #38, 2026-09-17 incident shape)', () => {
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      assistantToolUse('Write', { file_path: '/repo/tickets/proj/tmp_PROD-1234_jira_comment.txt', content: 'h2. Draft' }),
+      assistantText('Draft saved, not posted yet.'),
+    ]));
+    const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+    assert.equal(result.status, 0);
+  });
+
+  it('exits 0 when fetch ran and the only "work" was a source-file Edit — no ticket write (backlog #38)', () => {
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      assistantToolUse('Edit', { file_path: '/repo/src/a.mjs', old_string: 'a', new_string: 'b' }),
+    ]));
+    const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+    assert.equal(result.status, 0);
+  });
+
+  it('LOCK: still exits 2 when a real ticket write happened alongside memory/draft file writes (backlog #38)', () => {
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      assistantToolUse('Write', { file_path: '/repo/tickets/proj/tmp_PROD-1234_jira_comment.txt', content: 'h2. Draft' }),
+      assistantToolUse('Edit', { file_path: '/Users/u/.claude-work/projects/-proj/memory/MEMORY.md', old_string: 'a', new_string: 'b' }),
+      assistantToolUse('mcp__ticketlens__ticket_comment', { ticket: 'PROD-1234', body: 'Found the cause.' }),
+    ]));
+    const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+    assert.equal(result.status, 2);
+  });
+
   it('exits 2 when jtb\'s fetch ran via the bare CLI form (ticketlens TICKET-KEY), plus real ticket work, with no note', () => {
     writeFileSync(transcriptPath, transcriptWith([
       assistantToolUse('Bash', { command: 'ticketlens PROD-1234' }),

@@ -134,7 +134,7 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Real-incident replay, fake clock: old code nags at 19:48:46; new code never, 24 Stops.
     - CLI 3531→3538 tests, 0 failures.
 
-24b. **`sawMutatingAction` counts any `Edit`/`Write`, including scratch drafts and memory files.** Filed 2026-09-18, found during #24. Not scoped.
+24b. ~~**`sawMutatingAction` counts any `Edit`/`Write`, including scratch drafts and memory files.**~~ FIXED 2026-09-21 by #38. Filed 2026-09-18, found during #24.
     - Evidence: one session nagged 11s after a single `Write` to a scratch draft.
     - `isCodeEdit` in `scanTranscript()` (`recall-nudge-lib.mjs`) never checks the path.
     - Weakens #24's read-only gate: drafting a comment file counts as real work.
@@ -258,21 +258,38 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Open: which events per page, payload versus refetch, owner channel design.
     ROADMAP 59.
 
-38. **Recall Stop-hook nag fired again, 8th report (after #14, #15, #17, #24).** Filed 2026-09-21, user report. Not scoped, not fixed.
+38. ~~**Recall Stop-hook nag fired again, 8th report (after #14, #15, #17, #24).**~~ FIXED 2026-09-21, local commit, not published. Filed 2026-09-21, user report.
     - Report: the user says this has recurred for a very long time despite repeated fixes.
     - Seen 2026-09-21: nag fired while the assistant awaited plan approval, before any code.
     - Message was the generic branch: "touched ticket work but nothing was ever captured".
     - The assistant then saved two notes itself, so the nag did prompt real captures.
     - Trigger (verified in code): `sawFetch` and `sawMutatingAction`, no note added, once per session.
-    - `sawMutatingAction` counts any `Edit` or `Write` tool call, not only ticket writes (`recall-nudge-lib.mjs:295-298`).
-    - Hypothesis, unverified: a plan, memory or scratch file write at the plan gate set it.
-    - Hypothesis, unverified: the first eligible Stop is the plan turn, before any insight exists.
+    - `sawMutatingAction` counted any `Edit` or `Write` tool call, not only ticket writes (`isCodeEdit`, `recall-nudge-lib.mjs`).
+    - Confirmed by replaying the real transcript: memory-file writes set it.
+    - Also confirmed: that nag was the first Stop, zero earlier. Plan turn, before code.
     - Accepted overlap by design: nag plus Pro+ background auto-capture can double-fire (`recall-nudge-stop.mjs:52-57`).
     - Prior fixes: #14 rollover, #15 incidental key text, #20 strictness, #24 trigger and sliding markers.
     - Also seen: 18 Stop hooks ran at that turn-end; this is one of them.
-    - Scoping needs: the real session transcript, replayed with the #24 method.
-    - Scoping question: should any Stop-time nag exist, given auto-capture and claude-mem #9065's autonomy decision?
+    - Replayed 3 real nags (09-17 twice, 09-21): each armed only by assistant `Write`/`Edit`.
+    - Sources: memory files and `tmp_*` Jira comment drafts. Zero ticket writes, zero source edits.
+    - Root cause: `isCodeEdit`, the same gap as #24b. It also caused #24's 7th-report nag.
+    - Fix: `sawMutatingAction` counts ticket writes only: comment, transition, assign, update; CLI and MCP.
+    - Path filtering rejected: drafts live inside the repo, so no path rule separates them from source.
+    - Real hook replay of all 3 incidents: exit 2 before, exit 0 after, no stderr.
+    - Accepted tradeoff: fetch plus code edits, no ticket write, no longer nags. Pro+ auto-capture remains.
+    - Accepted LOW: code-only work no longer renews the sliding markers (`recall-nudge-stop.mjs:117-119`).
+    - Left open by decision: whether any Stop-time nag should exist. Revisit if it recurs.
+    - Unverified risk: an early `transition` or `assign` at ticket start could arm a first-Stop nag.
+    - CLI 3755→3763 tests, 0 failures. Two Edit/Write lib tests deliberately inverted.
     ROADMAP 60. Memory: `project_recall_stop_nag_backlog38_2026_09_21.md`.
+
+39. **Stop-hook signal regexes match text, not execution.** Filed 2026-09-21, found by #38's adversarial pass. Not scoped.
+    - Repro: a Bash command that only mentions `ticketlens comment KEY` sets `sawMutatingAction`.
+    - Cases: heredoc draft, `git commit -m`, `grep`, `echo >>`. All four reproduced.
+    - `FETCH_RE` shares the unanchored shape, so a mention can also set `sawFetch`.
+    - Real frequency: 0 matches in 5 large real transcripts. Ticket work there goes through MCP.
+    - Fix needs shell-aware anchoring. Risk: missing `cd x && ticketlens comment KEY`.
+    ROADMAP 62.
 
 ---
 **Status 2026-08-18**: #1, #1b, #1c, #1d, #1e, #2, #2b, #3, #4, #5, #6, #8, #8b, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #22 shipped/closed. #4 (ROADMAP 49b) fully complete 2026-08-14, 11 of 11 tools ported, MCP surface at 22 tools. #13 fully closed 2026-08-16 (PHP side shipped). #14 fully closed 2026-08-16 — necessity question resolved 2026-08-14 (keep hook + SKILL), bracket-literal scanner gap fixed 2026-08-16. #6 + #16 (Recall note attachments, CLI + MCP) fully CLOSED 2026-08-17 — shipped, pushed, published, self-tested. #17 fully CLOSED 2026-08-17. #18 fully CLOSED 2026-08-18 — non-blocking word-count warning shipped, pushed, published, installed, self-tested. #19 fully CLOSED 2026-08-17/18 — full attachment sync + Console preview shipped, one real security bug (extension-based scan bypass) found via live red-team and fixed same session. #22 fully CLOSED 2026-08-18 — recurring CI failure root-caused (stale audits + a hardcoded-date time bomb) and fixed durably. #20 fully CLOSED 2026-08-18 — Console-manageable strictness shipped, red-teamed (30-item pass, all attacks defended), pushed, published, installed, self-tested. #21 FULLY CLOSED 2026-08-18 (`note patch` attachment support, bundled a real attachment-drop bug fix, 15-attack red-team pass all defended) — pushed, published `ticketlens@0.38.47` (beta), installed, self-tested (real CLI + real MCP server, both paths). Remaining: scope #7.

@@ -447,13 +447,55 @@ describe('sawMutatingAction detection (scanTranscript)', () => {
     assert.equal(scanTranscript(p).sawMutatingAction, true);
   });
 
-  it('detects a real code edit (Edit tool) as mutating', () => {
+  // Backlog #38 / #24b: every real false-positive nag was armed only by an
+  // assistant Edit/Write of a memory file or a scratch comment draft. A file
+  // write is never a ticket write, so none of these may set sawMutatingAction.
+  it('does NOT count an Edit tool call as mutating — a file edit is not a ticket write (backlog #38)', () => {
     const p = writeTranscript([assistantEntry([toolUse('Edit', { file_path: '/x.mjs', old_string: 'a', new_string: 'b' })])]);
-    assert.equal(scanTranscript(p).sawMutatingAction, true);
+    assert.equal(scanTranscript(p).sawMutatingAction, false);
   });
 
-  it('detects a real code write (Write tool) as mutating', () => {
+  it('does NOT count a Write tool call as mutating — a file write is not a ticket write (backlog #38)', () => {
     const p = writeTranscript([assistantEntry([toolUse('Write', { file_path: '/x.mjs', content: 'x' })])]);
+    assert.equal(scanTranscript(p).sawMutatingAction, false);
+  });
+
+  it('does NOT count a Write to an assistant memory file as mutating (real incident shape, backlog #38)', () => {
+    const p = writeTranscript([
+      assistantEntry([toolUse('Write', { file_path: '/Users/u/.claude-work/projects/-proj/memory/attachment-digests/abc-digest.md', content: 'x' })]),
+      assistantEntry([toolUse('Edit', { file_path: '/Users/u/.claude-work/projects/-proj/memory/MEMORY.md', old_string: 'a', new_string: 'b' })]),
+    ]);
+    assert.equal(scanTranscript(p).sawMutatingAction, false);
+  });
+
+  it('does NOT count a Write to an in-repo scratch comment draft as mutating (real incident shape, backlog #38)', () => {
+    const p = writeTranscript([
+      assistantEntry([toolUse('Write', { file_path: '/repo/tickets/proj/tmp_PROD-1234_jira_comment.txt', content: 'h2. Draft' })]),
+      assistantEntry([toolUse('Edit', { file_path: '/repo/tickets/proj/tmp_PROD-1234_jira_comment.txt', old_string: 'a', new_string: 'b' })]),
+    ]);
+    assert.equal(scanTranscript(p).sawMutatingAction, false);
+  });
+
+  it('does NOT count other file-tool shapes as mutating: unicode path, missing input, CLI-like path text, NotebookEdit, MultiEdit (backlog #38)', () => {
+    const shapes = [
+      toolUse('Write', { file_path: '/tmp/ドラフト_PROD-1_コメント.txt', content: 'x' }),
+      { type: 'tool_use', name: 'Write' },
+      toolUse('Edit', { file_path: '/tmp/ticketlens comment PROD-1234.txt', old_string: 'a', new_string: 'b' }),
+      toolUse('NotebookEdit', { notebook_path: '/tmp/a.ipynb', new_source: 'x' }),
+      toolUse('MultiEdit', { file_path: '/tmp/a.mjs', edits: [] }),
+    ];
+    for (const shape of shapes) {
+      const p = writeTranscript([assistantEntry([shape])]);
+      assert.equal(scanTranscript(p).sawMutatingAction, false, `expected no mutation for ${JSON.stringify(shape).slice(0, 80)}`);
+    }
+  });
+
+  it('LOCK: a real ticket write still sets sawMutatingAction when file edits surround it', () => {
+    const p = writeTranscript([
+      assistantEntry([toolUse('Write', { file_path: '/repo/tmp_draft.txt', content: 'x' })]),
+      assistantEntry([toolUse('mcp__ticketlens__ticket_comment', { ticket: 'PROD-1234', body: 'x' })]),
+      assistantEntry([toolUse('Edit', { file_path: '/repo/src/a.mjs', old_string: 'a', new_string: 'b' })]),
+    ]);
     assert.equal(scanTranscript(p).sawMutatingAction, true);
   });
 

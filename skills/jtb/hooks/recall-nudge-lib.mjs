@@ -38,6 +38,11 @@ export const FETCH_MCP_RE = /^mcp__.+__fetch$/;
 // work from a read-only fetch — backlog #24's 6th report: a pure multi-
 // ticket status listing (fetch only, no mutation) still nagged, even though
 // nothing about it could ever satisfy SKILL.md's own capture rule.
+// These are the ONLY signals for sawMutatingAction. An Edit/Write tool call
+// is deliberately not one (backlog #38/#24b): all three real false-positive
+// nags were armed solely by the assistant writing memory files or scratch
+// comment drafts, which are not ticket writes and can live anywhere, so no
+// path filter can tell them apart from real source edits reliably.
 export const MUTATING_ACTION_RE = /\bticketlens\s+(?:comment|transition|assign|update)\s+[A-Z][A-Z0-9]{1,9}-\d+\b|\btl\s+(?:comment|transition|assign|update)\s+[A-Z][A-Z0-9]{1,9}-\d+\b|\/jtb\s+(?:comment|transition|assign|update)\s+[A-Z][A-Z0-9]{1,9}-\d+\b/;
 export const MUTATING_ACTION_MCP_RE = /^mcp__.+__(ticket_comment|ticket_transition|ticket_assign|ticket_update)$/;
 
@@ -294,8 +299,7 @@ export function scanTranscript(transcriptPath) {
 
         const isCliMutation = block.name === 'Bash' && MUTATING_ACTION_RE.test(block.input?.command ?? '');
         const isMcpMutation = MUTATING_ACTION_MCP_RE.test(block.name ?? '');
-        const isCodeEdit = block.name === 'Edit' || block.name === 'Write';
-        if (isCliMutation || isMcpMutation || isCodeEdit) result.sawMutatingAction = true;
+        if (isCliMutation || isMcpMutation) result.sawMutatingAction = true;
       }
     }
   }
