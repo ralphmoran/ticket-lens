@@ -55,8 +55,14 @@ export function readStdinJson() {
   }
 }
 
+// Sanitized so a session_id containing "../" (hard-test finding, backlog #38)
+// can't make path.join collapse the fixed "ticketlens-recall-nudge-" prefix
+// away and land the state file at an unrelated sibling path in os.tmpdir().
+// session_id is normally an unguessable UUID from Claude Code, not
+// attacker-controlled, but this is still external input — never trust it.
 export function statePath(sessionId) {
-  return path.join(os.tmpdir(), `ticketlens-recall-nudge-${sessionId || 'unknown'}.json`);
+  const safe = String(sessionId || 'unknown').replace(/[^A-Za-z0-9_-]/g, '_');
+  return path.join(os.tmpdir(), `ticketlens-recall-nudge-${safe}.json`);
 }
 
 export function readState(sessionId) {
@@ -250,7 +256,7 @@ export function scanTranscript(transcriptPath) {
   const result = { sawTicketKey: false, sawRecallFlag: false, sawNoteAdd: false, sawFetch: false, sawMutatingAction: false, ticketKey: null };
   let lines;
   try {
-    lines = fs.readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
+    lines = fs.readFileSync(transcriptPath, 'utf8').replace(/^\uFEFF/, '').split('\n').filter(Boolean);
   } catch {
     return result;
   }
@@ -280,11 +286,12 @@ export function scanTranscript(transcriptPath) {
       }
     }
 
-    if (entry.type !== 'assistant') continue;
+    if (!entry || typeof entry !== 'object' || entry.type !== 'assistant') continue;
     const blocks = entry.message?.content;
     if (!Array.isArray(blocks)) continue;
 
     for (const block of blocks) {
+      if (!block || typeof block !== 'object') continue; // same guard as entry above — a null/primitive array element must not crash this (hard-test finding)
       if (block.type === 'text' && RECALL_FLAG_RE.test(block.text ?? '')) {
         result.sawRecallFlag = true;
       }
@@ -363,7 +370,7 @@ export function shouldNag({ sawFetch, sawMutatingAction, sawRecallFlag, sawNoteA
 export function buildCaptureExcerpt(transcriptPath) {
   let lines;
   try {
-    lines = fs.readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
+    lines = fs.readFileSync(transcriptPath, 'utf8').replace(/^\uFEFF/, '').split('\n').filter(Boolean);
   } catch {
     return '';
   }
@@ -376,10 +383,11 @@ export function buildCaptureExcerpt(transcriptPath) {
     } catch {
       continue;
     }
-    if (entry.type !== 'assistant') continue;
+    if (!entry || typeof entry !== 'object' || entry.type !== 'assistant') continue;
     const blocks = entry.message?.content;
     if (!Array.isArray(blocks)) continue;
     for (const block of blocks) {
+      if (!block || typeof block !== 'object') continue; // same guard as scanTranscript — a null/primitive array element must not crash this (hard-test finding)
       if (block.type === 'text' && block.text) texts.push(block.text);
     }
   }

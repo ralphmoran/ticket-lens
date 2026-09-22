@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scanTranscript, lastCapturePath, readLastCaptureAt, writeLastCaptureAt, hasRecentCapture, lastNagPath, readLastNagAt, writeLastNagAt, hasRecentNag, lastAutoCaptureAttemptPath, readLastAutoCaptureAttemptAt, writeLastAutoCaptureAttemptAt, hasRecentAutoCaptureAttempt, CAPTURE_FRESHNESS_MS, shouldNag, buildCaptureExcerpt } from '../../hooks/recall-nudge-lib.mjs';
+import { scanTranscript, statePath, lastCapturePath, readLastCaptureAt, writeLastCaptureAt, hasRecentCapture, lastNagPath, readLastNagAt, writeLastNagAt, hasRecentNag, lastAutoCaptureAttemptPath, readLastAutoCaptureAttemptAt, writeLastAutoCaptureAttemptAt, hasRecentAutoCaptureAttempt, CAPTURE_FRESHNESS_MS, shouldNag, buildCaptureExcerpt } from '../../hooks/recall-nudge-lib.mjs';
+import { resolve } from 'node:path';
 
 function assistantEntry(blocks) {
   return JSON.stringify({ type: 'assistant', message: { content: blocks } });
@@ -127,6 +128,99 @@ describe('lastAutoCaptureAttempt marker (throttles the background auto-capture s
   it('auto-capture-attempt and nag markers are independent — recording one does not satisfy the other', () => {
     writeLastAutoCaptureAttemptAt(cwd, Date.now());
     assert.equal(hasRecentNag(cwd), false);
+  });
+});
+
+// Backlog #38 hard-test findings (2026-09-21): reproduced against the real hook, not hypothetical.
+describe('statePath sanitizes session_id (path traversal, hard-test finding)', () => {
+  const prefix = resolve(join(tmpdir(), 'ticketlens-recall-nudge-'));
+
+  it('a session_id containing ../ resolves under the ticketlens-recall-nudge- prefix, not a sibling path', () => {
+    const p = resolve(statePath('../../etc/evil'));
+    assert.ok(p.startsWith(prefix), `escaped the state-file prefix: ${p}`);
+  });
+
+  it('a session_id containing a path separator resolves under the ticketlens-recall-nudge- prefix', () => {
+    const p = resolve(statePath('foo/bar/baz'));
+    assert.ok(p.startsWith(prefix), `escaped the state-file prefix: ${p}`);
+  });
+
+  it('a normal UUID-shaped session_id is unaffected', () => {
+    const id = '56ec7d14-ab8d-4986-958d-4be4b0c0a801';
+    assert.ok(statePath(id).includes(id));
+  });
+});
+
+describe('scanTranscript survives malformed transcript content (hard-test finding)', () => {
+  let dir;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'recall-nudge-test-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  function writeRaw(content) {
+    const p = join(dir, 'transcript.jsonl');
+    writeFileSync(p, content, 'utf8');
+    return p;
+  }
+
+  it('does not throw on a bare JSON `null` line, and keeps reading real entries around it', () => {
+    const p = writeRaw([
+      assistantEntry([toolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' })]),
+      'null',
+      assistantEntry([toolUse('mcp__ticketlens__ticket_comment', { ticket: 'PROD-1234', body: 'x' })]),
+    ].join('\n'));
+    assert.doesNotThrow(() => scanTranscript(p));
+    const result = scanTranscript(p);
+    assert.equal(result.sawFetch, true);
+    assert.equal(result.sawMutatingAction, true);
+  });
+
+  it('does not throw on bare JSON array/string/number lines', () => {
+    const p = writeRaw(['[]', '"str"', '42', 'true'].join('\n'));
+    assert.doesNotThrow(() => scanTranscript(p));
+  });
+
+  it('does not throw on a `null` element inside the content array, and keeps reading real blocks around it', () => {
+    const p = writeRaw([
+      JSON.stringify({ type: 'assistant', message: { content: [null, toolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }), null] } }),
+      assistantEntry([toolUse('mcp__ticketlens__ticket_comment', { ticket: 'PROD-1234', body: 'x' })]),
+    ].join('\n'));
+    assert.doesNotThrow(() => scanTranscript(p));
+    const result = scanTranscript(p);
+    assert.equal(result.sawFetch, true);
+    assert.equal(result.sawMutatingAction, true);
+  });
+
+  it('strips a leading UTF-8 BOM so the first line is still parsed', () => {
+    const p = writeRaw('﻿' + [
+      assistantEntry([toolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' })]),
+    ].join('\n'));
+    assert.equal(scanTranscript(p).sawFetch, true);
+  });
+});
+
+describe('buildCaptureExcerpt survives malformed transcript content (same class as scanTranscript, hard-test finding)', () => {
+  let dir;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'recall-nudge-test-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('does not throw on a bare JSON `null` line', () => {
+    const p = join(dir, 'transcript.jsonl');
+    writeFileSync(p, ['null', assistantEntry([text('real insight')])].join('\n'), 'utf8');
+    assert.doesNotThrow(() => buildCaptureExcerpt(p));
+    assert.ok(buildCaptureExcerpt(p).includes('real insight'));
+  });
+
+  it('does not throw on a `null` element inside the content array', () => {
+    const p = join(dir, 'transcript.jsonl');
+    writeFileSync(p, JSON.stringify({ type: 'assistant', message: { content: [null, text('real insight'), null] } }), 'utf8');
+    assert.doesNotThrow(() => buildCaptureExcerpt(p));
+    assert.ok(buildCaptureExcerpt(p).includes('real insight'));
+  });
+
+  it('strips a leading UTF-8 BOM so the first assistant text block is still captured', () => {
+    const p = join(dir, 'transcript.jsonl');
+    writeFileSync(p, '﻿' + assistantEntry([text('first-line insight')]), 'utf8');
+    assert.ok(buildCaptureExcerpt(p).includes('first-line insight'));
   });
 });
 

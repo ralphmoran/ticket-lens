@@ -258,7 +258,7 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Open: which events per page, payload versus refetch, owner channel design.
     ROADMAP 59.
 
-38. ~~**Recall Stop-hook nag fired again, 8th report (after #14, #15, #17, #24).**~~ FIXED 2026-09-21, `ticket-lens@4359de3`, published `ticketlens@0.39.4` (beta), installed. Filed 2026-09-21, user report.
+38. ~~**Recall Stop-hook nag fired again, 8th report (after #14, #15, #17, #24).**~~ FIXED 2026-09-21/22, `ticket-lens@4359de3`, published `ticketlens@0.39.5` (beta), installed. Filed 2026-09-21, user report.
     - Report: the user says this has recurred for a very long time despite repeated fixes.
     - Seen 2026-09-21: nag fired while the assistant awaited plan approval, before any code.
     - Message was the generic branch: "touched ticket work but nothing was ever captured".
@@ -281,6 +281,7 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Left open by decision: whether any Stop-time nag should exist. Revisit if it recurs.
     - Unverified risk: an early `transition` or `assign` at ticket start could arm a first-Stop nag.
     - CLI 3755→3763 tests, 0 failures. Two Edit/Write lib tests deliberately inverted.
+    - **Hard-tested on the installed 0.39.4 build (75 scenarios)** — found and fixed 3 real bugs, published as `ticketlens@0.39.5`: a bare `null` JSONL line crashed `scanTranscript`/`buildCaptureExcerpt` (exit 1); a `null` element inside a `content` array crashed the same two functions one level deeper (caught by code review, not the original hard test); a leading UTF-8 BOM broke the first transcript line, silently losing `sawFetch`; `statePath(sessionId)` let a `../`-bearing session_id collide with an unrelated sibling filename inside `os.tmpdir()`. All fixed with regression locks. code-reviewer: 0 CRITICAL, 1 HIGH (block-null, fixed same pass), 2 LOW accepted (sanitize-regex collision risk on a UUID-shaped input, documented; BOM test gap, closed). CLI 3763→3773 tests. Not fixed: #39 (regex matches text, not execution) and a same-cwd parallel-Stop double-nag — both filed separately.
     ROADMAP 60. Memory: `project_recall_stop_nag_backlog38_2026_09_21.md`.
 
 39. **Stop-hook signal regexes match text, not execution.** Filed 2026-09-21, found by #38's adversarial pass. Not scoped.
@@ -290,6 +291,14 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Real frequency: 0 matches in 5 large real transcripts. Ticket work there goes through MCP.
     - Fix needs shell-aware anchoring. Risk: missing `cd x && ticketlens comment KEY`.
     ROADMAP 62.
+
+40. **Parallel Stop hooks for the same session_id can both block.** Filed 2026-09-22, found by #38's hard-test pass. Not scoped.
+    - Repro: 4 concurrent hook runs, same session_id + cwd, real ticket-write transcript. 2 of 4 blocked.
+    - `readState`/`writeState` (`recall-nudge-lib.mjs`) are non-atomic — a classic read-modify-write race.
+    - 8 concurrent runs across DIFFERENT session_ids, same cwd: 5 of 8 blocked (each own gate, expected).
+    - Impact: at most one extra duplicate nag message, same accepted-LOW class as backlog #24's marker race.
+    - Real trigger unclear: Stop hooks for one session_id don't normally run concurrently.
+    ROADMAP 63.
 
 ---
 **Status 2026-08-18**: #1, #1b, #1c, #1d, #1e, #2, #2b, #3, #4, #5, #6, #8, #8b, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #22 shipped/closed. #4 (ROADMAP 49b) fully complete 2026-08-14, 11 of 11 tools ported, MCP surface at 22 tools. #13 fully closed 2026-08-16 (PHP side shipped). #14 fully closed 2026-08-16 — necessity question resolved 2026-08-14 (keep hook + SKILL), bracket-literal scanner gap fixed 2026-08-16. #6 + #16 (Recall note attachments, CLI + MCP) fully CLOSED 2026-08-17 — shipped, pushed, published, self-tested. #17 fully CLOSED 2026-08-17. #18 fully CLOSED 2026-08-18 — non-blocking word-count warning shipped, pushed, published, installed, self-tested. #19 fully CLOSED 2026-08-17/18 — full attachment sync + Console preview shipped, one real security bug (extension-based scan bypass) found via live red-team and fixed same session. #22 fully CLOSED 2026-08-18 — recurring CI failure root-caused (stale audits + a hardcoded-date time bomb) and fixed durably. #20 fully CLOSED 2026-08-18 — Console-manageable strictness shipped, red-teamed (30-item pass, all attacks defended), pushed, published, installed, self-tested. #21 FULLY CLOSED 2026-08-18 (`note patch` attachment support, bundled a real attachment-drop bug fix, 15-attack red-team pass all defended) — pushed, published `ticketlens@0.38.47` (beta), installed, self-tested (real CLI + real MCP server, both paths). Remaining: scope #7.
