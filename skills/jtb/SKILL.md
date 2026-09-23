@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.44.1 -->
+<!-- jtb-skill-version: 0.44.2 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -375,6 +375,15 @@ echo "Retry client swallowed 429s silently; added backoff and a warning log on t
 **Choosing tags:** derive them from this note's actual content — the specific technology, error type, root cause, or affected component (e.g. `retry-backoff`, `null-pointer`, `auth-middleware`) — never the project name or a generic category word like `gotcha` or `bug`. A tag like `jtb` or `ticketlens` tells a future search nothing that the ticket/project context doesn't already say; a tag like `retry-backoff` is what actually surfaces this note when someone else hits the same problem. A tag that just restates the title in different words, or one you can't trace to a specific sentence in the body, gives that same zero signal — if you can't point to the exact phrase that justifies it, drop it. Same rule whether you're constructing the bash command above or calling `recall_add` directly — see its tool description for the same guidance.
 
 **Attaching local files.** `note add --attach=path1,path2` (Pro) saves a screenshot or file alongside the note — same 10 MB/file, 50 MB/call, 20-file caps as `ticket_create`/`ticket_comment`'s `--attach` for the local save. If this account is entitled and the note syncs to a team (Team Recall sync active), the attachment syncs with it — visible and downloadable from Console > Admin > Recall, not just text-only. The sync path has a lower 12 MB/call cap than the local save (bounded by the backend's request-size limit, not the CLI). Going over it fails the whole push, not just the attachment — the note stays saved locally, but neither its text nor the attachment reaches the team until pushed within the cap. Attachments with plain-text content (checked by actually decoding the bytes, not by filename extension — renaming a text file to `.png` doesn't skip this) go through the same secret scan as the note body before syncing; a rejected scan blocks the whole push the same way. The `recall_add` MCP tool has a matching `attachments` array parameter — prefer it over the bash form when available, same rule as the rest of this section.
+
+**Attaching a browser screenshot.** No separate capture path exists — `--attach` already takes any local file path, and a browser-automation tool's screenshot action (e.g. Chrome DevTools MCP's `take_screenshot`, Playwright's `browser_take_screenshot`) writes to a path you choose when you pass it a `filePath`/output-path argument. Save there, then attach it like any other file:
+```bash
+# 1. take_screenshot(filePath="/tmp/bug.png") via your browser-automation tool
+# 2. attach the saved file to a Recall note
+echo "Layout breaks below 768px — sidebar overlaps content." | \
+  ticketlens note add --title="Responsive layout bug" --ticket=TICKET-KEY --attach=/tmp/bug.png
+```
+Same caps, same secret scan, same team-sync behavior as any other `--attach` file above — there is nothing screenshot-specific to configure.
 
 To search saved notes directly (outside of automatic brief injection): `ticketlens recall "<query>"`.
 
