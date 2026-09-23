@@ -15,10 +15,11 @@
  * Anything else (no fetch this session, or a note was already added) exits
  * clean — this must never be the reason a session can't end.
  *
- * The per-session_id "asked once" state (readState/writeState) cannot
- * survive a compaction/resume event — that hands this hook a brand-new
- * session_id, a blank dedup state, AND a blank transcript file, so a real
- * earlier capture becomes invisible. The cross-session lastCapture marker
+ * The per-session_id "asked once" state (readState fast-path + claimStopNag
+ * atomic gate, backlog #40) cannot survive a compaction/resume event — that
+ * hands this hook a brand-new session_id, a blank dedup state, AND a blank
+ * transcript file, so a real earlier capture becomes invisible. The
+ * cross-session lastCapture marker
  * (keyed by cwd, not session_id) is what actually bridges that boundary
  * for a genuine capture. The parallel lastNag marker (backlog #14) bridges
  * the same boundary for a DISMISSED nag: without it, a session that already
@@ -72,7 +73,7 @@
 
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { readStdinJson, readState, writeState, scanTranscript, hasRecentCapture, writeLastCaptureAt, hasRecentNag, writeLastNagAt, hasRecentAutoCaptureAttempt, writeLastAutoCaptureAttemptAt, shouldNag } from './recall-nudge-lib.mjs';
+import { readStdinJson, readState, claimStopNag, scanTranscript, hasRecentCapture, writeLastCaptureAt, hasRecentNag, writeLastNagAt, hasRecentAutoCaptureAttempt, writeLastAutoCaptureAttemptAt, shouldNag } from './recall-nudge-lib.mjs';
 import { resolveProfile, resolveEffectiveRecallStrictness } from '../scripts/lib/profile-resolver.mjs';
 import { readCliToken } from '../scripts/lib/cli-auth.mjs';
 import { isLicensed } from '../scripts/lib/license.mjs';
@@ -136,8 +137,10 @@ if (hasRecentNag(cwd)) {
   process.exit(0); // already nagged recently in this same directory, just under a different session_id — a compaction/resume rollover, not a fresh session (backlog #14)
 }
 
-state.stopChecked = true;
-writeState(sessionId, state);
+// Atomic claim (backlog #40) — the correctness gate, not the readState
+// fast-path above. Only the single winner among concurrent Stop hooks for
+// this session_id reaches the nag below; every other one exits 0 here.
+if (!claimStopNag(sessionId)) process.exit(0);
 writeLastNagAt(cwd, Date.now());
 
 if (sawRecallFlag) {

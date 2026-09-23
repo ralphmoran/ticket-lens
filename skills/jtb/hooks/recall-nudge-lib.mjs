@@ -13,7 +13,12 @@ import crypto from 'node:crypto';
 
 export const TICKET_KEY_RE = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/;
 export const RECALL_FLAG_RE = /🔖\s*Recall-flag:/;
-export const NOTE_ADD_RE = /\bticketlens\s+note\s+add\b|\/jtb\s+note\b/;
+// Anchored to the START of a shell statement (see isRealInvocation below),
+// not matched anywhere in the raw command string — backlog #39/#62: a Bash
+// command that only MENTIONS this text (a heredoc doc example, a commit
+// message, `grep`, `echo >>`) is not an execution. Only the statement
+// splitter/heredoc stripper below make `^` a safe anchor here.
+export const NOTE_ADD_RE = /^ticketlens\s+note\s+add\b|^\/jtb\s+note\b/;
 // Matches the MCP tool_use name Claude Code gives an MCP server's tool call
 // (mcp__<server-alias>__<tool-name>) — the server alias is whatever the user
 // named it in their own .mcp.json, so only the tool-name suffix is fixed.
@@ -29,7 +34,8 @@ export const NOTE_ADD_MCP_RE = /^mcp__.+__recall_add$/;
 // deliberately does not match any other tracked subcommand (triage/
 // compliance/etc) — those are lowercase words and can never satisfy the
 // uppercase ticket-key class required immediately after the command name.
-export const FETCH_RE = /\bticketlens\s+(?:get\s+)?[A-Z][A-Z0-9]{1,9}-\d+\b|\btl\s+(?:get\s+)?[A-Z][A-Z0-9]{1,9}-\d+\b|\/jtb\s+(?:get\s+)?[A-Z][A-Z0-9]{1,9}-\d+\b/;
+// Anchored (backlog #39/#62 — see NOTE_ADD_RE comment above for why).
+export const FETCH_RE = /^ticketlens\s+(?:get\s+)?[A-Z][A-Z0-9]{1,9}-\d+\b|^tl\s+(?:get\s+)?[A-Z][A-Z0-9]{1,9}-\d+\b|^\/jtb\s+(?:get\s+)?[A-Z][A-Z0-9]{1,9}-\d+\b/;
 export const FETCH_MCP_RE = /^mcp__.+__fetch$/;
 // Matches a real ticket-mutating CLI subcommand (comment/transition/assign/
 // update, each confirmed in cli.mjs's parseCommand() to take TICKET-KEY as
@@ -43,8 +49,210 @@ export const FETCH_MCP_RE = /^mcp__.+__fetch$/;
 // nags were armed solely by the assistant writing memory files or scratch
 // comment drafts, which are not ticket writes and can live anywhere, so no
 // path filter can tell them apart from real source edits reliably.
-export const MUTATING_ACTION_RE = /\bticketlens\s+(?:comment|transition|assign|update)\s+[A-Z][A-Z0-9]{1,9}-\d+\b|\btl\s+(?:comment|transition|assign|update)\s+[A-Z][A-Z0-9]{1,9}-\d+\b|\/jtb\s+(?:comment|transition|assign|update)\s+[A-Z][A-Z0-9]{1,9}-\d+\b/;
+// Anchored (backlog #39/#62 — see NOTE_ADD_RE comment above for why).
+export const MUTATING_ACTION_RE = /^ticketlens\s+(?:comment|transition|assign|update)\s+[A-Z][A-Z0-9]{1,9}-\d+\b|^tl\s+(?:comment|transition|assign|update)\s+[A-Z][A-Z0-9]{1,9}-\d+\b|^\/jtb\s+(?:comment|transition|assign|update)\s+[A-Z][A-Z0-9]{1,9}-\d+\b/;
 export const MUTATING_ACTION_MCP_RE = /^mcp__.+__(ticket_comment|ticket_transition|ticket_assign|ticket_update)$/;
+
+// Real heredoc introducer only: `(?<!<)` / `(?!<)` reject a `<<` that's part
+// of a `<<<` here-string (code review finding — `diff <<<foo <<<bar &&
+// ticketlens comment KEY` was misread as a heredoc start, swallowing the
+// real trailing `&&` command into a fake "body" that ran to end-of-string).
+// Group 1 captures a literal `-` (the `<<-DELIM` variant, whose terminator
+// line may be tab-indented) vs. plain `<<DELIM` (terminator must be exact,
+// 2nd-round review finding). Group 2 is the optional quote, group 3 the
+// delimiter word, `\2` closes the same quote.
+const HEREDOC_MARKER_RE = /(?<!<)<<(-)?~?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2/g;
+
+// Crude but sufficient: counts unmatched literal "((" before `index`. A real
+// heredoc redirect is never nested inside arithmetic evaluation, so a `<<`
+// found while this is > 0 is `$((1 << FOO))`-style bit-shift, not a heredoc
+// (code review finding). Single-paren subshells (`(cmd <<EOF ...)`) don't
+// register here — only a literal "((" pair does — so a real heredoc inside
+// a plain subshell is unaffected. Quote-aware (2nd-round review finding):
+// `echo "((" && cat <<EOF` must not count the quoted "((" as arithmetic —
+// doing so skipped a REAL heredoc, leaving its body unstripped and readable
+// as a fake statement (the exact false-positive class this whole fix set
+// out to close).
+function isInsideArithmeticContext(command, index) {
+  let depth = 0;
+  let quote = null;
+  for (let i = 0; i < index - 1; i++) {
+    const ch = command[i];
+    if (quote) {
+      if (ch === quote && command[i - 1] !== '\\') quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') { quote = ch; continue; }
+    if (ch === '(' && command[i + 1] === '(') { depth++; i++; }
+    else if (ch === ')' && command[i + 1] === ')') { depth = Math.max(0, depth - 1); i++; }
+  }
+  return depth > 0;
+}
+
+/**
+ * Strips heredoc bodies (`<<EOF ... EOF`, `<<-EOF`, `<<'EOF'`, `<<"EOF"`)
+ * out of a shell command string, keeping everything else. Runs BEFORE
+ * splitShellStatements() — without this, a doc-example heredoc line that
+ * itself starts with "ticketlens ..." is indistinguishable from a real
+ * invocation once newline-split into its own statement (backlog #39/#62).
+ * Only the heredoc's introducer (`<<...DELIM`) and body are removed; text
+ * before/after is untouched. Best-effort: an unterminated heredoc marker
+ * strips to end-of-string rather than throwing.
+ *
+ * Handles multiple `<<DELIM` markers on one command line (`cat <<A <<B`) —
+ * bash fills their bodies in the order the markers appear, both AFTER the
+ * line's newline (code review finding: a naive single-marker-at-a-time scan
+ * left the second body's text, e.g. a "ticketlens comment KEY" doc line,
+ * un-stripped and readable as a fake statement).
+ *
+ * Accepted scope limit (2nd-round review finding, not fixed): a delimiter
+ * with a hyphen or other non-identifier character (`<<'MY-DELIM'`) is not
+ * recognized as a heredoc marker at all, so that body stays unstripped.
+ * Real-world Bash tool calls essentially never use such a delimiter — a
+ * plain `EOF`/`END`/`SCRIPT`-shaped word is standard practice — so this is
+ * left as-is rather than widening the character class for marginal benefit.
+ */
+export function stripHeredocs(command) {
+  let result = '';
+  let cursor = 0;
+
+  while (cursor < command.length) {
+    HEREDOC_MARKER_RE.lastIndex = cursor;
+    const match = HEREDOC_MARKER_RE.exec(command);
+    if (!match) {
+      result += command.slice(cursor);
+      break;
+    }
+
+    if (isInsideArithmeticContext(command, match.index)) {
+      // Not a real heredoc marker — keep it as-is, keep scanning after it.
+      result += command.slice(cursor, match.index + match[0].length);
+      cursor = match.index + match[0].length;
+      continue;
+    }
+
+    // Collect every further <<DELIM marker on this SAME command line —
+    // their bodies are filled in order, right after the line ends.
+    const lineEnd = command.indexOf('\n', match.index + match[0].length);
+    const lineBoundary = lineEnd === -1 ? command.length : lineEnd;
+    const markers = [{ delim: match[3], dash: Boolean(match[1]) }];
+    let scanPos = match.index + match[0].length;
+    HEREDOC_MARKER_RE.lastIndex = scanPos;
+    let next;
+    while (scanPos < lineBoundary && (next = HEREDOC_MARKER_RE.exec(command)) && next.index < lineBoundary) {
+      if (!isInsideArithmeticContext(command, next.index)) markers.push({ delim: next[3], dash: Boolean(next[1]) });
+      scanPos = next.index + next[0].length;
+      HEREDOC_MARKER_RE.lastIndex = scanPos;
+    }
+
+    // Keep the command line itself (through its newline) — only the bodies
+    // that follow are stripped.
+    const afterLine = lineEnd === -1 ? command.length : lineEnd + 1;
+    result += command.slice(cursor, afterLine);
+
+    let bodyPos = afterLine;
+    for (const { delim, dash } of markers) {
+      // Delimiter is always [A-Za-z_][A-Za-z0-9_]* (HEREDOC_MARKER_RE's own
+      // capture class) — never a regex metacharacter. Escaped anyway, purely
+      // defensive, in case that class is ever widened (2nd-round review
+      // finding: this is deliberately a no-op today, not dead code to trim).
+      const escapedDelim = delim.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Real bash terminator rules (2nd-round review finding — the previous
+      // `^[ \t]*delim[ \t]*$` was too lenient both directions): plain
+      // `<<DELIM` requires the line to be EXACTLY the delimiter, no leading
+      // or trailing whitespace; `<<-DELIM` allows leading TABS only to be
+      // stripped, never spaces, and still no trailing whitespace.
+      const terminatorRe = dash
+        ? new RegExp(`^\\t*${escapedDelim}$`, 'm')
+        : new RegExp(`^${escapedDelim}$`, 'm');
+      const rest = command.slice(bodyPos);
+      const termMatch = terminatorRe.exec(rest);
+      bodyPos = termMatch ? bodyPos + termMatch.index + termMatch[0].length : command.length;
+    }
+
+    cursor = bodyPos;
+  }
+
+  return result;
+}
+
+/**
+ * Splits a shell command into top-level statements on &&, ||, ;, |, and
+ * newline — but NOT when those separators appear inside a single- or
+ * double-quoted string. This is what makes anchoring FETCH_RE/MUTATING_
+ * ACTION_RE/NOTE_ADD_RE with `^` safe: a mention inside a quoted argument to
+ * `echo`/`grep`/`git commit -m` never becomes its own statement, because the
+ * quote keeps it attached to the statement's real leading command (echo/
+ * grep/git), which does not match. Not a full shell parser — no backslash-
+ * escape handling inside quotes beyond a trailing-quote check, no command
+ * substitution awareness — deliberately minimal for this narrow, low-stakes
+ * use (see scanTranscript()'s doc comment on the ceiling of a false match
+ * here: one local Stop-hook decision, never credentials or ticket data).
+ */
+export function splitShellStatements(command) {
+  const statements = [];
+  let current = '';
+  let quote = null;
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (quote) {
+      current += ch;
+      if (ch === quote && command[i - 1] !== '\\') quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      current += ch;
+      continue;
+    }
+    if ((ch === '&' && command[i + 1] === '&') || (ch === '|' && command[i + 1] === '|')) {
+      statements.push(current);
+      current = '';
+      i++;
+      continue;
+    }
+    if (ch === ';' || ch === '|' || ch === '\n') {
+      statements.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  if (current) statements.push(current);
+  return statements.map((s) => s.trim()).filter(Boolean);
+}
+
+/**
+ * Strips a leading subshell paren, env-var assignment(s), and a
+ * sudo/exec/command prefix from a single statement, so `cd x && FOO=bar
+ * sudo ticketlens comment KEY` still anchors correctly on `ticketlens`.
+ */
+export function stripLeadingNoise(statement) {
+  let s = statement.replace(/^\(+\s*/, '');
+  s = s.replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, '');
+  s = s.replace(/^(?:sudo|exec|command)\s+/, '');
+  return s;
+}
+
+/**
+ * The command's real shell statements, heredoc-stripped and leading-noise-
+ * stripped — the shared prep step behind isRealInvocation(). scanTranscript()
+ * computes this ONCE per Bash block and reuses it for all three regex checks
+ * (NOTE_ADD/FETCH/MUTATING) instead of re-parsing the same command string
+ * three times (code review finding — DRY/perf).
+ */
+export function realInvocationStatements(command) {
+  return splitShellStatements(stripHeredocs(command)).map(stripLeadingNoise);
+}
+
+/**
+ * True if `command` contains a real shell statement whose start matches
+ * `anchoredRe` (one of FETCH_RE/MUTATING_ACTION_RE/NOTE_ADD_RE above) — not
+ * merely a substring mention anywhere in the raw string (backlog #39/#62).
+ */
+export function isRealInvocation(command, anchoredRe) {
+  return realInvocationStatements(command).some((stmt) => anchoredRe.test(stmt));
+}
 
 export function readStdinJson() {
   const raw = fs.readFileSync(0, 'utf8');
@@ -65,18 +273,39 @@ export function statePath(sessionId) {
   return path.join(os.tmpdir(), `ticketlens-recall-nudge-${safe}.json`);
 }
 
+// Cheap, non-atomic fast-path read — safe only as an optimization (skip the
+// rest of the hook's work once a session has already nagged), never as the
+// sole gate: readState()-then-decide-then-write left a TOCTOU race where
+// concurrent Stop hooks for the same session_id could both read "not yet
+// checked" before either wrote (backlog #40). claimStopNag() below is the
+// actual correctness gate for the nag decision itself.
 export function readState(sessionId) {
   try {
     return JSON.parse(fs.readFileSync(statePath(sessionId), 'utf8'));
   } catch {
-    return { ticketToolCalls: 0, lastNudgeAt: 0 };
+    return { stopChecked: false };
   }
 }
 
-export function writeState(sessionId, state) {
+/**
+ * Atomically claims the one-time "we are nagging this session" slot.
+ * Returns true only for the single caller that wins; every other caller —
+ * a concurrent Stop hook for the same session_id (backlog #40), or a later
+ * Stop event in the same session that already nagged — gets false and must
+ * not nag. Uses `wx` (O_CREAT|O_EXCL): a single atomic syscall, so there is
+ * no read-then-write window for two processes to both see "unclaimed".
+ * Fails open (returns true) on anything other than EEXIST — matches the
+ * rest of this file's best-effort philosophy: a filesystem error here must
+ * never be the reason the Stop hook silently stops nagging.
+ */
+export function claimStopNag(sessionId) {
   try {
-    fs.writeFileSync(statePath(sessionId), JSON.stringify(state));
-  } catch { /* best-effort — a lost nudge counter is not worth failing the hook over */ }
+    fs.writeFileSync(statePath(sessionId), JSON.stringify({ stopChecked: true }), { flag: 'wx' });
+    return true;
+  } catch (err) {
+    if (err && err.code === 'EEXIST') return false;
+    return true;
+  }
 }
 
 // Two hours of IDLE time — how long a real capture in one directory counts as
@@ -296,15 +525,19 @@ export function scanTranscript(transcriptPath) {
         result.sawRecallFlag = true;
       }
       if (block.type === 'tool_use') {
-        const isCliNoteAdd = block.name === 'Bash' && NOTE_ADD_RE.test(block.input?.command ?? '');
+        // Parsed once per Bash block, reused for all three checks below
+        // (code review finding — was re-parsing the same command 3x).
+        const cliStatements = block.name === 'Bash' ? realInvocationStatements(block.input?.command ?? '') : null;
+
+        const isCliNoteAdd = cliStatements && cliStatements.some((s) => NOTE_ADD_RE.test(s));
         const isMcpNoteAdd = NOTE_ADD_MCP_RE.test(block.name ?? '');
         if (isCliNoteAdd || isMcpNoteAdd) result.sawNoteAdd = true;
 
-        const isCliFetch = block.name === 'Bash' && FETCH_RE.test(block.input?.command ?? '');
+        const isCliFetch = cliStatements && cliStatements.some((s) => FETCH_RE.test(s));
         const isMcpFetch = FETCH_MCP_RE.test(block.name ?? '');
         if (isCliFetch || isMcpFetch) result.sawFetch = true;
 
-        const isCliMutation = block.name === 'Bash' && MUTATING_ACTION_RE.test(block.input?.command ?? '');
+        const isCliMutation = cliStatements && cliStatements.some((s) => MUTATING_ACTION_RE.test(s));
         const isMcpMutation = MUTATING_ACTION_MCP_RE.test(block.name ?? '');
         if (isCliMutation || isMcpMutation) result.sawMutatingAction = true;
       }

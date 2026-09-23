@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -44,6 +44,22 @@ function runHook({ sessionId, transcriptPath, cwd, home, env = {} }) {
     input: JSON.stringify({ session_id: sessionId, transcript_path: transcriptPath, cwd }),
     encoding: 'utf8',
     env: { ...process.env, HOME: home, ...env },
+  });
+}
+
+// Truly concurrent (async spawn, not spawnSync) — required to reproduce the
+// backlog #40 race: N processes fired back-to-back via Promise.all all reach
+// the hook's session-state read before any of them has written it.
+function runHookAsync({ sessionId, transcriptPath, cwd, home, env = {} }) {
+  return new Promise((resolveHook) => {
+    const child = spawn(process.execPath, [HOOK_PATH], {
+      env: { ...process.env, HOME: home, ...env },
+    });
+    let stderr = '';
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.on('close', (status) => resolveHook({ status, stderr }));
+    child.stdin.write(JSON.stringify({ session_id: sessionId, transcript_path: transcriptPath, cwd }));
+    child.stdin.end();
   });
 }
 
@@ -642,5 +658,84 @@ describe('recall-nudge-stop hook (subprocess)', () => {
       try { rmSync(statePath(`${sessionId}-other`)); } catch { /* fine */ }
       try { rmSync(lastAutoCaptureAttemptPath(otherDir)); } catch { /* fine */ }
     });
+  });
+});
+
+describe('concurrent Stop hooks, same session_id — atomic claim (backlog #40, HARD TEST)', () => {
+  let dir, home, transcriptPath, sessionId;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'ticketlens-hook-race-'));
+    home = join(dir, 'home');
+    mkdirSync(home, { recursive: true });
+    transcriptPath = join(dir, 'transcript.jsonl');
+    sessionId = `race-${Math.random().toString(36).slice(2)}`;
+  });
+
+  afterEach(() => {
+    try { rmSync(statePath(sessionId)); } catch { /* not written this test — fine */ }
+    try { rmSync(lastNagPath(dir)); } catch { /* not written this test — fine */ }
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('HARD TEST: exactly one of 8 truly concurrent runs blocks — real fetch + real mutation, no note', async () => {
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantText('Looking at PROD-1234 now.'),
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      assistantToolUse('mcp__ticketlens__ticket_comment', { ticket: 'PROD-1234', body: 'x' }),
+    ]));
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => runHookAsync({ sessionId, transcriptPath, cwd: dir, home })),
+    );
+    const blocked = results.filter((r) => r.status === 2);
+    assert.equal(blocked.length, 1, `expected exactly 1 block, got ${blocked.length} of 8`);
+  });
+
+  it('HARD TEST: exactly one of 8 concurrent runs blocks — loose profile, recall-flag path (different shouldNag branch)', async () => {
+    writeProfile(home, 'loose');
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantText('Looking at PROD-1234 now.'),
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      assistantToolUse('mcp__ticketlens__ticket_comment', { ticket: 'PROD-1234', body: 'x' }),
+      assistantText('🔖 Recall-flag: found a gotcha'),
+    ]));
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => runHookAsync({ sessionId, transcriptPath, cwd: dir, home })),
+    );
+    const blocked = results.filter((r) => r.status === 2);
+    assert.equal(blocked.length, 1, `expected exactly 1 block, got ${blocked.length} of 8`);
+  });
+
+  it('HARD TEST: 16-way concurrency still yields exactly one block', async () => {
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      assistantToolUse('mcp__ticketlens__ticket_comment', { ticket: 'PROD-1234', body: 'x' }),
+    ]));
+    const results = await Promise.all(
+      Array.from({ length: 16 }, () => runHookAsync({ sessionId, transcriptPath, cwd: dir, home })),
+    );
+    const blocked = results.filter((r) => r.status === 2);
+    assert.equal(blocked.length, 1, `expected exactly 1 block, got ${blocked.length} of 16`);
+  });
+
+  it('adversarial bypass: a pre-planted garbage file at the claim path is treated as already-claimed, no crash, no double-nag', () => {
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      assistantToolUse('mcp__ticketlens__ticket_comment', { ticket: 'PROD-1234', body: 'x' }),
+    ]));
+    writeFileSync(statePath(sessionId), 'not json{{{'); // pre-planted before the hook ever runs
+    const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+    assert.equal(result.status, 0);
+  });
+
+  it('sequential runs (not concurrent) still cap at exactly one block — must not regress the existing dedup behaviour', () => {
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      assistantToolUse('mcp__ticketlens__ticket_comment', { ticket: 'PROD-1234', body: 'x' }),
+    ]));
+    const first = runHook({ sessionId, transcriptPath, cwd: dir, home });
+    const second = runHook({ sessionId, transcriptPath, cwd: dir, home });
+    assert.equal(first.status, 2);
+    assert.equal(second.status, 0);
   });
 });

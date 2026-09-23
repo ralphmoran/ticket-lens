@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scanTranscript, statePath, lastCapturePath, readLastCaptureAt, writeLastCaptureAt, hasRecentCapture, lastNagPath, readLastNagAt, writeLastNagAt, hasRecentNag, lastAutoCaptureAttemptPath, readLastAutoCaptureAttemptAt, writeLastAutoCaptureAttemptAt, hasRecentAutoCaptureAttempt, CAPTURE_FRESHNESS_MS, shouldNag, buildCaptureExcerpt } from '../../hooks/recall-nudge-lib.mjs';
+import { scanTranscript, statePath, lastCapturePath, readLastCaptureAt, writeLastCaptureAt, hasRecentCapture, lastNagPath, readLastNagAt, writeLastNagAt, hasRecentNag, lastAutoCaptureAttemptPath, readLastAutoCaptureAttemptAt, writeLastAutoCaptureAttemptAt, hasRecentAutoCaptureAttempt, CAPTURE_FRESHNESS_MS, shouldNag, buildCaptureExcerpt, stripHeredocs, splitShellStatements, stripLeadingNoise, isRealInvocation, claimStopNag, FETCH_RE, MUTATING_ACTION_RE, NOTE_ADD_RE } from '../../hooks/recall-nudge-lib.mjs';
 import { resolve } from 'node:path';
 
 function assistantEntry(blocks) {
@@ -665,5 +665,236 @@ describe('buildCaptureExcerpt', () => {
   it('returns empty string when the session had no assistant text at all', () => {
     const p = writeTranscript([assistantEntry([toolUse('Bash', { command: 'ls' })])]);
     assert.equal(buildCaptureExcerpt(p), '');
+  });
+});
+
+describe('stripHeredocs', () => {
+  it('removes a heredoc body between quoted markers, keeping surrounding text', () => {
+    const input = 'cat <<\'EOF\'\nticketlens comment PROD-1234\nEOF\necho done';
+    const result = stripHeredocs(input);
+    assert.equal(/ticketlens comment/.test(result), false);
+    assert.equal(/echo done/.test(result), true);
+  });
+
+  it('removes an unquoted heredoc body too', () => {
+    const input = 'cat <<EOF\nticketlens note add --title=x\nEOF';
+    assert.equal(/ticketlens note add/.test(stripHeredocs(input)), false);
+  });
+
+  it('leaves a command with no heredoc unchanged', () => {
+    const input = 'ticketlens comment PROD-1234 --body=x';
+    assert.equal(stripHeredocs(input), input);
+  });
+
+  it('does not hang or throw on an unterminated heredoc marker', () => {
+    const input = 'cat <<EOF\nno terminator here';
+    assert.doesNotThrow(() => stripHeredocs(input));
+  });
+
+  it('does NOT treat a <<< here-string as a heredoc (code review finding)', () => {
+    const input = 'diff <<<foo <<<bar';
+    assert.equal(stripHeredocs(input), input); // nothing to strip — no real heredoc here
+  });
+
+  it('does NOT treat an arithmetic << (bit shift) as a heredoc (code review finding)', () => {
+    const input = '$((1 << FOO))';
+    assert.equal(stripHeredocs(input), input);
+  });
+
+  it('strips BOTH bodies when two <<DELIM markers share one command line (code review finding)', () => {
+    const input = 'cat <<A <<B\nbody-of-A\nA\nticketlens comment PROD-1234 hi\nB\necho done';
+    const result = stripHeredocs(input);
+    assert.equal(/body-of-A/.test(result), false);
+    assert.equal(/ticketlens comment/.test(result), false);
+    assert.equal(/echo done/.test(result), true);
+  });
+
+  it('a quoted "((" does not block a real heredoc after it from being stripped (2nd-round review finding)', () => {
+    const input = 'echo "((" && cat <<EOF\nticketlens comment PROD-1234 hi\nEOF';
+    const result = stripHeredocs(input);
+    assert.equal(/ticketlens comment/.test(result), false);
+  });
+
+  it('<<-DELIM (dash variant) recognizes a tab-indented terminator', () => {
+    const input = 'cat <<-EOF\nticketlens comment PROD-1234 hi\n\tEOF\necho done';
+    const result = stripHeredocs(input);
+    assert.equal(/ticketlens comment/.test(result), false);
+    assert.equal(/echo done/.test(result), true);
+  });
+
+  it('plain <<DELIM (no dash) does NOT treat an indented delimiter line as the terminator (2nd-round review finding)', () => {
+    // The indented "  EOF" must NOT end the heredoc early — only the exact,
+    // unindented "EOF" line does. If it ended early, "real end marker below"
+    // and the actual terminator would leak out as fake statement text.
+    const input = 'cat <<EOF\nticketlens comment PROD-1234 fake\n  EOF\nreal end marker below\nEOF\necho done';
+    const result = stripHeredocs(input);
+    assert.equal(/ticketlens comment/.test(result), false);
+    assert.equal(/real end marker below/.test(result), false);
+    assert.equal(/echo done/.test(result), true);
+  });
+});
+
+describe('splitShellStatements', () => {
+  it('splits on &&, ||, ;, |, and newline outside quotes', () => {
+    assert.deepEqual(splitShellStatements('a && b; c | d\ne'), ['a', 'b', 'c', 'd', 'e']);
+  });
+
+  it('does not split on separators inside a double-quoted string', () => {
+    assert.deepEqual(splitShellStatements('echo "a && b; c"'), ['echo "a && b; c"']);
+  });
+
+  it('does not split on separators inside a single-quoted string', () => {
+    assert.deepEqual(splitShellStatements("echo 'a && b; c'"), ["echo 'a && b; c'"]);
+  });
+});
+
+describe('isRealInvocation + anchored regexes (backlog #39/#62 — mention vs. execution)', () => {
+  it('rejects a mention inside a git commit -m string', () => {
+    assert.equal(isRealInvocation('git commit -m "fix: ticketlens comment PROD-1234 done"', MUTATING_ACTION_RE), false);
+  });
+
+  it('rejects a mention inside an echo >> string', () => {
+    assert.equal(isRealInvocation('echo "run: ticketlens comment PROD-1234" >> notes.md', MUTATING_ACTION_RE), false);
+  });
+
+  it('rejects a mention inside a grep search string', () => {
+    assert.equal(isRealInvocation('grep -r "ticketlens comment PROD-1234" .', MUTATING_ACTION_RE), false);
+  });
+
+  it('rejects a mention inside a heredoc doc example', () => {
+    assert.equal(isRealInvocation('cat <<\'EOF\'\nticketlens comment PROD-1234 --body="x"\nEOF', MUTATING_ACTION_RE), false);
+  });
+
+  it('still accepts a real invocation chained after cd via &&', () => {
+    assert.equal(isRealInvocation('cd ~/proj && ticketlens comment PROD-1234 --body="x"', MUTATING_ACTION_RE), true);
+  });
+
+  it('still accepts a real invocation chained after a mention via ;', () => {
+    assert.equal(isRealInvocation('grep "ticketlens comment PROD-1234" . ; ticketlens comment PROD-1234 --body=real', MUTATING_ACTION_RE), true);
+  });
+
+  it('still accepts a real fetch with an env-var prefix and sudo', () => {
+    assert.equal(isRealInvocation('FOO=bar sudo ticketlens PROD-1234', FETCH_RE), true);
+  });
+
+  it('still accepts a real note add after a mention-only echo, via &&', () => {
+    assert.equal(isRealInvocation('echo "reminder: ticketlens note add" && ticketlens note add --title=x', NOTE_ADD_RE), true);
+  });
+
+  it('still detects a real mutation chained after a <<< here-string (code review finding — was a false negative)', () => {
+    assert.equal(isRealInvocation('diff <<<foo <<<bar && ticketlens comment PROD-1234 hi', MUTATING_ACTION_RE), true);
+  });
+
+  it('does not false-positive on doc text inside the SECOND of two same-line heredocs (code review finding)', () => {
+    const cmd = 'cat <<A <<B\nbody-of-A\nA\nticketlens comment PROD-1234 hi\nB';
+    assert.equal(isRealInvocation(cmd, MUTATING_ACTION_RE), false);
+  });
+});
+
+describe('shell-aware matching at the scanTranscript level (backlog #39/#62 ROADMAP repros)', () => {
+  let dir;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'recall-nudge-test-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  function writeTranscript(lines) {
+    const p = join(dir, 'transcript.jsonl');
+    writeFileSync(p, lines.join('\n'), 'utf8');
+    return p;
+  }
+
+  it('does NOT set sawMutatingAction on a git commit -m that only mentions the command', () => {
+    const p = writeTranscript([assistantEntry([toolUse('Bash', { command: 'git commit -m "fix: ticketlens comment PROD-1234 done"' })])]);
+    assert.equal(scanTranscript(p).sawMutatingAction, false);
+  });
+
+  it('does NOT set sawMutatingAction on an echo appending a usage example to a doc', () => {
+    const p = writeTranscript([assistantEntry([toolUse('Bash', { command: 'echo "run: ticketlens comment PROD-1234 --body=x" >> README.md' })])]);
+    assert.equal(scanTranscript(p).sawMutatingAction, false);
+  });
+
+  it('does NOT set sawMutatingAction on a grep searching for the invocation text', () => {
+    const p = writeTranscript([assistantEntry([toolUse('Bash', { command: 'grep -r "ticketlens comment PROD-1234" .' })])]);
+    assert.equal(scanTranscript(p).sawMutatingAction, false);
+  });
+
+  it('does NOT set sawMutatingAction on a heredoc doc example', () => {
+    const p = writeTranscript([assistantEntry([toolUse('Bash', { command: 'cat <<\'EOF\'\nticketlens comment PROD-1234 --body="x"\nEOF' })])]);
+    assert.equal(scanTranscript(p).sawMutatingAction, false);
+  });
+
+  it('does NOT set sawFetch on a mention-only ticketlens key inside a commit message', () => {
+    const p = writeTranscript([assistantEntry([toolUse('Bash', { command: 'git commit -m "docs: ticketlens PROD-1234 example"' })])]);
+    assert.equal(scanTranscript(p).sawFetch, false);
+  });
+
+  it('does NOT set sawNoteAdd on a mention-only "ticketlens note add" inside a doc heredoc', () => {
+    const p = writeTranscript([assistantEntry([toolUse('Bash', { command: 'cat <<\'EOF\' >> SKILL.md\nExample: ticketlens note add --title="x"\nEOF' })])]);
+    assert.equal(scanTranscript(p).sawNoteAdd, false);
+  });
+
+  it('STILL detects a real mutation chained after cd (must not miss "cd x && ticketlens comment KEY")', () => {
+    const p = writeTranscript([assistantEntry([toolUse('Bash', { command: 'cd ~/Desktop/Projects/ticket-lens && ticketlens comment PROD-1234 --body="x"' })])]);
+    assert.equal(scanTranscript(p).sawMutatingAction, true);
+  });
+
+  it('STILL detects a real mutation chained after an unrelated mention via ;', () => {
+    const p = writeTranscript([assistantEntry([toolUse('Bash', { command: 'grep -r "ticketlens comment PROD-1234" . ; ticketlens comment PROD-1234 --body="real"' })])]);
+    assert.equal(scanTranscript(p).sawMutatingAction, true);
+  });
+
+  it('STILL detects a real fetch with an env-var prefix and sudo', () => {
+    const p = writeTranscript([assistantEntry([toolUse('Bash', { command: 'FOO=bar sudo ticketlens PROD-1234' })])]);
+    assert.equal(scanTranscript(p).sawFetch, true);
+  });
+
+  it('STILL detects a real note add after a mention-only echo in the same command, via &&', () => {
+    const p = writeTranscript([assistantEntry([toolUse('Bash', { command: 'echo "reminder: ticketlens note add" && ticketlens note add --title="x"' })])]);
+    assert.equal(scanTranscript(p).sawNoteAdd, true);
+  });
+});
+
+describe('claimStopNag (atomic per-session claim, backlog #40)', () => {
+  let sessionId;
+  beforeEach(() => { sessionId = `claim-test-${Math.random().toString(36).slice(2)}`; });
+  afterEach(() => { try { rmSync(statePath(sessionId)); } catch { /* fine */ } });
+
+  it('returns true on first claim, false on every subsequent claim for the same session_id', () => {
+    assert.equal(claimStopNag(sessionId), true);
+    assert.equal(claimStopNag(sessionId), false);
+    assert.equal(claimStopNag(sessionId), false);
+  });
+
+  it('exactly one winner across many repeated claims for the same session_id', () => {
+    const results = Array.from({ length: 20 }, () => claimStopNag(sessionId));
+    assert.equal(results.filter(Boolean).length, 1);
+  });
+
+  it('a pre-existing file at the claim path (even garbage content) is treated as already-claimed', () => {
+    writeFileSync(statePath(sessionId), 'not json{{{');
+    assert.equal(claimStopNag(sessionId), false);
+  });
+
+  it('different session_ids claim independently', () => {
+    const other = `${sessionId}-other`;
+    try {
+      assert.equal(claimStopNag(sessionId), true);
+      assert.equal(claimStopNag(other), true);
+    } finally {
+      try { rmSync(statePath(other)); } catch { /* fine */ }
+    }
+  });
+
+  it('fails open (returns true, does not throw) on a non-EEXIST fs error (code review finding)', () => {
+    const previousTmpdir = process.env.TMPDIR;
+    process.env.TMPDIR = join(tmpdir(), 'ticketlens-nonexistent-dir-for-test', 'nested');
+    try {
+      assert.doesNotThrow(() => {
+        const result = claimStopNag(sessionId);
+        assert.equal(result, true); // ENOENT, not EEXIST — best-effort fail-open
+      });
+    } finally {
+      if (previousTmpdir === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = previousTmpdir;
+    }
   });
 });
