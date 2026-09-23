@@ -1121,6 +1121,7 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
+- **Console: Recall "select all N matching" bulk delete** — Gmail-style banner deletes every note matching your search/filters across all pages, not just the current one
 - **Recall Stop-hook fix** — the end-of-session Recall reminder no longer fires because of file writes; only real ticket writes (comment, transition, assign, update) arm it. Also hardened against malformed transcripts and a session-id path-collision bug found by adversarial testing
 - **Console: no repeat request on same-page menu clicks** — sidebar links, the header gear and Settings tabs skip the request when they point at the page you are on
 - **Worklog** (`ticketlens worklog`, `ticket_worklog` MCP) — log time on Jira tickets, preview first. Pro tier
