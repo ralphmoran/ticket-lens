@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { scanForSecrets } from '../lib/secret-scanner.mjs';
+import { scanForSecrets, containsKnownSecretPattern } from '../lib/secret-scanner.mjs';
 
 describe('scanForSecrets — clean input', () => {
   test('plain note text is not rejected and has no warnings', () => {
@@ -656,5 +656,62 @@ describe('scanForSecrets — angle-bracket code/document syntax (backlog #19 fol
     const result = scanForSecrets({ title: 'x', tags: [], body: '<zqXvbNmKlPoIuYtRfghjklqwertyuiop>' });
     assert.equal(result.rejected, false);
     assert.ok(result.warnings.length > 0);
+  });
+});
+
+describe('containsKnownSecretPattern — narrow, no-entropy check (49e error reporting)', () => {
+  // Found 2026-09-23: a real multi-frame V8 stack trace, run through the
+  // full scanForSecrets entropy heuristic (as 49e's error-reporter.mjs
+  // originally did), rejected on nearly every "at fn (path:line:col)" line
+  // — false-positiving on the exact content type stack traces always are.
+  // containsKnownSecretPattern exists to scan that content without the
+  // entropy pass triggering on it.
+  const REAL_STACK = [
+    'Error: boom',
+    '    at TestContext.<anonymous> (file:///private/tmp/repro.test.mjs:6:17)',
+    '    at Test.runInAsyncScope (node:async_hooks:226:14)',
+    '    at Test.run (node:internal/test_runner/test:1201:25)',
+    '    at Test.start (node:internal/test_runner/test:1096:17)',
+    '    at node:internal/test_runner/test:1617:71',
+    '    at node:internal/per_context/primordials:466:82',
+    '    at new SafePromise (node:internal/per_context/primordials:435:3)',
+  ].join('\n');
+
+  test('a real stack trace with no secret is not flagged', () => {
+    assert.equal(containsKnownSecretPattern(REAL_STACK), false);
+  });
+
+  test('an AWS key embedded in a stack trace is still caught', () => {
+    assert.equal(containsKnownSecretPattern(`${REAL_STACK}\nError: token AKIAIOSFODNN7EXAMPLE rejected`), true);
+  });
+
+  test('a JWT is still caught', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U';
+    assert.equal(containsKnownSecretPattern(`Error: auth failed for ${jwt}`), true);
+  });
+
+  test('a PEM private key block is still caught', () => {
+    assert.equal(containsKnownSecretPattern('-----BEGIN RSA PRIVATE KEY-----\nMIIEow...'), true);
+  });
+
+  test('a secret split by whitespace fragmentation is still caught, same as scanForSecrets', () => {
+    // Security review finding (2026-09-23): the previous version pre-stripped
+    // spaces before calling the function, so it never actually exercised the
+    // despacedCombined fallback it claims to test. Passing the raw fragmented
+    // string is the real test — despacing must happen inside the function.
+    assert.equal(containsKnownSecretPattern('AKIAI OSFOD NN7EX AMPLE'), true);
+  });
+
+  test('plain error message prose with no secret is not flagged', () => {
+    assert.equal(containsKnownSecretPattern('ENOENT: no such file or directory, open \'/tmp/foo.json\''), false);
+  });
+
+  test('does not reject on entropy alone, unlike scanForSecrets', () => {
+    // scanForSecrets would flag this generic random-looking string; the
+    // narrow check must not, since that's the exact class of false
+    // positive it exists to skip.
+    const random = 'zqXvbNmKlPoIuYtRfghjklqwertyuiopASDFGHJKL';
+    assert.equal(scanForSecrets({ title: '', tags: [], body: random }).rejected, true);
+    assert.equal(containsKnownSecretPattern(random), false);
   });
 });

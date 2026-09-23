@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveConnection, resolveProfile, resolveProfileByPath, findProfilesByPrefix, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams, saveProfileRecallTeamId, loadProfileRecallTeamId, saveProfileRecallStrictness, normalizeRecallStrictness, resolveEffectiveRecallStrictness, RECALL_STRICTNESS_LEVELS, DEFAULT_RECALL_STRICTNESS, resolveRecallStrictnessTarget } from '../lib/profile-resolver.mjs';
+import { resolveConnection, resolveProfile, resolveProfileByPath, findProfilesByPrefix, loadProfiles, loadCredentials, saveDefault, saveProfile, deleteProfile, invalidateProfilesCache, saveTeams, loadTeams, saveProfileRecallTeamId, loadProfileRecallTeamId, saveProfileRecallStrictness, normalizeRecallStrictness, resolveEffectiveRecallStrictness, RECALL_STRICTNESS_LEVELS, DEFAULT_RECALL_STRICTNESS, resolveRecallStrictnessTarget, loadErrorReportingConsent, saveErrorReportingConsent } from '../lib/profile-resolver.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { hashToken } from '../lib/recall-sync.mjs';
 
@@ -465,6 +465,55 @@ describe('profile-resolver', () => {
 
     it('loadTeams returns an empty array when profiles.json does not exist', () => {
       assert.deepEqual(loadTeams(configDir), []);
+    });
+  });
+
+  describe('saveErrorReportingConsent / loadErrorReportingConsent (49e)', () => {
+    it('returns undefined when never asked (profiles.json does not exist)', () => {
+      assert.equal(loadErrorReportingConsent(configDir), undefined);
+    });
+
+    it('returns undefined when profiles.json exists but has no errorReporting key', () => {
+      writeConfig();
+      assert.equal(loadErrorReportingConsent(configDir), undefined);
+    });
+
+    it('persists true', () => {
+      writeConfig();
+      saveErrorReportingConsent(true, configDir);
+      assert.equal(loadErrorReportingConsent(configDir), true);
+    });
+
+    it('persists false', () => {
+      writeConfig();
+      saveErrorReportingConsent(false, configDir);
+      assert.equal(loadErrorReportingConsent(configDir), false);
+    });
+
+    it('creates profiles.json if it does not exist', () => {
+      saveErrorReportingConsent(true, configDir);
+      assert.equal(loadErrorReportingConsent(configDir), true);
+    });
+
+    it('preserves existing profiles and default when writing consent', () => {
+      writeConfig();
+      saveErrorReportingConsent(true, configDir);
+      const config = loadProfiles(configDir);
+      assert.ok(config.profiles['corenexus']);
+      assert.equal(config.default, 'corenexus');
+    });
+
+    it('is global, not per-profile — unaffected by which profile is active', () => {
+      writeConfig();
+      saveErrorReportingConsent(true, configDir);
+      saveDefault('acme', configDir);
+      assert.equal(loadErrorReportingConsent(configDir), true);
+    });
+
+    it('writes profiles.json with mode 0o600', () => {
+      saveErrorReportingConsent(true, configDir);
+      const mode = statSync(join(configDir, 'profiles.json')).mode & 0o777;
+      assert.equal(mode, 0o600);
     });
 
     it('overwrites a previously saved team list rather than appending', () => {

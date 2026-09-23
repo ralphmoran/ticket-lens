@@ -194,22 +194,46 @@ export function promptRecallPulse(question, { stream = process.stderr } = {}) {
   }));
 }
 
-export function promptYN(question, { stream = process.stderr } = {}) {
+/**
+ * @param {string} question
+ * @param {{ stream?: NodeJS.WriteStream, timeoutMs?: number }} [opts]
+ * @param {number} [opts.timeoutMs] - Optional. When set, an unanswered
+ *   prompt resolves to `null` (not `false`) after this many ms, cleanly
+ *   releasing raw mode and removing the listener first — this is what
+ *   actually lets the process exit; merely racing the returned promise at
+ *   the call site does nothing, since an orphaned raw-mode stdin listener
+ *   keeps the event loop alive regardless. `null` (not `false`), so a
+ *   caller can tell "timed out" apart from a real "no" answer and, e.g.,
+ *   avoid permanently persisting a decision the user never actually made.
+ *   Omitted entirely for the setup-wizard callers (config-wizard.mjs,
+ *   init-wizard.mjs, onboarding.mjs) — an unbounded wait is the right
+ *   behavior for a prompt the user is actively mid-flow on.
+ */
+export function promptYN(question, { stream = process.stderr, timeoutMs } = {}) {
   const s = createStyler({ isTTY: stream.isTTY });
   stream.write(`\n  ${question}  ${s.dim('y/N')}  `);
   return flushStdin().then(() => new Promise(res => {
     const stdin = process.stdin;
-    stdin.setRawMode(true);
-    stdin.resume();
-    stdin.setEncoding('utf8');
-    function onData(char) {
+    let timer = null;
+    function cleanup() {
       stdin.setRawMode(false);
       stdin.pause();
       stdin.removeListener('data', onData);
+      if (timer) clearTimeout(timer);
+    }
+    function onData(char) {
+      cleanup();
       stream.write('\n');
       if (char === '\x03') process.exit(0);
       res(char === 'y' || char === 'Y');
     }
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
     stdin.on('data', onData);
+    if (timeoutMs) {
+      timer = setTimeout(() => { cleanup(); stream.write('\n'); res(null); }, timeoutMs);
+      timer.unref?.(); // never itself the reason the process stays alive
+    }
   }));
 }

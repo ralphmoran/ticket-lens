@@ -80,6 +80,23 @@ export function loadTeams(configDir = DEFAULT_CONFIG_DIR) {
   return loadProfiles(configDir)?.teams ?? [];
 }
 
+// Opt-in CLI error/diagnostic reporting (49e) — global, not per-profile: one
+// machine, one consent decision, unlike recallStrictness. Tri-state via
+// `undefined` (never asked) vs. `true`/`false` (asked once, answer
+// persisted) — the consent prompt fires at most once per install.
+export function saveErrorReportingConsent(consent, configDir = DEFAULT_CONFIG_DIR) {
+  mkdirSync(configDir, { recursive: true });
+  const profilesPath = join(configDir, 'profiles.json');
+  const config = loadProfiles(configDir) || { profiles: {} };
+  config.errorReporting = consent;
+  writeFileSync(profilesPath, JSON.stringify(config, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
+  invalidateProfilesCache(configDir);
+}
+
+export function loadErrorReportingConsent(configDir = DEFAULT_CONFIG_DIR) {
+  return loadProfiles(configDir)?.errorReporting;
+}
+
 export function saveProfile(name, profileData, credData, configDir = DEFAULT_CONFIG_DIR) {
   mkdirSync(configDir, { recursive: true });
   const profilesPath = join(configDir, 'profiles.json');

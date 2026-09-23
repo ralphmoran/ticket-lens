@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { flushStdin, promptRecallPulse } from '../lib/prompt-helpers.mjs';
+import { flushStdin, promptRecallPulse, promptYN } from '../lib/prompt-helpers.mjs';
 
 function mockStdin({ paused = true, queue = [] } = {}) {
   const orig = {
@@ -96,6 +96,7 @@ function mockRawStdin() {
       }
       emitter.emit('data', char);
     },
+    listenerCount(event) { return emitter.listenerCount(event); },
     restore() { Object.assign(process.stdin, orig); },
   };
 }
@@ -140,6 +141,80 @@ describe('promptRecallPulse', () => {
       const result = promptRecallPulse('q', { stream: { write: () => {}, isTTY: false } });
       await mock.sendKey('Y');
       assert.equal(await result, 'y');
+    } finally {
+      mock.restore();
+    }
+  });
+});
+
+describe('promptYN', () => {
+  it('resolves true when the user presses y', async () => {
+    const mock = mockRawStdin();
+    try {
+      const result = promptYN('q', { stream: { write: () => {}, isTTY: false } });
+      await mock.sendKey('y');
+      assert.equal(await result, true);
+    } finally {
+      mock.restore();
+    }
+  });
+
+  it('resolves false for any non-y key, with no timeoutMs set', async () => {
+    const mock = mockRawStdin();
+    try {
+      const result = promptYN('q', { stream: { write: () => {}, isTTY: false } });
+      await mock.sendKey('n');
+      assert.equal(await result, false);
+    } finally {
+      mock.restore();
+    }
+  });
+
+  // Security review finding (2026-09-23): the first version had no timeout
+  // at all — an unanswered prompt kept the process alive indefinitely via
+  // the raw-mode stdin listener, regardless of what a caller did with the
+  // returned promise. This is the fix under direct test, not just inferred
+  // from reading the source.
+  it('resolves to null (not false) after timeoutMs elapses with no key pressed', async () => {
+    const mock = mockRawStdin();
+    try {
+      const result = await promptYN('q', { stream: { write: () => {}, isTTY: false }, timeoutMs: 20 });
+      assert.equal(result, null);
+    } finally {
+      mock.restore();
+    }
+  });
+
+  it('removes the data listener on timeout — no orphaned listener kept alive', async () => {
+    const mock = mockRawStdin();
+    try {
+      await promptYN('q', { stream: { write: () => {}, isTTY: false }, timeoutMs: 20 });
+      assert.equal(mock.listenerCount('data'), 0);
+    } finally {
+      mock.restore();
+    }
+  });
+
+  it('a key pressed after timeout has already fired has no listener left to receive it', async () => {
+    const mock = mockRawStdin();
+    try {
+      const result = await promptYN('q', { stream: { write: () => {}, isTTY: false }, timeoutMs: 20 });
+      assert.equal(result, null);
+      // No listener to send to — sendKey would hang waiting for one, so this
+      // just confirms the state directly instead.
+      assert.equal(mock.listenerCount('data'), 0);
+    } finally {
+      mock.restore();
+    }
+  });
+
+  it('never times out when timeoutMs is omitted — an answer well past 20ms still resolves', async () => {
+    const mock = mockRawStdin();
+    try {
+      const result = promptYN('q', { stream: { write: () => {}, isTTY: false } });
+      await new Promise(r => setTimeout(r, 30));
+      await mock.sendKey('y');
+      assert.equal(await result, true);
     } finally {
       mock.restore();
     }

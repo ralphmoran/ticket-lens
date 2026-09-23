@@ -16,7 +16,7 @@ import { runSwitch } from '../skills/jtb/scripts/lib/profile-switcher.mjs';
 import { runProfilesSetTeam } from '../skills/jtb/scripts/lib/profile-set-team.mjs';
 import { run as runConfig } from '../skills/jtb/scripts/lib/config-wizard.mjs';
 import { activateLicense, checkLicense, revalidateIfStale, isLicensed, showUpgradePrompt, readLicense } from '../skills/jtb/scripts/lib/license.mjs';
-import { deleteProfile, loadProfiles, saveCredentialKey, resolveRecallStrictnessTarget, saveProfileRecallStrictness, RECALL_STRICTNESS_LEVELS } from '../skills/jtb/scripts/lib/profile-resolver.mjs';
+import { deleteProfile, loadProfiles, saveCredentialKey, resolveRecallStrictnessTarget, saveProfileRecallStrictness, RECALL_STRICTNESS_LEVELS, saveErrorReportingConsent } from '../skills/jtb/scripts/lib/profile-resolver.mjs';
 import { run as runCache } from '../skills/jtb/scripts/lib/cache-manager.mjs';
 import { runDoctor } from '../skills/jtb/scripts/lib/doctor-command.mjs';
 import {
@@ -43,6 +43,16 @@ import { incrementInvocation, incrementCommand } from '../skills/jtb/scripts/lib
 import { DEFAULT_CONFIG_DIR } from '../skills/jtb/scripts/lib/config.mjs';
 import { checkTeamJiraConfigUpdate } from '../skills/jtb/scripts/lib/team-jira-sync.mjs';
 import { maybeAutoFlush } from '../skills/jtb/scripts/lib/recall-queue.mjs';
+import { maybeReportError } from '../skills/jtb/scripts/lib/error-reporter.mjs';
+
+// Fire-and-forget (49e) — never awaited by a caller, mirrors checkForUpdate's
+// own fire-and-forget style. maybeReportError already self-catches
+// everything internally; the extra .catch(() => {}) here is a second,
+// outermost safety net so this can never produce an unhandled rejection
+// regardless of what changes inside that function later.
+function reportError(err, command) {
+  maybeReportError(err, command).catch(() => {});
+}
 
 const TRACKED_COMMANDS = new Set([
   'triage', 'fetch', 'get', 'compliance', 'review', 'standup',
@@ -121,6 +131,7 @@ switch (command) {
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'fetch');
     });
     break;
   }
@@ -129,6 +140,7 @@ switch (command) {
     runTriage(cmdArgs).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'triage');
     });
     break;
 
@@ -138,6 +150,7 @@ switch (command) {
     runCollisions(cmdArgs).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'collisions');
     });
     break;
   }
@@ -147,6 +160,7 @@ switch (command) {
     runHistory(cmdArgs).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'history');
     });
     break;
   }
@@ -156,6 +170,7 @@ switch (command) {
     runStats(cmdArgs).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'stats');
     });
     break;
   }
@@ -165,6 +180,7 @@ switch (command) {
     runIssueTypes(cmdArgs).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'issue-types');
     });
     break;
   }
@@ -176,6 +192,7 @@ switch (command) {
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'doctor');
     });
     break;
   }
@@ -185,6 +202,7 @@ switch (command) {
     runInit().catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'init');
     });
     break;
 
@@ -193,6 +211,7 @@ switch (command) {
     runSwitch().catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'switch');
     });
     break;
 
@@ -216,6 +235,19 @@ switch (command) {
       saveCredentialKey('aiProvider', value);
       process.stdout.write(`  ${s.green('✔')} AI provider set to ${s.bold(s.cyan(value))}\n`);
       process.stdout.write(`  ${s.dim('Applied when running --summarize or --handoff without --provider=')}\n`);
+      break;
+    }
+
+    if (cmdArgs[0] === 'set' && cmdArgs[1] === 'errorReporting') {
+      const s = createStyler({ isTTY: process.stdout.isTTY });
+      const value = cmdArgs[2];
+      if (value !== 'on' && value !== 'off') {
+        process.stderr.write(`${s.red('✖')} Missing or invalid value.\n  Usage: ticketlens config set errorReporting <on|off>\n`);
+        process.exitCode = 1;
+        break;
+      }
+      saveErrorReportingConsent(value === 'on', DEFAULT_CONFIG_DIR);
+      process.stdout.write(`  ${s.green('✔')} Error reporting ${s.bold(s.cyan(value))}\n`);
       break;
     }
 
@@ -265,6 +297,7 @@ switch (command) {
     })().catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'config');
     });
     break;
   }
@@ -290,6 +323,7 @@ switch (command) {
     }).catch(err => {
       process.stderr.write(`\n  ${s.red('✖')} Activation error: ${err.message}\n\n`);
       process.exitCode = 1;
+      reportError(err, 'activate');
     });
     break;
   }
@@ -408,6 +442,7 @@ switch (command) {
       runProfilesSetTeam(profileName, teamName).catch(err => {
         process.stderr.write(`Error: ${err.message}\n`);
         process.exitCode = 1;
+        reportError(err, 'profiles');
       });
       break;
     }
@@ -422,6 +457,7 @@ switch (command) {
     runCache(cmdArgs).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'cache');
     });
     break;
 
@@ -489,6 +525,7 @@ switch (command) {
     runFetch(['install-hooks', ...cmdArgs]).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'install-hooks');
     });
     break;
 
@@ -497,6 +534,7 @@ switch (command) {
     runFetch(['pr', ...cmdArgs]).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'pr');
     });
     break;
 
@@ -505,6 +543,7 @@ switch (command) {
     runFetch(['review', ...cmdArgs]).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'review');
     });
     break;
 
@@ -513,6 +552,7 @@ switch (command) {
     runFetch(['standup', ...cmdArgs]).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'standup');
     });
     break;
 
@@ -521,6 +561,7 @@ switch (command) {
     runFetch(['ledger', ...cmdArgs]).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'ledger');
     });
     break;
 
@@ -529,6 +570,7 @@ switch (command) {
     runFetch(['compliance', ...cmdArgs]).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'compliance');
     });
     break;
 
@@ -549,6 +591,7 @@ switch (command) {
     })().catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'login');
     });
     break;
   }
@@ -589,6 +632,7 @@ switch (command) {
     })().catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'sync');
     });
     break;
   }
@@ -707,6 +751,7 @@ switch (command) {
     })().catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'cloud-keys');
     });
     break;
   }
@@ -720,6 +765,7 @@ switch (command) {
       }).catch(err => {
         process.stderr.write(`Error: ${err.message}\n`);
         process.exitCode = 1;
+        reportError(err, 'note');
       });
       break;
     }
@@ -730,6 +776,7 @@ switch (command) {
       }).catch(err => {
         process.stderr.write(`Error: ${err.message}\n`);
         process.exitCode = 1;
+        reportError(err, 'note');
       });
       break;
     }
@@ -740,6 +787,7 @@ switch (command) {
       }).catch(err => {
         process.stderr.write(`Error: ${err.message}\n`);
         process.exitCode = 1;
+        reportError(err, 'note');
       });
       break;
     }
@@ -757,6 +805,7 @@ switch (command) {
       }).catch(err => {
         process.stderr.write(`Error: ${err.message}\n`);
         process.exitCode = 1;
+        reportError(err, 'recall');
       });
       break;
     }
@@ -767,6 +816,7 @@ switch (command) {
       }).catch(err => {
         process.stderr.write(`Error: ${err.message}\n`);
         process.exitCode = 1;
+        reportError(err, 'recall');
       });
       break;
     }
@@ -776,6 +826,7 @@ switch (command) {
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'recall');
     });
     break;
   }
@@ -803,6 +854,7 @@ switch (command) {
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'comment');
     });
     break;
   }
@@ -819,6 +871,7 @@ switch (command) {
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'transition');
     });
     break;
   }
@@ -831,6 +884,7 @@ switch (command) {
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'assign');
     });
     break;
   }
@@ -843,6 +897,7 @@ switch (command) {
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'worklog');
     });
     break;
   }
@@ -855,6 +910,7 @@ switch (command) {
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'duplicates');
     });
     break;
   }
@@ -871,6 +927,7 @@ switch (command) {
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'link');
     });
     break;
   }
@@ -883,6 +940,7 @@ switch (command) {
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'update');
     });
     break;
   }
@@ -895,6 +953,7 @@ switch (command) {
     }).catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, 'create');
     });
     break;
   }
@@ -916,6 +975,7 @@ switch (command) {
     })().catch(err => {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
+      reportError(err, command);
     });
     break;
   }

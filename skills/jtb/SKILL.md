@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.44.2 -->
+<!-- jtb-skill-version: 0.45.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -507,6 +507,19 @@ ticketlens doctor --mcp              # also check the MCP server handshake (spaw
 If this harness has TicketLens's MCP server configured (a tool named `doctor` — often shown as `mcp__ticketlens__doctor` — visible in your tool list), prefer it over the bash form: it always requests the JSON report internally and returns it as the tool's text content, so you get a structured result to reason over directly instead of parsing CLI stdout. It accepts the same `fix`/`profile` options as the CLI flags above (the `--mcp` handshake check is CLI-only — deliberately not exposed as an MCP tool option, since a successful MCP tool call already proves the handshake works).
 
 A report with `ok: false` is a successful tool call describing failures, not a tool error — read the `checks[]` array for what's failing and act on each entry's `hint`, don't treat the call itself as having failed.
+
+---
+
+## Opt-in error reporting
+
+Off by default. The first time a command hits a genuine unexpected error while running in a real interactive terminal, TicketLens asks once — "Would you like TicketLens to send reports about issues, bugs, and errors to improve your experience?" — and remembers the answer permanently, never asking again. It never asks under an MCP-connected harness, CI, or any piped/non-interactive invocation; in those contexts an undecided consent state just stays undecided and nothing is sent.
+
+When consent is `on`, an unexpected error triggers a best-effort, fire-and-forget report — CLI version, OS, the command name, the error message, and a stack trace. This never delays or affects the command's own exit code or stderr output; a failed or slow send is silently dropped. The message and stack trace are scanned for secret-shaped content (same scanner `note add` uses) before anything leaves the machine — a flagged report is dropped, not sent redacted. No account, profile name, ticket data, or credential ever leaves the machine as part of this — reports are anonymous.
+
+```bash
+ticketlens config set errorReporting on     # opt in explicitly, skip the prompt
+ticketlens config set errorReporting off    # opt out — also the way to change your mind after saying yes
+```
 
 ---
 

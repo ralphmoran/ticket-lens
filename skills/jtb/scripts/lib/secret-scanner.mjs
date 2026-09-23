@@ -476,6 +476,28 @@ function joinedChunkRuns(tokens, { stopAtLabelWords = true } = {}) {
 }
 
 /**
+ * HARD_REJECT_PATTERNS only — no tokenization, no entropy heuristic. For
+ * machine-generated text that is never free-form user prose (a V8 stack
+ * trace's "at fn (path:line:col)" frames, in practice), where the entropy
+ * heuristic false-positives on nearly every line: short, punctuation-dense,
+ * path-heavy tokens read as "random" to it even though none of it is a
+ * secret. A real secret embedded in such text (e.g. a token baked into an
+ * error message that then appears in the trace's own first line) still has
+ * a literal prefix (AKIA/eyJ/sk-/-----BEGIN/etc.) and is still caught here —
+ * only the generic "long random-looking string" class of rejection is
+ * skipped, deliberately, for this one call site.
+ *
+ * @param {string} text
+ * @returns {boolean}
+ */
+export function containsKnownSecretPattern(text) {
+  const tokens = text.split(WHITESPACE_SPLIT_RE).filter(Boolean);
+  const despaced = text.replace(WHITESPACE_STRIP_RE, '');
+  const runs = joinedChunkRuns(tokens, { stopAtLabelWords: false });
+  return HARD_REJECT_PATTERNS.some(({ re }) => re.test(text) || runs.some(c => re.test(c)) || re.test(despaced));
+}
+
+/**
  * @param {{ title?: string, tags?: string[], body?: string }} note
  * @returns {{ rejected: boolean, reasons: string[], warnings: string[] }}
  */
