@@ -232,8 +232,15 @@ export function promptYN(question, { stream = process.stderr, timeoutMs } = {}) 
     stdin.setEncoding('utf8');
     stdin.on('data', onData);
     if (timeoutMs) {
+      // Deliberately NOT unref'd: this timer is what bounds the wait — an
+      // unref'd timer doesn't count toward Node keeping the process alive,
+      // so if nothing else were holding the loop open, the process (or a
+      // test runner's own loop-empty detection) could end before the timer
+      // ever fires, leaving the promise permanently pending. A live TTY's
+      // own stdin.resume() already keeps the process alive regardless; this
+      // timer only needs to fire and clean up before that natural lifetime
+      // runs out, which is the entire point of having it.
       timer = setTimeout(() => { cleanup(); stream.write('\n'); res(null); }, timeoutMs);
-      timer.unref?.(); // never itself the reason the process stays alive
     }
   }));
 }
