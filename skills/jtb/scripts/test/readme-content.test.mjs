@@ -87,7 +87,12 @@ describe('README — worklog is documented (ROADMAP 56)', () => {
   it('Recently shipped lists Worklog', () => {
     const start = README.indexOf('Recently shipped:');
     assert.notEqual(start, -1);
-    assert.match(README.slice(start, start + 600), /\*\*Worklog\*\*/);
+    // Whole list, not a fixed char window — a magic-number slice (previously
+    // 600) breaks the instant a newer item is legitimately prepended above
+    // Worklog, which isn't a real regression. `\n---` closes the Roadmap
+    // section, same end-marker convention as this file's own section().
+    const end = README.indexOf('\n---', start);
+    assert.match(README.slice(start, end === -1 ? undefined : end), /\*\*Worklog\*\*/);
   });
 });
 
