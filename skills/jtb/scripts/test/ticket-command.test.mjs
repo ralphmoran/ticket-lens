@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate, runTicketCreate, classifyWriteFailure, matchColor } from '../lib/ticket-command.mjs';
+import { runTicketComment, runTicketTransitionList, runTicketTransition, runTicketAssign, runTicketDuplicates, runTicketLinkList, runTicketLink, runTicketUpdate, runTicketCreate, classifyWriteFailure, matchColor, safeClaim, safeRelease } from '../lib/ticket-command.mjs';
 import { createStyler } from '../lib/ansi.mjs';
 
 function makeStream() {
@@ -40,8 +40,8 @@ function baseDeps(overrides = {}) {
     isLicensedFn: () => true,
     resolveConnectionFn: () => ({ baseUrl: 'https://jira.example.com' }),
     resolveAdapterFn: () => fakeAdapter(),
-    checkCooldownFn: () => ({ active: false, remainingMs: 0 }),
-    recordActionFn: () => {},
+    claimActionFn: () => ({ claimed: true, remainingMs: 0 }),
+    releaseActionFn: () => {},
     logActionFn: () => {},
     readMetadataCacheFn: () => null,
     writeMetadataCacheFn: () => {},
@@ -77,6 +77,47 @@ describe('classifyWriteFailure', () => {
     const result = classifyWriteFailure(err);
     assert.equal(result.kind, 'terminal');
     assert.deepEqual(result.details, { errors: ['bad'] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// safeClaim / safeRelease (Backlog #34/ROADMAP 57) — the shared claimAction/
+// releaseAction guard every runTicket* write in this file goes through.
+// Tested once here directly (DAMP) rather than duplicated per call site.
+// ---------------------------------------------------------------------------
+describe('safeClaim', () => {
+  test('passes through a successful claim unchanged', () => {
+    const result = safeClaim(() => ({ claimed: true, remainingMs: 0 }), 'PROJ-1', 'comment', '/fake');
+    assert.deepEqual(result, { claimed: true, remainingMs: 0 });
+  });
+
+  test('passes through an active-cooldown skip unchanged', () => {
+    const result = safeClaim(() => ({ claimed: false, remainingMs: 4000 }), 'PROJ-1', 'comment', '/fake');
+    assert.deepEqual(result, { claimed: false, remainingMs: 4000 });
+  });
+
+  test('a thrown lock-contention error becomes claimed:false with a lockError message, never propagates', () => {
+    const result = safeClaim(() => { throw new Error('cooldown lock busy — another ticketlens process holds it'); }, 'PROJ-1', 'comment', '/fake');
+    assert.equal(result.claimed, false);
+    assert.match(result.lockError, /lock busy/);
+  });
+
+  test('threads ticketKey/action/configDir through to claimActionFn unchanged', () => {
+    let captured;
+    safeClaim((key, action, opts) => { captured = { key, action, opts }; return { claimed: true, remainingMs: 0 }; }, 'PROJ-1', 'comment', '/fake/config');
+    assert.deepEqual(captured, { key: 'PROJ-1', action: 'comment', opts: { configDir: '/fake/config' } });
+  });
+});
+
+describe('safeRelease', () => {
+  test('calls releaseActionFn with ticketKey/action/configDir', () => {
+    let captured;
+    safeRelease((key, action, opts) => { captured = { key, action, opts }; }, 'PROJ-1', 'comment', '/fake/config');
+    assert.deepEqual(captured, { key: 'PROJ-1', action: 'comment', opts: { configDir: '/fake/config' } });
+  });
+
+  test('swallows a thrown lock-contention error — best effort, never propagates', () => {
+    assert.doesNotThrow(() => safeRelease(() => { throw new Error('cooldown lock busy'); }, 'PROJ-1', 'comment', '/fake'));
   });
 });
 
@@ -120,16 +161,29 @@ describe('runTicketComment — usage validation', () => {
 });
 
 describe('runTicketComment — cooldown', () => {
-  test('active cooldown skips the write entirely', async () => {
+  test('an unclaimable cooldown skips the write entirely', async () => {
     let addCalled = false;
     const deps = baseDeps({
-      checkCooldownFn: () => ({ active: true, remainingMs: 4000 }),
+      claimActionFn: () => ({ claimed: false, remainingMs: 4000 }),
       resolveAdapterFn: () => fakeAdapter({ addComment: async () => { addCalled = true; return {}; } }),
     });
     const result = await runTicketComment(['PROJ-1', '--body=hi'], deps);
     assert.equal(result.ok, false);
     assert.equal(addCalled, false);
     assert.match(deps.stream.lines.join(''), /Skipped/);
+  });
+
+  test('claimActionFn throwing (lock contention) is reported gracefully via safeClaim, not an uncaught crash (Backlog #34/ROADMAP 57)', async () => {
+    let addCalled = false;
+    const deps = baseDeps({
+      claimActionFn: () => { throw new Error('cooldown lock busy — another ticketlens process holds it'); },
+      resolveAdapterFn: () => fakeAdapter({ addComment: async () => { addCalled = true; return {}; } }),
+    });
+    const result = await runTicketComment(['PROJ-1', '--body=hi'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(addCalled, false);
+    assert.match(deps.stream.lines.join(''), /could not take the cooldown lock/);
+    assert.match(deps.stream.lines.join(''), /safe to retry/);
   });
 });
 
@@ -143,6 +197,16 @@ describe('runTicketComment — connection resolution', () => {
     const result = await runTicketComment(['PROJ-1', '--body=hi'], deps);
     assert.equal(result.ok, false);
     assert.equal(adapterResolved, false);
+  });
+
+  test('a failed connection resolution releases the already-taken claim, so a fixed retry is not blocked (Backlog #34/ROADMAP 57)', async () => {
+    let released;
+    const deps = baseDeps({
+      resolveConnectionFn: () => ({ baseUrl: null }),
+      releaseActionFn: (key, action) => { released = { key, action }; },
+    });
+    await runTicketComment(['PROJ-1', '--body=hi'], deps);
+    assert.deepEqual(released, { key: 'PROJ-1', action: 'comment' });
   });
 
   test('an ambiguous-prefix warning from the resolver is surfaced to the stream, not swallowed', async () => {
@@ -168,15 +232,15 @@ describe('runTicketComment — connection resolution', () => {
 });
 
 describe('runTicketComment — happy path', () => {
-  test('posts the comment, records the cooldown, and logs the action', async () => {
-    let recorded, logged;
+  test('posts the comment, claims the cooldown before writing (Backlog #34/ROADMAP 57), and logs the action', async () => {
+    let claimed, logged;
     const deps = baseDeps({
-      recordActionFn: (key, action) => { recorded = { key, action }; },
+      claimActionFn: (key, action) => { claimed = { key, action }; return { claimed: true, remainingMs: 0 }; },
       logActionFn: (entry) => { logged = entry; },
     });
     const result = await runTicketComment(['PROJ-1', '--body=Looks good'], deps);
     assert.equal(result.ok, true);
-    assert.deepEqual(recorded, { key: 'PROJ-1', action: 'comment' });
+    assert.deepEqual(claimed, { key: 'PROJ-1', action: 'comment' });
     assert.equal(logged.ticketKey, 'PROJ-1');
     assert.equal(logged.action, 'comment');
     assert.equal(logged.tracker, 'jira');
@@ -199,30 +263,40 @@ describe('runTicketComment — happy path', () => {
   });
 
   test('normalizes a lowercase ticket key instead of rejecting it', async () => {
-    let recorded;
+    let claimed;
     const deps = baseDeps({
-      recordActionFn: (key, action) => { recorded = { key, action }; },
+      claimActionFn: (key, action) => { claimed = { key, action }; return { claimed: true, remainingMs: 0 }; },
     });
     const result = await runTicketComment(['proj-1', '--body=Looks good'], deps);
     assert.equal(result.ok, true);
-    assert.deepEqual(recorded, { key: 'PROJ-1', action: 'comment' });
+    assert.deepEqual(claimed, { key: 'PROJ-1', action: 'comment' });
     assert.match(deps.stream.lines.join(''), /Comment posted to PROJ-1/);
   });
 });
 
 describe('runTicketComment — write failure', () => {
-  test('a thrown error is classified and reported, cooldown/log are never recorded', async () => {
-    let recorded = false, logged = false;
+  test('a thrown error is classified and reported; the claim is released so a retry is not blocked (Backlog #34/ROADMAP 57), log is never recorded', async () => {
+    let released = false, logged = false;
     const deps = baseDeps({
       resolveAdapterFn: () => fakeAdapter({ addComment: async () => { throw Object.assign(new Error('boom'), { status: 500 }); } }),
-      recordActionFn: () => { recorded = true; },
+      releaseActionFn: (key, action) => { released = { key, action }; },
       logActionFn: () => { logged = true; },
     });
     const result = await runTicketComment(['PROJ-1', '--body=hi'], deps);
     assert.equal(result.ok, false);
-    assert.equal(recorded, false);
+    assert.deepEqual(released, { key: 'PROJ-1', action: 'comment' });
     assert.equal(logged, false);
     assert.match(deps.stream.lines.join(''), /server error/);
+  });
+
+  test('releaseActionFn throwing (lock contention) does not mask the original write failure — the release is best-effort (Backlog #34/ROADMAP 57)', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ addComment: async () => { throw new Error('network down'); } }),
+      releaseActionFn: () => { throw new Error('cooldown lock busy — another ticketlens process holds it'); },
+    });
+    const result = await runTicketComment(['PROJ-1', '--body=hi'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Network error or timeout/, 'the original failure must still be reported, not the release error');
   });
 });
 
@@ -487,10 +561,10 @@ describe('runTicketTransition — usage validation', () => {
 });
 
 describe('runTicketTransition — cooldown', () => {
-  test('active cooldown skips execution', async () => {
+  test('an unclaimable cooldown skips execution', async () => {
     let transitionCalled = false;
     const deps = baseDeps({
-      checkCooldownFn: () => ({ active: true, remainingMs: 2000 }),
+      claimActionFn: () => ({ claimed: false, remainingMs: 2000 }),
       resolveAdapterFn: () => fakeAdapter({ transition: async () => { transitionCalled = true; return { executed: true, to: 'Done' }; } }),
     });
     const result = await runTicketTransition(['PROJ-1', '--target=Done', '--confirm'], deps);
@@ -500,15 +574,15 @@ describe('runTicketTransition — cooldown', () => {
 });
 
 describe('runTicketTransition — happy path', () => {
-  test('executes, records cooldown, and logs the action', async () => {
-    let recorded, logged;
+  test('executes, claims the cooldown before writing (Backlog #34/ROADMAP 57), and logs the action', async () => {
+    let claimed, logged;
     const deps = baseDeps({
-      recordActionFn: (key, action) => { recorded = { key, action }; },
+      claimActionFn: (key, action) => { claimed = { key, action }; return { claimed: true, remainingMs: 0 }; },
       logActionFn: (entry) => { logged = entry; },
     });
     const result = await runTicketTransition(['PROJ-1', '--target=Done', '--confirm'], deps);
     assert.equal(result.ok, true);
-    assert.deepEqual(recorded, { key: 'PROJ-1', action: 'transition' });
+    assert.deepEqual(claimed, { key: 'PROJ-1', action: 'transition' });
     assert.equal(logged.detail.to, 'Done');
     assert.match(deps.stream.lines.join(''), /transitioned to "Done"/);
   });
@@ -530,31 +604,34 @@ describe('runTicketTransition — happy path', () => {
 });
 
 describe('runTicketTransition — unresolved target', () => {
-  test('executed:false is reported with valid options, cooldown/log never recorded', async () => {
-    let recorded = false, logged = false;
+  test('executed:false is reported with valid options; the claim is released (nothing was written), log never recorded', async () => {
+    let released, logged = false;
     const deps = baseDeps({
       resolveAdapterFn: () => fakeAdapter({
         transition: async () => ({ executed: false, reason: 'not-found', options: [{ id: '1', name: 'Done', to: 'Done' }] }),
       }),
-      recordActionFn: () => { recorded = true; },
+      releaseActionFn: (key, action) => { released = { key, action }; },
       logActionFn: () => { logged = true; },
     });
     const result = await runTicketTransition(['PROJ-1', '--target=Bogus', '--confirm'], deps);
     assert.equal(result.ok, false);
     assert.equal(result.reason, 'not-found');
-    assert.equal(recorded, false);
+    assert.deepEqual(released, { key: 'PROJ-1', action: 'transition' });
     assert.equal(logged, false);
     assert.match(deps.stream.lines.join(''), /Done/);
   });
 });
 
 describe('runTicketTransition — write failure', () => {
-  test('a thrown error during execution is classified and reported', async () => {
+  test('a thrown error during execution is classified and reported; the claim is released (Backlog #34/ROADMAP 57)', async () => {
+    let released;
     const deps = baseDeps({
       resolveAdapterFn: () => fakeAdapter({ transition: async () => { throw new Error('network down'); } }),
+      releaseActionFn: (key, action) => { released = { key, action }; },
     });
     const result = await runTicketTransition(['PROJ-1', '--target=Done', '--confirm'], deps);
     assert.equal(result.ok, false);
+    assert.deepEqual(released, { key: 'PROJ-1', action: 'transition' });
     assert.match(deps.stream.lines.join(''), /Network error or timeout/);
   });
 });
@@ -667,29 +744,29 @@ describe('runTicketAssign — assign to another developer (ROADMAP 61)', () => {
     assert.match(deps.stream.lines.join(''), /--confirm/);
   });
 
-  test('a single match with --confirm executes, records cooldown, and logs accountId', async () => {
-    let recorded, logged, assignedTo;
+  test('a single match with --confirm executes, claims the cooldown before writing (Backlog #34/ROADMAP 57), and logs accountId', async () => {
+    let claimed, logged, assignedTo;
     const deps = cloudDeps({
       resolveAdapterFn: () => fakeAdapter({
         searchAssignableUsers: async () => [{ accountId: 'acc-1', displayName: 'Jane Dev' }],
         assignToUser: async (key, accountId) => { assignedTo = { key, accountId }; },
       }),
-      recordActionFn: (key, action) => { recorded = { key, action }; },
+      claimActionFn: (key, action) => { claimed = { key, action }; return { claimed: true, remainingMs: 0 }; },
       logActionFn: (entry) => { logged = entry; },
     });
     const result = await runTicketAssign(['PROJ-1', '--to=jane', '--confirm'], deps);
     assert.equal(result.ok, true);
     assert.deepEqual(assignedTo, { key: 'PROJ-1', accountId: 'acc-1' });
-    assert.deepEqual(recorded, { key: 'PROJ-1', action: 'assign' });
+    assert.deepEqual(claimed, { key: 'PROJ-1', action: 'assign' });
     assert.equal(logged.detail.assignee, 'Jane Dev');
     assert.equal(logged.detail.accountId, 'acc-1');
     assert.match(deps.stream.lines.join(''), /assigned to Jane Dev/);
   });
 
-  test('active cooldown blocks the confirmed execute, even after a resolved single match', async () => {
+  test('an unclaimable cooldown blocks the confirmed execute, even after a resolved single match', async () => {
     let assignCalled = false;
     const deps = cloudDeps({
-      checkCooldownFn: () => ({ active: true, remainingMs: 3000 }),
+      claimActionFn: () => ({ claimed: false, remainingMs: 3000 }),
       resolveAdapterFn: () => fakeAdapter({
         searchAssignableUsers: async () => [{ accountId: 'acc-1', displayName: 'Jane Dev' }],
         assignToUser: async () => { assignCalled = true; },
@@ -738,10 +815,10 @@ describe('runTicketAssign — assign to another developer (ROADMAP 61)', () => {
 });
 
 describe('runTicketAssign — cooldown', () => {
-  test('active cooldown skips the write entirely', async () => {
+  test('an unclaimable cooldown skips the write entirely', async () => {
     let assignCalled = false;
     const deps = baseDeps({
-      checkCooldownFn: () => ({ active: true, remainingMs: 3000 }),
+      claimActionFn: () => ({ claimed: false, remainingMs: 3000 }),
       resolveAdapterFn: () => fakeAdapter({ assignToSelf: async () => { assignCalled = true; return { assignee: 'x' }; } }),
     });
     const result = await runTicketAssign(['PROJ-1', '--to=me'], deps);
@@ -752,15 +829,15 @@ describe('runTicketAssign — cooldown', () => {
 });
 
 describe('runTicketAssign — happy path', () => {
-  test('assigns to self, records cooldown, and logs the action', async () => {
-    let recorded, logged;
+  test('assigns to self, claims the cooldown before writing (Backlog #34/ROADMAP 57), and logs the action', async () => {
+    let claimed, logged;
     const deps = baseDeps({
-      recordActionFn: (key, action) => { recorded = { key, action }; },
+      claimActionFn: (key, action) => { claimed = { key, action }; return { claimed: true, remainingMs: 0 }; },
       logActionFn: (entry) => { logged = entry; },
     });
     const result = await runTicketAssign(['PROJ-1', '--to=me'], deps);
     assert.equal(result.ok, true);
-    assert.deepEqual(recorded, { key: 'PROJ-1', action: 'assign' });
+    assert.deepEqual(claimed, { key: 'PROJ-1', action: 'assign' });
     assert.equal(logged.detail.assignee, 'Ralph Moran');
     assert.match(deps.stream.lines.join(''), /assigned to Ralph Moran/);
   });
@@ -782,16 +859,16 @@ describe('runTicketAssign — happy path', () => {
 });
 
 describe('runTicketAssign — write failure', () => {
-  test('a thrown error is classified and reported, cooldown/log are never recorded', async () => {
-    let recorded = false, logged = false;
+  test('a thrown error is classified and reported; the claim is released (Backlog #34/ROADMAP 57), log never recorded', async () => {
+    let released, logged = false;
     const deps = baseDeps({
       resolveAdapterFn: () => fakeAdapter({ assignToSelf: async () => { throw Object.assign(new Error('boom'), { status: 500 }); } }),
-      recordActionFn: () => { recorded = true; },
+      releaseActionFn: (key, action) => { released = { key, action }; },
       logActionFn: () => { logged = true; },
     });
     const result = await runTicketAssign(['PROJ-1', '--to=me'], deps);
     assert.equal(result.ok, false);
-    assert.equal(recorded, false);
+    assert.deepEqual(released, { key: 'PROJ-1', action: 'assign' });
     assert.equal(logged, false);
     assert.match(deps.stream.lines.join(''), /server error/);
   });
@@ -1241,17 +1318,17 @@ describe('runTicketLink — usage validation', () => {
 });
 
 describe('runTicketLink — cooldown', () => {
-  test('active cooldown skips execution, checked against the source:target pair key', async () => {
+  test('an unclaimable cooldown skips execution, claimed against the source:target pair key', async () => {
     let linkCalled = false;
-    let checkedKey;
+    let claimedKey;
     const deps = baseDeps({
-      checkCooldownFn: (key) => { checkedKey = key; return { active: true, remainingMs: 2000 }; },
+      claimActionFn: (key) => { claimedKey = key; return { claimed: false, remainingMs: 2000 }; },
       resolveAdapterFn: () => fakeAdapter({ linkTo: async () => { linkCalled = true; return { executed: true }; } }),
     });
     const result = await runTicketLink(['PROJ-1', 'PROJ-2', '--type=duplicate', '--confirm'], deps);
     assert.equal(result.ok, false);
     assert.equal(linkCalled, false);
-    assert.equal(checkedKey, 'PROJ-1:PROJ-2');
+    assert.equal(claimedKey, 'PROJ-1:PROJ-2');
   });
 });
 
@@ -1269,34 +1346,34 @@ describe('runTicketLink — GitHub type restriction', () => {
 });
 
 describe('runTicketLink — unresolved type', () => {
-  test('executed:false is reported with valid options, cooldown/log never recorded — mirrors runTicketTransition\'s unresolved-target handling', async () => {
-    let recorded = false, logged = false;
+  test('executed:false is reported with valid options; the claim is released (nothing was written), log never recorded — mirrors runTicketTransition\'s unresolved-target handling', async () => {
+    let released, logged = false;
     const deps = baseDeps({
       resolveAdapterFn: () => fakeAdapter({
         linkTo: async () => ({ executed: false, reason: 'not-found', options: ['duplicate', 'related'] }),
       }),
-      recordActionFn: () => { recorded = true; },
+      releaseActionFn: (key, action) => { released = { key, action }; },
       logActionFn: () => { logged = true; },
     });
     const result = await runTicketLink(['PROJ-1', 'PROJ-2', '--type=Bogus', '--confirm'], deps);
     assert.equal(result.ok, false);
     assert.equal(result.reason, 'not-found');
-    assert.equal(recorded, false);
+    assert.deepEqual(released, { key: 'PROJ-1:PROJ-2', action: 'link' });
     assert.equal(logged, false);
     assert.match(deps.stream.lines.join(''), /duplicate/);
   });
 });
 
 describe('runTicketLink — happy path', () => {
-  test('links, records cooldown on the pair key, and logs sourceKey with target/type in detail', async () => {
-    let recorded, logged;
+  test('links, claims the cooldown on the pair key before writing (Backlog #34/ROADMAP 57), and logs sourceKey with target/type in detail', async () => {
+    let claimed, logged;
     const deps = baseDeps({
-      recordActionFn: (key, action) => { recorded = { key, action }; },
+      claimActionFn: (key, action) => { claimed = { key, action }; return { claimed: true, remainingMs: 0 }; },
       logActionFn: (entry) => { logged = entry; },
     });
     const result = await runTicketLink(['PROJ-1', 'PROJ-2', '--type=duplicate', '--confirm'], deps);
     assert.equal(result.ok, true);
-    assert.deepEqual(recorded, { key: 'PROJ-1:PROJ-2', action: 'link' });
+    assert.deepEqual(claimed, { key: 'PROJ-1:PROJ-2', action: 'link' });
     assert.deepEqual(logged, { ticketKey: 'PROJ-1', action: 'link', actor: 'ralph', tracker: 'jira', detail: { targetKey: 'PROJ-2', type: 'duplicate' } });
     assert.match(deps.stream.lines.join(''), /linked to PROJ-2/);
   });
@@ -1336,16 +1413,16 @@ describe('runTicketLink — happy path', () => {
 });
 
 describe('runTicketLink — write failure', () => {
-  test('a thrown error during execution is classified and reported, cooldown/log never recorded', async () => {
-    let recorded = false, logged = false;
+  test('a thrown error during execution is classified and reported; the claim is released (Backlog #34/ROADMAP 57), log never recorded', async () => {
+    let released, logged = false;
     const deps = baseDeps({
       resolveAdapterFn: () => fakeAdapter({ linkTo: async () => { throw new Error('network down'); } }),
-      recordActionFn: () => { recorded = true; },
+      releaseActionFn: (key, action) => { released = { key, action }; },
       logActionFn: () => { logged = true; },
     });
     const result = await runTicketLink(['PROJ-1', 'PROJ-2', '--type=duplicate', '--confirm'], deps);
     assert.equal(result.ok, false);
-    assert.equal(recorded, false);
+    assert.deepEqual(released, { key: 'PROJ-1:PROJ-2', action: 'link' });
     assert.equal(logged, false);
     assert.match(deps.stream.lines.join(''), /Network error or timeout/);
   });
@@ -1385,10 +1462,10 @@ describe('runTicketUpdate — usage validation', () => {
 });
 
 describe('runTicketUpdate — cooldown', () => {
-  test('active cooldown skips execution', async () => {
+  test('an unclaimable cooldown skips execution', async () => {
     let called = false;
     const deps = baseDeps({
-      checkCooldownFn: () => ({ active: true, remainingMs: 3000 }),
+      claimActionFn: () => ({ claimed: false, remainingMs: 3000 }),
       resolveAdapterFn: () => fakeAdapter({ updateFields: async () => { called = true; return { applied: {}, errors: {} }; } }),
     });
     const result = await runTicketUpdate(['PROJ-1', '--title=New'], deps);
@@ -1407,6 +1484,16 @@ describe('runTicketUpdate — GitHub priority restriction', () => {
     assert.equal(result.ok, false);
     assert.equal(called, false);
     assert.match(deps.stream.lines.join(''), /GitHub.*priority/i);
+  });
+
+  test('releases the claim when refusing GitHub priority — nothing was written (Backlog #34/ROADMAP 57)', async () => {
+    let released;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ type: 'github' }),
+      releaseActionFn: (key, action) => { released = { key, action }; },
+    });
+    await runTicketUpdate(['PROJ-1', '--priority=High'], deps);
+    assert.deepEqual(released, { key: 'PROJ-1', action: 'update' });
   });
 
   test('does not block other fields on GitHub as long as --priority is absent', async () => {
@@ -1434,10 +1521,10 @@ describe('runTicketUpdate — happy path', () => {
     assert.deepEqual(captured.fields, { title: 'New title', description: undefined, priority: undefined, addLabels: ['urgent', 'backend'], removeLabels: ['stale'] });
   });
 
-  test('records cooldown and logs the audit detail using applied field names/values, never full description text', async () => {
-    let recorded, logged;
+  test('claims cooldown before writing (Backlog #34/ROADMAP 57) and logs the audit detail using applied field names/values, never full description text', async () => {
+    let claimed, logged;
     const deps = baseDeps({
-      recordActionFn: (key, action) => { recorded = { key, action }; },
+      claimActionFn: (key, action) => { claimed = { key, action }; return { claimed: true, remainingMs: 0 }; },
       logActionFn: (entry) => { logged = entry; },
       resolveAdapterFn: () => fakeAdapter({
         updateFields: async () => ({ applied: { description: true, priority: 'High' }, errors: {} }),
@@ -1445,7 +1532,7 @@ describe('runTicketUpdate — happy path', () => {
     });
     const result = await runTicketUpdate(['PROJ-1', '--description=a very long secret-ish body', '--priority=High'], deps);
     assert.equal(result.ok, true);
-    assert.deepEqual(recorded, { key: 'PROJ-1', action: 'update' });
+    assert.deepEqual(claimed, { key: 'PROJ-1', action: 'update' });
     assert.equal(logged.ticketKey, 'PROJ-1');
     assert.equal(logged.action, 'update');
     assert.equal(logged.tracker, 'jira');
@@ -1485,10 +1572,10 @@ describe('runTicketUpdate — happy path', () => {
 });
 
 describe('runTicketUpdate — partial failure', () => {
-  test('some fields applied, some failed — reports ok:false but still records/logs what landed', async () => {
-    let recorded = false, logged;
+  test('some fields applied, some failed — reports ok:false but keeps the cooldown claim armed and logs what landed (Backlog #34/ROADMAP 57)', async () => {
+    let released = false, logged;
     const deps = baseDeps({
-      recordActionFn: () => { recorded = true; },
+      releaseActionFn: () => { released = true; },
       logActionFn: (entry) => { logged = entry; },
       resolveAdapterFn: () => fakeAdapter({
         updateFields: async () => ({ applied: { title: true }, errors: { addLabels: { reason: 'not-found', missing: ['bogus'] } } }),
@@ -1496,7 +1583,7 @@ describe('runTicketUpdate — partial failure', () => {
     });
     const result = await runTicketUpdate(['PROJ-1', '--title=x', '--add-labels=bogus'], deps);
     assert.equal(result.ok, false);
-    assert.equal(recorded, true, 'whatever did apply should still be recorded for cooldown purposes');
+    assert.equal(released, false, 'whatever did apply should keep the claim armed, same as the old recordActionFn-when-hasApplied behavior');
     assert.deepEqual(logged.detail.failed, ['addLabels']);
     assert.match(deps.stream.lines.join(''), /bogus/);
   });
@@ -1515,10 +1602,10 @@ describe('runTicketUpdate — partial failure', () => {
     assert.doesNotMatch(output, /38;5;71m✔/, 'a partial update must not also render the full-success green checkmark');
   });
 
-  test('nothing applied at all — reports ok:false and never records/logs', async () => {
-    let recorded = false, logged = false;
+  test('nothing applied at all — reports ok:false, releases the claim so a fixed retry is not blocked (Backlog #34/ROADMAP 57), never logs', async () => {
+    let released, logged = false;
     const deps = baseDeps({
-      recordActionFn: () => { recorded = true; },
+      releaseActionFn: (key, action) => { released = { key, action }; },
       logActionFn: () => { logged = true; },
       resolveAdapterFn: () => fakeAdapter({
         updateFields: async () => ({ applied: {}, errors: { priority: { reason: 'not-found', options: ['High', 'Low'] } } }),
@@ -1526,7 +1613,7 @@ describe('runTicketUpdate — partial failure', () => {
     });
     const result = await runTicketUpdate(['PROJ-1', '--priority=Critical'], deps);
     assert.equal(result.ok, false);
-    assert.equal(recorded, false);
+    assert.deepEqual(released, { key: 'PROJ-1', action: 'update' });
     assert.equal(logged, false);
   });
 
@@ -1545,16 +1632,16 @@ describe('runTicketUpdate — partial failure', () => {
 });
 
 describe('runTicketUpdate — write failure', () => {
-  test('a thrown error (Jira/Linear atomic failure) is classified and reported, cooldown/log never recorded', async () => {
-    let recorded = false, logged = false;
+  test('a thrown error (Jira/Linear atomic failure) is classified and reported; the claim is released (Backlog #34/ROADMAP 57), log never recorded', async () => {
+    let released, logged = false;
     const deps = baseDeps({
-      recordActionFn: () => { recorded = true; },
+      releaseActionFn: (key, action) => { released = { key, action }; },
       logActionFn: () => { logged = true; },
       resolveAdapterFn: () => fakeAdapter({ updateFields: async () => { throw new Error('network down'); } }),
     });
     const result = await runTicketUpdate(['PROJ-1', '--title=x'], deps);
     assert.equal(result.ok, false);
-    assert.equal(recorded, false);
+    assert.deepEqual(released, { key: 'PROJ-1', action: 'update' });
     assert.equal(logged, false);
     assert.match(deps.stream.lines.join(''), /Network error or timeout/);
   });
@@ -1796,10 +1883,10 @@ describe('runTicketCreate — profile/project mismatch safety net', () => {
 });
 
 describe('runTicketCreate — cooldown', () => {
-  test('active cooldown skips execution', async () => {
+  test('an unclaimable cooldown skips execution', async () => {
     let called = false;
     const deps = baseDeps({
-      checkCooldownFn: () => ({ active: true, remainingMs: 3000 }),
+      claimActionFn: () => ({ claimed: false, remainingMs: 3000 }),
       resolveAdapterFn: () => fakeAdapter({ createTicket: async () => { called = true; return { key: 'X-1' }; } }),
     });
     const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
@@ -1810,7 +1897,7 @@ describe('runTicketCreate — cooldown', () => {
   test('cooldown key is derived from project/type/summary, not a ticket key — guards against a flaky retry double-creating', async () => {
     let cooldownKey;
     const deps = baseDeps({
-      checkCooldownFn: (key) => { cooldownKey = key; return { active: false, remainingMs: 0 }; },
+      claimActionFn: (key) => { cooldownKey = key; return { claimed: true, remainingMs: 0 }; },
     });
     await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New issue'], deps);
     assert.match(cooldownKey, /PROJ/);
@@ -1821,7 +1908,7 @@ describe('runTicketCreate — cooldown', () => {
   test('two field tuples that would collide under naive colon-joining produce different cooldown keys', async () => {
     const keys = [];
     const deps = baseDeps({
-      checkCooldownFn: (key) => { keys.push(key); return { active: false, remainingMs: 0 }; },
+      claimActionFn: (key) => { keys.push(key); return { claimed: true, remainingMs: 0 }; },
     });
     await runTicketCreate(['--project=A:B', '--type=C', '--summary=D'], deps);
     await runTicketCreate(['--project=A', '--type=B:C', '--summary=D'], deps);
@@ -1843,10 +1930,10 @@ describe('runTicketCreate — happy path', () => {
     assert.deepEqual(captured, { project: 'PROJ', type: 'Task', summary: 'New title', description: 'Body text' });
   });
 
-  test('records cooldown and logs the audit entry keyed on the newly created ticket, never the full description text', async () => {
-    let recorded, logged;
+  test('claims the cooldown before writing (Backlog #34/ROADMAP 57) and logs the audit entry keyed on the newly created ticket, never the full description text', async () => {
+    let claimed, logged;
     const deps = baseDeps({
-      recordActionFn: (key, action) => { recorded = { key, action }; },
+      claimActionFn: (key, action) => { claimed = { key, action }; return { claimed: true, remainingMs: 0 }; },
       logActionFn: (entry) => { logged = entry; },
       resolveAdapterFn: () => fakeAdapter({
         createTicket: async () => ({ key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }),
@@ -1854,7 +1941,7 @@ describe('runTicketCreate — happy path', () => {
     });
     const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New title', '--description=a very long secret-ish body'], deps);
     assert.equal(result.ok, true);
-    assert.equal(recorded.action, 'create');
+    assert.equal(claimed.action, 'create');
     assert.equal(logged.ticketKey, 'PROJ-99');
     assert.equal(logged.action, 'create');
     assert.equal(logged.tracker, 'jira');
@@ -2032,16 +2119,16 @@ describe('runTicketCreate — attachments', () => {
 });
 
 describe('runTicketCreate — write failure', () => {
-  test('a thrown error is classified and reported with a create-specific message, cooldown/log never recorded', async () => {
-    let recorded = false, logged = false;
+  test('a thrown error is classified and reported with a create-specific message; the claim is released so a corrected retry is not blocked (Backlog #34/ROADMAP 57), log never recorded', async () => {
+    let released, logged = false;
     const deps = baseDeps({
-      recordActionFn: () => { recorded = true; },
+      releaseActionFn: (key, action) => { released = { key, action }; },
       logActionFn: () => { logged = true; },
       resolveAdapterFn: () => fakeAdapter({ createTicket: async () => { throw new Error('network down'); } }),
     });
     const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
     assert.equal(result.ok, false);
-    assert.equal(recorded, false);
+    assert.equal(released.action, 'create');
     assert.equal(logged, false);
     assert.match(deps.stream.lines.join(''), /Network error or timeout/);
     assert.doesNotMatch(deps.stream.lines.join(''), /undefined/);
@@ -2049,21 +2136,6 @@ describe('runTicketCreate — write failure', () => {
 });
 
 describe('runTicketCreate — post-success bookkeeping failure', () => {
-  test('a real, already-created ticket is still reported ok:true with its key when recordActionFn throws — never mistaken for a failed write', async () => {
-    let createCalls = 0;
-    const deps = baseDeps({
-      recordActionFn: () => { throw new Error('disk full'); },
-      resolveAdapterFn: () => fakeAdapter({ createTicket: async () => { createCalls++; return { key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }; } }),
-    });
-    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
-    assert.equal(result.ok, true, 'a real external write must never be reported as failed');
-    assert.equal(result.key, 'PROJ-99');
-    assert.equal(createCalls, 1, 'must not retry createTicket after a bookkeeping failure');
-    assert.match(deps.stream.lines.join(''), /PROJ-99/, 'the real ticket key must still be surfaced to the caller');
-    assert.match(deps.stream.lines.join(''), /Warning/i);
-    assert.doesNotMatch(deps.stream.lines.join(''), /Network error or timeout/, 'must never be misreported as a network/timeout failure');
-  });
-
   test('a real, already-created ticket is still reported ok:true with its key when logActionFn throws (e.g. TICKET_KEY_PATTERN rejects an odd tracker-returned key)', async () => {
     const deps = baseDeps({
       logActionFn: () => { throw new Error('Refusing to log malformed ticket key: "G-42"'); },
@@ -2076,15 +2148,16 @@ describe('runTicketCreate — post-success bookkeeping failure', () => {
     assert.match(deps.stream.lines.join(''), /Warning/i);
   });
 
-  test('recordActionFn still runs (and its cooldown effect still applies) even when logActionFn throws afterward', async () => {
-    let recordedKey;
+  test('the cooldown claim (already taken before the write) survives a logActionFn throw — never released on a real success (Backlog #34/ROADMAP 57)', async () => {
+    let released = false;
     const deps = baseDeps({
-      recordActionFn: (key) => { recordedKey = key; },
+      releaseActionFn: () => { released = true; },
       logActionFn: () => { throw new Error('boom'); },
       resolveAdapterFn: () => fakeAdapter({ createTicket: async () => ({ key: 'PROJ-99' }) }),
     });
-    await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
-    assert.match(recordedKey, /PROJ/);
+    const result = await runTicketCreate(['--project=PROJ', '--type=Task', '--summary=New'], deps);
+    assert.equal(result.ok, true, 'a real external write must never be reported as failed');
+    assert.equal(released, false, 'a logging failure after a real success must never release the claim');
   });
 });
 

@@ -14,7 +14,7 @@ import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { isLicensed, showUpgradePrompt } from './license.mjs';
 import { resolveConnection, findProfilesByPrefix } from './profile-resolver.mjs';
 import { resolveAdapter } from './resolve-adapter.mjs';
-import { checkCooldown, recordAction } from './ticket-action-cooldown.mjs';
+import { claimAction, releaseAction } from './ticket-action-cooldown.mjs';
 import { logAction } from './ticket-action-log.mjs';
 import { readMetadataCache, writeMetadataCache, isFresh, SINGLE_PROJECT_TTL_MS, mergeAssignableUsers, normalizeAssigneeQuery } from './ticket-metadata-cache.mjs';
 import { detectProjectOrTypeError, enrichCreateFailure } from './ticket-create-enrichment.mjs';
@@ -31,6 +31,45 @@ export function parseFlag(cmdArgs, name) {
 function parseAttachPaths(cmdArgs) {
   const raw = parseFlag(cmdArgs, 'attach');
   return raw ? raw.split(',').map(p => p.trim()).filter(Boolean) : [];
+}
+
+/**
+ * Best-effort release of a claimAction cooldown claim (Backlog #34/ROADMAP
+ * 57) — releaseAction can itself throw (lock contention, same as any
+ * withLock caller in ticket-action-cooldown.mjs). A release is always
+ * called while already reporting some other outcome (a write failure, a
+ * refusal, an executed:false result); letting a lock-contention error
+ * replace that outcome would be strictly worse than just leaving the claim
+ * in place a few seconds longer — it expires on its own. Same "best
+ * effort — the claim expires by itself" reasoning already applied to
+ * ticket-worklog.mjs's own releaseClaim helper, DRY'd here across every
+ * write in this family instead of duplicated per function.
+ */
+export function safeRelease(releaseActionFn, ticketKey, action, configDir) {
+  try { releaseActionFn(ticketKey, action, { configDir }); } catch { /* best effort — the claim expires by itself */ }
+}
+
+/**
+ * claimAction can itself throw — lock contention on the same 2s deadline
+ * as any other withLock caller in ticket-action-cooldown.mjs. Left
+ * unguarded, that throw would fall through to the outer CLI/MCP error
+ * handler and be misreported as a real failure (and could trip the
+ * opt-in error-reporting pipeline) for what is actually correct, benign
+ * contention — the write is still safely refused either way, but the
+ * graceful "Skipped" UX this whole family is built around would be lost.
+ * Same guard ticket-worklog.mjs's own claimOrSkip already has; returns a
+ * `lockError` string instead of a boolean flag so each call site can
+ * fold it into its existing skip-message wording without a second
+ * lookup. Caught in code review before shipping — not exercised by the
+ * original 4-way live concurrency trial, which stayed under the 2s
+ * deadline.
+ */
+export function safeClaim(claimActionFn, ticketKey, action, configDir) {
+  try {
+    return claimActionFn(ticketKey, action, { configDir });
+  } catch (err) {
+    return { claimed: false, remainingMs: 0, lockError: err.message };
+  }
 }
 
 /**
@@ -264,8 +303,8 @@ export async function runTicketComment(cmdArgs, {
   isLicensedFn = isLicensed,
   resolveConnectionFn = resolveConnection,
   resolveAdapterFn = resolveAdapter,
-  checkCooldownFn = checkCooldown,
-  recordActionFn = recordAction,
+  claimActionFn = claimAction,
+  releaseActionFn = releaseAction,
   logActionFn = logAction,
   actor = os.userInfo().username,
 } = {}) {
@@ -282,32 +321,36 @@ export async function runTicketComment(cmdArgs, {
   }
   const attachPaths = parseAttachPaths(cmdArgs);
 
-  const cooldown = checkCooldownFn(ticketKey, 'comment', { configDir });
-  if (cooldown.active) {
-    stream.write(`  Skipped — a comment was already posted to ${ticketKey} ${Math.ceil(cooldown.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
+  const claim = safeClaim(claimActionFn, ticketKey, 'comment', configDir);
+  if (!claim.claimed) {
+    stream.write(claim.lockError
+      ? `  ${ticketKey} not commented — could not take the cooldown lock (${claim.lockError}). Nothing was sent; safe to retry.\n`
+      : `  Skipped — a comment was already posted to ${ticketKey} ${Math.ceil(claim.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
     return { ok: false };
   }
 
   const resolved = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-  if (!resolved) return { ok: false };
+  if (!resolved) { safeRelease(releaseActionFn, ticketKey, 'comment', configDir); return { ok: false }; }
   const { adapter } = resolved;
   const s = createStyler({ isTTY: stream.isTTY });
 
   // Uploaded BEFORE the comment write so a tracker capable of inline
   // rendering (Jira Server/DC via wiki markup, Jira Cloud via a real ADF
   // media node, Linear via Markdown) can fold it into the same atomic
-  // comment post rather than needing a second edit call.
+  // comment post rather than needing a second edit call. Inside the same
+  // try/catch as addComment — every adapter's attachFiles is documented to
+  // never throw (per-file errors are caught internally), but that is an
+  // implicit contract, not something to leave an un-released claim on if
+  // it were ever violated (caught in code review before shipping).
   let attachResult = null;
-  if (attachPaths.length && !refuseGithubAttachments(adapter, attachPaths, stream)) {
-    attachResult = await adapter.attachFiles(ticketKey, attachPaths);
-  }
-  const inlineSnippets = (attachResult?.uploaded ?? []).filter(a => a.inlineMarkup).map(a => a.inlineMarkup).join('\n\n');
-  const finalBody = inlineSnippets ? `${body}\n\n${inlineSnippets}` : body;
-  const extraAdfNodes = (attachResult?.uploaded ?? []).filter(a => a.adfMediaNode).map(a => a.adfMediaNode);
-
   try {
+    if (attachPaths.length && !refuseGithubAttachments(adapter, attachPaths, stream)) {
+      attachResult = await adapter.attachFiles(ticketKey, attachPaths);
+    }
+    const inlineSnippets = (attachResult?.uploaded ?? []).filter(a => a.inlineMarkup).map(a => a.inlineMarkup).join('\n\n');
+    const finalBody = inlineSnippets ? `${body}\n\n${inlineSnippets}` : body;
+    const extraAdfNodes = (attachResult?.uploaded ?? []).filter(a => a.adfMediaNode).map(a => a.adfMediaNode);
     const result = await adapter.addComment(ticketKey, finalBody, extraAdfNodes.length ? { extraAdfNodes } : {});
-    recordActionFn(ticketKey, 'comment', { configDir });
     // attachPaths (every path attempted, raw) plus attachedFilenames (what
     // actually landed) — a partial attach failure is reconstructable from
     // the difference between the two, not just silently absent from audit.
@@ -315,6 +358,7 @@ export async function runTicketComment(cmdArgs, {
     stream.write(`  ${s.green('✔')} Comment posted to ${s.brand(s.bold(ticketKey))}${result.url ? ` (${result.url})` : ''}\n` + formatAttachSummary(attachResult, s));
     return { ok: true };
   } catch (err) {
+    safeRelease(releaseActionFn, ticketKey, 'comment', configDir);
     // Attachments (if any) genuinely landed on the tracker before this
     // write was attempted — formatAttachSummary is still shown here so a
     // caller retrying the whole command doesn't blindly re-upload them.
@@ -384,8 +428,8 @@ export async function runTicketTransition(cmdArgs, {
   isLicensedFn = isLicensed,
   resolveConnectionFn = resolveConnection,
   resolveAdapterFn = resolveAdapter,
-  checkCooldownFn = checkCooldown,
-  recordActionFn = recordAction,
+  claimActionFn = claimAction,
+  releaseActionFn = releaseAction,
   logActionFn = logAction,
   actor = os.userInfo().username,
   cliHints = true,
@@ -408,29 +452,32 @@ export async function runTicketTransition(cmdArgs, {
     return { ok: false };
   }
 
-  const cooldown = checkCooldownFn(ticketKey, 'transition', { configDir });
-  if (cooldown.active) {
-    stream.write(`  Skipped — ${ticketKey} was already transitioned ${Math.ceil(cooldown.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
+  const claim = safeClaim(claimActionFn, ticketKey, 'transition', configDir);
+  if (!claim.claimed) {
+    stream.write(claim.lockError
+      ? `  ${ticketKey} not transitioned — could not take the cooldown lock (${claim.lockError}). Nothing was sent; safe to retry.\n`
+      : `  Skipped — ${ticketKey} was already transitioned ${Math.ceil(claim.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
     return { ok: false };
   }
 
   const resolved = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-  if (!resolved) return { ok: false };
+  if (!resolved) { safeRelease(releaseActionFn, ticketKey, 'transition', configDir); return { ok: false }; }
   const { adapter } = resolved;
 
   try {
     const result = await adapter.transition(ticketKey, target);
     if (!result.executed) {
+      safeRelease(releaseActionFn, ticketKey, 'transition', configDir);
       const optionsHint = result.options?.length ? ` Valid options: ${result.options.map(o => o.name).join(', ')}.` : '';
       stream.write(`  Not transitioned — ${result.reason}.${optionsHint}\n`);
       return { ok: false, reason: result.reason };
     }
-    recordActionFn(ticketKey, 'transition', { configDir });
     logActionFn({ ticketKey, action: 'transition', actor, tracker: adapter.type, detail: { to: result.to } }, { configDir });
     const s = createStyler({ isTTY: stream.isTTY });
     stream.write(`  ${s.green('✔')} ${s.brand(s.bold(ticketKey))} transitioned to ${s.bold(`"${result.to}"`)}.\n`);
     return { ok: true };
   } catch (err) {
+    safeRelease(releaseActionFn, ticketKey, 'transition', configDir);
     stream.write(formatWriteFailure(ticketKey, err));
     return { ok: false };
   }
@@ -508,8 +555,8 @@ export async function runTicketAssign(cmdArgs, {
   isLicensedFn = isLicensed,
   resolveConnectionFn = resolveConnection,
   resolveAdapterFn = resolveAdapter,
-  checkCooldownFn = checkCooldown,
-  recordActionFn = recordAction,
+  claimActionFn = claimAction,
+  releaseActionFn = releaseAction,
   logActionFn = logAction,
   readMetadataCacheFn = readMetadataCache,
   writeMetadataCacheFn = writeMetadataCache,
@@ -531,24 +578,26 @@ export async function runTicketAssign(cmdArgs, {
   }
 
   if (to === 'me') {
-    const cooldown = checkCooldownFn(ticketKey, 'assign', { configDir });
-    if (cooldown.active) {
-      stream.write(`  Skipped — ${ticketKey} was already assigned ${Math.ceil(cooldown.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
+    const claim = safeClaim(claimActionFn, ticketKey, 'assign', configDir);
+    if (!claim.claimed) {
+      stream.write(claim.lockError
+        ? `  ${ticketKey} not assigned — could not take the cooldown lock (${claim.lockError}). Nothing was sent; safe to retry.\n`
+        : `  Skipped — ${ticketKey} was already assigned ${Math.ceil(claim.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
       return { ok: false };
     }
 
     const resolved = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-    if (!resolved) return { ok: false };
+    if (!resolved) { safeRelease(releaseActionFn, ticketKey, 'assign', configDir); return { ok: false }; }
     const { adapter } = resolved;
 
     try {
       const result = await adapter.assignToSelf(ticketKey);
-      recordActionFn(ticketKey, 'assign', { configDir });
       logActionFn({ ticketKey, action: 'assign', actor, tracker: adapter.type, detail: { assignee: result.assignee } }, { configDir });
       const s = createStyler({ isTTY: stream.isTTY });
       stream.write(`  ${s.green('✔')} ${s.brand(s.bold(ticketKey))} assigned to ${s.bold(result.assignee)}.\n`);
       return { ok: true };
     } catch (err) {
+      safeRelease(releaseActionFn, ticketKey, 'assign', configDir);
       stream.write(formatWriteFailure(ticketKey, err));
       return { ok: false };
     }
@@ -597,19 +646,21 @@ export async function runTicketAssign(cmdArgs, {
     return { ok: false };
   }
 
-  const cooldown = checkCooldownFn(ticketKey, 'assign', { configDir });
-  if (cooldown.active) {
-    stream.write(`  Skipped — ${ticketKey} was already assigned ${Math.ceil(cooldown.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
+  const claim = safeClaim(claimActionFn, ticketKey, 'assign', configDir);
+  if (!claim.claimed) {
+    stream.write(claim.lockError
+      ? `  ${ticketKey} not assigned — could not take the cooldown lock (${claim.lockError}). Nothing was sent; safe to retry.\n`
+      : `  Skipped — ${ticketKey} was already assigned ${Math.ceil(claim.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
     return { ok: false };
   }
 
   try {
     await adapter.assignToUser(ticketKey, candidate.accountId);
-    recordActionFn(ticketKey, 'assign', { configDir });
     logActionFn({ ticketKey, action: 'assign', actor, tracker: adapter.type, detail: { assignee: candidate.displayName, accountId: candidate.accountId } }, { configDir });
     stream.write(`  ${s.green('✔')} ${s.brand(s.bold(ticketKey))} assigned to ${s.bold(candidate.displayName)}.\n`);
     return { ok: true };
   } catch (err) {
+    safeRelease(releaseActionFn, ticketKey, 'assign', configDir);
     stream.write(formatWriteFailure(ticketKey, err));
     return { ok: false };
   }
@@ -777,8 +828,8 @@ export async function runTicketLink(cmdArgs, {
   isLicensedFn = isLicensed,
   resolveConnectionFn = resolveConnection,
   resolveAdapterFn = resolveAdapter,
-  checkCooldownFn = checkCooldown,
-  recordActionFn = recordAction,
+  claimActionFn = claimAction,
+  releaseActionFn = releaseAction,
   logActionFn = logAction,
   actor = os.userInfo().username,
   cliHints = true,
@@ -804,17 +855,20 @@ export async function runTicketLink(cmdArgs, {
   }
 
   const cooldownKey = `${sourceKey}:${targetKey}`;
-  const cooldown = checkCooldownFn(cooldownKey, 'link', { configDir });
-  if (cooldown.active) {
-    stream.write(`  Skipped — ${sourceKey} was already linked to ${targetKey} ${Math.ceil(cooldown.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
+  const claim = safeClaim(claimActionFn, cooldownKey, 'link', configDir);
+  if (!claim.claimed) {
+    stream.write(claim.lockError
+      ? `  ${sourceKey} not linked — could not take the cooldown lock (${claim.lockError}). Nothing was sent; safe to retry.\n`
+      : `  Skipped — ${sourceKey} was already linked to ${targetKey} ${Math.ceil(claim.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
     return { ok: false };
   }
 
   const resolved = resolveTicketAdapter(sourceKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-  if (!resolved) return { ok: false };
+  if (!resolved) { safeRelease(releaseActionFn, cooldownKey, 'link', configDir); return { ok: false }; }
   const { adapter } = resolved;
 
   if (adapter.type === 'github' && type.toLowerCase() !== 'duplicate') {
+    safeRelease(releaseActionFn, cooldownKey, 'link', configDir);
     stream.write(`  GitHub only supports linking as a duplicate — no generic link types. Got type "${type}".\n`);
     return { ok: false };
   }
@@ -825,11 +879,11 @@ export async function runTicketLink(cmdArgs, {
   try {
     const result = await adapter.linkTo(sourceKey, targetKey, type);
     if (!result.executed) {
+      safeRelease(releaseActionFn, cooldownKey, 'link', configDir);
       const optionsHint = result.options?.length ? ` Valid options: ${result.options.join(', ')}.` : '';
       stream.write(`  Not linked — ${result.reason}.${optionsHint}\n`);
       return { ok: false, reason: result.reason };
     }
-    recordActionFn(cooldownKey, 'link', { configDir });
     logActionFn({ ticketKey: sourceKey, action: 'link', actor, tracker: adapter.type, detail: { targetKey, type } }, { configDir });
     const s = createStyler({ isTTY: stream.isTTY });
     stream.write(
@@ -839,6 +893,7 @@ export async function runTicketLink(cmdArgs, {
     );
     return { ok: true };
   } catch (err) {
+    safeRelease(releaseActionFn, cooldownKey, 'link', configDir);
     stream.write(formatWriteFailure(sourceKey, err));
     return { ok: false };
   }
@@ -871,8 +926,8 @@ export async function runTicketUpdate(cmdArgs, {
   isLicensedFn = isLicensed,
   resolveConnectionFn = resolveConnection,
   resolveAdapterFn = resolveAdapter,
-  checkCooldownFn = checkCooldown,
-  recordActionFn = recordAction,
+  claimActionFn = claimAction,
+  releaseActionFn = releaseAction,
   logActionFn = logAction,
   readMetadataCacheFn = readMetadataCache,
   writeMetadataCacheFn = writeMetadataCache,
@@ -897,17 +952,20 @@ export async function runTicketUpdate(cmdArgs, {
     return { ok: false };
   }
 
-  const cooldown = checkCooldownFn(ticketKey, 'update', { configDir });
-  if (cooldown.active) {
-    stream.write(`  Skipped — ${ticketKey} was already updated ${Math.ceil(cooldown.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
+  const claim = safeClaim(claimActionFn, ticketKey, 'update', configDir);
+  if (!claim.claimed) {
+    stream.write(claim.lockError
+      ? `  ${ticketKey} not updated — could not take the cooldown lock (${claim.lockError}). Nothing was sent; safe to retry.\n`
+      : `  Skipped — ${ticketKey} was already updated ${Math.ceil(claim.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
     return { ok: false };
   }
 
   const resolved = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-  if (!resolved) return { ok: false };
+  if (!resolved) { safeRelease(releaseActionFn, ticketKey, 'update', configDir); return { ok: false }; }
   const { adapter, conn } = resolved;
 
   if (adapter.type === 'github' && priority !== undefined) {
+    safeRelease(releaseActionFn, ticketKey, 'update', configDir);
     stream.write(`  GitHub Issues have no native priority field — cannot update priority on ${ticketKey}. Remove --priority and retry.\n`);
     return { ok: false };
   }
@@ -918,12 +976,19 @@ export async function runTicketUpdate(cmdArgs, {
     const hasErrors = Object.keys(result.errors).length > 0;
 
     if (hasApplied) {
-      recordActionFn(ticketKey, 'update', { configDir });
       logActionFn({ ticketKey, action: 'update', actor, tracker: adapter.type, detail: { ...result.applied, failed: Object.keys(result.errors) } }, { configDir });
+    } else {
+      // Nothing landed — release so a caller fixing the failed field(s) can
+      // retry immediately, same "release on definite failure" rule as every
+      // other write in this family. A partial success (hasApplied &&
+      // hasErrors) deliberately keeps the claim armed, unchanged from the
+      // old recordActionFn-only-when-hasApplied behavior.
+      safeRelease(releaseActionFn, ticketKey, 'update', configDir);
     }
     stream.write(formatUpdateResult(ticketKey, result, createStyler({ isTTY: stream.isTTY })));
     return hasErrors ? { ok: false, applied: result.applied, errors: result.errors } : { ok: true, applied: result.applied };
   } catch (err) {
+    safeRelease(releaseActionFn, ticketKey, 'update', configDir);
     const enrichment = await enrichUpdateFailure(err, { adapter, projectKey: projectKeyFromTicket(ticketKey), profileName: conn.profileName, configDir, readMetadataCacheFn, writeMetadataCacheFn });
     stream.write(formatWriteFailure(ticketKey, err) + enrichment);
     return { ok: false };
@@ -960,8 +1025,8 @@ export async function runTicketCreate(cmdArgs, {
   isLicensedFn = isLicensed,
   resolveConnectionFn = resolveConnection,
   resolveAdapterFn = resolveAdapter,
-  checkCooldownFn = checkCooldown,
-  recordActionFn = recordAction,
+  claimActionFn = claimAction,
+  releaseActionFn = releaseAction,
   logActionFn = logAction,
   readMetadataCacheFn = readMetadataCache,
   writeMetadataCacheFn = writeMetadataCache,
@@ -1026,9 +1091,11 @@ export async function runTicketCreate(cmdArgs, {
   // text that can themselves contain ":", which would let two genuinely
   // different tuples collide onto the same cooldown key.
   const cooldownKey = `create:${JSON.stringify([project ?? '', type ?? '', summary])}`;
-  const cooldown = checkCooldownFn(cooldownKey, 'create', { configDir });
-  if (cooldown.active) {
-    stream.write(`  Skipped — a ticket with this summary was already created ${Math.ceil(cooldown.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
+  const claim = safeClaim(claimActionFn, cooldownKey, 'create', configDir);
+  if (!claim.claimed) {
+    stream.write(claim.lockError
+      ? `  Nothing was created — could not take the cooldown lock (${claim.lockError}). Safe to retry.\n`
+      : `  Skipped — a ticket with this summary was already created ${Math.ceil(claim.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
     return { ok: false };
   }
 
@@ -1036,6 +1103,9 @@ export async function runTicketCreate(cmdArgs, {
   try {
     result = await adapter.createTicket({ project, type, summary, description });
   } catch (err) {
+    // Definite failure — no ticket was created, so the claim is released to
+    // let a corrected retry through immediately (Backlog #34/ROADMAP 57).
+    safeRelease(releaseActionFn, cooldownKey, 'create', configDir);
     // profileName is only resolved when this failure is actually
     // project/issuetype-shaped — not on every failure, and never on the
     // success path — since it exists solely to scope the enrichment cache.
@@ -1049,12 +1119,13 @@ export async function runTicketCreate(cmdArgs, {
   }
 
   // The write already landed — a real, external, hard-to-walk-back ticket
-  // now exists. From here on, nothing may report this as a failed write:
-  // cooldown/audit bookkeeping is best-effort, never the reason a real
-  // success gets mistaken for one (which risks a caller retrying and
-  // fabricating a genuine duplicate).
+  // now exists. From here on, nothing may report this as a failed write.
+  // The cooldown claim was already recorded atomically at claim time above
+  // (no separate recordActionFn call needed here); only the audit log is
+  // best-effort — a logging failure must never make a real success look
+  // like a failure (which risks a caller retrying and fabricating a
+  // genuine duplicate).
   try {
-    recordActionFn(cooldownKey, 'create', { configDir });
     logActionFn({ ticketKey: result.key, action: 'create', actor, tracker: adapter.type, detail: { project, type } }, { configDir });
   } catch (bookkeepingErr) {
     stream.write(`  Warning: ${result.key} was created but could not be logged: ${bookkeepingErr.message}\n`);
