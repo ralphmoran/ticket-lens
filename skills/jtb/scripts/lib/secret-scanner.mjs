@@ -105,7 +105,17 @@ const HARD_REJECT_PATTERNS = [
   { name: 'GitHub token', re: /\bgh[pousr]_[A-Za-z0-9]{20,}\b/ },
 ];
 
-const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+// Bounded quantifiers (RFC 5321-realistic: 64-char local part, 253-char
+// domain, 24-char TLD — no real email exceeds these) are load-bearing, not
+// cosmetic: an unbounded `+` here is a textbook O(n^2) ReDoS on any long
+// token with no '@' — the unanchored regex tries every starting position,
+// and at each one backtracks the whole remaining length one char at a time
+// before giving up. Found 2026-09-23 via adversarial testing of 49e: a
+// 500KB error message with no '@' hung the process for minutes. Affects
+// every caller of scanForSecrets (note add/patch, Recall push, and now
+// error-reporter.mjs) — fixed once here rather than length-capping each
+// call site, since the regex itself is the actual bug.
+const EMAIL_RE = /[a-zA-Z0-9._%+-]{1,64}@[a-zA-Z0-9.-]{1,253}\.[a-zA-Z]{2,24}/;
 
 // Shared between CODE_FILENAME_RE below and FILENAME_REFERENCE_RE further
 // down, the same way WHITESPACE_CLASS is shared across the whitespace

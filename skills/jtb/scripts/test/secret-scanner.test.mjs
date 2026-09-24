@@ -343,6 +343,38 @@ describe('scanForSecrets — soft warnings (never reject)', () => {
     assert.equal(result.rejected, false);
     assert.match(result.warnings.join(' '), /email/i);
   });
+
+  test('a long realistic email (plus-tag, subdomain, multi-part TLD) still triggers the warning after the EMAIL_RE length bound', () => {
+    const result = scanForSecrets({ title: 'x', tags: [], body: 'Contact jane.roe+ticketlens-support@mail.acme.co.uk please.' });
+    assert.equal(result.rejected, false);
+    assert.match(result.warnings.join(' '), /email/i);
+  });
+});
+
+describe('scanForSecrets — performance (security regression, 2026-09-23)', () => {
+  // EMAIL_RE's unbounded `+` before '@' was a textbook O(n^2) ReDoS: an
+  // unanchored regex tries every starting position in the string, and at
+  // each one backtracks the whole remaining length looking for '@' before
+  // giving up. Found via adversarial testing of 49e — a 500KB error message
+  // with no '@' hung the process for minutes. This must stay fast for any
+  // realistic input, not just the exact repro shape.
+  test('a long token with no @ completes in well under a second, not minutes', () => {
+    const start = Date.now();
+    const result = scanForSecrets({ title: '', tags: [], body: 'A'.repeat(500_000) });
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < 2000, `expected < 2000ms, took ${elapsed}ms`);
+    assert.equal(result.rejected, false);
+  });
+
+  test('a long token with many @-like near-misses (still no real email) also stays fast', () => {
+    const start = Date.now();
+    // '@' present but never followed by a valid domain — the worst case for
+    // an engine that backtracks per near-match rather than per character.
+    const body = ('a@' + 'B'.repeat(50)).repeat(2000);
+    scanForSecrets({ title: '', tags: [], body });
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < 2000, `expected < 2000ms, took ${elapsed}ms`);
+  });
 });
 
 describe('scanForSecrets — multiple issues', () => {
