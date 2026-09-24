@@ -22,7 +22,11 @@
  *   issueTypesByProject:  {KEY: [{id, name}]},
  *   issueTypesFetchedAt:  {KEY: iso timestamp}  // per-project, either access pattern
  *   assignableUsersByProject:  {KEY: {normalizedQuery: [{accountId, displayName}]}},
- *   assignableUsersFetchedAt:  {KEY: {normalizedQuery: iso timestamp}}
+ *   assignableUsersFetchedAt:  {KEY: {normalizedQuery: iso timestamp}},
+ *   prioritiesByProject:  {KEY: [{id, name}]},
+ *   prioritiesFetchedAt:  {KEY: iso timestamp},
+ *   labelsByTeam:  {TEAM_ID: [{id, name}]},
+ *   labelsFetchedAt:  {TEAM_ID: iso timestamp}
  * }
  *
  * assignableUsersByProject/assignableUsersFetchedAt (ROADMAP 61) share this
@@ -32,6 +36,20 @@
  * `user/assignable/search` has no "list everyone" mode (query is required
  * unless accountId is given) — there is no per-project roster to cache,
  * only per-(project, query) result pages, each with its own clock.
+ *
+ * prioritiesByProject/prioritiesFetchedAt (Backlog #34/ROADMAP 57 follow-up)
+ * are per-project like issueTypesByProject, not global — confirmed live
+ * against both a Cloud instance (corenexus) and a Server/DC instance
+ * (advent) that priority schemes are project-scoped, not instance-wide.
+ * Reactive-enrichment-only, same 3-day SINGLE_PROJECT_TTL_MS bar, same
+ * design as issue-types: never blocks a write, only enriches the error
+ * message after Jira's own 400.
+ *
+ * labelsByTeam/labelsFetchedAt is Linear-only — Linear requires labels to
+ * pre-exist as real objects (unlike Jira's freeform labels), and its own
+ * `updateFields` re-fetches the full team label list via GraphQL on every
+ * single call with no caching. Keyed by team id (Linear's label scope),
+ * same 3-day freshness bar.
  */
 
 import fs from 'node:fs';
@@ -106,6 +124,34 @@ export function mergeAssignableUsers(cached, projectKey, query, candidates, fetc
 }
 
 /**
+ * Merges one project's priority list into an existing (possibly null)
+ * cached map — same shape and Object.create(null) defense as
+ * mergeProjectIssueTypes, for the same reason (projectKey is an
+ * unvalidated CLI/tracker value reaching a key position).
+ */
+export function mergeProjectPriorities(cached, projectKey, priorities, fetchedAt = new Date().toISOString()) {
+  const prioritiesByProject = Object.assign(Object.create(null), cached?.prioritiesByProject ?? {});
+  prioritiesByProject[projectKey] = priorities;
+  const prioritiesFetchedAt = Object.assign(Object.create(null), cached?.prioritiesFetchedAt ?? {});
+  prioritiesFetchedAt[projectKey] = fetchedAt;
+  return { prioritiesByProject, prioritiesFetchedAt };
+}
+
+/**
+ * Merges one team's label list into an existing (possibly null) cached
+ * map — same shape and Object.create(null) defense as
+ * mergeProjectIssueTypes; teamId is Linear's own UUID, not user-supplied,
+ * but the same defensive pattern is kept for consistency with its siblings.
+ */
+export function mergeTeamLabels(cached, teamId, labels, fetchedAt = new Date().toISOString()) {
+  const labelsByTeam = Object.assign(Object.create(null), cached?.labelsByTeam ?? {});
+  labelsByTeam[teamId] = labels;
+  const labelsFetchedAt = Object.assign(Object.create(null), cached?.labelsFetchedAt ?? {});
+  labelsFetchedAt[teamId] = fetchedAt;
+  return { labelsByTeam, labelsFetchedAt };
+}
+
+/**
  * Returns the absolute path to the ticket-metadata cache file for a profile.
  */
 export function metadataCachePath(profileName, configDir = DEFAULT_CONFIG_DIR) {
@@ -127,7 +173,7 @@ export function metadataCachePath(profileName, configDir = DEFAULT_CONFIG_DIR) {
  * @param {string|null} profileName
  * @param {string} [configDir]
  * @param {number} [ttlMs] - override TTL in ms for this file's own GC deletion; defaults to METADATA_TTL_MS (7d)
- * @returns {{ projects: {key:string,name:string}[], issueTypesByProject: object, issueTypesFetchedAt: object, assignableUsersByProject: object, assignableUsersFetchedAt: object, projectsFetchedAt: string|null, fetchedAt: string } | null}
+ * @returns {{ projects: {key:string,name:string}[], issueTypesByProject: object, issueTypesFetchedAt: object, assignableUsersByProject: object, assignableUsersFetchedAt: object, prioritiesByProject: object, prioritiesFetchedAt: object, labelsByTeam: object, labelsFetchedAt: object, projectsFetchedAt: string|null, fetchedAt: string } | null}
  */
 export function readMetadataCache(profileName, configDir = DEFAULT_CONFIG_DIR, ttlMs = METADATA_TTL_MS) {
   const filePath = metadataCachePath(profileName, configDir);
@@ -152,6 +198,10 @@ export function readMetadataCache(profileName, configDir = DEFAULT_CONFIG_DIR, t
     issueTypesFetchedAt: data.issueTypesFetchedAt ?? {},
     assignableUsersByProject: data.assignableUsersByProject ?? {},
     assignableUsersFetchedAt: data.assignableUsersFetchedAt ?? {},
+    prioritiesByProject: data.prioritiesByProject ?? {},
+    prioritiesFetchedAt: data.prioritiesFetchedAt ?? {},
+    labelsByTeam: data.labelsByTeam ?? {},
+    labelsFetchedAt: data.labelsFetchedAt ?? {},
     projectsFetchedAt: data.projectsFetchedAt ?? null,
     fetchedAt: data.fetchedAt,
   };
@@ -164,7 +214,7 @@ export function readMetadataCache(profileName, configDir = DEFAULT_CONFIG_DIR, t
  * updates (e.g. a single-project fetch merging into an existing
  * multi-project cache) — this function persists exactly what it's given.
  */
-export function writeMetadataCache(profileName, { projects = [], issueTypesByProject = {}, issueTypesFetchedAt = {}, assignableUsersByProject = {}, assignableUsersFetchedAt = {}, projectsFetchedAt = null } = {}, configDir = DEFAULT_CONFIG_DIR) {
+export function writeMetadataCache(profileName, { projects = [], issueTypesByProject = {}, issueTypesFetchedAt = {}, assignableUsersByProject = {}, assignableUsersFetchedAt = {}, prioritiesByProject = {}, prioritiesFetchedAt = {}, labelsByTeam = {}, labelsFetchedAt = {}, projectsFetchedAt = null } = {}, configDir = DEFAULT_CONFIG_DIR) {
   const filePath = metadataCachePath(profileName, configDir);
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -176,6 +226,10 @@ export function writeMetadataCache(profileName, { projects = [], issueTypesByPro
       issueTypesFetchedAt,
       assignableUsersByProject,
       assignableUsersFetchedAt,
+      prioritiesByProject,
+      prioritiesFetchedAt,
+      labelsByTeam,
+      labelsFetchedAt,
     }));
   } catch {
     // Non-fatal

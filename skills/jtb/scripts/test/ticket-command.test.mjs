@@ -1560,6 +1560,46 @@ describe('runTicketUpdate — write failure', () => {
   });
 });
 
+describe('runTicketUpdate — priority-error enrichment (Backlog #34/ROADMAP 57)', () => {
+  test('a Jira priority-shaped 400 is enriched with the real per-project priority list', async () => {
+    const deps = baseDeps({
+      resolveConnectionFn: () => ({ baseUrl: 'https://jira.example.com', profileName: 'work' }),
+      resolveAdapterFn: () => fakeAdapter({
+        updateFields: async () => { throw Object.assign(new Error('x'), { status: 400, details: { errors: { priority: 'Specify the Priority (name) in the string format' } } }); },
+        listPriorities: async () => ([{ id: '1', name: 'Highest' }, { id: '3', name: 'Medium' }]),
+      }),
+    });
+    const result = await runTicketUpdate(['PROJ-1', '--priority=Bogus'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Known priorities for PROJ: Highest, Medium/);
+  });
+
+  test('a non-priority thrown error is not enriched — no adapter.listPriorities call', async () => {
+    let listCalled = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        updateFields: async () => { throw new Error('network down'); },
+        listPriorities: async () => { listCalled = true; return []; },
+      }),
+    });
+    await runTicketUpdate(['PROJ-1', '--title=x'], deps);
+    assert.equal(listCalled, false);
+  });
+
+  test('a priority-shaped 400 on GitHub is not enriched — GitHub has no priority field to look up', async () => {
+    let listCalled = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        type: 'github',
+        updateFields: async () => { throw Object.assign(new Error('x'), { details: { errors: { priority: 'bad' } } }); },
+        listPriorities: async () => { listCalled = true; return []; },
+      }),
+    });
+    await runTicketUpdate(['PROJ-1', '--title=x'], deps);
+    assert.equal(listCalled, false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // runTicketCreate
 // ---------------------------------------------------------------------------

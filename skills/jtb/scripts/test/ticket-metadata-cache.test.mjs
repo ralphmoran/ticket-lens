@@ -12,6 +12,8 @@ import {
   isFresh,
   normalizeAssigneeQuery,
   mergeAssignableUsers,
+  mergeProjectPriorities,
+  mergeTeamLabels,
 } from '../lib/ticket-metadata-cache.mjs';
 
 function makeTmpDir() {
@@ -251,5 +253,89 @@ describe('assignableUsersByProject/assignableUsersFetchedAt round-trip through r
     assert.equal(isFresh(stale, SINGLE_PROJECT_TTL_MS), false);
     const fresh = new Date().toISOString();
     assert.equal(isFresh(fresh, SINGLE_PROJECT_TTL_MS), true);
+  });
+
+  it('round-trips prioritiesByProject and labelsByTeam', () => {
+    const dir = makeTmpDir();
+    try {
+      writeMetadataCache('work', {
+        prioritiesByProject: { CNV1: [{ id: '1', name: 'Highest' }] },
+        prioritiesFetchedAt: { CNV1: '2026-09-24T00:00:00.000Z' },
+        labelsByTeam: { 'team-uuid': [{ id: 'lbl-1', name: 'bug' }] },
+        labelsFetchedAt: { 'team-uuid': '2026-09-24T00:00:00.000Z' },
+      }, dir);
+      const result = readMetadataCache('work', dir);
+      assert.deepEqual(result.prioritiesByProject, { CNV1: [{ id: '1', name: 'Highest' }] });
+      assert.deepEqual(result.prioritiesFetchedAt, { CNV1: '2026-09-24T00:00:00.000Z' });
+      assert.deepEqual(result.labelsByTeam, { 'team-uuid': [{ id: 'lbl-1', name: 'bug' }] });
+      assert.deepEqual(result.labelsFetchedAt, { 'team-uuid': '2026-09-24T00:00:00.000Z' });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('defaults prioritiesByProject/labelsByTeam to {} when omitted — does not break reading an old cache file written before this feature', () => {
+    const dir = makeTmpDir();
+    try {
+      writeMetadataCache('work', { projects: [{ key: 'CNV1', name: 'x' }] }, dir);
+      const result = readMetadataCache('work', dir);
+      assert.deepEqual(result.prioritiesByProject, {});
+      assert.deepEqual(result.prioritiesFetchedAt, {});
+      assert.deepEqual(result.labelsByTeam, {});
+      assert.deepEqual(result.labelsFetchedAt, {});
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a priorities-only write preserves an existing issueTypesByProject entry untouched (LOCK — shared-file regression guard)', () => {
+    const dir = makeTmpDir();
+    try {
+      writeMetadataCache('work', { projects: [{ key: 'PROJ', name: 'x' }], issueTypesByProject: { PROJ: [{ id: '1', name: 'Task' }] }, issueTypesFetchedAt: { PROJ: '2026-09-20T00:00:00.000Z' } }, dir);
+      const cached = readMetadataCache('work', dir);
+      const { prioritiesByProject, prioritiesFetchedAt } = mergeProjectPriorities(cached, 'PROJ', [{ id: '1', name: 'Highest' }]);
+      writeMetadataCache('work', { ...cached, prioritiesByProject, prioritiesFetchedAt }, dir);
+      const result = readMetadataCache('work', dir);
+      assert.deepEqual(result.issueTypesByProject, { PROJ: [{ id: '1', name: 'Task' }] }, 'issue-types cache must survive a priorities write');
+      assert.deepEqual(result.prioritiesByProject, { PROJ: [{ id: '1', name: 'Highest' }] });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('mergeProjectPriorities', () => {
+  it('adds a new project entry to a null cache', () => {
+    const { prioritiesByProject, prioritiesFetchedAt } = mergeProjectPriorities(null, 'CNV1', [{ id: '1', name: 'Highest' }], '2026-09-24T00:00:00.000Z');
+    assert.deepEqual(prioritiesByProject.CNV1, [{ id: '1', name: 'Highest' }]);
+    assert.equal(prioritiesFetchedAt.CNV1, '2026-09-24T00:00:00.000Z');
+  });
+
+  it('preserves other projects already in the cache', () => {
+    const cached = { prioritiesByProject: { ADV: [{ id: '1', name: 'Blocker' }] }, prioritiesFetchedAt: { ADV: '2026-09-20T00:00:00.000Z' } };
+    const { prioritiesByProject } = mergeProjectPriorities(cached, 'CNV1', [{ id: '1', name: 'Highest' }]);
+    assert.deepEqual(prioritiesByProject.ADV, [{ id: '1', name: 'Blocker' }]);
+    assert.deepEqual(prioritiesByProject.CNV1, [{ id: '1', name: 'Highest' }]);
+  });
+
+  it('a "__proto__" project key becomes a real own entry, not a prototype redirect', () => {
+    const { prioritiesByProject } = mergeProjectPriorities(null, '__proto__', [{ id: '1', name: 'Highest' }]);
+    assert.equal(Object.getPrototypeOf(prioritiesByProject), null, 'target must stay a null-prototype object');
+    assert.deepEqual(Object.getOwnPropertyDescriptor(prioritiesByProject, '__proto__').value, [{ id: '1', name: 'Highest' }]);
+  });
+});
+
+describe('mergeTeamLabels', () => {
+  it('adds a new team entry to a null cache', () => {
+    const { labelsByTeam, labelsFetchedAt } = mergeTeamLabels(null, 'team-uuid', [{ id: 'lbl-1', name: 'bug' }], '2026-09-24T00:00:00.000Z');
+    assert.deepEqual(labelsByTeam['team-uuid'], [{ id: 'lbl-1', name: 'bug' }]);
+    assert.equal(labelsFetchedAt['team-uuid'], '2026-09-24T00:00:00.000Z');
+  });
+
+  it('preserves other teams already in the cache', () => {
+    const cached = { labelsByTeam: { 'team-a': [{ id: '1', name: 'old' }] }, labelsFetchedAt: { 'team-a': '2026-09-20T00:00:00.000Z' } };
+    const { labelsByTeam } = mergeTeamLabels(cached, 'team-b', [{ id: '2', name: 'new' }]);
+    assert.deepEqual(labelsByTeam['team-a'], [{ id: '1', name: 'old' }]);
+    assert.deepEqual(labelsByTeam['team-b'], [{ id: '2', name: 'new' }]);
   });
 });

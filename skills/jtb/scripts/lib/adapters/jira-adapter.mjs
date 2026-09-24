@@ -1,4 +1,4 @@
-import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, postComment, getTransitions, postTransition, assignIssue, fetchAssignableUsers, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue, DEFAULT_SEARCH_FIELDS } from '../jira-client.mjs';
+import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, fetchProjectPriorities, postComment, getTransitions, postTransition, assignIssue, fetchAssignableUsers, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue, DEFAULT_SEARCH_FIELDS } from '../jira-client.mjs';
 import { postWorklog } from '../jira-worklog-client.mjs';
 import { uploadAttachment, resolveMediaId } from '../jira-attachment-client.mjs';
 import { readAttachments } from '../attachment-uploader.mjs';
@@ -210,6 +210,34 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
 
     /** Real, currently-configured issue types for one project. */
     listIssueTypes: (projectKey, opts = {}) => fetchIssueTypes(projectKey, { ...base, ...opts }),
+
+    /**
+     * Real, currently-configured priority options for one project — used
+     * only to enrich an `update` failure message, never to pre-validate
+     * (see fetchProjectPriorities' own doc for why). Priority has no
+     * dedicated list-per-project endpoint, so this walks the project's
+     * issue types until one returns a non-empty priority list. NOT every
+     * issue type has one: confirmed live against corenexus that a
+     * team-managed project's Epic type has no `priority` field in its
+     * field metadata at all (real fields returned: assignee, description,
+     * labels, ... — priority absent), while its Task type does. An
+     * earlier version picked types[0] unconditionally and silently
+     * returned [] whenever that happened to be an Epic — caught by a live
+     * CLI run against CNV1-34, not by any unit test (every unit test used
+     * a hand-picked type). Stops at the first success rather than trying
+     * every type, since priority is otherwise scheme-shared across a
+     * project's types by Jira's default. Returns [] only once every type
+     * has been tried — this can only ever make an error message less
+     * informative, never a new way for `update` to fail.
+     */
+    async listPriorities(projectKey, opts = {}) {
+      const types = await fetchIssueTypes(projectKey, { ...base, ...opts });
+      for (const type of types) {
+        const priorities = await fetchProjectPriorities(projectKey, type.id, { ...base, ...opts });
+        if (priorities.length) return priorities;
+      }
+      return [];
+    },
 
     /**
      * Best-effort, per-file: one bad path or one failed upload never blocks

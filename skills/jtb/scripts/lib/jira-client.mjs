@@ -739,6 +739,46 @@ export async function fetchIssueTypes(projectKey, opts = {}) {
 }
 
 /**
+ * Discovers the priority scheme actually configured for a project — used
+ * only to enrich an `update` failure message with real, current options,
+ * never as a client-side pre-validation step (same design choice as
+ * fetchIssueTypes' own doc comment). Confirmed live against a Cloud
+ * instance (corenexus) and a Server/DC instance (advent) that a project's
+ * priority list lives on this per-issuetype field-metadata sub-resource —
+ * there is no separate global-priority-list call this codebase already
+ * makes. Same v2/v3 envelope split as fetchIssueTypes' own top-level list
+ * call: v3 nests the field array under `fields`, v2 under `values` (a
+ * paginated-list envelope, maxResults/startAt/total/isLast). An earlier
+ * version of this function assumed the two were identical here — an
+ * artifact of an exploratory probe script that used a `??` fallback
+ * across both keys, which happened to mask the real difference. Caught
+ * live against advent (v2): a real Bug-type priority list came back
+ * empty under `fields`, present under `values`.
+ */
+export async function fetchProjectPriorities(projectKey, issueTypeId, opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const headers = { ...buildAuthHeader(env), 'Content-Type': 'application/json' };
+
+  const url = `${baseUrl}/rest/api/${apiVersion}/issue/createmeta/${encodeURIComponent(projectKey)}/issuetypes/${encodeURIComponent(issueTypeId)}`;
+  const fetchOpts = { headers };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
+
+  if (!response.ok) {
+    const err = new Error(`Jira API error ${response.status} fetching priorities for ${projectKey}`);
+    err.status = response.status;
+    throw err;
+  }
+
+  const raw = await response.json();
+  const fieldList = apiVersion >= 3 ? (raw.fields ?? []) : (raw.values ?? []);
+  const priorityField = fieldList.find(f => f.fieldId === 'priority');
+  return (priorityField?.allowedValues ?? []).map(p => ({ id: p.id, name: p.name }));
+}
+
+/**
  * Creates a new issue. `project`/`type` are passed straight through as
  * Jira's own {key}/{name} references — issue types are project-configurable,
  * so validity is never pre-checked here; an invalid one surfaces Jira's own

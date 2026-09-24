@@ -532,6 +532,62 @@ describe('createJiraAdapter — listIssueTypes', () => {
   });
 });
 
+describe('createJiraAdapter — listPriorities', () => {
+  it('resolves the project\'s first issue type, then reads that type\'s priority allowedValues (v2/Server-DC envelope: "values")', async () => {
+    const urls = [];
+    const fetcher = async (url) => {
+      urls.push(url);
+      if (url.includes('/issuetypes/10003')) {
+        return { ok: true, status: 200, json: async () => ({ values: [{ fieldId: 'priority', allowedValues: [{ id: '1', name: 'Highest' }] }] }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ values: [{ id: '10003', name: 'Task' }] }) };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.listPriorities('TEST');
+    assert.match(urls[0], /\/createmeta\/TEST\/issuetypes$/);
+    assert.match(urls[1], /\/createmeta\/TEST\/issuetypes\/10003/);
+    assert.deepEqual(result, [{ id: '1', name: 'Highest' }]);
+  });
+
+  it('returns [] without a second call when the project has no issue types', async () => {
+    let callCount = 0;
+    const fetcher = async () => { callCount += 1; return { ok: true, status: 200, json: async () => ({ values: [] }) }; };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.listPriorities('EMPTY');
+    assert.deepEqual(result, []);
+    assert.equal(callCount, 1, 'must not call fetchProjectPriorities when there is no issue type to key off');
+  });
+
+  it('falls through to the next issue type when the first has no priority field — real case: a team-managed Epic type, confirmed live against corenexus CNV1 (v3/Cloud envelope: "fields")', async () => {
+    const urls = [];
+    const fetcher = async (url) => {
+      urls.push(url);
+      if (url.includes('/issuetypes/10001')) {
+        // Real Epic field list on CNV1 has no "priority" entry at all.
+        return { ok: true, status: 200, json: async () => ({ fields: [{ fieldId: 'assignee' }, { fieldId: 'labels' }] }) };
+      }
+      if (url.includes('/issuetypes/10003')) {
+        return { ok: true, status: 200, json: async () => ({ fields: [{ fieldId: 'priority', allowedValues: [{ id: '1', name: 'Highest' }] }] }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ issueTypes: [{ id: '10001', name: 'Epic' }, { id: '10003', name: 'Task' }] }) };
+    };
+    const adapter = createJiraAdapter({ ...CONN, auth: 'cloud' }, { fetcher });
+    const result = await adapter.listPriorities('CNV1');
+    assert.equal(urls.length, 3, 'list + Epic (empty) + Task (hit) — must not stop at the first empty result');
+    assert.deepEqual(result, [{ id: '1', name: 'Highest' }]);
+  });
+
+  it('returns [] once every issue type has been tried and none has a priority field (v2/Server-DC envelope: "values")', async () => {
+    const fetcher = async (url) => {
+      if (url.includes('/issuetypes/')) return { ok: true, status: 200, json: async () => ({ values: [] }) };
+      return { ok: true, status: 200, json: async () => ({ values: [{ id: '1', name: 'Epic' }, { id: '2', name: 'Subtask' }] }) };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.listPriorities('NOPRI');
+    assert.deepEqual(result, []);
+  });
+});
+
 describe('createJiraAdapter — attachFiles', () => {
   let tmpDir;
   beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jtb-jira-attach-test-')); });

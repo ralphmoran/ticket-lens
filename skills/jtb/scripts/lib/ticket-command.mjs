@@ -18,6 +18,7 @@ import { checkCooldown, recordAction } from './ticket-action-cooldown.mjs';
 import { logAction } from './ticket-action-log.mjs';
 import { readMetadataCache, writeMetadataCache, isFresh, SINGLE_PROJECT_TTL_MS, mergeAssignableUsers, normalizeAssigneeQuery } from './ticket-metadata-cache.mjs';
 import { detectProjectOrTypeError, enrichCreateFailure } from './ticket-create-enrichment.mjs';
+import { enrichUpdateFailure } from './ticket-update-enrichment.mjs';
 import { TICKET_KEY_PATTERN, normalizeTicketKey } from './cli.mjs';
 import { scoreCandidates } from './duplicate-scorer.mjs';
 import { MAX_ATTACHMENTS } from './attachment-uploader.mjs';
@@ -873,6 +874,8 @@ export async function runTicketUpdate(cmdArgs, {
   checkCooldownFn = checkCooldown,
   recordActionFn = recordAction,
   logActionFn = logAction,
+  readMetadataCacheFn = readMetadataCache,
+  writeMetadataCacheFn = writeMetadataCache,
   actor = os.userInfo().username,
 } = {}) {
   const usage = 'Usage: ticketlens update TICKET-KEY [--title="..."] [--description="..."] [--add-labels=a,b] [--remove-labels=c] [--priority="High"]\n';
@@ -902,7 +905,7 @@ export async function runTicketUpdate(cmdArgs, {
 
   const resolved = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
   if (!resolved) return { ok: false };
-  const { adapter } = resolved;
+  const { adapter, conn } = resolved;
 
   if (adapter.type === 'github' && priority !== undefined) {
     stream.write(`  GitHub Issues have no native priority field — cannot update priority on ${ticketKey}. Remove --priority and retry.\n`);
@@ -910,7 +913,7 @@ export async function runTicketUpdate(cmdArgs, {
   }
 
   try {
-    const result = await adapter.updateFields(ticketKey, { title, description, priority, addLabels, removeLabels });
+    const result = await adapter.updateFields(ticketKey, { title, description, priority, addLabels, removeLabels }, { readMetadataCacheFn, writeMetadataCacheFn, profileName: conn.profileName, configDir });
     const hasApplied = Object.keys(result.applied).length > 0;
     const hasErrors = Object.keys(result.errors).length > 0;
 
@@ -921,7 +924,8 @@ export async function runTicketUpdate(cmdArgs, {
     stream.write(formatUpdateResult(ticketKey, result, createStyler({ isTTY: stream.isTTY })));
     return hasErrors ? { ok: false, applied: result.applied, errors: result.errors } : { ok: true, applied: result.applied };
   } catch (err) {
-    stream.write(formatWriteFailure(ticketKey, err));
+    const enrichment = await enrichUpdateFailure(err, { adapter, projectKey: projectKeyFromTicket(ticketKey), profileName: conn.profileName, configDir, readMetadataCacheFn, writeMetadataCacheFn });
+    stream.write(formatWriteFailure(ticketKey, err) + enrichment);
     return { ok: false };
   }
 }

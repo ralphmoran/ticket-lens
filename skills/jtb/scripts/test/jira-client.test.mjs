@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, fetchAssignableUsers, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue, DEFAULT_SEARCH_FIELDS } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, fetchProjectPriorities, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, fetchAssignableUsers, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue, DEFAULT_SEARCH_FIELDS } from '../lib/jira-client.mjs';
 import { buildMediaNode } from '../lib/adf-converter.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -1330,6 +1330,92 @@ describe('fetchIssueTypes', () => {
     const badEnv = { ...ENV, JIRA_BASE_URL: 'https://169.254.169.254' };
     await assert.rejects(
       () => fetchIssueTypes('CNV1', { env: badEnv, fetcher: async () => ({ ok: true, status: 200, json: async () => ({}) }) }),
+      /blocked/,
+    );
+  });
+});
+
+describe('fetchProjectPriorities', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+
+  it('v3 (Cloud) reads allowedValues off the "fields" envelope — real shape confirmed live against corenexus', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return {
+        ok: true, status: 200, json: async () => ({
+          fields: [{ fieldId: 'priority', allowedValues: [{ id: '1', name: 'Highest' }, { id: '3', name: 'Medium' }] }],
+        }),
+      };
+    };
+    const result = await fetchProjectPriorities('CNV1', '10003', { env: ENV, fetcher, apiVersion: 3 });
+    assert.match(capturedUrl, /\/issue\/createmeta\/CNV1\/issuetypes\/10003/);
+    assert.deepEqual(result, [{ id: '1', name: 'Highest' }, { id: '3', name: 'Medium' }]);
+  });
+
+  it('v2 (Server/DC) reads a genuinely different "values" (paginated-list) envelope — confirmed live against advent; an earlier version wrongly assumed the same "fields" key as v3', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return {
+        ok: true, status: 200, json: async () => ({
+          maxResults: 50, startAt: 0, total: 1, isLast: true,
+          values: [{ fieldId: 'priority', allowedValues: [{ id: '1', name: 'Blocker' }] }],
+        }),
+      };
+    };
+    const result = await fetchProjectPriorities('ADV', '1', { env: ENV, fetcher, apiVersion: 2 });
+    assert.match(capturedUrl, /\/issue\/createmeta\/ADV\/issuetypes\/1/);
+    assert.deepEqual(result, [{ id: '1', name: 'Blocker' }]);
+  });
+
+  it('v2 ignores a "fields" key even if present — ties the two envelopes to apiVersion, not to whichever key happens to exist', async () => {
+    const fetcher = async () => ({
+      ok: true, status: 200, json: async () => ({
+        fields: [{ fieldId: 'priority', allowedValues: [{ id: '9', name: 'Should not be read on v2' }] }],
+      }),
+    });
+    const result = await fetchProjectPriorities('ADV', '1', { env: ENV, fetcher, apiVersion: 2 });
+    assert.deepEqual(result, [], 'v2 must read "values", not silently fall back to "fields"');
+  });
+
+  it('returns an empty array when the priority field is absent from this issue type (v3)', async () => {
+    const fetcher = async () => ({ ok: true, status: 200, json: async () => ({ fields: [{ fieldId: 'summary' }] }) });
+    const result = await fetchProjectPriorities('CNV1', '10001', { env: ENV, fetcher, apiVersion: 3 });
+    assert.deepEqual(result, []);
+  });
+
+  it('returns an empty array when the priority field has no allowedValues (v3)', async () => {
+    const fetcher = async () => ({ ok: true, status: 200, json: async () => ({ fields: [{ fieldId: 'priority' }] }) });
+    const result = await fetchProjectPriorities('CNV1', '10001', { env: ENV, fetcher, apiVersion: 3 });
+    assert.deepEqual(result, []);
+  });
+
+  it('returns an empty array when the priority field is absent from this issue type (v2)', async () => {
+    const fetcher = async () => ({ ok: true, status: 200, json: async () => ({ values: [{ fieldId: 'summary' }] }) });
+    const result = await fetchProjectPriorities('ADV', '1', { env: ENV, fetcher, apiVersion: 2 });
+    assert.deepEqual(result, []);
+  });
+
+  it('URL-encodes the project key and issue type id', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => { capturedUrl = url; return { ok: true, status: 200, json: async () => ({ values: [] }) }; };
+    await fetchProjectPriorities('PROJ WITH SPACE', '100 01', { env: ENV, fetcher, apiVersion: 2 });
+    assert.ok(!capturedUrl.includes(' '), `URL must not contain a raw space: ${capturedUrl}`);
+  });
+
+  it('surfaces a non-OK response with .status, never silently swallowed', async () => {
+    const fetcher = async () => ({ ok: false, status: 400 });
+    await assert.rejects(
+      () => fetchProjectPriorities('BOGUS', '1', { env: ENV, fetcher }),
+      (err) => err.status === 400,
+    );
+  });
+
+  it('goes through validateBaseUrl/guardedFetch like every other read (SSRF guard not bypassed)', async () => {
+    const badEnv = { ...ENV, JIRA_BASE_URL: 'https://169.254.169.254' };
+    await assert.rejects(
+      () => fetchProjectPriorities('CNV1', '1', { env: badEnv, fetcher: async () => ({ ok: true, status: 200, json: async () => ({}) }) }),
       /blocked/,
     );
   });

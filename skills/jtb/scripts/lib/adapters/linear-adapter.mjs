@@ -1,6 +1,7 @@
 import { tokenize } from '../duplicate-scorer.mjs';
 import { readAttachments } from '../attachment-uploader.mjs';
 import { isSafeRedirectUrl, validateResolvedHost, defaultLookupFor } from '../jira-client.mjs';
+import { SINGLE_PROJECT_TTL_MS, isFresh, mergeTeamLabels } from '../ticket-metadata-cache.mjs';
 
 const LINEAR_API = 'https://api.linear.app/graphql';
 
@@ -101,6 +102,22 @@ function resolveLabelNames(names, byName) {
     if (id) resolved.push({ id, name }); else missing.push(name);
   }
   return { resolved, missing };
+}
+
+/**
+ * Real, currently-configured labels for one team — extracted from
+ * updateFields' own inline query so the cache read-through wrapper around
+ * it (see updateFields below) and this raw fetch stay independently
+ * testable. Returns {id, name} to match ticket-metadata-cache.mjs's
+ * documented labelsByTeam shape exactly.
+ */
+async function fetchTeamLabels(teamId, { token, fetcher, signal }) {
+  const data = await gql(
+    `query ($teamId: ID!) { issueLabels(filter: { team: { id: { eq: $teamId } } }, first: 250) { nodes { id name } } }`,
+    { teamId },
+    { token, fetcher, signal },
+  );
+  return (data.issueLabels?.nodes ?? []).map(l => ({ id: l.id, name: l.name }));
 }
 
 async function fetchTeamWorkflowStates(teamId, { token, fetcher, signal }) {
@@ -393,12 +410,28 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
 
       let addLabelsResolved, addLabelsMissing, removeLabelsResolved, removeLabelsMissing;
       if (addLabels?.length || removeLabels?.length) {
-        const labelData = await gql(
-          `query ($teamId: ID!) { issueLabels(filter: { team: { id: { eq: $teamId } } }, first: 250) { nodes { id name } } }`,
-          { teamId: info.team.id },
-          { token, fetcher, signal },
-        );
-        const byName = new Map((labelData.issueLabels?.nodes ?? []).map(l => [l.name.toLowerCase(), l.id]));
+        const teamId = info.team.id;
+        const { readMetadataCacheFn, writeMetadataCacheFn, profileName, configDir } = opts;
+        const cached = readMetadataCacheFn ? readMetadataCacheFn(profileName, configDir) : null;
+        // Keyed on the timestamp existing, not on the cached array having
+        // entries — a team with genuinely zero labels configured caches
+        // `[]`, and gating on `.length` would re-fetch on every single
+        // subsequent call, never respecting SINGLE_PROJECT_TTL_MS. Same
+        // fix as ticket-update-enrichment.mjs's prioritiesByProject check.
+        const hasFreshLabels = cached?.labelsByTeam?.[teamId] !== undefined
+          && isFresh(cached?.labelsFetchedAt?.[teamId], SINGLE_PROJECT_TTL_MS);
+
+        let labels;
+        if (hasFreshLabels) {
+          labels = cached.labelsByTeam[teamId];
+        } else {
+          labels = await fetchTeamLabels(teamId, { token, fetcher, signal });
+          if (writeMetadataCacheFn) {
+            const { labelsByTeam, labelsFetchedAt } = mergeTeamLabels(cached, teamId, labels);
+            writeMetadataCacheFn(profileName, { ...cached, labelsByTeam, labelsFetchedAt }, configDir);
+          }
+        }
+        const byName = new Map(labels.map(l => [l.name.toLowerCase(), l.id]));
 
         if (addLabels?.length) {
           ({ resolved: addLabelsResolved, missing: addLabelsMissing } = resolveLabelNames(addLabels, byName));

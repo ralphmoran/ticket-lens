@@ -769,6 +769,82 @@ describe('updateFields', () => {
     const adapter = createLinearAdapter(CONN, { fetcher });
     await assert.rejects(adapter.updateFields('ENG-42', { title: 'x' }), /success:false/);
   });
+
+  it('a fresh labelsByTeam cache hit skips the issueLabels query entirely (Backlog #34/ROADMAP 57 follow-up)', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      return makeResponse({ issueUpdate: { success: true } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const now = new Date().toISOString();
+    const result = await adapter.updateFields('ENG-42', { addLabels: ['urgent'] }, {
+      readMetadataCacheFn: () => ({
+        labelsByTeam: { 'team-uuid-1': [{ id: 'label-urgent', name: 'urgent' }] },
+        labelsFetchedAt: { 'team-uuid-1': now },
+      }),
+      writeMetadataCacheFn: () => { throw new Error('must not write when the cache was already fresh'); },
+    });
+    assert.equal(calls.length, 2, 'issue-info fetch + mutation only — no issueLabels query');
+    assert.deepEqual(result.applied, { addLabels: ['urgent'] });
+  });
+
+  it('a stale (or missing) labelsByTeam cache entry still live-fetches and then writes through', async () => {
+    const calls = [];
+    let written;
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      if (calls.length === 2) return makeResponse({ issueLabels: { nodes: [{ id: 'label-urgent', name: 'urgent' }] } });
+      return makeResponse({ issueUpdate: { success: true } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const fourDaysAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString();
+    const result = await adapter.updateFields('ENG-42', { addLabels: ['urgent'] }, {
+      readMetadataCacheFn: () => ({ labelsByTeam: { 'team-uuid-1': [{ id: 'old', name: 'old' }] }, labelsFetchedAt: { 'team-uuid-1': fourDaysAgo } }),
+      writeMetadataCacheFn: (profile, data) => { written = data; },
+    });
+    assert.equal(calls.length, 3, 'a stale entry must still hit the live issueLabels query');
+    assert.deepEqual(result.applied, { addLabels: ['urgent'] });
+    assert.deepEqual(written.labelsByTeam['team-uuid-1'], [{ id: 'label-urgent', name: 'urgent' }]);
+    assert.ok(written.labelsFetchedAt['team-uuid-1']);
+  });
+
+  it('a fresh cached [] (a team with genuinely zero labels) is NOT re-fetched — negative-cache gap, caught in code review', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      return makeResponse({ issueUpdate: { success: true } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const now = new Date().toISOString();
+    const result = await adapter.updateFields('ENG-42', { addLabels: ['urgent'] }, {
+      readMetadataCacheFn: () => ({ labelsByTeam: { 'team-uuid-1': [] }, labelsFetchedAt: { 'team-uuid-1': now } }),
+      writeMetadataCacheFn: () => { throw new Error('must not write when the (empty) cache was already fresh'); },
+    });
+    assert.equal(calls.length, 1, 'issue-info fetch only — fresh empty cache short-circuits issueLabels, then empty input short-circuits the mutation too');
+    assert.deepEqual(result.errors.addLabels, { reason: 'not-found', missing: ['urgent'] });
+  });
+
+  it('omitting readMetadataCacheFn/writeMetadataCacheFn behaves exactly as before — always live-fetches, never crashes', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      if (calls.length === 2) return makeResponse({ issueLabels: { nodes: [{ id: 'label-urgent', name: 'urgent' }] } });
+      return makeResponse({ issueUpdate: { success: true } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    const result = await adapter.updateFields('ENG-42', { addLabels: ['urgent'] });
+    assert.equal(calls.length, 3);
+    assert.deepEqual(result.applied, { addLabels: ['urgent'] });
+  });
 });
 
 // ---------------------------------------------------------------------------
