@@ -21,7 +21,17 @@
  *   projects: [{key, name}],
  *   issueTypesByProject:  {KEY: [{id, name}]},
  *   issueTypesFetchedAt:  {KEY: iso timestamp}  // per-project, either access pattern
+ *   assignableUsersByProject:  {KEY: {normalizedQuery: [{accountId, displayName}]}},
+ *   assignableUsersFetchedAt:  {KEY: {normalizedQuery: iso timestamp}}
  * }
+ *
+ * assignableUsersByProject/assignableUsersFetchedAt (ROADMAP 61) share this
+ * file rather than a new one — same profile-scoped Jira-lookup cache, same
+ * 3-day freshness bar as a single-project issue-types lookup. Nested one
+ * level deeper than issueTypesByProject because Jira's own
+ * `user/assignable/search` has no "list everyone" mode (query is required
+ * unless accountId is given) — there is no per-project roster to cache,
+ * only per-(project, query) result pages, each with its own clock.
  */
 
 import fs from 'node:fs';
@@ -63,6 +73,39 @@ export function mergeProjectIssueTypes(cached, projectKey, types, fetchedAt = ne
 }
 
 /**
+ * Trim + lowercase — the one normalization every assignable-users cache
+ * read and write must agree on, so "Jane", " jane ", and "JANE" share one
+ * cache entry instead of three.
+ */
+export function normalizeAssigneeQuery(query) {
+  return String(query).trim().toLowerCase();
+}
+
+/**
+ * Merges one (project, query) assignable-users search result into an
+ * existing (possibly null) cached map — same shape and same
+ * Object.create(null) defense as mergeProjectIssueTypes, one level deeper
+ * since a project can have many independently-fresh cached queries. Both
+ * projectKey and the normalized query are unvalidated values reaching a
+ * key position.
+ */
+export function mergeAssignableUsers(cached, projectKey, query, candidates, fetchedAt = new Date().toISOString()) {
+  const normalizedQuery = normalizeAssigneeQuery(query);
+
+  const assignableUsersByProject = Object.assign(Object.create(null), cached?.assignableUsersByProject ?? {});
+  const projectQueries = Object.assign(Object.create(null), assignableUsersByProject[projectKey] ?? {});
+  projectQueries[normalizedQuery] = candidates;
+  assignableUsersByProject[projectKey] = projectQueries;
+
+  const assignableUsersFetchedAt = Object.assign(Object.create(null), cached?.assignableUsersFetchedAt ?? {});
+  const projectQueryTimestamps = Object.assign(Object.create(null), assignableUsersFetchedAt[projectKey] ?? {});
+  projectQueryTimestamps[normalizedQuery] = fetchedAt;
+  assignableUsersFetchedAt[projectKey] = projectQueryTimestamps;
+
+  return { assignableUsersByProject, assignableUsersFetchedAt };
+}
+
+/**
  * Returns the absolute path to the ticket-metadata cache file for a profile.
  */
 export function metadataCachePath(profileName, configDir = DEFAULT_CONFIG_DIR) {
@@ -84,7 +127,7 @@ export function metadataCachePath(profileName, configDir = DEFAULT_CONFIG_DIR) {
  * @param {string|null} profileName
  * @param {string} [configDir]
  * @param {number} [ttlMs] - override TTL in ms for this file's own GC deletion; defaults to METADATA_TTL_MS (7d)
- * @returns {{ projects: {key:string,name:string}[], issueTypesByProject: object, issueTypesFetchedAt: object, projectsFetchedAt: string|null, fetchedAt: string } | null}
+ * @returns {{ projects: {key:string,name:string}[], issueTypesByProject: object, issueTypesFetchedAt: object, assignableUsersByProject: object, assignableUsersFetchedAt: object, projectsFetchedAt: string|null, fetchedAt: string } | null}
  */
 export function readMetadataCache(profileName, configDir = DEFAULT_CONFIG_DIR, ttlMs = METADATA_TTL_MS) {
   const filePath = metadataCachePath(profileName, configDir);
@@ -107,6 +150,8 @@ export function readMetadataCache(profileName, configDir = DEFAULT_CONFIG_DIR, t
     projects: data.projects ?? [],
     issueTypesByProject: data.issueTypesByProject ?? {},
     issueTypesFetchedAt: data.issueTypesFetchedAt ?? {},
+    assignableUsersByProject: data.assignableUsersByProject ?? {},
+    assignableUsersFetchedAt: data.assignableUsersFetchedAt ?? {},
     projectsFetchedAt: data.projectsFetchedAt ?? null,
     fetchedAt: data.fetchedAt,
   };
@@ -119,7 +164,7 @@ export function readMetadataCache(profileName, configDir = DEFAULT_CONFIG_DIR, t
  * updates (e.g. a single-project fetch merging into an existing
  * multi-project cache) — this function persists exactly what it's given.
  */
-export function writeMetadataCache(profileName, { projects = [], issueTypesByProject = {}, issueTypesFetchedAt = {}, projectsFetchedAt = null } = {}, configDir = DEFAULT_CONFIG_DIR) {
+export function writeMetadataCache(profileName, { projects = [], issueTypesByProject = {}, issueTypesFetchedAt = {}, assignableUsersByProject = {}, assignableUsersFetchedAt = {}, projectsFetchedAt = null } = {}, configDir = DEFAULT_CONFIG_DIR) {
   const filePath = metadataCachePath(profileName, configDir);
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -129,6 +174,8 @@ export function writeMetadataCache(profileName, { projects = [], issueTypesByPro
       projects,
       issueTypesByProject,
       issueTypesFetchedAt,
+      assignableUsersByProject,
+      assignableUsersFetchedAt,
     }));
   } catch {
     // Non-fatal

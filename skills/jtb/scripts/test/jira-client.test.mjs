@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue, DEFAULT_SEARCH_FIELDS } from '../lib/jira-client.mjs';
+import { normalizeTicket, buildAuthHeader, fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, fetchRemoteLinks, parseStatusChangedAt, guardedFetch, validateResolvedHost, validateBaseUrl, isSafeRedirectUrl, defaultLookupFor, postComment, getTransitions, postTransition, assignIssue, fetchAssignableUsers, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue, DEFAULT_SEARCH_FIELDS } from '../lib/jira-client.mjs';
 import { buildMediaNode } from '../lib/adf-converter.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -1093,6 +1093,55 @@ describe('assignIssue', () => {
     const badEnv = { ...ENV, JIRA_BASE_URL: 'https://169.254.169.254' };
     await assert.rejects(
       () => assignIssue('PROJ-1', { accountId: 'x' }, { env: badEnv, fetcher: async () => ({ ok: true, status: 204 }) }),
+      /blocked/,
+    );
+  });
+});
+
+describe('fetchAssignableUsers', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+
+  it('throws before any request when query is empty — Jira has no "list everyone" mode', async () => {
+    let called = false;
+    const fetcher = async () => { called = true; return { ok: true, json: async () => [] }; };
+    await assert.rejects(
+      () => fetchAssignableUsers('PROJ-1', '', { env: ENV, fetcher, apiVersion: 3 }),
+      /non-empty query/,
+    );
+    assert.equal(called, false);
+  });
+
+  it('sends issueKey and query as GET params against the v3 endpoint', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => { capturedUrl = url; return { ok: true, json: async () => [] }; };
+    await fetchAssignableUsers('PROJ-1', 'jane', { env: ENV, fetcher, apiVersion: 3 });
+    assert.match(capturedUrl, /\/rest\/api\/3\/user\/assignable\/search\?/);
+    const params = new URL(capturedUrl).searchParams;
+    assert.equal(params.get('issueKey'), 'PROJ-1');
+    assert.equal(params.get('query'), 'jane');
+  });
+
+  it('normalizes the returned user objects to {accountId, name, displayName}', async () => {
+    const fetcher = async () => ({
+      ok: true,
+      json: async () => [{ accountId: 'acc-1', displayName: 'Jane Dev', emailAddress: 'jane@example.com', avatarUrls: {} }],
+    });
+    const result = await fetchAssignableUsers('PROJ-1', 'jane', { env: ENV, fetcher, apiVersion: 3 });
+    assert.deepEqual(result, [{ accountId: 'acc-1', name: null, displayName: 'Jane Dev' }]);
+  });
+
+  it('throws with .status on a non-OK response', async () => {
+    const fetcher = async () => ({ ok: false, status: 400 });
+    await assert.rejects(
+      () => fetchAssignableUsers('PROJ-1', 'jane', { env: ENV, fetcher, apiVersion: 3 }),
+      (err) => err.status === 400,
+    );
+  });
+
+  it('goes through validateBaseUrl/guardedFetch like every other read (SSRF guard not bypassed)', async () => {
+    const badEnv = { ...ENV, JIRA_BASE_URL: 'https://169.254.169.254' };
+    await assert.rejects(
+      () => fetchAssignableUsers('PROJ-1', 'jane', { env: badEnv, fetcher: async () => ({ ok: true, json: async () => [] }) }),
       /blocked/,
     );
   });

@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.45.0 -->
+<!-- jtb-skill-version: 0.46.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -436,7 +436,9 @@ ticketlens comment PROD-1234 --body="Fixed in a2f9c1, deployed to staging."
 ticketlens comment PROD-1234 --body="See screenshot" --attach=./bug.png  # attach local files
 ticketlens transition PROD-1234                              # list valid transitions — read-only
 ticketlens transition PROD-1234 --target="Done" --confirm    # execute
-ticketlens assign PROD-1234 --to=me                          # assign to yourself
+ticketlens assign PROD-1234 --to=me                          # assign to yourself — immediate, no --confirm
+ticketlens assign PROD-1234 --to="Jane Dev"                  # search assignable users — read-only, lists match(es)
+ticketlens assign PROD-1234 --to="Jane Dev" --confirm        # execute — only if exactly one match (Jira Cloud only)
 ticketlens duplicates PROD-1234                               # find likely duplicates — read-only
 ticketlens link PROD-1234 PROD-5678                            # list valid link types — read-only
 ticketlens link PROD-1234 PROD-5678 --type="Duplicate" --confirm  # execute the link
@@ -451,13 +453,13 @@ ticketlens worklog PROD-1234=1h30m PROD-5678=45m --comment="Sprint work" --confi
 
 `transition` called with just a ticket key never mutates anything — it lists the tracker's current valid options (Jira: real workflow transitions for that issue; GitHub: open/closed; Linear: team-scoped workflow states). Only add `--target` **and** `--confirm` once the target has actually been confirmed with the user — `--confirm` is a deliberate two-step gate, not a formality to route around. Never guess a `--target` value; always list first, then use one of the names shown.
 
-`assign` is self-assign only — `--to` must be `me`. There is no way to assign to anyone else yet; don't attempt a workaround (e.g. via `comment`) if the user asks for that — tell them it isn't supported.
+`assign` — `--to=me` self-assigns immediately, no `--confirm` needed. Any other `--to` (a name or email) assigns to another developer, Jira Cloud only for now — GitHub, Linear, and Jira Server/DC refuse cleanly rather than guess at unverified API behavior. It searches Jira's real assignable-user list first: called without `--confirm` it never assigns, only lists the matching candidate(s) (name + accountId, cached locally per project for 3 days); called again with the same `--to` and `--confirm`, it executes only if exactly one candidate still matches — 0 or 2+ matches always refuses, never guesses which person was meant. Never attempt a workaround (e.g. via `comment`) for a tracker `assign` refuses (GitHub/Linear/Server-DC) — tell the user it isn't supported yet.
 
 `duplicates` lists likely-duplicate tickets in the same project. On Jira, any ticket already linked as a "Duplicate" is always listed first — that's a confirmed relationship a human already recorded, not a heuristic. Everything else is ranked by local title/description overlap — no tracker scores similarity server-side, so treat those as a nudge for the user to check manually, never as a confirmed duplicate to act on unprompted (e.g. don't auto-close or auto-comment based on a match). `--threshold=N` (0–1, default 0.35) tightens or loosens what counts as a text-match — it has no effect on Jira-linked duplicates, which are always shown. An empty result is the same approximation in the other direction — the local scorer can miss a real duplicate too, so don't treat "no likely duplicates found" as proof none exist.
 
 `link SOURCE-KEY TARGET-KEY` links two tickets — direction matters: SOURCE "types" TARGET (e.g. `link A B --type=Duplicate` means A duplicates B, not the other way around). Called with just the two keys, it lists the tracker's current valid link types without changing anything — never guess `--type`; always list first, then use one of the names shown. GitHub has no generic link relationship, so linking on a GitHub-tracked ticket *closes SOURCE as a duplicate of TARGET* — a real state change, not just a relationship add — and prints an explicit warning immediately before that happens, on top of the same `--confirm` gate.
 
-`update TICKET-KEY` updates a narrow, named field set — title, description, labels, priority. At least one field is required. Labels are always add/remove (`--add-labels=a,b` / `--remove-labels=c`), never a wholesale replace — an unnamed existing label is left alone, never silently dropped. No `--confirm` needed — these are reversible metadata edits, same risk tier as `assign`.
+`update TICKET-KEY` updates a narrow, named field set — title, description, labels, priority. At least one field is required. Labels are always add/remove (`--add-labels=a,b` / `--remove-labels=c`), never a wholesale replace — an unnamed existing label is left alone, never silently dropped. No `--confirm` needed — these are reversible metadata edits, same risk tier as self-assign.
 
 `create` makes a brand-new ticket — there's no existing ticket to target, so `--project` (Jira project key / Linear team key) and `--type` (Jira issue type, ignored elsewhere) pick the destination instead of a ticket key. This is the highest-blast-radius command in the family: a bad `--project`/`--type` fabricates a real, hard-to-walk-back item in a live tracker. No `--confirm` gate — double-check the values with the user before calling it, since an invalid value surfaces the tracker's own error rather than a silent guess.
 

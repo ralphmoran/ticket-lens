@@ -1,4 +1,4 @@
-import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, postComment, getTransitions, postTransition, assignIssue, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue, DEFAULT_SEARCH_FIELDS } from '../jira-client.mjs';
+import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, postComment, getTransitions, postTransition, assignIssue, fetchAssignableUsers, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue, DEFAULT_SEARCH_FIELDS } from '../jira-client.mjs';
 import { postWorklog } from '../jira-worklog-client.mjs';
 import { uploadAttachment, resolveMediaId } from '../jira-attachment-client.mjs';
 import { readAttachments } from '../attachment-uploader.mjs';
@@ -81,6 +81,31 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       }
       await assignIssue(key, { [field]: value }, { ...base, ...opts });
       return { assignee: me.displayName ?? value };
+    },
+
+    /**
+     * Resolves a free-text name/email into candidate assignable users —
+     * read-only, never assigns. Cloud only (`apiVersion === 3`): Jira
+     * Server/DC's equivalent endpoint semantics are unverified, so this
+     * refuses rather than guess at request/response shape (ROADMAP 61).
+     * Caching (3-day TTL, per project+query) is the caller's job — same
+     * split as `listIssueTypes`, which is also cache-agnostic here.
+     */
+    async searchAssignableUsers(key, query, opts = {}) {
+      if (apiVersion !== 3) {
+        throw new Error('Assigning to another developer needs Jira Cloud — Server/DC is not supported yet.');
+      }
+      const users = await fetchAssignableUsers(key, query, { ...base, ...opts });
+      return users.map(u => ({ accountId: u.accountId, displayName: u.displayName ?? u.name ?? u.accountId }));
+    },
+
+    /**
+     * Executes an assignment to a resolved accountId — always Cloud
+     * (`searchAssignableUsers` is the only path that produces one), so no
+     * apiVersion branch is needed here the way `assignToSelf` has.
+     */
+    async assignToUser(key, accountId, opts = {}) {
+      await assignIssue(key, { accountId }, { ...base, ...opts });
     },
 
     /**

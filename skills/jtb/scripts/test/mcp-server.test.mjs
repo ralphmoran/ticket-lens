@@ -1646,6 +1646,55 @@ describe('mcp-server', () => {
       );
       assert.equal(messages[0].result.isError, true);
     });
+
+    it('to another developer + confirm:true forwards --confirm (ROADMAP 61)', async () => {
+      let seenArgs;
+      const runTicketAssignFn = async (cmdArgs, opts) => {
+        seenArgs = cmdArgs;
+        opts.stream.write('  PROJ-1 assigned to Jane Dev.\n');
+        return { ok: true };
+      };
+      const { messages } = await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_assign', arguments: { ticket: 'PROJ-1', to: 'jane', confirm: true } } }],
+        { configDir, runTicketAssignFn },
+      );
+      assert.deepEqual(seenArgs, ['PROJ-1', '--to=jane', '--confirm']);
+      assert.equal(messages[0].result.isError, undefined);
+    });
+
+    it('to another developer without confirm does not forward --confirm — the underlying function lists candidates instead', async () => {
+      let seenArgs;
+      const runTicketAssignFn = async (cmdArgs, opts) => {
+        seenArgs = cmdArgs;
+        opts.stream.write('  Match: Jane Dev\n');
+        return { ok: false };
+      };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_assign', arguments: { ticket: 'PROJ-1', to: 'jane' } } }],
+        { configDir, runTicketAssignFn },
+      );
+      assert.deepEqual(seenArgs, ['PROJ-1', '--to=jane']);
+    });
+
+    it('confirm:false (falsy, not strictly true) is not forwarded as --confirm', async () => {
+      let seenArgs;
+      const runTicketAssignFn = async (cmdArgs) => { seenArgs = cmdArgs; return { ok: false }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_assign', arguments: { ticket: 'PROJ-1', to: 'jane', confirm: false } } }],
+        { configDir, runTicketAssignFn },
+      );
+      assert.deepEqual(seenArgs, ['PROJ-1', '--to=jane']);
+    });
+
+    it('always passes cliHints:false so a refusal is worded for the MCP caller, not a CLI user', async () => {
+      let seenOpts;
+      const runTicketAssignFn = async (cmdArgs, opts) => { seenOpts = opts; return { ok: true }; };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_assign', arguments: { ticket: 'PROJ-1', to: 'me' } } }],
+        { configDir, runTicketAssignFn },
+      );
+      assert.equal(seenOpts.cliHints, false);
+    });
   });
 
   describe('tools/call ticket_duplicates', () => {

@@ -590,15 +590,150 @@ describe('runTicketAssign — usage validation', () => {
     assert.match(deps.stream.lines.join(''), /Usage/);
   });
 
-  test('--to value other than "me" is rejected with an explicit not-yet-supported message, never reaches the adapter', async () => {
-    let assignCalled = false;
+  test('--to value other than "me" on a non-Cloud connection is refused, never reaches the adapter (ROADMAP 61 is Jira Cloud only)', async () => {
+    let searchCalled = false;
     const deps = baseDeps({
-      resolveAdapterFn: () => fakeAdapter({ assignToSelf: async () => { assignCalled = true; return { assignee: 'x' }; } }),
+      resolveAdapterFn: () => fakeAdapter({ searchAssignableUsers: async () => { searchCalled = true; return []; } }),
     });
     const result = await runTicketAssign(['PROJ-1', '--to=someone@else.com'], deps);
     assert.equal(result.ok, false);
+    assert.equal(searchCalled, false);
+    assert.match(deps.stream.lines.join(''), /Jira Cloud/);
+  });
+});
+
+describe('runTicketAssign — assign to another developer (ROADMAP 61)', () => {
+  function cloudDeps(overrides = {}) {
+    return baseDeps({
+      resolveConnectionFn: () => ({ baseUrl: 'https://jira.example.com', auth: 'cloud', profileName: 'default' }),
+      resolveAdapterFn: () => fakeAdapter({
+        searchAssignableUsers: async () => [{ accountId: 'acc-1', displayName: 'Jane Dev' }],
+      }),
+      ...overrides,
+    });
+  }
+
+  test('a non-Jira tracker is refused, never reaches searchAssignableUsers', async () => {
+    let searchCalled = false;
+    const deps = cloudDeps({
+      resolveAdapterFn: () => fakeAdapter({ type: 'github', searchAssignableUsers: async () => { searchCalled = true; return []; } }),
+    });
+    const result = await runTicketAssign(['PROJ-1', '--to=jane'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(searchCalled, false);
+    assert.match(deps.stream.lines.join(''), /Jira-only/);
+  });
+
+  test('zero matches reports no user found, does not execute', async () => {
+    const deps = cloudDeps({
+      resolveAdapterFn: () => fakeAdapter({ searchAssignableUsers: async () => [] }),
+    });
+    const result = await runTicketAssign(['PROJ-1', '--to=nobody', '--confirm'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /No assignable user found/);
+  });
+
+  test('multiple matches lists all candidates and never executes, even with --confirm', async () => {
+    let assignCalled = false;
+    const deps = cloudDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        searchAssignableUsers: async () => [
+          { accountId: 'acc-1', displayName: 'Jane Dev' },
+          { accountId: 'acc-2', displayName: 'Jane Doe' },
+        ],
+        assignToUser: async () => { assignCalled = true; },
+      }),
+    });
+    const result = await runTicketAssign(['PROJ-1', '--to=jane', '--confirm'], deps);
+    assert.equal(result.ok, false);
     assert.equal(assignCalled, false);
-    assert.match(deps.stream.lines.join(''), /not yet supported/);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /Jane Dev/);
+    assert.match(output, /Jane Doe/);
+  });
+
+  test('a single match without --confirm lists it and does not execute', async () => {
+    let assignCalled = false;
+    const deps = cloudDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        searchAssignableUsers: async () => [{ accountId: 'acc-1', displayName: 'Jane Dev' }],
+        assignToUser: async () => { assignCalled = true; },
+      }),
+    });
+    const result = await runTicketAssign(['PROJ-1', '--to=jane'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(assignCalled, false);
+    assert.match(deps.stream.lines.join(''), /Jane Dev/);
+    assert.match(deps.stream.lines.join(''), /--confirm/);
+  });
+
+  test('a single match with --confirm executes, records cooldown, and logs accountId', async () => {
+    let recorded, logged, assignedTo;
+    const deps = cloudDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        searchAssignableUsers: async () => [{ accountId: 'acc-1', displayName: 'Jane Dev' }],
+        assignToUser: async (key, accountId) => { assignedTo = { key, accountId }; },
+      }),
+      recordActionFn: (key, action) => { recorded = { key, action }; },
+      logActionFn: (entry) => { logged = entry; },
+    });
+    const result = await runTicketAssign(['PROJ-1', '--to=jane', '--confirm'], deps);
+    assert.equal(result.ok, true);
+    assert.deepEqual(assignedTo, { key: 'PROJ-1', accountId: 'acc-1' });
+    assert.deepEqual(recorded, { key: 'PROJ-1', action: 'assign' });
+    assert.equal(logged.detail.assignee, 'Jane Dev');
+    assert.equal(logged.detail.accountId, 'acc-1');
+    assert.match(deps.stream.lines.join(''), /assigned to Jane Dev/);
+  });
+
+  test('active cooldown blocks the confirmed execute, even after a resolved single match', async () => {
+    let assignCalled = false;
+    const deps = cloudDeps({
+      checkCooldownFn: () => ({ active: true, remainingMs: 3000 }),
+      resolveAdapterFn: () => fakeAdapter({
+        searchAssignableUsers: async () => [{ accountId: 'acc-1', displayName: 'Jane Dev' }],
+        assignToUser: async () => { assignCalled = true; },
+      }),
+    });
+    const result = await runTicketAssign(['PROJ-1', '--to=jane', '--confirm'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(assignCalled, false);
+    assert.match(deps.stream.lines.join(''), /Skipped/);
+  });
+
+  test('a fresh cache hit skips searchAssignableUsers entirely', async () => {
+    let searchCalled = false;
+    const deps = cloudDeps({
+      readMetadataCacheFn: () => ({
+        assignableUsersByProject: { PROJ: { jane: [{ accountId: 'acc-1', displayName: 'Jane Dev' }] } },
+        assignableUsersFetchedAt: { PROJ: { jane: new Date().toISOString() } },
+      }),
+      resolveAdapterFn: () => fakeAdapter({ searchAssignableUsers: async () => { searchCalled = true; return []; } }),
+    });
+    const result = await runTicketAssign(['PROJ-1', '--to=jane'], deps);
+    assert.equal(result.ok, false); // lists the cached match, still requires --confirm
+    assert.equal(searchCalled, false);
+    assert.match(deps.stream.lines.join(''), /Jane Dev/);
+  });
+
+  test('a stale cache entry falls through to a live search and rewrites the cache, preserving unrelated issue-types data', async () => {
+    let written;
+    const deps = cloudDeps({
+      readMetadataCacheFn: () => ({
+        assignableUsersByProject: { PROJ: { jane: [{ accountId: 'stale', displayName: 'Stale Jane' }] } },
+        assignableUsersFetchedAt: { PROJ: { jane: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString() } },
+        issueTypesByProject: { PROJ: [{ id: '1', name: 'Task' }] },
+        issueTypesFetchedAt: { PROJ: new Date().toISOString() },
+        projects: [{ key: 'PROJ', name: 'Project' }],
+      }),
+      writeMetadataCacheFn: (profileName, data) => { written = data; },
+      resolveAdapterFn: () => fakeAdapter({ searchAssignableUsers: async () => [{ accountId: 'acc-1', displayName: 'Jane Dev' }] }),
+    });
+    const result = await runTicketAssign(['PROJ-1', '--to=jane'], deps);
+    assert.equal(result.ok, false);
+    assert.match(deps.stream.lines.join(''), /Jane Dev/);
+    assert.deepEqual(written.issueTypesByProject, { PROJ: [{ id: '1', name: 'Task' }] }, 'unrelated issue-types cache data must survive an assignable-users write');
+    assert.equal(written.assignableUsersByProject.PROJ.jane[0].displayName, 'Jane Dev');
   });
 });
 

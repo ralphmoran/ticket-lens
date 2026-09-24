@@ -16,7 +16,7 @@ import { resolveConnection, findProfilesByPrefix } from './profile-resolver.mjs'
 import { resolveAdapter } from './resolve-adapter.mjs';
 import { checkCooldown, recordAction } from './ticket-action-cooldown.mjs';
 import { logAction } from './ticket-action-log.mjs';
-import { readMetadataCache, writeMetadataCache } from './ticket-metadata-cache.mjs';
+import { readMetadataCache, writeMetadataCache, isFresh, SINGLE_PROJECT_TTL_MS, mergeAssignableUsers, normalizeAssigneeQuery } from './ticket-metadata-cache.mjs';
 import { detectProjectOrTypeError, enrichCreateFailure } from './ticket-create-enrichment.mjs';
 import { TICKET_KEY_PATTERN, normalizeTicketKey } from './cli.mjs';
 import { scoreCandidates } from './duplicate-scorer.mjs';
@@ -436,13 +436,69 @@ export async function runTicketTransition(cmdArgs, {
 }
 
 /**
- * Self-assign only — `--to` currently only accepts the literal "me".
- * Arbitrary-user assignment needs a per-tracker user-search step this
- * codebase doesn't have yet; kept as an explicit, rejected value now so
- * a future `--to=someone@else.com` doesn't silently redefine what a
- * bare/missing --to means today.
+ * Derives the project-key portion of a ticket key — used only to key the
+ * local assignable-users cache, never for validation. Jira's own API stays
+ * the source of truth for whether the ticket key is real; a ticket key
+ * this can't parse just means caching is skipped, not a hard failure.
+ */
+function projectKeyFromTicket(ticketKey) {
+  const hyphenIndex = ticketKey.lastIndexOf('-');
+  return hyphenIndex > 0 ? ticketKey.slice(0, hyphenIndex) : null;
+}
+
+/**
+ * Resolves a free-text `--to` query into assignable-user candidates,
+ * checking the local cache (3-day TTL, per project+query — ROADMAP 61)
+ * before calling the adapter. Read-only: never assigns, never touches
+ * cooldown. Exported for direct unit testing, same convention as
+ * `resolveTicketAdapter`.
+ */
+export async function resolveAssigneeCandidates(adapter, ticketKey, query, {
+  profileName,
+  configDir = DEFAULT_CONFIG_DIR,
+  readMetadataCacheFn = readMetadataCache,
+  writeMetadataCacheFn = writeMetadataCache,
+} = {}) {
+  const projectKey = projectKeyFromTicket(ticketKey);
+  const cached = readMetadataCacheFn(profileName, configDir);
+
+  if (projectKey) {
+    const normalizedQuery = normalizeAssigneeQuery(query);
+    const cachedCandidates = cached?.assignableUsersByProject?.[projectKey]?.[normalizedQuery];
+    const cachedAt = cached?.assignableUsersFetchedAt?.[projectKey]?.[normalizedQuery];
+    if (cachedCandidates && isFresh(cachedAt, SINGLE_PROJECT_TTL_MS)) {
+      return cachedCandidates;
+    }
+  }
+
+  const candidates = await adapter.searchAssignableUsers(ticketKey, query);
+
+  if (projectKey) {
+    const { assignableUsersByProject, assignableUsersFetchedAt } = mergeAssignableUsers(cached, projectKey, query, candidates);
+    writeMetadataCacheFn(profileName, {
+      projects: cached?.projects ?? [],
+      issueTypesByProject: cached?.issueTypesByProject ?? {},
+      issueTypesFetchedAt: cached?.issueTypesFetchedAt ?? {},
+      projectsFetchedAt: cached?.projectsFetchedAt ?? null,
+      assignableUsersByProject,
+      assignableUsersFetchedAt,
+    }, configDir);
+  }
+
+  return candidates;
+}
+
+/**
+ * `--to=me` self-assigns immediately — unchanged fast path, no discovery,
+ * no confirm. Any other `--to` resolves a real person first (ROADMAP 61):
+ * Jira Cloud only (Server/DC's assignable-user search is unverified —
+ * refuses cleanly rather than guessing), and only executes when exactly
+ * one candidate matches AND --confirm is given, mirroring `transition`'s
+ * list-then-confirm shape — notifying a colleague deserves the same
+ * reviewed-before-write gate as a workflow-state change.
  *
- * @param {string[]} cmdArgs - [ticketKey, '--to=me']
+ * @param {string[]} cmdArgs - [ticketKey, '--to=me'] or [ticketKey, '--to=...', '--confirm']
+ * @param {boolean} [cliHints] - see runTicketTransitionList's cliHints doc
  * @returns {Promise<{ ok: boolean }>}
  */
 export async function runTicketAssign(cmdArgs, {
@@ -454,17 +510,89 @@ export async function runTicketAssign(cmdArgs, {
   checkCooldownFn = checkCooldown,
   recordActionFn = recordAction,
   logActionFn = logAction,
+  readMetadataCacheFn = readMetadataCache,
+  writeMetadataCacheFn = writeMetadataCache,
   actor = os.userInfo().username,
+  cliHints = true,
 } = {}) {
-  const usage = 'Usage: ticketlens assign TICKET-KEY --to=me\n';
+  const usage = cliHints
+    ? 'Usage: ticketlens assign TICKET-KEY --to=me | --to="name or email" --confirm\n'
+    : 'Usage: assign requires ticket and to; a to other than "me" also needs confirm: true to execute.\n';
   if (!requireLicense(isLicensedFn, configDir, 'ticketlens assign', stream)) return { ok: false };
 
   const ticketKey = requireTicketKey(cmdArgs, usage, stream);
   if (!ticketKey) return { ok: false };
 
   const to = parseFlag(cmdArgs, 'to');
-  if (to !== 'me') {
-    stream.write(to ? `  --to="${to}" is not yet supported — only --to=me (self-assign) is available.\n` : usage);
+  if (!to) {
+    stream.write(usage);
+    return { ok: false };
+  }
+
+  if (to === 'me') {
+    const cooldown = checkCooldownFn(ticketKey, 'assign', { configDir });
+    if (cooldown.active) {
+      stream.write(`  Skipped — ${ticketKey} was already assigned ${Math.ceil(cooldown.remainingMs / 1000)}s ago. Wait a moment before retrying.\n`);
+      return { ok: false };
+    }
+
+    const resolved = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+    if (!resolved) return { ok: false };
+    const { adapter } = resolved;
+
+    try {
+      const result = await adapter.assignToSelf(ticketKey);
+      recordActionFn(ticketKey, 'assign', { configDir });
+      logActionFn({ ticketKey, action: 'assign', actor, tracker: adapter.type, detail: { assignee: result.assignee } }, { configDir });
+      const s = createStyler({ isTTY: stream.isTTY });
+      stream.write(`  ${s.green('✔')} ${s.brand(s.bold(ticketKey))} assigned to ${s.bold(result.assignee)}.\n`);
+      return { ok: true };
+    } catch (err) {
+      stream.write(formatWriteFailure(ticketKey, err));
+      return { ok: false };
+    }
+  }
+
+  const resolved = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
+  if (!resolved) return { ok: false };
+  const { adapter, conn } = resolved;
+
+  if (adapter.type !== 'jira') {
+    stream.write(`  Assigning to another developer is Jira-only right now — ${adapter.type} is not supported.\n`);
+    return { ok: false };
+  }
+  if (conn.auth !== 'cloud') {
+    stream.write('  Assigning to another developer needs Jira Cloud — Server/DC is not supported yet.\n');
+    return { ok: false };
+  }
+
+  const s = createStyler({ isTTY: stream.isTTY });
+  let candidates;
+  try {
+    candidates = await resolveAssigneeCandidates(adapter, ticketKey, to, { profileName: conn.profileName, configDir, readMetadataCacheFn, writeMetadataCacheFn });
+  } catch (err) {
+    stream.write(formatWriteFailure(ticketKey, err));
+    return { ok: false };
+  }
+
+  if (candidates.length === 0) {
+    stream.write(`  No assignable user found matching "${to}" for ${s.brand(s.bold(ticketKey))}.\n`);
+    return { ok: false };
+  }
+
+  if (candidates.length > 1) {
+    stream.write(`  ${candidates.length} users match "${to}" — narrow the query:\n\n`);
+    for (const c of candidates) stream.write(`    ${s.brand('●')} ${c.displayName}  ${s.dim(c.accountId)}\n`);
+    return { ok: false };
+  }
+
+  const [candidate] = candidates;
+
+  if (!cmdArgs.includes('--confirm')) {
+    stream.write(`  Match: ${s.bold(candidate.displayName)}  ${s.dim(candidate.accountId)}\n`);
+    stream.write(cliHints
+      ? `\n  Run again with --to="${to}" --confirm to execute.\n`
+      : `\n  Call again with to="${to}" and confirm: true to execute.\n`);
     return { ok: false };
   }
 
@@ -474,16 +602,11 @@ export async function runTicketAssign(cmdArgs, {
     return { ok: false };
   }
 
-  const resolved = resolveTicketAdapter(ticketKey, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
-  if (!resolved) return { ok: false };
-  const { adapter } = resolved;
-
   try {
-    const result = await adapter.assignToSelf(ticketKey);
+    await adapter.assignToUser(ticketKey, candidate.accountId);
     recordActionFn(ticketKey, 'assign', { configDir });
-    logActionFn({ ticketKey, action: 'assign', actor, tracker: adapter.type, detail: { assignee: result.assignee } }, { configDir });
-    const s = createStyler({ isTTY: stream.isTTY });
-    stream.write(`  ${s.green('✔')} ${s.brand(s.bold(ticketKey))} assigned to ${s.bold(result.assignee)}.\n`);
+    logActionFn({ ticketKey, action: 'assign', actor, tracker: adapter.type, detail: { assignee: candidate.displayName, accountId: candidate.accountId } }, { configDir });
+    stream.write(`  ${s.green('✔')} ${s.brand(s.bold(ticketKey))} assigned to ${s.bold(candidate.displayName)}.\n`);
     return { ok: true };
   } catch (err) {
     stream.write(formatWriteFailure(ticketKey, err));

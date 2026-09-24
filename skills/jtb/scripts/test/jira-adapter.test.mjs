@@ -224,6 +224,44 @@ describe('createJiraAdapter — assignToSelf', () => {
   });
 });
 
+describe('createJiraAdapter — searchAssignableUsers / assignToUser (ROADMAP 61)', () => {
+  it('searchAssignableUsers refuses on Server/DC (apiVersion 2) — unverified endpoint semantics, never guessed', async () => {
+    const adapter = createJiraAdapter(CONN, { fetcher: jsonFetcher([]) });
+    await assert.rejects(() => adapter.searchAssignableUsers('TEST-1', 'jane'), /Jira Cloud/);
+  });
+
+  it('searchAssignableUsers returns {accountId, displayName} candidates on Cloud', async () => {
+    const fetcher = jsonFetcher([{ accountId: 'acc-1', displayName: 'Jane Dev', name: null }]);
+    const adapter = createJiraAdapter({ ...CONN, auth: 'cloud' }, { fetcher });
+    const result = await adapter.searchAssignableUsers('TEST-1', 'jane');
+    assert.deepEqual(result, [{ accountId: 'acc-1', displayName: 'Jane Dev' }]);
+  });
+
+  it('searchAssignableUsers falls back to name, then accountId, when displayName is missing', async () => {
+    const fetcher = jsonFetcher([{ accountId: 'acc-1', displayName: null, name: 'jdoe' }]);
+    const adapter = createJiraAdapter({ ...CONN, auth: 'cloud' }, { fetcher });
+    const result = await adapter.searchAssignableUsers('TEST-1', 'jane');
+    assert.equal(result[0].displayName, 'jdoe');
+  });
+
+  it('assignToUser PUTs {accountId} to the assignee endpoint', async () => {
+    let captured;
+    const fetcher = async (url, opts) => {
+      captured = { url, body: JSON.parse(opts.body) };
+      return { ok: true, status: 204 };
+    };
+    const adapter = createJiraAdapter({ ...CONN, auth: 'cloud' }, { fetcher });
+    await adapter.assignToUser('TEST-1', 'acc-1');
+    assert.deepEqual(captured.body, { accountId: 'acc-1' });
+    assert.match(captured.url, /\/assignee$/);
+  });
+
+  it('threads conn.allowPrivateIp into searchAssignableUsers', async () => {
+    const adapter = createJiraAdapter({ ...CONN, auth: 'cloud', allowPrivateIp: true }, { fetcher: jsonFetcher([]) });
+    await assert.doesNotReject(() => adapter.searchAssignableUsers('TEST-1', 'jane', { lookup: privateLookup }));
+  });
+});
+
 describe('findCandidates — duplicate-detection candidate search', () => {
   it('scopes the JQL to the ticket key\'s project and excludes the source key itself', async () => {
     let capturedUrl;

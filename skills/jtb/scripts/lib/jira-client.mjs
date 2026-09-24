@@ -614,6 +614,39 @@ export async function assignIssue(ticketKey, assignee, opts = {}) {
 }
 
 /**
+ * Searches for users assignable to a ticket — resolves a caller-typed
+ * name/email into a real accountId before assignIssue can use it.
+ *
+ * `query` is required by Jira's own API: `GET .../user/assignable/search`
+ * 400s unless `query` or `accountId` is given (verified against Atlassian's
+ * published spec — there is no "list everyone assignable" mode), so this
+ * throws early on an empty query rather than sending a request guaranteed
+ * to fail.
+ */
+export async function fetchAssignableUsers(ticketKey, query, opts = {}) {
+  const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false, maxResults = 20 } = opts;
+  if (!query) {
+    throw new Error('fetchAssignableUsers requires a non-empty query — Jira has no "list all assignable users" mode.');
+  }
+  validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
+  const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
+  const params = new URLSearchParams({ issueKey: ticketKey, query, maxResults: String(maxResults) });
+  const url = `${baseUrl}/rest/api/${apiVersion}/user/assignable/search?${params}`;
+
+  const fetchOpts = { headers: { ...buildAuthHeader(env), 'Content-Type': 'application/json' } };
+  if (timeoutMs) fetchOpts.signal = AbortSignal.timeout(timeoutMs);
+
+  const response = await guardedFetch(url, fetchOpts, { fetcher, lookup, allowPrivateIp });
+  if (!response.ok) {
+    const err = new Error(`Jira API error ${response.status} searching assignable users for ${ticketKey}`);
+    err.status = response.status;
+    throw err;
+  }
+  const raw = await response.json();
+  return raw.map(u => ({ accountId: u.accountId ?? null, name: u.name ?? null, displayName: u.displayName ?? null }));
+}
+
+/**
  * Updates a narrow, named field set on an issue. `fields` (summary,
  * description, priority) uses plain SET semantics — the same shape Jira's
  * own GET returns, same convention as assignIssue/postIssueLink. Labels use

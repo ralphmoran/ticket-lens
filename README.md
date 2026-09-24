@@ -499,7 +499,7 @@ Write directly to the ticket in its real tracker — Jira, GitHub, or Linear —
 
 `ticketlens transition` with just a ticket key lists the tracker's current valid options without changing anything (Jira: real workflow transitions for that issue; GitHub: open/closed; Linear: team-scoped workflow states). Add both `--target` and `--confirm` to execute — `--confirm` is a deliberate two-step gate: a behavioral nudge and forensic trail, not a hard security guarantee. Every write, once resolved, is re-validated against the tracker's current state immediately before executing — never a blind write against a stale option.
 
-`ticketlens assign` is self-assign only for now — `--to` must be `me`. Assigning to someone else needs a per-tracker user-lookup step this doesn't do yet, so it's deliberately out of scope until that's built.
+`ticketlens assign --to=me` self-assigns immediately, no `--confirm` needed. Any other `--to` (a name or email) assigns to another developer — Jira Cloud only for now, GitHub/Linear/Server-DC refuse cleanly. It searches Jira's real assignable-user list first: without `--confirm` it only lists the matching candidate(s), never assigns; with `--confirm` it executes only if exactly one candidate still matches (0 or 2+ always refuses). Matches are cached locally per project for 3 days.
 
 `ticketlens worklog` (or `tl worklog`) logs time on Jira tickets, always as you.
 
@@ -1121,6 +1121,7 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
+- **`ticketlens assign --to="name or email"`** — assign a ticket to another developer, not just yourself. Jira Cloud only for now; searches real assignable users first, lists matches, executes only on one confirmed match. Pro tier
 - **Console: Recall "select all N matching" bulk delete** — Gmail-style banner deletes every note matching your search/filters across all pages, not just the current one
 - **Recall Stop-hook fix** — the end-of-session Recall reminder no longer fires because of file writes; only real ticket writes (comment, transition, assign, update) arm it. Also hardened against malformed transcripts and a session-id path-collision bug found by adversarial testing
 - **Console: no repeat request on same-page menu clicks** — sidebar links, the header gear and Settings tabs skip the request when they point at the page you are on

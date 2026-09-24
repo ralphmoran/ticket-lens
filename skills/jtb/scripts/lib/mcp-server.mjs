@@ -522,7 +522,9 @@ async function callTicketAssign(args, { configDir, runTicketAssignFn }) {
     return { isError: true, content: [{ type: 'text', text: 'Missing required argument: to' }] };
   }
   const capture = capturingStream();
-  const { ok } = await runTicketAssignFn([args.ticket, `--to=${args.to}`], { configDir, stream: capture });
+  const cmdArgs = [args.ticket, `--to=${args.to}`];
+  if (args.confirm === true) cmdArgs.push('--confirm');
+  const { ok } = await runTicketAssignFn(cmdArgs, { configDir, stream: capture, cliHints: false });
   const content = [{ type: 'text', text: capture.text }];
   return ok ? { content } : { isError: true, content };
 }

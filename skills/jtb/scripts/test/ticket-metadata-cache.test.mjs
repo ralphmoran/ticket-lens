@@ -9,6 +9,9 @@ import {
   writeMetadataCache,
   METADATA_TTL_MS,
   SINGLE_PROJECT_TTL_MS,
+  isFresh,
+  normalizeAssigneeQuery,
+  mergeAssignableUsers,
 } from '../lib/ticket-metadata-cache.mjs';
 
 function makeTmpDir() {
@@ -159,5 +162,94 @@ describe('SINGLE_PROJECT_TTL_MS', () => {
     assert.ok(SINGLE_PROJECT_TTL_MS < METADATA_TTL_MS);
     assert.equal(SINGLE_PROJECT_TTL_MS, 3 * 24 * 60 * 60 * 1000);
     assert.equal(METADATA_TTL_MS, 7 * 24 * 60 * 60 * 1000);
+  });
+});
+
+describe('normalizeAssigneeQuery', () => {
+  it('trims and lowercases so "Jane", " jane ", and "JANE" share one cache entry', () => {
+    assert.equal(normalizeAssigneeQuery('Jane'), 'jane');
+    assert.equal(normalizeAssigneeQuery(' jane '), 'jane');
+    assert.equal(normalizeAssigneeQuery('JANE'), 'jane');
+  });
+});
+
+describe('mergeAssignableUsers', () => {
+  it('adds a new project+query entry into an empty cache', () => {
+    const { assignableUsersByProject, assignableUsersFetchedAt } = mergeAssignableUsers(null, 'PROJ', 'Jane', [{ accountId: 'acc-1', displayName: 'Jane Dev' }], '2026-09-23T00:00:00.000Z');
+    assert.deepEqual(assignableUsersByProject.PROJ.jane, [{ accountId: 'acc-1', displayName: 'Jane Dev' }]);
+    assert.equal(assignableUsersFetchedAt.PROJ.jane, '2026-09-23T00:00:00.000Z');
+  });
+
+  it('preserves an existing query under the same project when merging a different query', () => {
+    const cached = mergeAssignableUsers(null, 'PROJ', 'jane', [{ accountId: 'acc-1', displayName: 'Jane Dev' }]);
+    const merged = mergeAssignableUsers(cached, 'PROJ', 'john', [{ accountId: 'acc-2', displayName: 'John Doe' }]);
+    assert.deepEqual(Object.keys(merged.assignableUsersByProject.PROJ).sort(), ['jane', 'john']);
+  });
+
+  it('preserves other projects entirely when merging a new project', () => {
+    const cached = mergeAssignableUsers(null, 'PROJ', 'jane', [{ accountId: 'acc-1', displayName: 'Jane Dev' }]);
+    const merged = mergeAssignableUsers(cached, 'OTHER', 'jane', [{ accountId: 'acc-9', displayName: 'Jane Other' }]);
+    assert.deepEqual(merged.assignableUsersByProject.PROJ.jane, [{ accountId: 'acc-1', displayName: 'Jane Dev' }]);
+    assert.deepEqual(merged.assignableUsersByProject.OTHER.jane, [{ accountId: 'acc-9', displayName: 'Jane Other' }]);
+  });
+
+  it('__proto__ as a projectKey is stored as a real own key, not redirected into the prototype chain', () => {
+    const { assignableUsersByProject } = mergeAssignableUsers(null, '__proto__', 'jane', [{ accountId: 'x', displayName: 'y' }]);
+    assert.ok(Object.prototype.hasOwnProperty.call(assignableUsersByProject, '__proto__'));
+    assert.deepEqual(Object.getPrototypeOf({}), Object.prototype, 'the real Object.prototype must be untouched');
+  });
+
+  it('__proto__ as a query is stored as a real own key, not redirected into the prototype chain', () => {
+    const { assignableUsersByProject } = mergeAssignableUsers(null, 'PROJ', '__proto__', [{ accountId: 'x', displayName: 'y' }]);
+    assert.ok(Object.prototype.hasOwnProperty.call(assignableUsersByProject.PROJ, '__proto__'));
+  });
+});
+
+describe('assignableUsersByProject/assignableUsersFetchedAt round-trip through read/writeMetadataCache', () => {
+  it('round-trips through the cache file untouched', () => {
+    const dir = makeTmpDir();
+    try {
+      const { assignableUsersByProject, assignableUsersFetchedAt } = mergeAssignableUsers(null, 'PROJ', 'jane', [{ accountId: 'acc-1', displayName: 'Jane Dev' }], '2026-09-23T00:00:00.000Z');
+      writeMetadataCache('work', { assignableUsersByProject, assignableUsersFetchedAt }, dir);
+      const result = readMetadataCache('work', dir);
+      assert.deepEqual(result.assignableUsersByProject, { PROJ: { jane: [{ accountId: 'acc-1', displayName: 'Jane Dev' }] } });
+      assert.deepEqual(result.assignableUsersFetchedAt, { PROJ: { jane: '2026-09-23T00:00:00.000Z' } });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('defaults assignableUsersByProject/FetchedAt to {} when omitted — does not break reading an old cache file written before this feature', () => {
+    const dir = makeTmpDir();
+    try {
+      writeMetadataCache('work', { projects: [{ key: 'CNV1', name: 'x' }], issueTypesByProject: {} }, dir);
+      const result = readMetadataCache('work', dir);
+      assert.deepEqual(result.assignableUsersByProject, {});
+      assert.deepEqual(result.assignableUsersFetchedAt, {});
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('an assignable-users-only write preserves an existing issueTypesByProject entry untouched (LOCK — shared-file regression guard)', () => {
+    const dir = makeTmpDir();
+    try {
+      writeMetadataCache('work', { projects: [{ key: 'PROJ', name: 'x' }], issueTypesByProject: { PROJ: [{ id: '1', name: 'Task' }] }, issueTypesFetchedAt: { PROJ: '2026-09-20T00:00:00.000Z' } }, dir);
+      const cached = readMetadataCache('work', dir);
+      const { assignableUsersByProject, assignableUsersFetchedAt } = mergeAssignableUsers(cached, 'PROJ', 'jane', [{ accountId: 'acc-1', displayName: 'Jane Dev' }]);
+      writeMetadataCache('work', { ...cached, assignableUsersByProject, assignableUsersFetchedAt }, dir);
+      const result = readMetadataCache('work', dir);
+      assert.deepEqual(result.issueTypesByProject, { PROJ: [{ id: '1', name: 'Task' }] }, 'issue-types cache must survive an assignable-users write');
+      assert.deepEqual(result.projects, [{ key: 'PROJ', name: 'x' }]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('isFresh treats a stale assignableUsersFetchedAt entry as expired, same as issueTypesFetchedAt', () => {
+    const stale = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString();
+    assert.equal(isFresh(stale, SINGLE_PROJECT_TTL_MS), false);
+    const fresh = new Date().toISOString();
+    assert.equal(isFresh(fresh, SINGLE_PROJECT_TTL_MS), true);
   });
 });
