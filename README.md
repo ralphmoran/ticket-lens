@@ -1121,6 +1121,7 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
+- **`ticketlens update --priority`** — a bad priority name now tells you the project's real, current valid options instead of a bare tracker error
 - **`ticketlens assign --to="name or email"`** — assign a ticket to another developer, not just yourself. Jira Cloud only for now; searches real assignable users first, lists matches, executes only on one confirmed match. Pro tier
 - **Console: Recall "select all N matching" bulk delete** — Gmail-style banner deletes every note matching your search/filters across all pages, not just the current one
 - **Recall Stop-hook fix** — the end-of-session Recall reminder no longer fires because of file writes; only real ticket writes (comment, transition, assign, update) arm it. Also hardened against malformed transcripts and a session-id path-collision bug found by adversarial testing
