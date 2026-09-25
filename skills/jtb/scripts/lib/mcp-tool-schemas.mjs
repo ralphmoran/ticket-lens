@@ -239,12 +239,12 @@ export const TOOLS = [
   },
   {
     name: 'ticket_assign',
-    description: 'Assign a ticket in its tracker (Jira/GitHub/Linear). `to: "me"` self-assigns immediately, no confirm needed. Any other `to` (a name or email) assigns to another developer — Jira Cloud only for now; GitHub, Linear, and Jira Server/DC are refused. Resolves `to` against real assignable users before writing: called without `confirm: true`, it never assigns — it returns the matching candidate(s) (name + accountId) instead, so the exact person can be confirmed first. Called again with the same `to` and `confirm: true`, it executes only if `to` still resolves to exactly one candidate; 0 or 2+ matches always refuses, never guesses. Matches are cached locally per ticket\'s project for 3 days. Requires a TicketLens Pro license.',
+    description: 'Assign a ticket in its tracker (Jira/GitHub/Linear). `to: "me"` self-assigns immediately, no confirm needed. Any other `to` (a name or email) assigns to another developer on Jira (Cloud and Server/DC); GitHub and Linear are refused. Resolves `to` against real assignable users before writing: called without `confirm: true`, it never assigns — it returns the matching candidate(s) (name + accountId) instead, so the exact person can be confirmed first. Called again with the same `to` and `confirm: true`, it executes only if `to` still resolves to exactly one candidate; 0 or 2+ matches always refuses, never guesses. Matches are cached locally per ticket\'s project for 3 days. Requires a TicketLens Pro license.',
     inputSchema: {
       type: 'object',
       properties: {
         ticket: { type: 'string', description: 'Ticket key, e.g. PROJ-123.' },
-        to: { type: 'string', description: '"me" to self-assign, or a name/email to search for and assign to another developer (Jira Cloud only).' },
+        to: { type: 'string', description: '"me" to self-assign, or a name/email to search for and assign to another developer (Jira only).' },
         confirm: { type: 'boolean', description: 'Must be true, alongside a `to` that resolves to exactly one match, to actually execute an assign-to-other. Not needed for `to: "me"`.' },
       },
       required: ['ticket', 'to'],

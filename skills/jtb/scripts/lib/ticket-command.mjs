@@ -538,10 +538,9 @@ export async function resolveAssigneeCandidates(adapter, ticketKey, query, {
 
 /**
  * `--to=me` self-assigns immediately — unchanged fast path, no discovery,
- * no confirm. Any other `--to` resolves a real person first (ROADMAP 61):
- * Jira Cloud only (Server/DC's assignable-user search is unverified —
- * refuses cleanly rather than guessing), and only executes when exactly
- * one candidate matches AND --confirm is given, mirroring `transition`'s
+ * no confirm. Any other `--to` resolves a real person first (ROADMAP 61,
+ * extended to Server/DC by ROADMAP 65) and only executes when exactly one
+ * candidate matches AND --confirm is given, mirroring `transition`'s
  * list-then-confirm shape — notifying a colleague deserves the same
  * reviewed-before-write gate as a workflow-state change.
  *
@@ -611,10 +610,6 @@ export async function runTicketAssign(cmdArgs, {
     stream.write(`  Assigning to another developer is Jira-only right now — ${adapter.type} is not supported.\n`);
     return { ok: false };
   }
-  if (conn.auth !== 'cloud') {
-    stream.write('  Assigning to another developer needs Jira Cloud — Server/DC is not supported yet.\n');
-    return { ok: false };
-  }
 
   const s = createStyler({ isTTY: stream.isTTY });
   let candidates;
@@ -632,14 +627,14 @@ export async function runTicketAssign(cmdArgs, {
 
   if (candidates.length > 1) {
     stream.write(`  ${candidates.length} users match "${to}" — narrow the query:\n\n`);
-    for (const c of candidates) stream.write(`    ${s.brand('●')} ${c.displayName}  ${s.dim(c.accountId)}\n`);
+    for (const c of candidates) stream.write(`    ${s.brand('●')} ${c.displayName}  ${s.dim(c.accountId ?? c.name)}\n`);
     return { ok: false };
   }
 
   const [candidate] = candidates;
 
   if (!cmdArgs.includes('--confirm')) {
-    stream.write(`  Match: ${s.bold(candidate.displayName)}  ${s.dim(candidate.accountId)}\n`);
+    stream.write(`  Match: ${s.bold(candidate.displayName)}  ${s.dim(candidate.accountId ?? candidate.name)}\n`);
     stream.write(cliHints
       ? `\n  Run again with --to="${to}" --confirm to execute.\n`
       : `\n  Call again with to="${to}" and confirm: true to execute.\n`);
@@ -655,8 +650,8 @@ export async function runTicketAssign(cmdArgs, {
   }
 
   try {
-    await adapter.assignToUser(ticketKey, candidate.accountId);
-    logActionFn({ ticketKey, action: 'assign', actor, tracker: adapter.type, detail: { assignee: candidate.displayName, accountId: candidate.accountId } }, { configDir });
+    await adapter.assignToUser(ticketKey, candidate);
+    logActionFn({ ticketKey, action: 'assign', actor, tracker: adapter.type, detail: { assignee: candidate.displayName, accountId: candidate.accountId, name: candidate.name } }, { configDir });
     stream.write(`  ${s.green('✔')} ${s.brand(s.bold(ticketKey))} assigned to ${s.bold(candidate.displayName)}.\n`);
     return { ok: true };
   } catch (err) {

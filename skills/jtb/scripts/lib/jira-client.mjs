@@ -622,6 +622,14 @@ export async function assignIssue(ticketKey, assignee, opts = {}) {
  * published spec — there is no "list everyone assignable" mode), so this
  * throws early on an empty query rather than sending a request guaranteed
  * to fail.
+ *
+ * Server/DC (v2) also gets the legacy `username` param alongside `query` —
+ * live-verified against a real Server/DC instance (ROADMAP 65): that
+ * instance silently ignores `query` and only filters on `username`, so
+ * `query`-only returned every assignable user regardless of input.
+ * Sending both is safe on Cloud too (Cloud simply never receives the extra
+ * param, this branch is v2-only) and on any Server/DC version that does
+ * honor `query` (an extra recognized param narrows further, never loosens).
  */
 export async function fetchAssignableUsers(ticketKey, query, opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false, maxResults = 20 } = opts;
@@ -630,7 +638,9 @@ export async function fetchAssignableUsers(ticketKey, query, opts = {}) {
   }
   validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
-  const params = new URLSearchParams({ issueKey: ticketKey, query, maxResults: String(maxResults) });
+  const paramFields = { issueKey: ticketKey, query, maxResults: String(maxResults) };
+  if (apiVersion === 2) paramFields.username = query;
+  const params = new URLSearchParams(paramFields);
   const url = `${baseUrl}/rest/api/${apiVersion}/user/assignable/search?${params}`;
 
   const fetchOpts = { headers: { ...buildAuthHeader(env), 'Content-Type': 'application/json' } };

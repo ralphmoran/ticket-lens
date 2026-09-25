@@ -1121,6 +1121,22 @@ describe('fetchAssignableUsers', () => {
     assert.equal(params.get('query'), 'jane');
   });
 
+  it('also sends the legacy username param on Server/DC (apiVersion 2) — a real live instance ignores query, only filters on username (ROADMAP 65)', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => { capturedUrl = url; return { ok: true, json: async () => [] }; };
+    await fetchAssignableUsers('PROJ-1', 'johnson', { env: ENV, fetcher, apiVersion: 2 });
+    const params = new URL(capturedUrl).searchParams;
+    assert.equal(params.get('query'), 'johnson');
+    assert.equal(params.get('username'), 'johnson');
+  });
+
+  it('does not send username on Cloud (apiVersion 3) — query alone is the documented, working filter there', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => { capturedUrl = url; return { ok: true, json: async () => [] }; };
+    await fetchAssignableUsers('PROJ-1', 'jane', { env: ENV, fetcher, apiVersion: 3 });
+    assert.equal(new URL(capturedUrl).searchParams.has('username'), false);
+  });
+
   it('normalizes the returned user objects to {accountId, name, displayName}', async () => {
     const fetcher = async () => ({
       ok: true,

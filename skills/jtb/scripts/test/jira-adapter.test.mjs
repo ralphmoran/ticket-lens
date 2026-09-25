@@ -224,17 +224,24 @@ describe('createJiraAdapter — assignToSelf', () => {
   });
 });
 
-describe('createJiraAdapter — searchAssignableUsers / assignToUser (ROADMAP 61)', () => {
-  it('searchAssignableUsers refuses on Server/DC (apiVersion 2) — unverified endpoint semantics, never guessed', async () => {
-    const adapter = createJiraAdapter(CONN, { fetcher: jsonFetcher([]) });
-    await assert.rejects(() => adapter.searchAssignableUsers('TEST-1', 'jane'), /Jira Cloud/);
-  });
-
-  it('searchAssignableUsers returns {accountId, displayName} candidates on Cloud', async () => {
+describe('createJiraAdapter — searchAssignableUsers / assignToUser (ROADMAP 61 + 65)', () => {
+  it('searchAssignableUsers returns {accountId, name, displayName} candidates on Cloud', async () => {
     const fetcher = jsonFetcher([{ accountId: 'acc-1', displayName: 'Jane Dev', name: null }]);
     const adapter = createJiraAdapter({ ...CONN, auth: 'cloud' }, { fetcher });
     const result = await adapter.searchAssignableUsers('TEST-1', 'jane');
-    assert.deepEqual(result, [{ accountId: 'acc-1', displayName: 'Jane Dev' }]);
+    assert.deepEqual(result, [{ accountId: 'acc-1', name: null, displayName: 'Jane Dev' }]);
+  });
+
+  it('searchAssignableUsers returns {accountId, name, displayName} candidates on Server/DC (ROADMAP 65)', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, status: 200, json: async () => [{ accountId: null, displayName: 'John Doe', name: 'jdoe' }] };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.searchAssignableUsers('TEST-1', 'jane');
+    assert.deepEqual(result, [{ accountId: null, name: 'jdoe', displayName: 'John Doe' }]);
+    assert.match(capturedUrl, /\/rest\/api\/2\/user\/assignable\/search/);
   });
 
   it('searchAssignableUsers falls back to name, then accountId, when displayName is missing', async () => {
@@ -244,16 +251,38 @@ describe('createJiraAdapter — searchAssignableUsers / assignToUser (ROADMAP 61
     assert.equal(result[0].displayName, 'jdoe');
   });
 
-  it('assignToUser PUTs {accountId} to the assignee endpoint', async () => {
+  it('assignToUser PUTs {accountId} to the assignee endpoint on Cloud', async () => {
     let captured;
     const fetcher = async (url, opts) => {
       captured = { url, body: JSON.parse(opts.body) };
       return { ok: true, status: 204 };
     };
     const adapter = createJiraAdapter({ ...CONN, auth: 'cloud' }, { fetcher });
-    await adapter.assignToUser('TEST-1', 'acc-1');
+    await adapter.assignToUser('TEST-1', { accountId: 'acc-1', name: null, displayName: 'Jane Dev' });
     assert.deepEqual(captured.body, { accountId: 'acc-1' });
     assert.match(captured.url, /\/assignee$/);
+  });
+
+  it('assignToUser PUTs {name} to the assignee endpoint on Server/DC (ROADMAP 65)', async () => {
+    let captured;
+    const fetcher = async (url, opts) => {
+      captured = { url, body: JSON.parse(opts.body) };
+      return { ok: true, status: 204 };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    await adapter.assignToUser('TEST-1', { accountId: null, name: 'jdoe', displayName: 'John Doe' });
+    assert.deepEqual(captured.body, { name: 'jdoe' });
+    assert.match(captured.url, /\/assignee$/);
+  });
+
+  it('assignToUser refuses when the apiVersion-matching field is null on Cloud — never sends a null identity', async () => {
+    const adapter = createJiraAdapter({ ...CONN, auth: 'cloud' }, { fetcher: jsonFetcher({}) });
+    await assert.rejects(() => adapter.assignToUser('TEST-1', { accountId: null, name: 'jdoe', displayName: 'x' }), /accountId/);
+  });
+
+  it('assignToUser refuses when the apiVersion-matching field is null on Server/DC — never sends a null identity', async () => {
+    const adapter = createJiraAdapter(CONN, { fetcher: jsonFetcher({}) });
+    await assert.rejects(() => adapter.assignToUser('TEST-1', { accountId: 'acc-1', name: null, displayName: 'x' }), /name/);
   });
 
   it('threads conn.allowPrivateIp into searchAssignableUsers', async () => {

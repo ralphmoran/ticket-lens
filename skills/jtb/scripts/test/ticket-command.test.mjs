@@ -667,15 +667,15 @@ describe('runTicketAssign — usage validation', () => {
     assert.match(deps.stream.lines.join(''), /Usage/);
   });
 
-  test('--to value other than "me" on a non-Cloud connection is refused, never reaches the adapter (ROADMAP 61 is Jira Cloud only)', async () => {
+  test('--to value other than "me" on a non-Cloud connection now reaches the adapter (ROADMAP 65 — Server/DC no longer refused)', async () => {
     let searchCalled = false;
     const deps = baseDeps({
       resolveAdapterFn: () => fakeAdapter({ searchAssignableUsers: async () => { searchCalled = true; return []; } }),
     });
     const result = await runTicketAssign(['PROJ-1', '--to=someone@else.com'], deps);
-    assert.equal(result.ok, false);
-    assert.equal(searchCalled, false);
-    assert.match(deps.stream.lines.join(''), /Jira Cloud/);
+    assert.equal(result.ok, false); // zero candidates from the fake — not a refusal
+    assert.equal(searchCalled, true);
+    assert.match(deps.stream.lines.join(''), /No assignable user found/);
   });
 });
 
@@ -749,14 +749,14 @@ describe('runTicketAssign — assign to another developer (ROADMAP 61)', () => {
     const deps = cloudDeps({
       resolveAdapterFn: () => fakeAdapter({
         searchAssignableUsers: async () => [{ accountId: 'acc-1', displayName: 'Jane Dev' }],
-        assignToUser: async (key, accountId) => { assignedTo = { key, accountId }; },
+        assignToUser: async (key, candidate) => { assignedTo = { key, candidate }; },
       }),
       claimActionFn: (key, action) => { claimed = { key, action }; return { claimed: true, remainingMs: 0 }; },
       logActionFn: (entry) => { logged = entry; },
     });
     const result = await runTicketAssign(['PROJ-1', '--to=jane', '--confirm'], deps);
     assert.equal(result.ok, true);
-    assert.deepEqual(assignedTo, { key: 'PROJ-1', accountId: 'acc-1' });
+    assert.deepEqual(assignedTo, { key: 'PROJ-1', candidate: { accountId: 'acc-1', displayName: 'Jane Dev' } });
     assert.deepEqual(claimed, { key: 'PROJ-1', action: 'assign' });
     assert.equal(logged.detail.assignee, 'Jane Dev');
     assert.equal(logged.detail.accountId, 'acc-1');
@@ -811,6 +811,61 @@ describe('runTicketAssign — assign to another developer (ROADMAP 61)', () => {
     assert.match(deps.stream.lines.join(''), /Jane Dev/);
     assert.deepEqual(written.issueTypesByProject, { PROJ: [{ id: '1', name: 'Task' }] }, 'unrelated issue-types cache data must survive an assignable-users write');
     assert.equal(written.assignableUsersByProject.PROJ.jane[0].displayName, 'Jane Dev');
+  });
+});
+
+describe('runTicketAssign — assign to another developer on Server/DC (ROADMAP 65)', () => {
+  function serverDcDeps(overrides = {}) {
+    return baseDeps({
+      resolveConnectionFn: () => ({ baseUrl: 'https://jira.advent.example.com', auth: 'pat', profileName: 'advent' }),
+      resolveAdapterFn: () => fakeAdapter({
+        searchAssignableUsers: async () => [{ accountId: null, name: 'jdoe', displayName: 'John Doe' }],
+      }),
+      ...overrides,
+    });
+  }
+
+  test('a single match with --confirm executes on Server/DC, PUTs the name-shaped candidate, and logs it', async () => {
+    let assignedTo, logged;
+    const deps = serverDcDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        searchAssignableUsers: async () => [{ accountId: null, name: 'jdoe', displayName: 'John Doe' }],
+        assignToUser: async (key, candidate) => { assignedTo = { key, candidate }; },
+      }),
+      logActionFn: (entry) => { logged = entry; },
+    });
+    const result = await runTicketAssign(['PROD-1', '--to=john', '--confirm'], deps);
+    assert.equal(result.ok, true);
+    assert.deepEqual(assignedTo, { key: 'PROD-1', candidate: { accountId: null, name: 'jdoe', displayName: 'John Doe' } });
+    assert.equal(logged.detail.assignee, 'John Doe');
+    assert.equal(logged.detail.name, 'jdoe');
+    assert.match(deps.stream.lines.join(''), /assigned to John Doe/);
+  });
+
+  test('a single match without --confirm on Server/DC shows the name, not "undefined"', async () => {
+    const deps = serverDcDeps();
+    const result = await runTicketAssign(['PROD-1', '--to=john'], deps);
+    assert.equal(result.ok, false);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /John Doe/);
+    assert.match(output, /jdoe/);
+    assert.doesNotMatch(output, /undefined/);
+  });
+
+  test('multiple matches on Server/DC lists all candidates by name, never executes', async () => {
+    const deps = serverDcDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        searchAssignableUsers: async () => [
+          { accountId: null, name: 'jdoe', displayName: 'John Doe' },
+          { accountId: null, name: 'jsmith', displayName: 'Jane Smith' },
+        ],
+      }),
+    });
+    const result = await runTicketAssign(['PROD-1', '--to=j', '--confirm'], deps);
+    assert.equal(result.ok, false);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /John Doe/);
+    assert.match(output, /Jane Smith/);
   });
 });
 
