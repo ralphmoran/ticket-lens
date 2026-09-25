@@ -300,5 +300,18 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Real trigger unclear: Stop hooks for one session_id don't normally run concurrently.
     ROADMAP 63.
 
+41. ~~**`ticket_assign` cross-assign is Jira Cloud only, refuses on Server/DC.**~~ FIXED 2026-09-25, `ticket-lens@7d4e636`, local only. Filed 2026-09-24, user report on Advent.
+    - Repro: `ticket_assign` on Advent's PROD-18375 (Jira Server/DC) toward another developer.
+    - By design: ROADMAP 61 scoped Cloud-only deliberately, shipped 2026-09-23. Not a regression.
+    - Fix: `assignToUser` resolves accountId/name by apiVersion, mirrors `assignToSelf`'s pattern.
+    - Real bug found live: Advent's Jira ignores `query`, only filters on legacy `username` param.
+    - Fix: `fetchAssignableUsers` now sends both params on v2 — live-verified, narrowed 10→1 match.
+    - Live-verified end-to-end on Advent PROD-18375: search, single-match, real assign to Johnson Pang.
+    - Independent verification: fresh REST read confirmed assignee = Johnson Pang after the write.
+    - Doc surfaces synced same pass: README, SKILL.md (0.46.0→0.47.0), CLI --help, MCP schema.
+    - code-reviewer: 0 CRITICAL/HIGH, 1 MEDIUM (missed `printAssignHelp` doc surface, fixed same pass).
+    - 3944/3944 tests, 0 regressions beyond 5 deliberately-changed tests (Cloud-only refusal removed).
+    ROADMAP 65.
+
 ---
 **Status 2026-08-18**: #1, #1b, #1c, #1d, #1e, #2, #2b, #3, #4, #5, #6, #8, #8b, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #22 shipped/closed. #4 (ROADMAP 49b) fully complete 2026-08-14, 11 of 11 tools ported, MCP surface at 22 tools. #13 fully closed 2026-08-16 (PHP side shipped). #14 fully closed 2026-08-16 — necessity question resolved 2026-08-14 (keep hook + SKILL), bracket-literal scanner gap fixed 2026-08-16. #6 + #16 (Recall note attachments, CLI + MCP) fully CLOSED 2026-08-17 — shipped, pushed, published, self-tested. #17 fully CLOSED 2026-08-17. #18 fully CLOSED 2026-08-18 — non-blocking word-count warning shipped, pushed, published, installed, self-tested. #19 fully CLOSED 2026-08-17/18 — full attachment sync + Console preview shipped, one real security bug (extension-based scan bypass) found via live red-team and fixed same session. #22 fully CLOSED 2026-08-18 — recurring CI failure root-caused (stale audits + a hardcoded-date time bomb) and fixed durably. #20 fully CLOSED 2026-08-18 — Console-manageable strictness shipped, red-teamed (30-item pass, all attacks defended), pushed, published, installed, self-tested. #21 FULLY CLOSED 2026-08-18 (`note patch` attachment support, bundled a real attachment-drop bug fix, 15-attack red-team pass all defended) — pushed, published `ticketlens@0.38.47` (beta), installed, self-tested (real CLI + real MCP server, both paths). Remaining: scope #7.
