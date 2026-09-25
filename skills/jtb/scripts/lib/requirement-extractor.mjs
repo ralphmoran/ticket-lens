@@ -9,8 +9,17 @@
 const RE_GWT           = /^\s*(given|when|then)\s+(.+)/i;
 const RE_MUST_ITEM     = /^\s*[-*•]\s+((?:must|should|shall|ensure|verify)\b.+|.+(?:must|should|shall|ensure|verify).+)/i;
 const RE_NUM_MUST      = /^\s*\d+[.)]\s+((?:must|should|shall|ensure|verify)\b.+|.+(?:must|should|shall|ensure|verify).+)/i;
-const RE_AC_HEADER     = /^\s*(?:#+\s*|h[1-6]\.\s*)?acceptance criteria\s*:?\s*$/i;
-const RE_HEADING       = /^\s*(?:#+|h[1-6]\.)\s+/i;
+// Matches "Acceptance Criteria" plus the two real-world Jira Server/DC section headers
+// (backlog #43) that carry the same content without that literal phrase: "Requirements"
+// and "How to test". A nested subheading (e.g. "h3. Validation range") does NOT match
+// this and still exits the section — known limitation, filed as a follow-up.
+const RE_AC_HEADER     = /^\s*(?:#+\s*|h[1-6]\.\s*)?(?:acceptance criteria|requirements|how to test)\s*:?\s*$/i;
+// Wiki-only (h1.-h6.) for section-exit detection — backlog #43: a leading markdown "#"
+// is indistinguishable from Jira Server/DC's "#" numbered-list marker (e.g. "# Run the
+// test suite."), so including it here closed real AC/how-to-test sections on their own
+// first list item. Entry detection (RE_AC_HEADER/RE_NON_AC_HEADER) is unaffected — those
+// still accept a markdown "#" prefix on the header line itself.
+const RE_HEADING       = /^\s*h[1-6]\.\s+/i;
 const RE_BULLET        = /^\s*[-*•]\s+(.+)/;
 const RE_NUM_ITEM      = /^\s*\d+[.)]\s+(.+)/;
 const RE_NUM_MARKER    = /^\s*(\d+)[.)]/;
@@ -101,7 +110,7 @@ export function extractRequirements(text) {
 
     if (RE_AC_HEADER.test(line)) { inAcSection = true; continue; }
 
-    // Exit on any explicit heading (markdown ## or wiki h2.) that is not the AC header
+    // Exit on any explicit heading (wiki h1.-h6. only, see RE_HEADING) that is not the AC header
     if (inAcSection && RE_HEADING.test(line) && !RE_AC_HEADER.test(line)) {
       inAcSection = false;
     }

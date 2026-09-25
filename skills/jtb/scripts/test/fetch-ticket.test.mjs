@@ -1401,6 +1401,31 @@ describe('review dispatch', () => {
     assert.ok(capturedOpts.diff.includes('src/Auth.php'), 'diff should be passed');
   });
 
+  it('diffs against merge-base (3-dot) but logs commits with 2-dot (backlog #42)', async () => {
+    let capturedDiffArgs = null;
+    let capturedLogArgs = null;
+    const execFn = (cmd, args) => {
+      if (args[0] === 'diff') { capturedDiffArgs = args; return { status: 0, stdout: '' }; }
+      if (args.includes('--oneline')) { capturedLogArgs = args; return { status: 0, stdout: '' }; }
+      return mockExecFn(cmd, args);
+    };
+    const assemblePrReviewFn = async () => '## PR Review Context\n';
+
+    await run(['review'], {
+      env: {},
+      execFn,
+      assemblePrReviewFn,
+      print: () => {},
+    }, async () => ({ ok: false }), NO_CONFIG);
+
+    const diffJoined = capturedDiffArgs.join(' ');
+    assert.ok(diffJoined.includes('...'), `diff should use 3-dot merge-base range, got: ${diffJoined}`);
+
+    const logJoined = capturedLogArgs.join(' ');
+    assert.ok(!logJoined.includes('...'), `log must stay 2-dot (commits unique to HEAD), got: ${logJoined}`);
+    assert.ok(/[^.]\.\.[^.]/.test(logJoined), `log should use 2-dot range, got: ${logJoined}`);
+  });
+
   it('respects --base=develop override', async () => {
     let capturedBase = null;
     const assemblePrReviewFn = async (o) => { capturedBase = o.baseBranch; return '## PR Review Context\n'; };

@@ -174,6 +174,77 @@ Implementation detail that is not a requirement
     assert.ok(result.every(r => !r.includes('not a requirement')));
   });
 
+  it('recognises h2./h3. "Requirements" header, not just literal "Acceptance Criteria" (backlog #43)', () => {
+    // Plain sentence + non-modal bullet — neither matches GWT/must-should-shall
+    // unconditionally, so this only extracts once "Requirements" opens the AC section.
+    const text = `
+h2. Requirements
+
+Relay Reserve Profit from the ASAP API through to the dealer server.
+
+* {{src/app/Http/Requests/Sale/CreateRequest.php}}, the validation rule.
+
+h2. Background
+
+Not a requirement, just context.
+    `;
+    const result = extractRequirements(text);
+    assert.ok(result.some(r => r.includes('Relay Reserve Profit')), `got: ${JSON.stringify(result)}`);
+    assert.ok(result.some(r => r.includes('the validation rule')), `got: ${JSON.stringify(result)}`);
+    assert.ok(result.every(r => !r.includes('Not a requirement')));
+  });
+
+  it('recognises h2./h3. "How to test" header, captures Jira "#" numbered items as plain sentences (backlog #43)', () => {
+    const text = `
+h2. How to test
+
+# Run the feature test suite with the new field present.
+# Post an out of range value and confirm a 422.
+    `;
+    const result = extractRequirements(text);
+    assert.ok(result.some(r => r.includes('Run the feature test suite')), `got: ${JSON.stringify(result)}`);
+    assert.ok(result.some(r => r.includes('Post an out of range value')));
+  });
+
+  it('real ASAP-2898 shape: "h2. Requirements" + "h2. How to test", no literal AC header — must not report zero requirements (backlog #43)', () => {
+    const text = `
+h2. Requirements
+
+Relay Reserve Profit from the ASAP API through to the dealer server.
+
+* {{src/app/Http/Requests/Sale/CreateRequest.php}}, the validation rule.
+* {{src/app/Http/Requests/Sale/UpdateRequest.php}}, the same rule on the update path.
+
+h2. How to test
+
+# {{php artisan test}} for the Sale API feature suites.
+# Post an out of range value and confirm a 422 with a useful message.
+
+h2. Background
+
+Reserve Profit is the dealer reserve profit on a deal.
+    `;
+    const result = extractRequirements(text);
+    assert.ok(result.length > 0, 'must not report zero requirements on a real h2.-only ticket');
+    assert.ok(result.every(r => !r.includes('dealer reserve profit on a deal')), 'Background must stay excluded');
+  });
+
+  it('known limitation: a subheading (h3.) inside a Requirements section still exits it — nested content under it is not captured (backlog #43 follow-up)', () => {
+    const text = `
+h2. Requirements
+
+Relay Reserve Profit from the ASAP API through to the dealer server.
+
+h3. Validation range
+
+The lower bound should not be zero here.
+    `;
+    const result = extractRequirements(text);
+    assert.ok(result.some(r => r.includes('Relay Reserve Profit')));
+    assert.ok(result.every(r => !r.includes('lower bound')),
+      'documents current scope: nested h3. content under Requirements is a known gap, filed as follow-up');
+  });
+
   it('extracts inline numbered enumeration flattened into one ADF paragraph (H-2)', () => {
     // Real-world shape from CNV1-25: Jira ADF flattens a numbered list into one
     // paragraph with inline "1) ... 2) ... 3) ..." markers, no newlines between items.

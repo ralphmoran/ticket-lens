@@ -43,7 +43,7 @@ export function scanCurrentBranch({ cwd = process.cwd(), execFn = spawnSync, fsC
 
   let files = [];
   if (base) {
-    const diffOut = run(execFn, ['diff', '--name-only', `${base}..HEAD`], cwd);
+    const diffOut = run(execFn, ['diff', '--name-only', `${base}...HEAD`], cwd);
     if (diffOut) {
       files = diffOut.trim().split('\n').filter(Boolean).slice(0, MAX_FILES);
     }

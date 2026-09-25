@@ -121,6 +121,19 @@ describe('scanCurrentBranch — normal branch', () => {
     assert.deepEqual(result[0].files, ['src/a.js', 'src/b.js']);
   });
 
+  it('diffs against merge-base (3-dot), not a direct 2-dot range — excludes commits main has that HEAD lacks (backlog #42)', () => {
+    let capturedDiffArgs = null;
+    const execFn = (cmd, args, opts) => {
+      if (args[0] === 'diff') capturedDiffArgs = args;
+      return makeGitExecFn()(cmd, args, opts);
+    };
+    scanCurrentBranch({ execFn, fsCheck: () => true });
+    assert.ok(capturedDiffArgs, 'diff should have been invoked');
+    const joined = capturedDiffArgs.join(' ');
+    assert.ok(joined.includes('...'), `expected 3-dot merge-base diff, got: ${joined}`);
+    assert.ok(!/[^.]\.\.[^.]/.test(joined), `expected no bare 2-dot range, got: ${joined}`);
+  });
+
   it('includes ticket keys extracted from branch name', () => {
     const result = scanCurrentBranch({
       execFn: makeGitExecFn({ branch: 'feat/PROJ-123-checkout', logLines: [] }),

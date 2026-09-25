@@ -800,7 +800,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const logResult = execFn('git', ['log', '--oneline', `${baseBranch}..HEAD`], { encoding: 'utf8', cwd, timeout: 10_000 });
     const commitMessages = logResult.status === 0 ? (logResult.stdout ?? '') : '';
 
-    const diffResult = execFn('git', ['diff', `${baseBranch}..HEAD`], { encoding: 'utf8', cwd, timeout: 30_000 });
+    const diffResult = execFn('git', ['diff', `${baseBranch}...HEAD`], { encoding: 'utf8', cwd, timeout: 30_000 });
     const diff = diffResult.status === 0 ? (diffResult.stdout || null) : null;
 
     const allText = [headBranch ?? '', commitMessages].join('\n');

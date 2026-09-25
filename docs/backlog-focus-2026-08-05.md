@@ -313,5 +313,31 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - 3944/3944 tests, 0 regressions beyond 5 deliberately-changed tests (Cloud-only refusal removed).
     ROADMAP 65.
 
+42. **`review`/`compliance` branch diff uses 2-dot, not merge-base (3-dot) — false changed-files list.** Filed 2026-09-25, found live testing ASAP repo (advent-resources/asap PR #155).
+    - Repro: `ticketlens review --base=main` inside asap repo, branch `feature/ASAP-2898-...` behind main.
+    - Reported 13 changed files. Real PR diff (`gh pr diff --name-only`, `git diff main...branch`): 5 files.
+    - Extra 8 files are unrelated deletions: branch missing 2 merged PRs (ASAP-2845, ASAP-2830).
+    - Confirmed root cause: `git diff --stat main..HEAD` (2-dot) matches TL's wrong 13-file list exactly.
+    - `git diff --stat main...HEAD` (3-dot, merge-base) matches GitHub's real 5-file PR diff exactly.
+    - Impact: `compliance` reuses the same diff for AC-vs-code matching — same corruption on any stale branch.
+    - Fix: switch branch-diff computation to merge-base (`...`) semantics in both `review` and `compliance`.
+    - Not scoped.
+
+43. **`compliance`/`review` AC parser rejects Jira `h2. Requirements` format — reports "no ACs found" on real ticket.** Filed 2026-09-25, found live on ASAP-2898.
+    - Repro: `ticketlens compliance ASAP-2898 --profile=advent` on a ticket with full `h2. Requirements` + `h2. How to test` sections, explicit file-level requirements and validation rules.
+    - Output: "No acceptance criteria found in ticket description. Add a 'Acceptance Criteria' section or Given/When/Then statements."
+    - Parser only recognizes a literal "Acceptance Criteria" heading or Given/When/Then syntax.
+    - Real-world impact: Jira Server/DC wiki markup (`h2.`, `h3.`) is Advent's actual ticket format — common case, not edge case.
+    - Fix: extend AC extraction to match `h2./h3. Requirements` and `h2./h3. How to test` sections, not just literal "Acceptance Criteria".
+    - Not scoped.
+
+44. **Recall Stop-hook nag fired again (9th report, after #14/#15/#17/#24/#38).** Filed 2026-09-25, user report.
+    - Session did real mutating ticket work (create/link/comment via TL tools), no `note add` before Stop.
+    - Hook fired: "touched ticket work but nothing was ever captured to Recall." Agent then added 2 notes in response.
+    - Caveat, from evidence: matches the 2026-09-17 scoping conclusion — nag-before-comply is the DESIGNED flow, not a bug.
+    - `shouldNag()` already suppresses on `sawNoteAdd`; here no note existed yet when Stop ran, so it fired correctly.
+    - Needs live repro with transcript timestamps (nag time vs. any prior note-add time) to confirm vs. refute, per #24 lesson.
+    - Not scoped.
+
 ---
 **Status 2026-08-18**: #1, #1b, #1c, #1d, #1e, #2, #2b, #3, #4, #5, #6, #8, #8b, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #22 shipped/closed. #4 (ROADMAP 49b) fully complete 2026-08-14, 11 of 11 tools ported, MCP surface at 22 tools. #13 fully closed 2026-08-16 (PHP side shipped). #14 fully closed 2026-08-16 — necessity question resolved 2026-08-14 (keep hook + SKILL), bracket-literal scanner gap fixed 2026-08-16. #6 + #16 (Recall note attachments, CLI + MCP) fully CLOSED 2026-08-17 — shipped, pushed, published, self-tested. #17 fully CLOSED 2026-08-17. #18 fully CLOSED 2026-08-18 — non-blocking word-count warning shipped, pushed, published, installed, self-tested. #19 fully CLOSED 2026-08-17/18 — full attachment sync + Console preview shipped, one real security bug (extension-based scan bypass) found via live red-team and fixed same session. #22 fully CLOSED 2026-08-18 — recurring CI failure root-caused (stale audits + a hardcoded-date time bomb) and fixed durably. #20 fully CLOSED 2026-08-18 — Console-manageable strictness shipped, red-teamed (30-item pass, all attacks defended), pushed, published, installed, self-tested. #21 FULLY CLOSED 2026-08-18 (`note patch` attachment support, bundled a real attachment-drop bug fix, 15-attack red-team pass all defended) — pushed, published `ticketlens@0.38.47` (beta), installed, self-tested (real CLI + real MCP server, both paths). Remaining: scope #7.
