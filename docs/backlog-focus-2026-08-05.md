@@ -313,23 +313,21 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - 3944/3944 tests, 0 regressions beyond 5 deliberately-changed tests (Cloud-only refusal removed).
     ROADMAP 65.
 
-42. **`review`/`compliance` branch diff uses 2-dot, not merge-base (3-dot) — false changed-files list.** Filed 2026-09-25, found live testing ASAP repo (advent-resources/asap PR #155).
-    - Repro: `ticketlens review --base=main` inside asap repo, branch `feature/ASAP-2898-...` behind main.
-    - Reported 13 changed files. Real PR diff (`gh pr diff --name-only`, `git diff main...branch`): 5 files.
-    - Extra 8 files are unrelated deletions: branch missing 2 merged PRs (ASAP-2845, ASAP-2830).
-    - Confirmed root cause: `git diff --stat main..HEAD` (2-dot) matches TL's wrong 13-file list exactly.
-    - `git diff --stat main...HEAD` (3-dot, merge-base) matches GitHub's real 5-file PR diff exactly.
-    - Impact: `compliance` reuses the same diff for AC-vs-code matching — same corruption on any stale branch.
-    - Fix: switch branch-diff computation to merge-base (`...`) semantics in both `review` and `compliance`.
-    - Not scoped.
+42. ~~**`review`/`compliance` branch diff uses 2-dot, not merge-base (3-dot) — false changed-files list.**~~ CLOSED 2026-09-25, `ticket-lens@eb1c9cc`, local only.
+    - Filed 2026-09-25, found live testing ASAP repo (advent-resources/asap PR #155).
+    - Refuted the filed "Impact" claim: `compliance` does NOT reuse `review`'s diff — it uses `commit-linker.mjs`'s own merge-base diff, already correct, untouched.
+    - Real bug scoped to `review`'s own `git diff` call (`fetch-ticket.mjs`) + `branch-scanner.mjs` (`triage`'s push snapshot) — both 2-dot, fixed to 3-dot.
+    - `git log` deliberately left 2-dot in both files — 3-dot there would wrongly include main-only commits (verified live: 7 vs. 1 correct commit).
+    - Live-verified against real PR #155: `review` now matches `gh pr diff --name-only` exactly (5 files, was 17/13 depending on branch state).
+    - code-reviewer: 0 CRITICAL/HIGH/MEDIUM, 1 LOW (stale comment, fixed same pass). 3944→3950 tests, 0 regressions.
 
-43. **`compliance`/`review` AC parser rejects Jira `h2. Requirements` format — reports "no ACs found" on real ticket.** Filed 2026-09-25, found live on ASAP-2898.
-    - Repro: `ticketlens compliance ASAP-2898 --profile=advent` on a ticket with full `h2. Requirements` + `h2. How to test` sections, explicit file-level requirements and validation rules.
-    - Output: "No acceptance criteria found in ticket description. Add a 'Acceptance Criteria' section or Given/When/Then statements."
-    - Parser only recognizes a literal "Acceptance Criteria" heading or Given/When/Then syntax.
-    - Real-world impact: Jira Server/DC wiki markup (`h2.`, `h3.`) is Advent's actual ticket format — common case, not edge case.
-    - Fix: extend AC extraction to match `h2./h3. Requirements` and `h2./h3. How to test` sections, not just literal "Acceptance Criteria".
-    - Not scoped.
+43. ~~**`compliance`/`review` AC parser rejects Jira `h2. Requirements` format — reports "no ACs found" on real ticket.**~~ CLOSED 2026-09-25, `ticket-lens@eb1c9cc`, local only.
+    - Filed 2026-09-25, found live on ASAP-2898.
+    - Fix: broadened AC-header match to "Requirements"/"How to test", not just literal "Acceptance Criteria".
+    - Found via TDD, not in original filing: Jira's `#` numbered-list marker collided with markdown `#`-heading detection, closing "How to test" on its own first line. Narrowed heading-exit to wiki `h1.-h6.` only.
+    - Known limitation, deliberately not fixed: a nested `h3.` subheading inside `h2. Requirements` still exits the section early — filed as follow-up, documented in a passing test.
+    - Live-verified on real ASAP-2898: "no ACs found" gone, real requirements extracted, 92% coverage computed against the (also-fixed) #42 diff.
+    - code-reviewer: 0 CRITICAL/HIGH/MEDIUM. 6 new RED→GREEN tests, 0 regressions.
 
 44. **Recall Stop-hook nag fired again (9th report, after #14/#15/#17/#24/#38).** Filed 2026-09-25, user report.
     - Session did real mutating ticket work (create/link/comment via TL tools), no `note add` before Stop.
