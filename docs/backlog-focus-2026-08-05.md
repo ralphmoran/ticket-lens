@@ -329,13 +329,14 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Live-verified on real ASAP-2898: "no ACs found" gone, real requirements extracted, 92% coverage computed against the (also-fixed) #42 diff.
     - code-reviewer: 0 CRITICAL/HIGH/MEDIUM. 6 new RED→GREEN tests, 0 regressions.
 
-44. **Recall Stop-hook nag fired again (9th report, after #14/#15/#17/#24/#38).** Filed 2026-09-25, user report.
-    - Session did real mutating ticket work (create/link/comment via TL tools), no `note add` before Stop.
-    - Hook fired: "touched ticket work but nothing was ever captured to Recall." Agent then added 2 notes in response.
-    - Caveat, from evidence: matches the 2026-09-17 scoping conclusion — nag-before-comply is the DESIGNED flow, not a bug.
-    - `shouldNag()` already suppresses on `sawNoteAdd`; here no note existed yet when Stop ran, so it fired correctly.
-    - Needs live repro with transcript timestamps (nag time vs. any prior note-add time) to confirm vs. refute, per #24 lesson.
-    - Not scoped.
+44. **Recall Stop-hook nag fired again (9th + 10th reports, after #14/#15/#17/#24/#38).** Filed 2026-09-25, 2 user reports same day.
+    - Occurrence 1: real mutating ticket work (create/link/comment via TL tools), no `note add` before Stop. Hook fired, agent added 2 notes after.
+    - Occurrence 2: separate session, comment posted + worklog + Recall search done, still no `note add` before Stop. Hook fired, agent added 1 note after.
+    - Caveat, from evidence (both occurrences): matches the 2026-09-17 scoping conclusion — nag-before-comply is the DESIGNED flow, not a bug.
+    - `shouldNag()` already suppresses on `sawNoteAdd`; a prior `recall_search` (occurrence 2) does not count as `sawNoteAdd` — correct per design.
+    - Both occurrences show the same shape: real ticket work, real capture, capture just happens after not before the nag.
+    - Needs live repro with transcript timestamps (nag time vs. any prior note-add time) to fully confirm vs. refute, per #24 lesson.
+    - Not scoped. Leaning toward "working as designed, close as not-a-bug" pending one more data point.
 
 ---
 **Status 2026-08-18**: #1, #1b, #1c, #1d, #1e, #2, #2b, #3, #4, #5, #6, #8, #8b, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #22 shipped/closed. #4 (ROADMAP 49b) fully complete 2026-08-14, 11 of 11 tools ported, MCP surface at 22 tools. #13 fully closed 2026-08-16 (PHP side shipped). #14 fully closed 2026-08-16 — necessity question resolved 2026-08-14 (keep hook + SKILL), bracket-literal scanner gap fixed 2026-08-16. #6 + #16 (Recall note attachments, CLI + MCP) fully CLOSED 2026-08-17 — shipped, pushed, published, self-tested. #17 fully CLOSED 2026-08-17. #18 fully CLOSED 2026-08-18 — non-blocking word-count warning shipped, pushed, published, installed, self-tested. #19 fully CLOSED 2026-08-17/18 — full attachment sync + Console preview shipped, one real security bug (extension-based scan bypass) found via live red-team and fixed same session. #22 fully CLOSED 2026-08-18 — recurring CI failure root-caused (stale audits + a hardcoded-date time bomb) and fixed durably. #20 fully CLOSED 2026-08-18 — Console-manageable strictness shipped, red-teamed (30-item pass, all attacks defended), pushed, published, installed, self-tested. #21 FULLY CLOSED 2026-08-18 (`note patch` attachment support, bundled a real attachment-drop bug fix, 15-attack red-team pass all defended) — pushed, published `ticketlens@0.38.47` (beta), installed, self-tested (real CLI + real MCP server, both paths). Remaining: scope #7.
