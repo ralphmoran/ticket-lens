@@ -29,7 +29,7 @@ import { appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isLicensed } from '../scripts/lib/license.mjs';
 import { readCliToken } from '../scripts/lib/cli-auth.mjs';
-import { buildCaptureExcerpt, privateTmpDir } from './recall-nudge-lib.mjs';
+import { buildCaptureExcerpt, privateTmpDir, writeLastCaptureAt } from './recall-nudge-lib.mjs';
 import { autoCapture } from '../scripts/lib/summarizer.mjs';
 import { runNoteAdd } from '../scripts/lib/note-command.mjs';
 import { DEFAULT_CONFIG_DIR } from '../scripts/lib/config.mjs';
@@ -56,17 +56,20 @@ function logLine(message) {
  * @param {string} opts.transcriptPath
  * @param {string} [opts.ticketKey]
  * @param {string} [opts.configDir]
+ * @param {string} [opts.cwd] - directory whose shared capture marker gets updated on a real capture (backlog #44: makes a successful background capture visible to a later sync Stop check, which otherwise has no way to know this ran)
  * @returns {Promise<{outcome: 'skipped'|'captured'|'not-written'|'error', reason?: string, title?: string, error?: string}>}
  */
 export async function runAutoCapture({
   transcriptPath,
   ticketKey,
   configDir = DEFAULT_CONFIG_DIR,
+  cwd = process.cwd(),
   isLicensedFn = isLicensed,
   readCliTokenFn = readCliToken,
   buildCaptureExcerptFn = buildCaptureExcerpt,
   autoCaptureFn = autoCapture,
   runNoteAddFn = runNoteAdd,
+  writeLastCaptureAtFn = writeLastCaptureAt,
 } = {}) {
   if (!isLicensedFn('pro', configDir)) {
     logLine('skipped: not licensed');
@@ -112,10 +115,16 @@ export async function runAutoCapture({
   });
 
   logLine(written ? `captured: ${result.title}` : `not-written: ${result.title}`);
+  if (written) writeLastCaptureAtFn(cwd, Date.now());
   return written ? { outcome: 'captured', title: result.title } : { outcome: 'not-written', title: result.title };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const [, , transcriptPath, ticketKeyArg] = process.argv;
-  runAutoCapture({ transcriptPath, ticketKey: ticketKeyArg || undefined }).catch(() => { /* never escape — nothing is watching this process */ });
+  // cwdArg (backlog #44 code review): passed explicitly by the spawning Stop
+  // hook rather than relying on this child's own process.cwd() — Node
+  // resolves process.cwd() through symlinks, so a cwd with a symlinked
+  // component would otherwise hash to a different marker file than the one
+  // a later Stop's hasRecentCapture(cwd) reads, silently breaking the bridge.
+  const [, , transcriptPath, ticketKeyArg, cwdArg] = process.argv;
+  runAutoCapture({ transcriptPath, ticketKey: ticketKeyArg || undefined, cwd: cwdArg || undefined }).catch(() => { /* never escape — nothing is watching this process */ });
 }

@@ -129,6 +129,71 @@ describe('recall-nudge-stop hook (subprocess)', () => {
     assert.equal(result.status, 2);
   });
 
+  describe('backlog #44 (9th/10th reports): entitled accounts get a silent exit 0, never the hard block', () => {
+    function realTicketWorkNoNote() {
+      writeFileSync(transcriptPath, transcriptWith([
+        assistantText('Looking at PROD-1234 now.'),
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+        assistantToolUse('mcp__ticketlens__ticket_comment', { ticket: 'PROD-1234', body: 'Found the cause.' }),
+      ]));
+    }
+
+    it('exits 0 (not 2) for a licensed + logged-in account on the exact scenario that hard-blocks free tier', () => {
+      realTicketWorkNoNote();
+      writeCliTokenFile(home, 'tl_key');
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home, env: { TICKETLENS_SKIP_LICENSE: 'true' } });
+      assert.equal(result.status, 0);
+    });
+
+    it('still writes the reminder to stderr even on the silent exit-0 path — a diagnostic trail if the async job silently failed', () => {
+      realTicketWorkNoNote();
+      writeCliTokenFile(home, 'tl_key');
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home, env: { TICKETLENS_SKIP_LICENSE: 'true' } });
+      assert.match(result.stderr, /nothing was ever captured to Recall/);
+    });
+
+    it('LOCK: licensed but logged out (no cli-token.json) still hard-blocks — safety net requires BOTH', () => {
+      realTicketWorkNoNote();
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home, env: { TICKETLENS_SKIP_LICENSE: 'true' } });
+      assert.equal(result.status, 2);
+    });
+
+    it('LOCK: a valid token but unlicensed (no TICKETLENS_SKIP_LICENSE) still hard-blocks — safety net requires BOTH', () => {
+      realTicketWorkNoNote();
+      writeCliTokenFile(home, 'tl_key');
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+      assert.equal(result.status, 2);
+    });
+
+    it('LOCK: free tier (neither license nor token) is completely unchanged — same exit 2, same message', () => {
+      realTicketWorkNoNote();
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home });
+      assert.equal(result.status, 2);
+      assert.match(result.stderr, /nothing was ever captured to Recall/);
+    });
+
+    it('HARD TEST: corrupted cli-token.json fails safe to exit 2, never crashes (readCliToken must swallow the parse error)', () => {
+      realTicketWorkNoNote();
+      const configDir = join(home, '.ticketlens');
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, 'cli-token.json'), '{not valid json');
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home, env: { TICKETLENS_SKIP_LICENSE: 'true' } });
+      assert.equal(result.status, 2, `must fail safe to the hard block, not crash — got status=${result.status}, stderr=${result.stderr}`);
+      assert.equal(result.signal, null, 'must not have crashed/been killed by a signal');
+    });
+
+    it('the broken-promise case (🔖 Recall-flag never followed by a note) also goes silent for entitled accounts', () => {
+      writeFileSync(transcriptPath, transcriptWith([
+        assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+        assistantToolUse('mcp__ticketlens__ticket_comment', { ticket: 'PROD-1234', body: 'x' }),
+        assistantText('🔖 Recall-flag: worth remembering'),
+      ]));
+      writeCliTokenFile(home, 'tl_key');
+      const result = runHook({ sessionId, transcriptPath, cwd: dir, home, env: { TICKETLENS_SKIP_LICENSE: 'true' } });
+      assert.equal(result.status, 0);
+    });
+  });
+
   it('exits 0 on a pure read-only lookup — fetch ran, no mutation at all (the reported false positive — backlog #24, 6th report)', () => {
     writeFileSync(transcriptPath, transcriptWith([
       assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
@@ -704,6 +769,22 @@ describe('concurrent Stop hooks, same session_id — atomic claim (backlog #40, 
     );
     const blocked = results.filter((r) => r.status === 2);
     assert.equal(blocked.length, 1, `expected exactly 1 block, got ${blocked.length} of 8`);
+  });
+
+  it('HARD TEST (backlog #44): 8 concurrent runs, entitled account — all exit 0, never 2, none crash', async () => {
+    writeCliTokenFile(home, 'tl_race_test');
+    writeFileSync(transcriptPath, transcriptWith([
+      assistantText('Looking at PROD-1234 now.'),
+      assistantToolUse('mcp__ticketlens__fetch', { ticket: 'PROD-1234' }),
+      assistantToolUse('mcp__ticketlens__ticket_comment', { ticket: 'PROD-1234', body: 'x' }),
+    ]));
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => runHookAsync({ sessionId, transcriptPath, cwd: dir, home, env: { TICKETLENS_SKIP_LICENSE: 'true' } })),
+    );
+    const blocked = results.filter((r) => r.status === 2);
+    assert.equal(blocked.length, 0, `entitled account must never hard-block, got ${blocked.length} of 8`);
+    assert.ok(results.every((r) => r.status === 0), `every run must exit 0 cleanly, got statuses: ${results.map(r => r.status)}`);
+    try { rmSync(lastAutoCaptureAttemptPath(dir)); } catch { /* fine */ }
   });
 
   it('HARD TEST: 16-way concurrency still yields exactly one block', async () => {

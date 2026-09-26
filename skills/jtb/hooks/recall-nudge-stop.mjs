@@ -89,11 +89,31 @@ if (!sessionId || !transcriptPath) process.exit(0);
 
 const { sawFetch, sawMutatingAction, sawRecallFlag, sawNoteAdd, ticketKey } = scanTranscript(transcriptPath);
 const cliToken = readCliToken();
+// Backlog #44 (9th/10th reports): entitled accounts already run the async
+// auto-capture judge below — throttled to at most once per CAPTURE_FRESHNESS_MS
+// per cwd (hasRecentAutoCaptureAttempt below), not on every single Stop. Once
+// it succeeds, its outcome is now visible via writeLastCaptureAt
+// (recall-auto-capture.mjs) to a LATER Stop's hasRecentCapture() check — but
+// THIS Stop's own decision below still can't see an attempt spawned moments
+// ago (detached, still running), nor is a fresh one spawned if the window's
+// one attempt already ran and moved on. For that residual window, a hard
+// block duplicates a safety net that's already in flight or already spent:
+// exit 0 instead of 2 so this never blocks the turn for these accounts. Free
+// tier has no such net, so it keeps the hard block unchanged — this is its
+// only enforcement.
+const hasSafetyNet = isLicensed('pro') && Boolean(cliToken);
 
-if (isLicensed('pro') && cliToken && !hasRecentAutoCaptureAttempt(cwd)) {
+if (hasSafetyNet && !hasRecentAutoCaptureAttempt(cwd)) {
   try {
     writeLastAutoCaptureAttemptAt(cwd, Date.now());
-    const child = spawn(process.execPath, [AUTO_CAPTURE_SCRIPT, transcriptPath, ticketKey ?? ''], {
+    // cwd is passed explicitly as argv (not left to the child's own
+    // process.cwd()) — code review finding: Node resolves process.cwd()
+    // through symlinks, so a cwd with any symlink component (macOS os.tmpdir()
+    // itself, an iCloud-synced Desktop, a Docker bind mount) would make the
+    // child's own process.cwd() differ from the string used here, hashing to
+    // a different marker file and silently breaking the bridge this fix exists
+    // to build.
+    const child = spawn(process.execPath, [AUTO_CAPTURE_SCRIPT, transcriptPath, ticketKey ?? '', cwd], {
       cwd,
       detached: true,
       stdio: 'ignore',
@@ -156,4 +176,7 @@ if (sawRecallFlag) {
     '`ticketlens note add`. If genuinely nothing qualified, just say so — then finish.\n',
   );
 }
-process.exit(2);
+// hasSafetyNet: the message above is still written (a diagnostic trail if
+// the async job silently fails) but exit 0 means Claude Code never surfaces
+// it or blocks the turn — only exit 2 feeds stderr back (backlog #44).
+process.exit(hasSafetyNet ? 0 : 2);
