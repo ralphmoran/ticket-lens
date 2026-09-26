@@ -1,7 +1,32 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { generateState, pickPort, startLocalServer, browserLogin } from '../lib/browser-login.mjs';
+import { EventEmitter } from 'node:events';
+import { generateState, pickPort, startLocalServer, browserLogin, openBrowser } from '../lib/browser-login.mjs';
+
+// ── openBrowser ────────────────────────────────────────────────────────────
+// Backlog #27 code review: a missing/blocked OS opener (headless container,
+// CI, restricted MCP runtime) emits an async spawn 'error' event; with no
+// listener that is an uncaught exception that kills the whole process —
+// including a long-lived MCP server, not just this one command.
+
+describe('openBrowser', () => {
+  it('attaches an error listener to the spawned process so a missing OS opener cannot crash the caller', () => {
+    const fakeChild = new EventEmitter();
+    fakeChild.unref = () => {};
+    let spawnCalled = false;
+    const spawnFn = () => { spawnCalled = true; return fakeChild; };
+
+    openBrowser('https://example.com', { spawnFn });
+
+    assert.ok(spawnCalled, 'openBrowser must still call spawn');
+    assert.ok(fakeChild.listenerCount('error') > 0, 'must attach an error listener');
+    assert.doesNotThrow(
+      () => fakeChild.emit('error', new Error('spawn open ENOENT')),
+      'emitting a spawn error must never throw/crash the caller',
+    );
+  });
+});
 
 // ── generateState ──────────────────────────────────────────────────────────
 

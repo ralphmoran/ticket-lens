@@ -14,12 +14,22 @@ export const generateState = () => randomBytes(16).toString('hex');
 export const pickPort = () =>
   Math.floor(Math.random() * (PORT_MAX - PORT_MIN + 1)) + PORT_MIN;
 
-export function openBrowser(url) {
+/**
+ * @param {string} url
+ * @param {object} [opts]
+ * @param {Function} [opts.spawnFn] - injectable child_process.spawn (default: spawn)
+ */
+export function openBrowser(url, { spawnFn = spawn } = {}) {
   const cmd = process.platform === 'win32' ? 'cmd'
             : process.platform === 'darwin' ? 'open'
             : 'xdg-open';
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
-  spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
+  const child = spawnFn(cmd, args, { detached: true, stdio: 'ignore' });
+  // A missing/blocked OS opener (headless container, restricted MCP runtime)
+  // emits this asynchronously; unhandled, it's an uncaught exception that
+  // kills the whole process — including a long-lived MCP server.
+  child.on('error', () => {});
+  child.unref();
 }
 
 /**

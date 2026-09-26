@@ -1242,6 +1242,64 @@ describe('pr subcommand', () => {
       assert.equal(out.stderr, '', 'must not also leak to the real stderr when printErr is injected');
     } finally { out.restore(); }
   });
+
+  describe('--open (backlog #27)', () => {
+    it('unlicensed: routes the upgrade prompt to injected printErr, never prints the markdown', async () => {
+      const printed = [];
+      const errChunks = [];
+      await run(['pr', 'PROD-1234', '--open'], {
+        env: validEnv, fetcher: mockFetcher, configDir: NO_CONFIG,
+        print: (s) => printed.push(s), printErr: (s) => errChunks.push(s),
+      });
+      assert.equal(printed.length, 0, 'must not print/open when the license gate blocks the call');
+      assert.ok(errChunks.join('').length > 0);
+      assert.equal(process.exitCode, 1);
+    });
+
+    it('licensed: calls openPr with the assembled markdown and prints the returned URL', async () => {
+      const { writeLicense } = await import('../lib/license.mjs');
+      const tmpDir = mkdtempSync(join(tmpdir(), 'tl-pr-open-'));
+      writeLicense({ key: 'AAAA-BBBB-CCCC-DDDD', tier: 'pro', email: 'dev@example.com', validatedAt: new Date().toISOString(), provider: 'lemonsqueezy' }, tmpDir);
+      const printed = [];
+      let seenMarkdown;
+      try {
+        await run(['pr', 'PROD-1234', '--open'], {
+          env: validEnv, fetcher: mockFetcher, configDir: tmpDir,
+          print: (s) => printed.push(s), printErr: () => {},
+          openPr: async (ticketKey, markdown) => { seenMarkdown = markdown; return { ok: true, url: 'https://github.com/acme/widgets/compare/main...feature-x?expand=1' }; },
+        });
+        assert.ok(seenMarkdown.includes('### What changed'), 'openPr must receive the same markdown the plain pr path assembles');
+        assert.ok(printed.join('').includes('https://github.com/acme/widgets/compare/main...feature-x?expand=1'));
+      } finally { rmSync(tmpDir, { recursive: true, force: true }); }
+    });
+
+    it('licensed but openPr refuses (e.g. not-github): prints the refusal reason, exits 1, never prints a URL', async () => {
+      const { writeLicense } = await import('../lib/license.mjs');
+      const tmpDir = mkdtempSync(join(tmpdir(), 'tl-pr-open-'));
+      writeLicense({ key: 'AAAA-BBBB-CCCC-DDDD', tier: 'pro', email: 'dev@example.com', validatedAt: new Date().toISOString(), provider: 'lemonsqueezy' }, tmpDir);
+      const printed = [];
+      const errChunks = [];
+      try {
+        await run(['pr', 'PROD-1234', '--open'], {
+          env: validEnv, fetcher: mockFetcher, configDir: tmpDir,
+          print: (s) => printed.push(s), printErr: (s) => errChunks.push(s),
+          openPr: async () => ({ ok: false, reason: 'not-github', message: 'No GitHub remote detected on origin — `pr --open` supports GitHub only.' }),
+        });
+        assert.equal(printed.length, 0);
+        assert.ok(errChunks.join('').includes('GitHub only'));
+        assert.equal(process.exitCode, 1);
+      } finally { rmSync(tmpDir, { recursive: true, force: true }); }
+    });
+
+    it('without --open, plain pr output is unchanged (no regression)', async () => {
+      const out = captureOutput();
+      try {
+        await run(['pr', 'PROD-1234'], validEnv, mockFetcher, NO_CONFIG);
+        assert.ok(out.stdout.includes('### What changed'));
+        assert.ok(!out.stdout.includes('github.com/'), 'plain pr must never build/print a compare URL');
+      } finally { out.restore(); }
+    });
+  });
 });
 
 describe('ledger subcommand', () => {

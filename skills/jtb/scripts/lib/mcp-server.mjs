@@ -231,9 +231,10 @@ async function callStandup(args, deps) {
   return callFetchTicketRun(buildStandupArgs, args, deps, 'standup failed');
 }
 
-function buildPrArgs({ ticket, profile }) {
+function buildPrArgs({ ticket, profile, open }) {
   const args = ['pr', ticket];
   if (profile) args.push(`--profile=${profile}`);
+  if (open) args.push('--open');
   return args;
 }
 

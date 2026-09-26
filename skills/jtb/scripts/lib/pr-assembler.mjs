@@ -11,25 +11,7 @@ import { findLinkedCommits } from './commit-linker.mjs';
 import { runComplianceCheck, STATUS_ICON, statusColor } from './compliance-checker.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { createStyler } from './ansi.mjs';
-
-/**
- * Detect the git remote URL using execFn.
- * Returns the URL string or null if none detected.
- *
- * @param {Function} execFn - injectable spawnSync-compatible function
- * @returns {string|null}
- */
-function detectRemoteUrl(execFn) {
-  try {
-    const result = execFn('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' });
-    if (result.status === 0 && result.stdout) {
-      return result.stdout.trim();
-    }
-  } catch {
-    // non-fatal
-  }
-  return null;
-}
+import { detectRemoteUrl } from './git-exec.mjs';
 
 /**
  * Build the "### Linked tickets" section from a ticket's linkedIssues.
@@ -129,7 +111,7 @@ export async function assemblePr(ticketKey, {
   }
 
   // Detect remote URL for auto-close footer
-  const remoteUrl = detectRemoteUrl(execFn);
+  const remoteUrl = detectRemoteUrl(execFn, cwd);
   const isGitHubOrGitLab = remoteUrl && (
     remoteUrl.includes('github.com') || remoteUrl.includes('gitlab.com')
   );

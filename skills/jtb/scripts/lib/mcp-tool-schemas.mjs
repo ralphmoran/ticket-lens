@@ -79,12 +79,13 @@ export const TOOLS = [
   },
   {
     name: 'pr',
-    description: 'Assemble a ready-to-paste PR description for a ticket — what changed (from linked commits), linked tickets, and (if the ticket has acceptance criteria) a requirements-coverage section. Read-only. The requirements-coverage section reuses the same Free-tier 3-checks/month counter as the `compliance` tool — calling `pr` on a ticket with acceptance criteria counts against that shared monthly limit; TicketLens Pro removes the cap.',
+    description: 'Assemble a ready-to-paste PR description for a ticket — what changed (from linked commits), linked tickets, and (if the ticket has acceptance criteria) a requirements-coverage section. Read-only by default. The requirements-coverage section reuses the same Free-tier 3-checks/month counter as the `compliance` tool — calling `pr` on a ticket with acceptance criteria counts against that shared monthly limit; TicketLens Pro removes the cap. `open: true` (TicketLens Pro required) opens a real GitHub PR compare page instead, prefilled with this same description — GitHub only, requires the current branch already pushed to origin; refuses cleanly on a non-GitHub remote, detached HEAD, or an unpushed branch.',
     inputSchema: {
       type: 'object',
       properties: {
         ticket: { type: 'string', description: 'Ticket key, e.g. PROJ-123.' },
         profile: { type: 'string', description: 'Connection profile to target, overriding folder-based inference and the default profile.' },
+        open: { type: 'boolean', description: 'Open a real GitHub PR compare page prefilled with this description, instead of just returning the text. TicketLens Pro required. GitHub only.' },
       },
       required: ['ticket'],
     },

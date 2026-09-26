@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.47.0 -->
+<!-- jtb-skill-version: 0.48.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -220,11 +220,13 @@ ticketlens pr PROJ-123 $EXTRA_ARGS
 
 Where `$EXTRA_ARGS` are any flags passed (e.g. `--profile=acme`). Requires a ticket key as the first positional argument.
 
-Assembles a ready-to-paste PR description: what changed (from commits linked to the ticket), linked tickets, and — if the ticket has acceptance criteria — a requirements-coverage section. Read-only. The requirements-coverage section reuses the same Free-tier 3-checks/month counter as `--compliance`/`ticketlens compliance` — running `pr` on a ticket with acceptance criteria counts against that shared monthly limit; Pro removes the cap.
+Assembles a ready-to-paste PR description: what changed (from commits linked to the ticket), linked tickets, and — if the ticket has acceptance criteria — a requirements-coverage section. Read-only by default. The requirements-coverage section reuses the same Free-tier 3-checks/month counter as `--compliance`/`ticketlens compliance` — running `pr` on a ticket with acceptance criteria counts against that shared monthly limit; Pro removes the cap.
+
+Add `--open` (TicketLens Pro required) to open a real GitHub PR compare page prefilled with this same description, instead of just printing it. GitHub only — refuses cleanly on a non-GitHub remote, a detached HEAD, a branch not yet pushed to origin, or when already on the base branch. Requires the current branch already pushed.
 
 Display the script's stdout directly. No plan mode. Stop here.
 
-If this harness has TicketLens's MCP server configured (a tool named `pr` — often shown as `mcp__ticketlens__pr` — visible in your tool list), prefer it over the bash form: same output, same shared compliance-counter caveat, no shell command to construct. It accepts `ticket`/`profile`.
+If this harness has TicketLens's MCP server configured (a tool named `pr` — often shown as `mcp__ticketlens__pr` — visible in your tool list), prefer it over the bash form: same output, same shared compliance-counter caveat, no shell command to construct. It accepts `ticket`/`profile`/`open`.
 
 ---
 

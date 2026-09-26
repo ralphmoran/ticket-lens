@@ -333,6 +333,7 @@ ticketlens pr <TICKET-KEY>                    # Generate PR description from tic
 ticketlens pr <TICKET-KEY> --profile=acme    # Specify a profile
 ticketlens pr <TICKET-KEY> --plain           # Plain markdown output
 ticketlens pr <TICKET-KEY> | pbcopy          # Copy to clipboard
+ticketlens pr <TICKET-KEY> --open            # Open a real GitHub PR compare page (Pro, GitHub only)
 ```
 
 Generates a PR description template pre-filled with the ticket summary, acceptance criteria, and compliance coverage. Free — the compliance coverage section follows the `compliance` command's own free (3/month) or Pro (unlimited) limit.

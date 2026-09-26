@@ -589,6 +589,19 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
     const adapterPr = resolveAdapter(connPr, { fetcher });
     const complianceRunnerPr = opts.runComplianceCheck ?? runComplianceCheck;
 
+    // Backlog #27: --open builds a real GitHub PR compare URL from the same
+    // markdown below and opens it — Pro-gated like every other write-back tool,
+    // unlike the plain preview above which stays Free.
+    const openFlagPr = args.includes('--open');
+    if (openFlagPr) {
+      const { isLicensed: isLicPr, showUpgradePrompt: showUpgradePr } = await import('./lib/license.mjs');
+      if (!isLicPr('pro', resolvedConfigDir)) {
+        showUpgradePr('pro', 'pr --open', { stream: errStream });
+        process.exitCode = 1;
+        return;
+      }
+    }
+
     try {
       const md = await assemblePr(ticketKeyArg, {
         configDir: resolvedConfigDir,
@@ -598,7 +611,24 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
         // upgrade prompt would leak to real stderr unless threaded here — same
         // treatment as the compliance dispatch block above (`stream: errStream`).
         runComplianceCheckFn: (o) => complianceRunnerPr({ ...o, stream: errStream }),
+        // --open needs raw markdown for the compare-URL body, regardless of the
+        // real terminal's TTY-ness — the plain preview path below is unaffected.
+        ...(openFlagPr ? { outStream: { write: () => {}, isTTY: false } } : {}),
       });
+
+      if (openFlagPr) {
+        const { openPr: openPrFn } = await import('./lib/pr-opener.mjs');
+        const openPrRunner = opts.openPr ?? openPrFn;
+        const result = await openPrRunner(ticketKeyArg, md, { cwd: process.cwd() });
+        if (!result.ok) {
+          printErrFn(`Error: ${result.message}\n`);
+          process.exitCode = 1;
+          return;
+        }
+        printFn(`Opening: ${result.url}\n`);
+        return;
+      }
+
       printFn(md + '\n');
     } catch (err) {
       printErrFn(`Error: ${err.message}\n`);

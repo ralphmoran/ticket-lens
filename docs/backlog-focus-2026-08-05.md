@@ -198,13 +198,11 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     **Diagnostics shipped 2026-09-17**, `ticket-lens@9b8e9c5`, local only, not published. Root cause still not confirmed — this fix adds attribution only, no behavior change. `logLine()` now appends the resolved `apiBase()` URL to every outcome; error lines also append `(status=<code>)`. Live-verified against the real backend: a deliberately corrupted token reproduced `error: Unauthorized (status=401) [api=https://5513-...ngrok-free.app]`. Stripping `TICKETLENS_API_URL` from env and re-running did NOT reproduce Unauthorized — it fell back to `http://api.ticketlens.test` and succeeded (`decision=skip`), since that host proxies to the same local Sail DB as the ngrok tunnel. This rules out "env unset → wrong backend" as the sole cause; leading theory is a transient stale/reset CliToken during active local dev on #24's D1 that day, not a real prod-facing bug. Next occurrence will log which backend + status was hit — needed before this can close. Code review: 0 CRITICAL/HIGH/MEDIUM. CLI 3531/3531 tests pass, 5 new (recall-auto-capture.test.mjs).
     **CLOSED 2026-09-18 — test pollution, not a product bug.** Root cause, reproduced live: `recall-nudge-stop.test.mjs` runs the real Stop hook with a temp `HOME` + fake token; the hook spawns detached real `recall-auto-capture.mjs` children that inherit the real ngrok `TICKETLENS_API_URL`, hit the real backend (401) and append to the machine-wide `auto-capture.log`. Running that file alone added exactly 2× `Unauthorized (status=401)` + 2× `not logged in`, the same 2+2 burst as the 2026-09-17 report. The real stored token authenticates 200 on both backends. Also: `recall-auto-capture.test.mjs`'s `afterEach` deleted the REAL log, erasing real diagnostics. Fix (test-only, not shipped — `test/` is outside npm `files`): new `test/helpers/isolate-hook-env.mjs` isolates `TMPDIR` + points `TICKETLENS_API_URL` at a closed loopback port, applied to both files; regression test locks the real log untouched. 3705/3705 tests. Earlier stale-token theory is refuted.
 
-34. **Cooldown race in the six older ticket-write tools (comment/transition/assign/link/update/create).** Filed 2026-09-20, found by ROADMAP 56's live break tests.
-    - They check the cooldown, then write, then record it; two parallel processes can both write.
-    - `ticket_worklog` reproduced this live: two parallel CLI runs both logged; fixed by `claimAction` (`861a271`).
-    - Unreproduced for the older tools: from reading `runTicketComment` (check at :284, record at :309).
-    - Fix path: adopt `claimAction`/`releaseAction` from `ticket-action-cooldown.mjs`; release only on definite failure.
-    - Also: their skip messages print remaining hold time as "Ns ago"; worklog's do not.
-    ROADMAP 57. Memory: `project_worklog_tool_roadmap56_2026_09_18.md`.
+34. ~~**Cooldown race in the six older ticket-write tools (comment/transition/assign/link/update/create).**~~ FIXED 2026-09-24, `ticket-lens@db9c411`, published `ticketlens@0.42.1` (beta), installed. Filed 2026-09-20, found by ROADMAP 56's live break tests.
+    - `comment`/`transition`/`assign`/`link`/`update`/`create` adopt `claimAction`/`releaseAction`, same pattern proven in `ticket_worklog` (`861a271`).
+    - Code review caught `claimActionFn` itself unguarded; new `safeClaim()`/`safeRelease()` fixed it plus a leaked-claim gap in `comment`'s `attachFiles`.
+    - Live-verified against real corenexus Jira Cloud: 3 concurrent 4-way trials, each exactly 1 of 4 succeeding.
+    - 4106/4106 tests. ROADMAP 57 (Phase 2; Phase 1 is ROADMAP 64). Memory: `project_roadmap57_phase2_claimaction_2026_09_24.md`.
 
 35. ~~**`ticket_worklog` live check on Jira Server/DC.**~~ VERIFIED 2026-09-18 by the user (reported 2026-09-21). Filed 2026-09-20, closed 2026-09-21.
     - The user logged time on a real Server/DC ticket on Friday 2026-09-18 and it worked.
@@ -284,21 +282,16 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - **Hard-tested on the installed 0.39.4 build (75 scenarios)** — found and fixed 3 real bugs, published as `ticketlens@0.39.5`: a bare `null` JSONL line crashed `scanTranscript`/`buildCaptureExcerpt` (exit 1); a `null` element inside a `content` array crashed the same two functions one level deeper (caught by code review, not the original hard test); a leading UTF-8 BOM broke the first transcript line, silently losing `sawFetch`; `statePath(sessionId)` let a `../`-bearing session_id collide with an unrelated sibling filename inside `os.tmpdir()`. All fixed with regression locks. code-reviewer: 0 CRITICAL, 1 HIGH (block-null, fixed same pass), 2 LOW accepted (sanitize-regex collision risk on a UUID-shaped input, documented; BOM test gap, closed). CLI 3763→3773 tests. Not fixed: #39 (regex matches text, not execution) and a same-cwd parallel-Stop double-nag — both filed separately.
     ROADMAP 60. Memory: `project_recall_stop_nag_backlog38_2026_09_21.md`.
 
-39. **Stop-hook signal regexes match text, not execution.** Filed 2026-09-21, found by #38's adversarial pass. Not scoped.
-    - Repro: a Bash command that only mentions `ticketlens comment KEY` sets `sawMutatingAction`.
-    - Cases: heredoc draft, `git commit -m`, `grep`, `echo >>`. All four reproduced.
-    - `FETCH_RE` shares the unanchored shape, so a mention can also set `sawFetch`.
-    - Real frequency: 0 matches in 5 large real transcripts. Ticket work there goes through MCP.
-    - Fix needs shell-aware anchoring. Risk: missing `cd x && ticketlens comment KEY`.
-    ROADMAP 62.
+39. ~~**Stop-hook signal regexes match text, not execution.**~~ FIXED 2026-09-23, `ticket-lens@1db672f`, published `ticketlens@0.39.6` (beta), installed. Filed 2026-09-21, found by #38's adversarial pass.
+    - `FETCH_RE`/`MUTATING_ACTION_RE`/`NOTE_ADD_RE` now anchor to a real shell statement, not a substring match anywhere.
+    - New `stripHeredocs`/`splitShellStatements`/`stripLeadingNoise`/`isRealInvocation` pipeline; 2 review passes caught 4 heredoc-stripper bugs, fixed.
+    - Real evidence: `git commit -m "...ticketlens comment KEY..."` wrongly exited 2 pre-fix, exits 0 post-fix.
+    - 43 new tests, 3816/3816 CLI suite. ROADMAP 62. Memory: `project_stophook_regex_anchor_race_fix_backlog39_40_2026_09_23.md`.
 
-40. **Parallel Stop hooks for the same session_id can both block.** Filed 2026-09-22, found by #38's hard-test pass. Not scoped.
-    - Repro: 4 concurrent hook runs, same session_id + cwd, real ticket-write transcript. 2 of 4 blocked.
-    - `readState`/`writeState` (`recall-nudge-lib.mjs`) are non-atomic — a classic read-modify-write race.
-    - 8 concurrent runs across DIFFERENT session_ids, same cwd: 5 of 8 blocked (each own gate, expected).
-    - Impact: at most one extra duplicate nag message, same accepted-LOW class as backlog #24's marker race.
-    - Real trigger unclear: Stop hooks for one session_id don't normally run concurrently.
-    ROADMAP 63.
+40. ~~**Parallel Stop hooks for the same session_id can both block.**~~ FIXED 2026-09-23, `ticket-lens@1db672f`, published `ticketlens@0.39.6` (beta), installed. Filed 2026-09-22, found by #38's hard-test pass.
+    - `readState`/`writeState` was a non-atomic read-modify-write; new `claimStopNag()` uses `wx`-flag atomic file creation as the sole correctness gate.
+    - Hard-tested via true concurrent subprocess spawns: pre-fix 1-4 of 8 blocked across 5 trials; post-fix 1 of 20 blocked, 5/5 reruns zero flakiness.
+    - ROADMAP 63. Memory: `project_stophook_regex_anchor_race_fix_backlog39_40_2026_09_23.md`.
 
 41. ~~**`ticket_assign` cross-assign is Jira Cloud only, refuses on Server/DC.**~~ FIXED 2026-09-25, `ticket-lens@7d4e636`, local only. Filed 2026-09-24, user report on Advent.
     - Repro: `ticket_assign` on Advent's PROD-18375 (Jira Server/DC) toward another developer.
@@ -328,6 +321,13 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Known limitation, deliberately not fixed: a nested `h3.` subheading inside `h2. Requirements` still exits the section early — filed as follow-up, documented in a passing test.
     - Live-verified on real ASAP-2898: "no ACs found" gone, real requirements extracted, 92% coverage computed against the (also-fixed) #42 diff.
     - code-reviewer: 0 CRITICAL/HIGH/MEDIUM. 6 new RED→GREEN tests, 0 regressions.
+
+45. **`scanCurrentBranch` (`branch-scanner.mjs`) misreports "not a git repo" when run from a subdirectory.** Filed 2026-09-26, found by code review during backlog #27 (`pr --open`).
+    - `.git` presence is checked only at the exact `cwd`, not via git's own upward search.
+    - Confirmed live: `scanCurrentBranch({cwd: '<repo>/skills/jtb'})` on a real branch returns `null`.
+    - Not fixed there: an explicit existing test locks "does not call execFn when .git is absent" — a real invariant, changing it is its own ticket, not bundled into #27.
+    - Shared caller: `triage`'s push-snapshot also uses this function — any fix needs to verify that path too.
+    - Fix direction: fall back to a git-command check (e.g. `rev-parse --is-inside-work-tree`) only when the fast fs-check misses, not replace it.
 
 44. ~~**Recall Stop-hook nag fired again (9th + 10th reports, after #14/#15/#17/#24/#38).**~~ CLOSED 2026-09-25, `ticket-lens` (local only, not pushed/published this session).
     - Occurrence 1: real mutating ticket work (create/link/comment via TL tools), no `note add` before Stop. Hook fired, agent added 2 notes after.

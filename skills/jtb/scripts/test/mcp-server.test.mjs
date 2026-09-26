@@ -461,6 +461,26 @@ describe('mcp-server', () => {
       assert.deepEqual(seen, ['pr', 'PROJ-1']);
     });
 
+    it('forwards --open when open: true (backlog #27)', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => { seen = cmdArgs; opts.print('Opening: https://github.com/acme/widgets/compare/main...x?expand=1\n'); };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'pr', arguments: { ticket: 'PROJ-1', open: true } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.deepEqual(seen, ['pr', 'PROJ-1', '--open']);
+    });
+
+    it('omits --open when open: false or absent', async () => {
+      let seen;
+      const runFetchTicketFn = async (cmdArgs, opts) => { seen = cmdArgs; opts.print('brief\n'); };
+      await drive(
+        [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'pr', arguments: { ticket: 'PROJ-1', open: false } } }],
+        { configDir, runFetchTicketFn },
+      );
+      assert.deepEqual(seen, ['pr', 'PROJ-1']);
+    });
+
     it('missing ticket returns a JSON-RPC tool error without ever calling the real function', async () => {
       let called = false;
       const runFetchTicketFn = async () => { called = true; };

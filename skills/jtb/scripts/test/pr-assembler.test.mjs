@@ -136,6 +136,18 @@ describe('assemblePr', () => {
     assert.ok(!result.includes('Closes PROJ-123'), 'Should omit "Closes" when no remote detected');
   });
 
+  it('passes the explicit cwd option through to execFn for remote detection, not process.cwd()', async () => {
+    let seenCwd;
+    await assemblePr(TICKET_KEY, makeOpts({
+      cwd: '/tmp/explicit-repo',
+      execFn: (cmd, args, opts) => {
+        seenCwd = opts.cwd;
+        return { stdout: 'https://github.com/org/repo.git', status: 0 };
+      },
+    }));
+    assert.equal(seenCwd, '/tmp/explicit-repo', 'detectRemoteUrl must read the same repo findLinkedCommitsFn was given, not the process cwd');
+  });
+
   it('marks FOUND requirements with ✔ and NOT_FOUND with ✖', async () => {
     const result = await assemblePr(TICKET_KEY, makeOpts({
       extractRequirementsFn: () => ['Must validate email', 'Must handle empty fields'],
