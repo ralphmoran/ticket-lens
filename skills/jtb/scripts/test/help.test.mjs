@@ -8,7 +8,7 @@ import {
   printInitHelp, printSwitchHelp, printConfigHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
   printCommentHelp, printTransitionHelp, printAssignHelp, printWorklogHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
-  printCloudKeysHelp, printIssueTypesHelp,
+  printCloudKeysHelp, printIssueTypesHelp, printPrHelp,
 } from '../lib/help.mjs';
 
 function captureHelp(fn) {
@@ -761,5 +761,14 @@ describe('printRecallHelp', () => {
   it('documents the sync subcommand for flushing the local retry queue', () => {
     const out = captureHelp(printRecallHelp);
     assert.match(out, /recall sync/);
+  });
+});
+
+describe('printPrHelp — backlog #27', () => {
+  it('documents --open and its Pro/GitHub-only requirement', () => {
+    const out = captureHelp(printPrHelp);
+    assert.match(out, /--open/);
+    assert.match(out, /Pro/);
+    assert.match(out, /GitHub/);
   });
 });

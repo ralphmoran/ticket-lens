@@ -1210,7 +1210,7 @@ export function printPrHelp({ stream = process.stdout } = {}) {
   const s = createStyler({ isTTY: stream.isTTY });
   const lines = [
     '',
-    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('pr')} ${s.dim('<TICKET-KEY> [--profile=NAME]')}`,
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('pr')} ${s.dim('<TICKET-KEY> [--profile=NAME] [--open]')}`,
     '',
     `  Assemble a pull-request description from a ticket's context —`,
     `  summary, acceptance criteria, and linked issues, formatted as a`,
@@ -1219,12 +1219,18 @@ export function printPrHelp({ stream = process.stdout } = {}) {
     `  ${s.bold('OPTIONS')}`,
     '',
     `    ${s.brand('--profile')}=${s.dim('NAME')}  Use a specific Jira profile`,
+    `    ${s.brand('--open')}         Open a real GitHub PR compare page prefilled with this`,
+    `                     description, instead of just printing it. TicketLens Pro`,
+    `                     required. GitHub only — refuses cleanly on a non-GitHub`,
+    `                     remote, detached HEAD, an unpushed branch, or when already`,
+    `                     on the base branch.`,
     `    ${s.brand('-h')}, ${s.brand('--help')}   Show this help`,
     '',
     `  ${s.bold('EXAMPLES')}`,
     '',
     `    ${s.dim('$')} ticketlens pr PROJ-123`,
     `    ${s.dim('$')} ticketlens pr PROJ-123 --profile=myteam`,
+    `    ${s.dim('$')} ticketlens pr PROJ-123 --open`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');
