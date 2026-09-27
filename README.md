@@ -1122,6 +1122,7 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
+- **`ticketlens pr --open`** — opens a real GitHub PR compare page prefilled with the same description `pr` already prints, instead of just printing it. GitHub only, no stored write-credential. Pro tier
 - **`review`/`compliance` fixes** — branch diff now uses merge-base semantics, no longer picks up unrelated unmerged-main files; AC parser now recognizes Jira wiki `Requirements`/`How to test` headers, not just literal "Acceptance Criteria"
 - **`ticketlens update --priority`** — a bad priority name now tells you the project's real, current valid options instead of a bare tracker error
 - **`ticketlens assign --to="name or email"`** — assign a ticket to another developer, not just yourself. Jira (Cloud + Server/DC); searches real assignable users first, lists matches, executes only on one confirmed match. Pro tier
