@@ -329,11 +329,15 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Live-verified on real ASAP-2898: "no ACs found" gone, real requirements extracted, 92% coverage computed against the (also-fixed) #42 diff.
     - code-reviewer: 0 CRITICAL/HIGH/MEDIUM. 6 new RED→GREEN tests, 0 regressions.
 
-45. **`scanCurrentBranch` (`branch-scanner.mjs`) misreports "not a git repo" when run from a subdirectory.** Filed 2026-09-26, found by code review during backlog #27 (`pr --open`).
-    - `.git` presence is checked only at the exact `cwd`, not via git's own upward search.
-    - Confirmed live: `scanCurrentBranch({cwd: '<repo>/skills/jtb'})` on a real branch returns `null`.
-    - Not fixed there: an explicit existing test locks "does not call execFn when .git is absent" — a real invariant, changing it is its own ticket, not bundled into #27.
-    - Shared caller: `triage`'s push-snapshot also uses this function — any fix needs to verify that path too.
+45. ~~**`scanCurrentBranch` (`branch-scanner.mjs`) misreports "not a git repo" when run from a subdirectory.**~~ FIXED 2026-09-27, `ticket-lens` local only (not pushed/published — no npm surface changed). Filed 2026-09-26, found by code review during backlog #27 (`pr --open`).
+    - Root cause confirmed as filed: `fsCheck(join(cwd, '.git'))` only matches at the exact `cwd`, never via git's own upward search.
+    - Fix: dropped the fs-check gate entirely (and its `existsSync`/`join` imports) — `git rev-parse --abbrev-ref HEAD` already fails outside a repo and, unlike a cwd-relative fs check, searches upward the same way real git does. No new git command needed.
+    - The "does not call execFn when .git is absent" test noted at filing time was the bug's own invariant, not a real constraint — replaced with an execFn-failure test plus a new subdirectory regression test.
+    - Live-verified via `git stash`/`git stash pop` A-B compare, real (unmocked) git calls, from a real subdirectory: pre-fix `scanCurrentBranch()` → `null`; post-fix → real branch data. Same A-B done through the real caller, `pr-opener.mjs`'s `openPr()`: pre-fix wrongly returned `reason: 'no-branch'`; post-fix correctly reached `reason: 'head-equals-base'`.
+    - 5-axis adversarial pass, all real (not mocked): real entry point (direct + via `openPr`), one-layer-up caller, detached-HEAD-from-subdirectory input variant, repeated/ordering calls, and a true non-repo directory 5 levels deep — confirmed no false positive introduced (still `null` outside a repo).
+    - Shared caller `triage --push` (`fetch-my-tickets.mjs`) verified via its own passing test suite (74/74 with `pr-opener.test.mjs`) — same `scanCurrentBranch` code path, no separate live push needed.
+    - CLI 3993→3994 tests (net: -2 renamed fsCheck-invariant tests, +3 new), 0 regressions on any other baseline test.
+    - Step 7.5 (JTB Skill Sync Gate): N/A — no CLI flag, MCP tool, or SKILL.md surface changed.
     - Fix direction: fall back to a git-command check (e.g. `rev-parse --is-inside-work-tree`) only when the fast fs-check misses, not replace it.
 
 44. ~~**Recall Stop-hook nag fired again (9th + 10th reports, after #14/#15/#17/#24/#38).**~~ CLOSED 2026-09-25, `ticket-lens` (local only, not pushed/published this session).

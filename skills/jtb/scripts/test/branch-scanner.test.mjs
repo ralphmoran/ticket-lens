@@ -45,23 +45,40 @@ function makeGitExecFn({
 // ── No git repo ───────────────────────────────────────────────────────────────
 
 describe('scanCurrentBranch — no git repo', () => {
-  it('returns null when .git directory is not present', () => {
+  it('does not call diff/log when rev-parse fails (short-circuits on the real error)', () => {
+    const calledCommands = [];
+    const execFn = (cmd, args, opts) => {
+      calledCommands.push(args[0]);
+      return makeGitExecFn({ branchFail: true })(cmd, args, opts);
+    };
+    scanCurrentBranch({ cwd: '/tmp', execFn });
+    assert.deepEqual(calledCommands, ['rev-parse']);
+  });
+});
+
+// ── Subdirectory (backlog #45) ─────────────────────────────────────────────────
+
+describe('scanCurrentBranch — run from a repo subdirectory', () => {
+  it('returns real branch data when invoked from a subdirectory of a git repo', () => {
+    // Backlog #45: a cwd-relative `.git` check used to return null here.
     const result = scanCurrentBranch({
-      cwd: '/tmp',
-      execFn: makeGitExecFn(),
-      fsCheck: () => false,
+      cwd: '/repo/src/nested/dir',
+      execFn: makeGitExecFn({ branch: 'feat/PROJ-9-subdir' }),
     });
-    assert.equal(result, null);
+    assert.ok(result, 'expected a result when run from a subdirectory of a real repo');
+    assert.equal(result[0].branch, 'feat/PROJ-9-subdir');
   });
 
-  it('does not call execFn when .git is absent', () => {
-    let called = false;
-    scanCurrentBranch({
-      cwd: '/tmp',
-      execFn: (...args) => { called = true; return makeGitExecFn()(...args); },
-      fsCheck: () => false,
-    });
-    assert.ok(!called, 'execFn must not be called when not in a git repo');
+  it('threads the subdirectory cwd through to every git invocation, not process.cwd()', () => {
+    // A cwd-ignoring mock can't detect a dropped cwd (backlog #27 bug class).
+    const seenCwds = [];
+    const execFn = (cmd, args, opts) => {
+      seenCwds.push(opts.cwd);
+      return makeGitExecFn({ branch: 'feat/PROJ-9-subdir' })(cmd, args, opts);
+    };
+    scanCurrentBranch({ cwd: '/repo/src/nested/dir', execFn });
+    assert.ok(seenCwds.length > 0, 'expected at least one git invocation');
+    assert.ok(seenCwds.every(c => c === '/repo/src/nested/dir'), `all calls must use the passed cwd, got: ${seenCwds}`);
   });
 });
 
@@ -71,7 +88,6 @@ describe('scanCurrentBranch — detached HEAD', () => {
   it('returns null when branch name is HEAD', () => {
     const result = scanCurrentBranch({
       execFn: makeGitExecFn({ branch: 'HEAD' }),
-      fsCheck: () => true,
     });
     assert.equal(result, null);
   });
@@ -79,7 +95,6 @@ describe('scanCurrentBranch — detached HEAD', () => {
   it('returns null when rev-parse fails', () => {
     const result = scanCurrentBranch({
       execFn: makeGitExecFn({ branchFail: true }),
-      fsCheck: () => true,
     });
     assert.equal(result, null);
   });
@@ -91,7 +106,6 @@ describe('scanCurrentBranch — normal branch', () => {
   it('returns one-element array', () => {
     const result = scanCurrentBranch({
       execFn: makeGitExecFn(),
-      fsCheck: () => true,
     });
     assert.ok(Array.isArray(result));
     assert.equal(result.length, 1);
@@ -100,7 +114,6 @@ describe('scanCurrentBranch — normal branch', () => {
   it('includes the current branch name', () => {
     const result = scanCurrentBranch({
       execFn: makeGitExecFn({ branch: 'feat/PROJ-42-my-feature' }),
-      fsCheck: () => true,
     });
     assert.equal(result[0].branch, 'feat/PROJ-42-my-feature');
   });
@@ -108,7 +121,6 @@ describe('scanCurrentBranch — normal branch', () => {
   it('includes the resolved base', () => {
     const result = scanCurrentBranch({
       execFn: makeGitExecFn({ base: 'origin/main' }),
-      fsCheck: () => true,
     });
     assert.equal(result[0].base, 'origin/main');
   });
@@ -116,7 +128,6 @@ describe('scanCurrentBranch — normal branch', () => {
   it('includes changed files from diff', () => {
     const result = scanCurrentBranch({
       execFn: makeGitExecFn({ diffFiles: ['src/a.js', 'src/b.js'] }),
-      fsCheck: () => true,
     });
     assert.deepEqual(result[0].files, ['src/a.js', 'src/b.js']);
   });
@@ -127,7 +138,7 @@ describe('scanCurrentBranch — normal branch', () => {
       if (args[0] === 'diff') capturedDiffArgs = args;
       return makeGitExecFn()(cmd, args, opts);
     };
-    scanCurrentBranch({ execFn, fsCheck: () => true });
+    scanCurrentBranch({ execFn });
     assert.ok(capturedDiffArgs, 'diff should have been invoked');
     const joined = capturedDiffArgs.join(' ');
     assert.ok(joined.includes('...'), `expected 3-dot merge-base diff, got: ${joined}`);
@@ -137,7 +148,6 @@ describe('scanCurrentBranch — normal branch', () => {
   it('includes ticket keys extracted from branch name', () => {
     const result = scanCurrentBranch({
       execFn: makeGitExecFn({ branch: 'feat/PROJ-123-checkout', logLines: [] }),
-      fsCheck: () => true,
     });
     assert.ok(result[0].tickets.includes('PROJ-123'));
   });
@@ -148,7 +158,6 @@ describe('scanCurrentBranch — normal branch', () => {
         branch: 'my-branch',
         logLines: ['abc1234 feat: MYAPP-456 fix payment'],
       }),
-      fsCheck: () => true,
     });
     assert.ok(result[0].tickets.includes('MYAPP-456'));
   });
@@ -159,7 +168,6 @@ describe('scanCurrentBranch — normal branch', () => {
         branch: 'feat/PROJ-123-checkout',
         logLines: ['abc feat: PROJ-123 step one', 'def feat: PROJ-123 step two'],
       }),
-      fsCheck: () => true,
     });
     const count = result[0].tickets.filter(k => k === 'PROJ-123').length;
     assert.equal(count, 1);
@@ -168,7 +176,6 @@ describe('scanCurrentBranch — normal branch', () => {
   it('tickets is empty array when no keys found', () => {
     const result = scanCurrentBranch({
       execFn: makeGitExecFn({ branch: 'my-feature-branch', logLines: ['abc no ticket here'] }),
-      fsCheck: () => true,
     });
     assert.deepEqual(result[0].tickets, []);
   });
@@ -185,7 +192,7 @@ describe('scanCurrentBranch — no base branch found', () => {
       if (key.startsWith('log --oneline'))        return { status: 0, stdout: '' };
       return { status: 1, stdout: '' };
     };
-    const result = scanCurrentBranch({ execFn, fsCheck: () => true });
+    const result = scanCurrentBranch({ execFn });
     assert.equal(result[0].base, null);
   });
 
@@ -197,7 +204,7 @@ describe('scanCurrentBranch — no base branch found', () => {
       if (key.startsWith('log --oneline'))        return { status: 0, stdout: '' };
       return { status: 1, stdout: '' };
     };
-    const result = scanCurrentBranch({ execFn, fsCheck: () => true });
+    const result = scanCurrentBranch({ execFn });
     assert.deepEqual(result[0].files, []);
   });
 });
@@ -209,7 +216,6 @@ describe('scanCurrentBranch — file count cap', () => {
     const bigDiff = Array.from({ length: 300 }, (_, i) => `src/file${i}.js`);
     const result = scanCurrentBranch({
       execFn: makeGitExecFn({ diffFiles: bigDiff }),
-      fsCheck: () => true,
     });
     assert.equal(result[0].files.length, 200);
   });
@@ -218,7 +224,6 @@ describe('scanCurrentBranch — file count cap', () => {
     const bigDiff = Array.from({ length: 300 }, (_, i) => `src/file${i}.js`);
     const result = scanCurrentBranch({
       execFn: makeGitExecFn({ diffFiles: bigDiff }),
-      fsCheck: () => true,
     });
     assert.equal(result[0].files[0],   'src/file0.js');
     assert.equal(result[0].files[199], 'src/file199.js');
@@ -231,7 +236,6 @@ describe('scanCurrentBranch — empty diff', () => {
   it('files is empty array when diff returns nothing', () => {
     const result = scanCurrentBranch({
       execFn: makeGitExecFn({ diffFiles: [] }),
-      fsCheck: () => true,
     });
     assert.deepEqual(result[0].files, []);
   });
@@ -250,7 +254,7 @@ describe('scanCurrentBranch — base candidate priority', () => {
       if (key.startsWith('log'))                     return { status: 0, stdout: '' };
       return { status: 1, stdout: '' };
     };
-    const result = scanCurrentBranch({ execFn, fsCheck: () => true });
+    const result = scanCurrentBranch({ execFn });
     assert.equal(result[0].base, 'origin/main');
   });
 
@@ -264,7 +268,7 @@ describe('scanCurrentBranch — base candidate priority', () => {
       if (key.startsWith('log'))                      return { status: 0, stdout: '' };
       return { status: 1, stdout: '' };
     };
-    const result = scanCurrentBranch({ execFn, fsCheck: () => true });
+    const result = scanCurrentBranch({ execFn });
     assert.equal(result[0].base, 'origin/master');
   });
 });

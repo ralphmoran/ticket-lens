@@ -50,11 +50,6 @@ export function buildCompareUrl({ owner, repo, base, head, title, body, ticketKe
  * @param {string} markdown - the exact markdown assemblePr() already produced
  * @param {object} [opts]
  * @returns {Promise<{ok: true, url: string} | {ok: false, reason: string, message: string}>}
- *
- * Known limitation (pre-existing in branch-scanner.mjs, not fixed here — see
- * backlog): run from a repo subdirectory misreports 'no-branch' even on a
- * real branch, since scanCurrentBranch only checks for .git at cwd exactly,
- * not via git's own upward search. Run from the repo root.
  */
 export async function openPr(ticketKey, markdown, {
   cwd = process.cwd(),

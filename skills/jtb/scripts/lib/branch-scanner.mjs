@@ -1,6 +1,4 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 
 const TICKET_KEY_RE = /([A-Z][A-Z0-9]+-\d+)/g;
 const SPAWN_OPTS = { encoding: 'utf8', timeout: 10_000 };
@@ -29,13 +27,13 @@ export function detectBase(execFn, cwd) {
  * @param {object}   [opts]
  * @param {string}   [opts.cwd]    Working directory (default: process.cwd())
  * @param {Function} [opts.execFn] spawnSync replacement (injectable for tests)
- * @param {Function} [opts.fsCheck] existsSync replacement (injectable for tests)
  * @returns {Array<{branch:string, base:string|null, tickets:string[], files:string[]}>|null}
  *   One-element array for the current branch, or null if not in a git repo / detached HEAD.
  */
-export function scanCurrentBranch({ cwd = process.cwd(), execFn = spawnSync, fsCheck = existsSync } = {}) {
-  if (!fsCheck(join(cwd, '.git'))) return null;
-
+export function scanCurrentBranch({ cwd = process.cwd(), execFn = spawnSync } = {}) {
+  // rev-parse fails outside a repo and searches upward like git itself, so it
+  // doubles as the repo check and works from subdirectories (backlog #45).
+  // GIT_DIR/GIT_WORK_TREE overrides are honored, matching real git semantics.
   const branch = run(execFn, ['rev-parse', '--abbrev-ref', 'HEAD'], cwd)?.trim();
   if (!branch || branch === 'HEAD') return null;
 
