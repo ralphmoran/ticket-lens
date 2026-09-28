@@ -17,13 +17,13 @@ const DEFAULT_MAX_TOKENS = 256;
  * @param {number} [opts.timeoutMs]
  * @returns {Promise<string>} Summary text
  */
-export async function summarize({ brief, mode, credentials = null, cliToken = null, fetcher = globalThis.fetch, timeoutMs = 30_000, prompt, maxTokens, provider }) {
+export async function summarize({ brief, mode, credentials = null, cliToken = null, fetcher = globalThis.fetch, timeoutMs = 30_000, prompt, maxTokens, provider, ticketKey }) {
   const effectivePrompt = prompt ?? DEFAULT_PROMPT;
   const effectiveMaxTokens = maxTokens ?? DEFAULT_MAX_TOKENS;
   if (mode === 'byok') {
     return byok({ brief, credentials, fetcher, timeoutMs, prompt: effectivePrompt, maxTokens: effectiveMaxTokens, provider });
   }
-  return cloud({ brief, cliToken, fetcher, timeoutMs });
+  return cloud({ brief, ticketKey, cliToken, fetcher, timeoutMs });
 }
 
 async function byok({ brief, credentials, fetcher, timeoutMs, prompt, maxTokens, provider }) {
@@ -137,8 +137,10 @@ async function callGroq({ brief, apiKey, fetcher, timeoutMs, prompt, maxTokens }
   return data.choices[0].message.content;
 }
 
-async function cloud({ brief, cliToken, fetcher, timeoutMs }) {
+async function cloud({ brief, ticketKey, cliToken, fetcher, timeoutMs }) {
   if (!cliToken) throw new Error('Not logged in. Run `ticketlens login` first.');
+  const payload = { brief };
+  if (ticketKey) payload.ticketKey = ticketKey;
   const res = await fetcher(`${apiBase()}/v1/summarize`, {
     method: 'POST',
     signal: AbortSignal.timeout(timeoutMs),
@@ -146,7 +148,7 @@ async function cloud({ brief, cliToken, fetcher, timeoutMs }) {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${cliToken}`,
     },
-    body: JSON.stringify({ brief }),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {

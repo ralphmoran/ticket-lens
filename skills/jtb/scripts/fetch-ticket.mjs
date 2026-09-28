@@ -207,7 +207,7 @@ async function applySummarize(brief, args, opts, configDir, conn, licensedFn, up
     const cliToken  = opts.cliToken ?? readCliToken(configDir);
     const provider = opts.provider ?? resolveAiProvider(args, credentials);
     const aiInput = augmentBriefForAi(brief, ticket?.localAttachments);
-    const summary = await summarizerFn({ brief: aiInput, mode, credentials, cliToken, provider });
+    const summary = await summarizerFn({ brief: aiInput, mode, credentials, cliToken, provider, ticketKey });
     if (ticketKey && !opts.summarizer) writeSummaryCache(ticketKey, profileName, summary, configDir);
     const divider = '─'.repeat(60);
     return brief + `\n\n${divider}\n─── AI Summary ${'─'.repeat(45)}\n${summary}\n${divider}\n`;
@@ -241,7 +241,7 @@ async function applyHandoff(ticket, args, opts, configDir, licensedFn, upgradeFn
     const cliToken  = opts.cliToken ?? readCliToken(configDir);
     const provider = opts.provider ?? resolveAiProvider(args, credentials);
     const input = buildHandoffInput(ticket);
-    const body = await summarizerFn({ brief: input, mode, credentials, cliToken, prompt: HANDOFF_PROMPT, maxTokens: 512, provider });
+    const body = await summarizerFn({ brief: input, mode, credentials, cliToken, prompt: HANDOFF_PROMPT, maxTokens: 512, provider, ticketKey: ticket?.key ?? null });
     return `## Handoff Brief — ${ticket.key}\n\n${body}\n`;
   } catch (err) {
     const onErrorFn = opts.onError ?? ((msg) => process.stderr.write(msg + '\n'));

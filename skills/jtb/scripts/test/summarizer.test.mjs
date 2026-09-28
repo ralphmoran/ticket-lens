@@ -262,6 +262,26 @@ describe('summarize — cloud mode', () => {
       { message: /ticketlens api error 402/i }
     );
   });
+
+  it('sends ticketKey in the request body when provided', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => {
+      calls.push(JSON.parse(opts.body));
+      return { ok: true, json: async () => ({ summary: 'Cloud summary.' }) };
+    };
+    await summarize({ brief: MOCK_BRIEF, mode: 'cloud', ticketKey: 'PROJ-123', cliToken: 'cli-tok', fetcher });
+    assert.equal(calls[0].ticketKey, 'PROJ-123');
+  });
+
+  it('omits ticketKey from the request body when not provided', async () => {
+    const calls = [];
+    const fetcher = async (url, opts) => {
+      calls.push(JSON.parse(opts.body));
+      return { ok: true, json: async () => ({ summary: 'Cloud summary.' }) };
+    };
+    await summarize({ brief: MOCK_BRIEF, mode: 'cloud', cliToken: 'cli-tok', fetcher });
+    assert.equal(calls[0].ticketKey, undefined);
+  });
 });
 
 describe('autoCapture (backlog #24 — autonomous Recall capture, D1)', () => {

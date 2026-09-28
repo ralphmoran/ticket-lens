@@ -803,6 +803,19 @@ describe('--summarize flag', () => {
     });
     assert.equal(calls[0], 'groq');
   });
+
+  it('passes the fetched ticket key to the summarizer (backlog #48)', async () => {
+    const calls = [];
+    await run(['PROD-1234', '--summarize'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      credentials: { anthropicApiKey: 'sk-ant-test' },
+      isLicensed: () => true,
+      summarizer: async ({ ticketKey }) => { calls.push(ticketKey); return 'summary'; },
+      print: () => {},
+    });
+    assert.equal(calls[0], 'PROD-1234');
+  });
 });
 
 describe('compliance subcommand', () => {
@@ -2052,6 +2065,18 @@ describe('--handoff flag', () => {
     });
     assert.ok(capturedPrompt !== null, 'Expected prompt to be passed to summarizer');
     assert.ok(capturedPrompt.includes('What was attempted'), `Expected handoff prompt. Got: ${capturedPrompt?.slice(0, 80)}`);
+  });
+
+  it('passes the fetched ticket key to the summarizer (backlog #48)', async () => {
+    let capturedKey;
+    await run(['PROD-1234', '--handoff'], {
+      env: mockEnv,
+      fetcher: mockFetcher,
+      isLicensed: () => true,
+      summarizer: async ({ ticketKey }) => { capturedKey = ticketKey; return 'ok'; },
+      print: () => {},
+    });
+    assert.equal(capturedKey, 'PROD-1234');
   });
 
   it('does not trigger unknown-flag error for --handoff', async () => {
