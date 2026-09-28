@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { findLinkedCommits } from '../lib/commit-linker.mjs';
@@ -109,8 +109,8 @@ describe('findLinkedCommits', () => {
 
       assert.equal(result.diff, '+  const x = 1;\n-  const x = 0;\n');
       assert.ok(calls.includes('merge-base HEAD origin/main'), 'expected a merge-base lookup against the detected base');
-      assert.ok(calls.includes('diff mb0123abc'), 'expected a single-ref diff against the merge-base commit');
-      assert.ok(!calls.includes('diff HEAD'), 'must not fall back to git diff HEAD when a base was found');
+      assert.ok(calls.includes('diff mb0123abc -- :(exclude,top)*.md'), 'expected a single-ref diff against the merge-base commit, excluding markdown');
+      assert.ok(!calls.some(c => c.startsWith('diff HEAD')), 'must not fall back to git diff HEAD when a base was found');
     });
 
     it('still finds a committed change — the exact audit repro: HEAD-relative diff is empty on a clean tree, merge-base-relative diff is not', () => {
@@ -133,7 +133,7 @@ describe('findLinkedCommits', () => {
       const result = findLinkedCommits('PROJ-123', { execFn, cwd: '/tmp' });
 
       assert.equal(result.diff, '+  const x = 1;\n');
-      assert.ok(calls.includes('diff HEAD'));
+      assert.ok(calls.includes('diff HEAD -- :(exclude,top)*.md'));
       assert.ok(!calls.some(c => c.startsWith('merge-base')), 'must not attempt merge-base when no base was found');
     });
 
@@ -146,7 +146,7 @@ describe('findLinkedCommits', () => {
       const result = findLinkedCommits('PROJ-123', { execFn, cwd: '/tmp' });
 
       assert.equal(result.diff, '+  const x = 1;\n');
-      assert.ok(calls.includes('diff HEAD'));
+      assert.ok(calls.includes('diff HEAD -- :(exclude,top)*.md'));
     });
 
     it('returns null diff when the fallback git diff HEAD also fails', () => {
@@ -210,6 +210,49 @@ describe('findLinkedCommits', () => {
       const result = findLinkedCommits('PROJ-999', { cwd: repoDir });
       assert.ok(result.diff.includes('dryRun'), 'still sees prior committed work');
       assert.ok(result.diff.includes('another'), 'also sees the new uncommitted work');
+    });
+
+    it('excludes an unrelated uncommitted nested markdown edit from the diff — backlog #26b repro', () => {
+      // Staged, not untracked: untracked files never appear in `git diff`
+      // regardless of pathspec, so this would otherwise pass vacuously.
+      mkdirSync(join(repoDir, 'docs'), { recursive: true });
+      writeFileSync(join(repoDir, 'docs', 'backlog-notes.md'), 'unrelated backlog notes\n');
+      git(['add', 'docs/backlog-notes.md']);
+      const result = findLinkedCommits('PROJ-999', { cwd: repoDir });
+      assert.ok(result.diff.includes('dryRun'), 'still sees the real committed work');
+      assert.ok(!result.diff.includes('backlog-notes'), 'must not include the unrelated markdown file');
+      assert.ok(!result.diff.includes('unrelated backlog notes'), 'must not include the unrelated file\'s content');
+    });
+
+    it('excludes an unrelated uncommitted top-level *.md edit from the diff', () => {
+      // README.md is already tracked (committed in beforeEach) — this
+      // exercises the modified-and-staged case, not an untracked new file.
+      writeFileSync(join(repoDir, 'README.md'), 'unrelated changelog entry\n');
+      git(['add', 'README.md']);
+      const result = findLinkedCommits('PROJ-999', { cwd: repoDir });
+      assert.ok(result.diff.includes('dryRun'), 'still sees the real committed work');
+      assert.ok(!result.diff.includes('unrelated changelog entry'), 'must not include the unrelated *.md edit');
+    });
+
+    it('does NOT exclude a non-markdown file that legitimately lives under docs/ — real evidence must survive', () => {
+      // Guards against widening the exclusion to docs/**, which would drop
+      // real source (e.g. a docs site's own code) as a false negative.
+      mkdirSync(join(repoDir, 'docs'), { recursive: true });
+      writeFileSync(join(repoDir, 'docs', 'search-widget.js'), 'const searchWidget = true;\n');
+      git(['add', 'docs/search-widget.js']);
+      const result = findLinkedCommits('PROJ-999', { cwd: repoDir });
+      assert.ok(result.diff.includes('searchWidget'), 'non-markdown docs/ source must remain visible as evidence');
+    });
+
+    it('excludes a repo-root markdown edit even when invoked from a subdirectory — code review HIGH', () => {
+      // Without `top` pathspec magic, the exclusion resolves relative to
+      // `cwd`, so repo-root docs would leak when run from a subdirectory.
+      writeFileSync(join(repoDir, 'README.md'), 'unrelated changelog entry from a subdir invocation\n');
+      git(['add', 'README.md']);
+      mkdirSync(join(repoDir, 'sub', 'dir'), { recursive: true });
+      const result = findLinkedCommits('PROJ-999', { cwd: join(repoDir, 'sub', 'dir') });
+      assert.ok(result.diff.includes('dryRun'), 'still sees the real committed work from a subdirectory cwd');
+      assert.ok(!result.diff.includes('unrelated changelog entry from a subdir invocation'), 'repo-root *.md must stay excluded regardless of cwd');
     });
   });
 });

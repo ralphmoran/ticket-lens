@@ -4,6 +4,17 @@ import { detectBase } from './branch-scanner.mjs';
 const TICKET_KEY_RE = /^[A-Z][A-Z0-9]+-\d+$/;
 const SPAWN_OPTS = { encoding: 'utf8', timeout: 10_000 };
 
+// Backlog #26b: markdown never carries source evidence for an acceptance
+// criterion, so unrelated doc edits must not leak into `analyzeDiff` or the
+// raw diff sent to `--consensus`'s external AI providers.
+//
+// `top` anchors the pattern to the repo root; without it `*.md` resolves
+// relative to `cwd`, and callers routinely run from a monorepo subdirectory.
+//
+// Scoped to `.md`, not `docs/**`: non-markdown files under `docs/` can be
+// real evidence (e.g. a docs site's own source).
+const EXCLUDED_DIFF_PATHSPECS = [':(exclude,top)*.md'];
+
 function run(execFn, cmd, args, cwd) {
   const result = execFn(cmd, args, { ...SPAWN_OPTS, cwd });
   return result.status === 0 ? (result.stdout || '') : null;
@@ -19,10 +30,10 @@ function computeDiff(execFn, cwd) {
   if (base) {
     const mergeBase = run(execFn, 'git', ['merge-base', 'HEAD', base], cwd)?.trim();
     if (mergeBase) {
-      return run(execFn, 'git', ['diff', mergeBase], cwd);
+      return run(execFn, 'git', ['diff', mergeBase, '--', ...EXCLUDED_DIFF_PATHSPECS], cwd);
     }
   }
-  return run(execFn, 'git', ['diff', 'HEAD'], cwd);
+  return run(execFn, 'git', ['diff', 'HEAD', '--', ...EXCLUDED_DIFF_PATHSPECS], cwd);
 }
 
 export function findLinkedCommits(ticketKey, opts = {}) {
