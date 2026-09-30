@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.49.0 -->
+<!-- jtb-skill-version: 0.49.1 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -484,7 +484,7 @@ ticketlens worklog PROD-1234=1h30m PROD-5678=45m --comment="Sprint work" --confi
 - The MCP tool takes `entries[]` with per-ticket `comment`/`started`.
 - The CLI applies one `--comment`/`--started` to every ticket.
 
-`--attach=path1,path2` (comma-separated local file paths) is available on `comment` and `create` only. Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
+`--attach=path1,path2` (comma-separated local file paths) is available on `comment` and `create` only, up to 50 files per call (Pro, Team, Enterprise). Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
 
 The write actions (comment/transition/assign/link/update/create/worklog) have a short local debounce (10s) against an accidental double-fire, and every write is appended to a local audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — surface the failure to the user rather than silently re-attempting, since a ticket write isn't naturally idempotent the way a Recall note save is. `duplicates` has neither, since nothing is written.
 
@@ -668,7 +668,7 @@ Forces a fresh fetch from Jira, bypassing the local brief cache (4-hour TTL by d
 
 ### --no-attachments
 
-Skip downloading and reading ticket attachments. Speeds up the fetch for tickets with large or irrelevant file attachments.
+Skip downloading and reading ticket attachments. Speeds up the fetch for tickets with large or irrelevant file attachments. Without it, downloads stop at 10 files per ticket on Free and 50 on Pro, Team and Enterprise; the excess is listed as skipped and a notice is printed.
 
 ### Team Jira config auto-sync (Pro/Team)
 

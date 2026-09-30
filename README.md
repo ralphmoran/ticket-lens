@@ -164,7 +164,7 @@ After the first fetch, ticket data is cached to `~/.ticketlens/cache/PROFILE/TIC
   ○ CNV1-2 · from cache (12m ago)  ·  --no-cache to refresh
 ```
 
-Attachments download to `~/.ticketlens/cache/TICKET-KEY/` (10 MB per-file cap). Claude Code reads images multimodally, extracts PDF text, and reads plain text files as context.
+Attachments download to `~/.ticketlens/cache/TICKET-KEY/` (10 MB per-file cap; 10 files per ticket on Free, 50 on Pro, Team and Enterprise — extras are listed as skipped, with a notice). Claude Code reads images multimodally, extracts PDF text, and reads plain text files as context.
 
 Confluence pages linked to the ticket via Jira Remote Links are fetched automatically and included as plain text in the brief (Jira profiles only, same-origin). Use `--no-attachments` to skip both attachments and Confluence pages.
 
@@ -524,7 +524,7 @@ Write directly to the ticket in its real tracker — Jira, GitHub, or Linear —
 
 `ticketlens create` creates a new ticket with a fixed minimal field set — no arbitrary custom fields. Unlike every other write command, there's no existing ticket to target, so `--profile` (or your default profile) picks the tracker instead of a ticket key. `--project` is the Jira project key or Linear team key — required for both, ignored on GitHub since its target repo is already fixed by the profile. `--type` is Jira's issue type (e.g. `"Task"`, `"Bug"`) — required for Jira, ignored elsewhere. No `--confirm` gate, same risk tier as `update`/`assign` — but this is the highest-blast-radius command in the whole family: a bad `--project`/`--type` fabricates a real, hard-to-walk-back item in a live tracker, so an invalid value surfaces the tracker's own error rather than a silent guess.
 
-`--attach=path1,path2` (comma-separated local file paths) is available on `comment` and `create` only. Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
+`--attach=path1,path2` (comma-separated local file paths) is available on `comment` and `create` only, up to 50 files per call (Pro, Team, Enterprise). Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
 
 **A bad `--project`/`--type` gets a better error, automatically.** If create fails because the project or issue type doesn't exist, TicketLens fetches your tracker's real, current project list (and, for Jira, the real issue types for that project) and shows them alongside the failure — e.g. `Known creatable projects: CNV1, CNV2.` — rather than a bare tracker error. This is reactive only: it never runs on a successful create, never auto-retries the write, and is cached locally per profile for 3 days (a targeted, single-project lookup — same bar `issue-types --project=KEY` uses) so a burst of failed attempts doesn't re-fetch every time. `ticketlens issue-types` (below) is the proactive counterpart — pre-fetches and caches the same data ahead of time, so a `create` right after it is a pure cache hit.
 
@@ -700,7 +700,7 @@ ticketlens update-skill --path=~/.gemini/commands  # sync to a different AI assi
 /jtb triage                         # Scan your assigned tickets
 ```
 
-Attachments are listed in the brief as absolute paths. Claude Code reads images (multimodal), PDFs, and text files before planning. Files over 10 MB are skipped.
+Attachments are listed in the brief as absolute paths. Claude Code reads images (multimodal), PDFs, and text files before planning. Files over 10 MB are skipped, and so are files past the per-ticket cap (10 on Free, 50 on Pro, Team and Enterprise).
 
 ---
 
