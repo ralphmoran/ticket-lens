@@ -346,7 +346,11 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
 
 48. ~~**CLI's `/v1/summarize` `--cloud` call never sends `ticketKey`**~~ CLOSED 2026-09-28, `ticket-lens@e9d706b`, local only. Filed 2026-09-27, found while scoping #46. Fix: `summarizer.mjs`'s `cloud()`/`summarize()` now accept an optional `ticketKey`, included in the POST body (camelCase, matching `SummarizeRequest`'s existing validated field — not snake_case like `/v1/recall/auto-capture`'s `ticket_key`). `fetch-ticket.mjs`'s `--summarize` and `--handoff` call sites both now pass the fetched ticket's key through. Backend side (`SummarizeController`) already read and recorded it — untouched, already correct. Code review: 0 CRITICAL/HIGH (informational note: `SummarizeRequest`'s `ticketKey` validation is looser than `ComplianceRequest`'s regex — pre-existing, low-severity, not blocking since it only flows into a log row). CLI 3994→3998 tests, 0 regressions. Not published to npm this pass — no `ticketlens` version bump, user only approved the local fix.
 
-44. ~~**Recall Stop-hook nag fired again (9th + 10th reports, after #14/#15/#17/#24/#38).**~~ CLOSED 2026-09-25, `ticket-lens` (local only, not pushed/published this session).
+44. ~~**Recall Stop-hook nag fired again (9th + 10th reports, after #14/#15/#17/#24/#38).**~~ CLOSED 2026-09-25, `ticket-lens@cded1d2`, pushed; published in `ticketlens@0.43.6` (beta), verified 2026-09-30 (status was stale).
+
+50. ~~**`ticket_transition` from Closed/Resolved to Open/In Progress seems not to work.**~~ CLOSED 2026-09-30, not doable — no code change.
+    - Jira's transitions endpoint lists only workflow-allowed moves for the current status; no reopen transition means nothing to call.
+    - CLI passes Jira's own list through, no status blocking (`jira-adapter.mjs` `transition()`). Fix belongs in the Jira workflow config.
 
 49. ~~**Attachment count cap should be tier-gated, not flat.**~~ CLOSED 2026-09-29, `ticket-lens@40d6813`+`ticketlens-api@4782e37`. Free 10, Pro/Team/Enterprise 50 files per call; byte caps unchanged. Applies to uploads, `fetch` downloads (visible notice on excess) and Recall push (server-side, from user tier). `LICENSE_TIERS` gained `enterprise: 3` (Enterprise previously ranked as Free). Review caught cap ignoring the command's own `configDir` (MEDIUM, fixed). `jtb-skill-version` 0.49.0.
     - Occurrence 1: real mutating ticket work (create/link/comment via TL tools), no `note add` before Stop. Hook fired, agent added 2 notes after.
