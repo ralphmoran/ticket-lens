@@ -21,7 +21,7 @@ import { detectProjectOrTypeError, enrichCreateFailure } from './ticket-create-e
 import { enrichUpdateFailure } from './ticket-update-enrichment.mjs';
 import { TICKET_KEY_PATTERN, normalizeTicketKey } from './cli.mjs';
 import { scoreCandidates } from './duplicate-scorer.mjs';
-import { MAX_ATTACHMENTS } from './attachment-uploader.mjs';
+import { attachmentCapFor, attachmentLimitNotice, PAID_MAX_ATTACHMENTS } from './attachment-caps.mjs';
 import { createStyler } from './ansi.mjs';
 
 export function parseFlag(cmdArgs, name) {
@@ -90,7 +90,7 @@ function formatAttachSummary(attachResult, s) {
   const lines = [];
   for (const u of attachResult.uploaded) lines.push(`  ${s.green('✔')} Attached ${s.bold(u.filename)}${u.url ? ` (${u.url})` : ''}\n`);
   for (const e of attachResult.errors) lines.push(`  Failed to attach ${e.path}: ${e.message}\n`);
-  if (attachResult.droppedCount > 0) lines.push(`  ${attachResult.droppedCount} attachment(s) dropped — exceeds the ${MAX_ATTACHMENTS}-file limit per call.\n`);
+  if (attachResult.droppedCount > 0) lines.push(`  ${attachmentLimitNotice(attachResult.droppedCount, attachResult.cap ?? PAID_MAX_ATTACHMENTS)}\n`);
   return lines.join('');
 }
 
@@ -345,7 +345,7 @@ export async function runTicketComment(cmdArgs, {
   let attachResult = null;
   try {
     if (attachPaths.length && !refuseGithubAttachments(adapter, attachPaths, stream)) {
-      attachResult = await adapter.attachFiles(ticketKey, attachPaths);
+      attachResult = await adapter.attachFiles(ticketKey, attachPaths, { maxAttachments: attachmentCapFor(configDir, isLicensedFn) });
     }
     const inlineSnippets = (attachResult?.uploaded ?? []).filter(a => a.inlineMarkup).map(a => a.inlineMarkup).join('\n\n');
     const finalBody = inlineSnippets ? `${body}\n\n${inlineSnippets}` : body;
@@ -1135,7 +1135,7 @@ export async function runTicketCreate(cmdArgs, {
   let attachResult = null;
   if (attachPaths.length && !attachRefused) {
     try {
-      attachResult = await adapter.attachFiles(result.key, attachPaths);
+      attachResult = await adapter.attachFiles(result.key, attachPaths, { maxAttachments: attachmentCapFor(configDir, isLicensedFn) });
 
       // Linear has no separate attachment list on an issue — unlike Jira's
       // classic attachment (real regardless of description text), an

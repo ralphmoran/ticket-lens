@@ -227,11 +227,28 @@ describe('downloadAttachments — error handling', () => {
 // ─── MAX_ATTACHMENTS limit ───────────────────────────────────────────────────
 
 describe('downloadAttachments — limit', () => {
-  it('stops downloading after 20 attachments', async () => {
+  it('stops downloading after the free cap of 10 by default', async () => {
+    const attachments = Array.from({ length: 12 }, (_, i) =>
+      makeAttachment({ filename: `d-${i}.png`, content: `https://jira.example.com/d-${i}.png` })
+    );
+    const result = await downloadAttachments(makeTicket(attachments), { env: ENV, fetcher: makeFetcher(), configDir: tmpDir });
+    assert.equal(result.filter(r => r.localPath !== null).length, 10);
+    assert.equal(result.filter(r => r.skipReason === 'limit').length, 2);
+  });
+
+  it('downloads up to 50 when maxAttachments is 50', async () => {
+    const attachments = Array.from({ length: 25 }, (_, i) =>
+      makeAttachment({ filename: `p-${i}.png`, content: `https://jira.example.com/p-${i}.png` })
+    );
+    const result = await downloadAttachments(makeTicket(attachments), { env: ENV, fetcher: makeFetcher(), configDir: tmpDir, maxAttachments: 50 });
+    assert.equal(result.filter(r => r.localPath !== null).length, 25);
+  });
+
+  it('stops downloading after maxAttachments', async () => {
     const attachments = Array.from({ length: 25 }, (_, i) =>
       makeAttachment({ filename: `file-${i}.png`, content: `https://jira.example.com/file-${i}.png` })
     );
-    const result = await downloadAttachments(makeTicket(attachments), { env: ENV, fetcher: makeFetcher(), configDir: tmpDir });
+    const result = await downloadAttachments(makeTicket(attachments), { env: ENV, fetcher: makeFetcher(), configDir: tmpDir, maxAttachments: 20 });
     assert.equal(result.length, 25);
     const downloaded = result.filter(r => r.localPath !== null);
     assert.equal(downloaded.length, 20);
@@ -241,7 +258,7 @@ describe('downloadAttachments — limit', () => {
     const attachments = Array.from({ length: 22 }, (_, i) =>
       makeAttachment({ filename: `f-${i}.png`, content: `https://jira.example.com/f-${i}.png` })
     );
-    const result = await downloadAttachments(makeTicket(attachments), { env: ENV, fetcher: makeFetcher(), configDir: tmpDir });
+    const result = await downloadAttachments(makeTicket(attachments), { env: ENV, fetcher: makeFetcher(), configDir: tmpDir, maxAttachments: 20 });
     const limitSkipped = result.filter(r => r.skipReason === 'limit');
     assert.equal(limitSkipped.length, 2);
   });

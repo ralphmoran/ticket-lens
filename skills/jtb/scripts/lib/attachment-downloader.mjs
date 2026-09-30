@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { buildAuthHeader, isSafeRedirectUrl, validateResolvedHost, defaultLookupFor } from './jira-client.mjs';
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
-const MAX_ATTACHMENTS = 20;
+import { attachmentCapFor } from './attachment-caps.mjs';
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 const MAX_REDIRECT_HOPS = 2;
 
@@ -57,6 +57,7 @@ async function followValidatedRedirects(initialUrl, fetcher, lookup, headers, al
  * @param {Function} opts.fetcher fetch-compatible function (default: globalThis.fetch)
  * @param {string} opts.configDir Base config dir (default: ~/.ticketlens)
  * @param {boolean} opts.noCache  Force re-download even if cached (default: false)
+ * @param {number} opts.maxAttachments  File-count cap (default: the tier cap for configDir)
  * @param {Function} opts.onProgress  Optional callback(msg: string) for progress lines
  * @param {boolean} opts.allowPrivateIp  Skip the private-IP DNS check on the initial hop only (default: false)
  *
@@ -71,6 +72,7 @@ export async function downloadAttachments(ticket, opts = {}) {
     noCache = false,
     onProgress = null,
     allowPrivateIp = false,
+    maxAttachments = attachmentCapFor(configDir),
   } = opts;
 
   const attachments = (ticket.attachments ?? []).filter(a => a.content);
@@ -82,8 +84,8 @@ export async function downloadAttachments(ticket, opts = {}) {
   const jiraOrigin = env.JIRA_BASE_URL ? new URL(env.JIRA_BASE_URL).origin : null;
 
   // Attachments beyond the limit are bulk-skipped
-  const capped = attachments.slice(0, MAX_ATTACHMENTS);
-  const limited = attachments.slice(MAX_ATTACHMENTS).map(a => makeResult(a, null, 'limit', null));
+  const capped = attachments.slice(0, maxAttachments);
+  const limited = attachments.slice(maxAttachments).map(a => makeResult(a, null, 'limit', null));
 
   // Pre-classify: resolve immediate results, collect pending downloads
   const results = new Array(capped.length);

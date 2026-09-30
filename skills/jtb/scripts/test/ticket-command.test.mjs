@@ -300,6 +300,34 @@ describe('runTicketComment — write failure', () => {
   });
 });
 
+describe('runTicketComment — attachment cap source', () => {
+  test('passes the cap resolved from the command\'s own license check, not the default config dir', async () => {
+    let attachOpts;
+    const asked = [];
+    const deps = baseDeps({
+      isLicensedFn: (tier, dir) => { asked.push([tier, dir]); return true; },
+      resolveAdapterFn: () => fakeAdapter({
+        attachFiles: async (key, paths, opts) => { attachOpts = opts; return { uploaded: [], errors: [], droppedCount: 0 }; },
+      }),
+    });
+    await runTicketComment(['PROJ-1', '--body=hi', '--attach=/tmp/a.png'], deps);
+    assert.equal(attachOpts.maxAttachments, 50);
+    assert.ok(asked.some(([tier, dir]) => tier === 'pro' && dir === '/fake/config'));
+  });
+});
+
+describe('runTicketComment — attachment cap notice', () => {
+  test('reports the free cap and the Pro upgrade hint when attachments are dropped', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        attachFiles: async () => ({ uploaded: [], errors: [], droppedCount: 4, cap: 10 }),
+      }),
+    });
+    await runTicketComment(['PROJ-1', '--body=hi', '--attach=/tmp/a.png'], deps);
+    assert.match(deps.stream.lines.join(''), /4 attachment\(s\) dropped.*10-file limit.*Upgrade to Pro/);
+  });
+});
+
 describe('runTicketComment — attachments', () => {
   test('uploads --attach paths and folds inline markup into the comment body before posting', async () => {
     let attachArgs, postedBody;

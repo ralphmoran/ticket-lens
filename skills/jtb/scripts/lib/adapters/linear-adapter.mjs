@@ -538,7 +538,7 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
     async attachFiles(key, filePaths, opts = {}) {
       const signal = AbortSignal.timeout(opts.timeoutMs ?? 30_000);
       const { lookup = defaultLookupFor(fetcher), allowPrivateIp = false } = opts;
-      const { files, droppedCount } = readAttachments(filePaths);
+      const { files, droppedCount, cap } = readAttachments(filePaths, opts.maxAttachments);
       const uploaded = [];
       const errors = [];
       for (const f of files) {
@@ -592,7 +592,7 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
           errors.push({ path: f.path, message: err.message });
         }
       }
-      return { uploaded, errors, droppedCount };
+      return { uploaded, errors, droppedCount, cap };
     },
   };
 }

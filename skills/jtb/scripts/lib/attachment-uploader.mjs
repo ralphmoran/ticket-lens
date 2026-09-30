@@ -14,8 +14,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { sanitizeFilename } from './attachment-downloader.mjs';
+import { attachmentCapFor } from './attachment-caps.mjs';
 
-export const MAX_ATTACHMENTS = 20; // mirrors attachment-downloader.mjs's download-side cap
 export const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB — same
 export const MAX_TOTAL_BYTES = 50 * 1024 * 1024; // 50 MB aggregate per call — bounds worst-case memory use across a whole batch
 
@@ -67,7 +67,7 @@ export function readAttachmentFile(filePath) {
 
 /**
  * Reads a batch of paths, best-effort — one bad path never blocks the rest.
- * Paths beyond MAX_ATTACHMENTS are dropped and counted, not silently read.
+ * Paths beyond the tier's file cap are dropped and counted, not silently read.
  * A cheap pre-stat tracks the running total so a file that would push the
  * batch over MAX_TOTAL_BYTES is rejected without ever being buffered — same
  * "reject before read" principle as the per-file size cap. The pre-stat's
@@ -75,10 +75,11 @@ export function readAttachmentFile(filePath) {
  * specific error (not-found/not-a-file/etc.) for those paths.
  *
  * @param {string[]} paths
- * @returns {{ files: Array<{ok: boolean} & (ReturnType<typeof readAttachmentFile>)>, droppedCount: number }}
+ * @param {number} [maxAttachments] file-count cap; defaults to the caller's tier cap
+ * @returns {{ files: Array<{ok: boolean} & (ReturnType<typeof readAttachmentFile>)>, droppedCount: number, cap: number }}
  */
-export function readAttachments(paths) {
-  const capped = paths.slice(0, MAX_ATTACHMENTS);
+export function readAttachments(paths, maxAttachments = attachmentCapFor()) {
+  const capped = paths.slice(0, maxAttachments);
   const files = [];
   let totalBytes = 0;
   for (const p of capped) {
@@ -92,5 +93,5 @@ export function readAttachments(paths) {
     if (!result.error) totalBytes += result.size;
     files.push({ ok: !result.error, ...result });
   }
-  return { files, droppedCount: paths.length - capped.length };
+  return { files, droppedCount: paths.length - capped.length, cap: maxAttachments };
 }

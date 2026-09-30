@@ -14,7 +14,7 @@ import {
 // Mixed into the HMAC key so that knowing the license key alone is not sufficient
 // to forge a valid signature — an attacker also needs this constant from the source.
 export const LICENSE_HMAC_SALT = 'tl-lic-v1';
-export const LICENSE_TIERS = { free: 0, pro: 1, team: 2 };
+export const LICENSE_TIERS = { free: 0, pro: 1, team: 2, enterprise: 3 };
 const LICENSE_FILE = 'license.json';
 const REVALIDATION_DAYS = 7;   // attempt background revalidation after this many days
 export const GRACE_DAYS = 30;   // treat license as invalid if not revalidated within this window

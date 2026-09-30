@@ -458,6 +458,33 @@ describe('runNoteAdd — --attach (local file attachments, backlog #6)', () => {
     assert.match(deps.stream.lines.join(''), /3 attachment\(s\) dropped/);
   });
 
+  test('reads attachments with the cap from the command\'s own license check', async () => {
+    let capturedCap;
+    const deps = baseDeps({
+      readAttachmentsFn: (paths, cap) => { capturedCap = cap; return { files: [], droppedCount: 0, cap }; },
+    });
+    await runNoteAdd(['--title=x', '--attach=/a.png'], deps);
+    assert.equal(capturedCap, 50);
+  });
+
+  test('a dropped count names the free cap and hints at the Pro upgrade', async () => {
+    const deps = baseDeps({
+      readAttachmentsFn: () => ({ files: [], droppedCount: 2, cap: 10 }),
+    });
+    await runNoteAdd(['--title=x', '--attach=/a.png'], deps);
+    assert.match(deps.stream.lines.join(''), /10-file limit.*Upgrade to Pro for up to 50/);
+  });
+
+  test('a dropped count on the paid cap names 50 and gives no upgrade hint', async () => {
+    const deps = baseDeps({
+      readAttachmentsFn: () => ({ files: [], droppedCount: 2, cap: 50 }),
+    });
+    await runNoteAdd(['--title=x', '--attach=/a.png'], deps);
+    const out = deps.stream.lines.join('');
+    assert.match(out, /50-file limit/);
+    assert.doesNotMatch(out, /Upgrade/);
+  });
+
   test('the success message includes the saved attachment count', async () => {
     const deps = baseDeps({
       readAttachmentsFn: () => ({ files: [{ ok: true, filename: 'a.png', buffer: Buffer.from([1]), size: 1 }, { ok: true, filename: 'b.png', buffer: Buffer.from([1]), size: 1 }], droppedCount: 0 }),

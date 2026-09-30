@@ -23,6 +23,7 @@ import { readTextAttachments } from './lib/handoff-assembler.mjs';
 import { handleUnknownFlags } from './lib/arg-validator.mjs';
 import { TICKET_KEY_PATTERN, normalizeTicketKey } from './lib/cli.mjs';
 import { downloadAttachments } from './lib/attachment-downloader.mjs';
+import { attachmentCapFor, attachmentLimitNotice } from './lib/attachment-caps.mjs';
 import { readBriefCache, writeBriefCache, readSummaryCache, writeSummaryCache, briefCacheAge, BRIEF_TTL_MS } from './lib/brief-cache.mjs';
 import { recordTokensSaved } from './lib/activity-counter.mjs';
 import { readCliToken } from './lib/cli-auth.mjs';
@@ -1372,7 +1373,9 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       printErrFn(`Downloading ${downloadable.length} ${noun}…\n`);
       // attachment-downloader is Jira-specific — it needs raw auth headers from buildJiraEnv
       const jiraEnv = buildJiraEnv(conn);
+      const maxAttachments = attachmentCapFor(configDir);
       ticket.localAttachments = await downloadAttachments(ticket, {
+        maxAttachments,
         env: jiraEnv,
         fetcher,
         noCache: args.includes('--no-cache'),
@@ -1385,6 +1388,8 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
       if (downloaded > 0) parts.push(`${downloaded} downloaded`);
       if (cached > 0) parts.push(`${cached} cached`);
       if (parts.length > 0) printErrFn(`  ✓ ${parts.join(', ')}\n`);
+      const overCap = ticket.localAttachments.filter(r => r.skipReason === 'limit').length;
+      if (overCap > 0) printErrFn(`  ${attachmentLimitNotice(overCap, maxAttachments, { verb: 'not downloaded', scope: 'ticket' })}\n`);
       printErrFn('\n');
     }
   }

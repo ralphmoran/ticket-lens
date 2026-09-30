@@ -628,6 +628,17 @@ describe('createJiraAdapter — attachFiles', () => {
     return p;
   }
 
+  it('honours opts.maxAttachments and reports the cap it applied', async () => {
+    const a = writeFixture('a.txt');
+    const b = writeFixture('b.txt');
+    const fetcher = async () => ({ ok: true, json: async () => [{ id: '1', filename: 'a.txt', size: 1, content: 'https://jira.example.com/secure/attachment/1/a.txt' }] });
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    const result = await adapter.attachFiles('TEST-1', [a, b], { maxAttachments: 1 });
+    assert.equal(result.uploaded.length, 1);
+    assert.equal(result.droppedCount, 1);
+    assert.equal(result.cap, 1);
+  });
+
   it('uploads a file and returns Server/DC (v2) thumbnail markup for an image', async () => {
     const p = writeFixture('screenshot.png', 'fake-bytes');
     const fetcher = async () => ({ ok: true, json: async () => [{ id: '1', filename: 'screenshot.png', size: 10, content: 'https://jira.example.com/secure/attachment/1/screenshot.png' }] });

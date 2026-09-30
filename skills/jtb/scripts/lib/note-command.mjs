@@ -18,7 +18,8 @@ import { pushNote } from './recall-sync.mjs';
 import { enqueueNote, isRetryableFailure, maybeAutoFlush } from './recall-queue.mjs';
 import { incrementDraftKept, incrementDraftDeleted } from './activity-counter.mjs';
 import { extractText } from './attachment-text.mjs';
-import { readAttachments, MAX_ATTACHMENTS } from './attachment-uploader.mjs';
+import { readAttachments } from './attachment-uploader.mjs';
+import { attachmentCapFor, attachmentLimitNotice, PAID_MAX_ATTACHMENTS } from './attachment-caps.mjs';
 import { TICKET_KEY_PATTERN, normalizeTicketKey } from './cli.mjs';
 import { createStyler } from './ansi.mjs';
 import { confirmDestructive } from './confirm.mjs';
@@ -43,14 +44,14 @@ function parseAttachPaths(cmdArgs) {
  * best-effort philosophy as ticket_create/comment's --attach: one bad path
  * never blocks the note from being saved.
  */
-function summarizeAttachments({ files, droppedCount }) {
+function summarizeAttachments({ files, droppedCount, cap = PAID_MAX_ATTACHMENTS }) {
   const saved = [];
   const warnings = [];
   for (const f of files) {
     if (f.ok) saved.push({ filename: f.filename, buffer: f.buffer });
     else warnings.push(`  Skipped attachment ${f.path}: ${ATTACHMENT_ERROR_MESSAGES[f.error] ?? f.error}\n`);
   }
-  if (droppedCount > 0) warnings.push(`  ${droppedCount} attachment(s) dropped — exceeds the ${MAX_ATTACHMENTS}-file limit per call.\n`);
+  if (droppedCount > 0) warnings.push(`  ${attachmentLimitNotice(droppedCount, cap)}\n`);
   return { saved, warnings };
 }
 
@@ -185,7 +186,7 @@ export async function runNoteAdd(cmdArgs, {
 
   const attachPaths = parseAttachPaths(cmdArgs);
   const { saved: attachments, warnings: attachWarnings } = attachPaths.length > 0
-    ? summarizeAttachments(readAttachmentsFn(attachPaths))
+    ? summarizeAttachments(readAttachmentsFn(attachPaths, attachmentCapFor(configDir, isLicensedFn)))
     : { saved: [], warnings: [] };
   for (const warning of attachWarnings) stream.write(warning);
 
@@ -303,7 +304,7 @@ export async function runNotePatch(cmdArgs, {
 
   const attachPaths = parseAttachPaths(cmdArgs);
   const { saved: attachments, warnings: attachWarnings } = attachPaths.length > 0
-    ? summarizeAttachments(readAttachmentsFn(attachPaths))
+    ? summarizeAttachments(readAttachmentsFn(attachPaths, attachmentCapFor(configDir, isLicensedFn)))
     : { saved: [], warnings: [] };
   for (const warning of attachWarnings) stream.write(warning);
 

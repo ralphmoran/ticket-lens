@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { readAttachmentFile, readAttachments, MAX_ATTACHMENTS, MAX_FILE_BYTES, MAX_TOTAL_BYTES } from '../lib/attachment-uploader.mjs';
+import { readAttachmentFile, readAttachments, MAX_FILE_BYTES, MAX_TOTAL_BYTES } from '../lib/attachment-uploader.mjs';
 
 let tmpDir;
 beforeEach(() => {
@@ -104,11 +104,22 @@ describe('readAttachments', () => {
     assert.equal(files[1].error, 'not-found');
   });
 
-  it('caps at MAX_ATTACHMENTS and reports how many were dropped', () => {
-    const paths = Array.from({ length: MAX_ATTACHMENTS + 3 }, (_, i) => writeFixture(`f${i}.txt`, 'x'));
-    const { files, droppedCount } = readAttachments(paths);
-    assert.equal(files.length, MAX_ATTACHMENTS);
+  it('caps at the given maxAttachments and reports how many were dropped', () => {
+    const paths = Array.from({ length: 13 }, (_, i) => writeFixture(`f${i}.txt`, 'x'));
+    const { files, droppedCount } = readAttachments(paths, 10);
+    assert.equal(files.length, 10);
     assert.equal(droppedCount, 3);
+  });
+
+  it('accepts up to 50 files when the cap is 50', () => {
+    const paths = Array.from({ length: 50 }, (_, i) => writeFixture(`g${i}.txt`, 'x'));
+    const { files, droppedCount } = readAttachments(paths, 50);
+    assert.equal(files.length, 50);
+    assert.equal(droppedCount, 0);
+  });
+
+  it('returns the cap it applied', () => {
+    assert.equal(readAttachments([], 10).cap, 10);
   });
 
   it('returns an empty result for an empty input array', () => {

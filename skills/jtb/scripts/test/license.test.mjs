@@ -115,6 +115,23 @@ describe('LICENSE_TIERS', () => {
     assert.ok(LICENSE_TIERS.free < LICENSE_TIERS.pro);
     assert.ok(LICENSE_TIERS.pro < LICENSE_TIERS.team);
   });
+
+  it('ranks enterprise above team', () => {
+    assert.ok(LICENSE_TIERS.team < LICENSE_TIERS.enterprise);
+  });
+});
+
+describe('isLicensed — enterprise', () => {
+  it('grants pro and team features to an enterprise license', () => {
+    writeLicense({ ...validLicense, tier: 'enterprise' }, tmpDir);
+    assert.equal(isLicensed('pro', tmpDir), true);
+    assert.equal(isLicensed('team', tmpDir), true);
+  });
+
+  it('does not grant team features to a pro license', () => {
+    writeLicense(validLicense, tmpDir);
+    assert.equal(isLicensed('team', tmpDir), false);
+  });
 });
 
 describe('GRACE_DAYS (exported)', () => {
