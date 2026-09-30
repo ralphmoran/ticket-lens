@@ -1122,6 +1122,7 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
+- **Tiered attachment cap** — per-call attachment count is now 10 on Free and 50 on Pro, Team and Enterprise (was a flat 20), for uploads, `fetch` downloads and Recall sync. Excess files are reported, not silently dropped
 - **`ticketlens pr --open`** — opens a real GitHub PR compare page prefilled with the same description `pr` already prints, instead of just printing it. GitHub only, no stored write-credential. Pro tier
 - **`review`/`compliance` fixes** — branch diff now uses merge-base semantics, no longer picks up unrelated unmerged-main files; AC parser now recognizes Jira wiki `Requirements`/`How to test` headers, not just literal "Acceptance Criteria"
 - **`ticketlens update --priority`** — a bad priority name now tells you the project's real, current valid options instead of a bare tracker error
