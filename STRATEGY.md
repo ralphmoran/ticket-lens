@@ -88,7 +88,7 @@ Current state (Phase A snapshot, 2026-03; 4,162 tests by 2026-09-26 per ROADMAP 
 
 **Goal**: First revenue. Premium features that run 100% locally. No backend needed.
 
-**Monetization**: License key via LemonSqueezy (Merchant of Record — handles tax, invoicing, customer portal). Key stored in `~/.ticketlens/license.json`, validated via LemonSqueezy API with offline grace period. Static landing page on Cloudflare Pages ($0 infra).
+**Monetization**: License key via LemonSqueezy (Merchant of Record — handles tax, invoicing, customer portal). Key stored in `~/.ticketlens/license.json`, validated via LemonSqueezy API with offline grace period. Landing page served by the Laravel app (`/`), prices rendered from `config/tiers.php`.
 
 **Tier philosophy:**
 - **Free** — Everything local. Me, now, one ticket. No limits on depth, fetch, or triage.

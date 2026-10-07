@@ -1,5 +1,7 @@
 # Phase 1 — Memory Foundation
 
+> **Note 2026-10-07:** `site/` was retired. The landing page template is `resources/landing/index.html` in `ticketlens-api`, rendered to `public/landing.html` by `php artisan landing:build` with prices from `config/tiers.php`. Every `site/index.html` and `site/assets` path below is historical.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace stale project memory with accurate current state and Atlassian MCP competitive intelligence.

@@ -1,4 +1,6 @@
 # TicketLens Next Sprint Design
+
+> **Note 2026-10-07:** `site/` was retired. The landing page template is `resources/landing/index.html` in `ticketlens-api`, rendered to `public/landing.html` by `php artisan landing:build` with prices from `config/tiers.php`. Every `site/index.html` and `site/assets` path below is historical.
 **Date:** 2026-03-30
 **Author:** Manager (Claude Code orchestrator)
 **Status:** Pending user approval

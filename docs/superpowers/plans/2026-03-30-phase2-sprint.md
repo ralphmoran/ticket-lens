@@ -1,5 +1,7 @@
 # Phase 2 — Sprint Tasks Implementation Plan
 
+> **Note 2026-10-07:** `site/` was retired. The landing page template is `resources/landing/index.html` in `ticketlens-api`, rendered to `public/landing.html` by `php artisan landing:build` with prices from `config/tiers.php`. Every `site/index.html` and `site/assets` path below is historical.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fix Node engines version gap, create backend CI pipeline, update competitive positioning copy, and produce three research reports (code audit, docs audit, security threat model) in parallel.

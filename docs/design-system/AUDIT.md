@@ -1,5 +1,7 @@
 # TicketLens Design System — Extraction Audit
 
+> **Note 2026-10-07:** `site/` was retired. The landing page template is `resources/landing/index.html` in `ticketlens-api`, rendered to `public/landing.html` by `php artisan landing:build` with prices from `config/tiers.php`. Every `site/index.html` and `site/assets` path below is historical.
+
 **Date:** 2026-04-21
 **Scope:** Landing page (`site/index.html`) + Console (`ticketlens-api/resources/`)
 **Method:** `ui-ux-pro-max` baseline rules + manual codebase scan following `impeccable/extract.md` Step 2 (identify patterns used 3+ times).

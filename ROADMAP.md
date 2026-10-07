@@ -293,6 +293,7 @@ Build only what paying customers or market demand requires.
 | 68 | ~~Feature~~ | ~~**Tier-gated attachment file-count cap (backlog #49)**~~ | **Done 2026-09-29, `ticket-lens@40d6813`+`ticketlens-api@4782e37`, published `ticketlens@0.43.5` (beta).** Flat 20-file cap replaced by Free 10 / Pro, Team, Enterprise 50 across uploads, `fetch` downloads and Recall push (server-derived from user tier). `enterprise: 3` added to `LICENSE_TIERS`. | Small |
 | 69 | ~~Feature~~ | ~~**Console: session-expiry warning with stay/logout countdown (backlog #51)**~~ | **Done 2026-10-01, `ticketlens-api@4a49299`, pushed.** 10 random playful messages, modal 2 min before expiry (clamped on short lifetimes), any activity resets the timer, `POST /console/session/keepalive` (auth, 30/min). Expiry asks the server first; reloads if another tab kept it alive, else login. Browser-verified on 3 scenarios plus 2-tab case. | Medium |
 | 70 | ~~Feature~~ | ~~**Console: behavior settings panel, configurable idle timeout (backlog #52)**~~ | **Done 2026-10-06, `ticketlens-api@72fe2df`, pushed, deploy pending (`migrate` + `npm run build`). Per-user only, client-only timer (5m/10m/1h), plain/playful tone, new Settings tab Behavior. Owner default and server lifetime dropped by user decision.** ~~Original note: (added 2026-10-01, user request). Settings panel to control how the Console behaves and responds. First setting: when the idle-warning modal appears after inactivity, with choices of 5 min, 10 min, 1 h. Builds on #51 (`session_lifetime` share, `sessionGuard.js`). Decided 2026-10-01: setting is both per-user and owner-wide, and the server session lifetime follows the chosen warning time. Open: extra settings (message set, live-update behavior), precedence when owner and user values differ.~~ (Superseded: shipped per-user only; owner-wide default and server lifetime dropped.) | Medium |
+| 71 | ~~Chore~~ | ~~**Doc-surface sync across CLI, Console, API, landing (2026-10-07)**~~ | **Done 2026-10-07, `ticket-lens@5d828ce`+`@27d42fc`, `ticketlens-api@69e7d7f`/`@51e1c05`/`@bbc8794`/`@621a632`. Docs re-audited against code; webhook signing-secret config, enterprise dashboard gate fixed; prices ($9/$19) and token rate read from `config/tiers.php`; landing built from `resources/landing/index.html` via `php artisan landing:build`; `site/` retired. Published `ticketlens@0.43.7` (beta).** | Medium |
 
 ---
 
@@ -383,7 +384,7 @@ Phase D:   Multi-tracker + Enterprise
 | SSO + audit logs | No | No | No | Phase D |
 | Self-hosted | No | No | No | Phase D |
 
-**Phase B revenue (no infra):** Pro at $9/mo ($84/yr) + Team at $19/seat/mo ($180/seat/yr), gated by license key via LemonSqueezy (Merchant of Record). Annual billing default (20% off). Static landing page on Cloudflare Pages ($0). LemonSqueezy handles checkout, tax, invoicing, and customer portal.
+**Phase B revenue (no infra):** Pro at $9/mo ($86/yr) + Team at $19/seat/mo ($182/seat/yr), gated by license key via LemonSqueezy (Merchant of Record). Annual billing default (20% off). Landing page served by the Laravel app (`/`), prices rendered from `config/tiers.php`. LemonSqueezy handles checkout, tax, invoicing, and customer portal.
 
 ---
 

@@ -1151,6 +1151,7 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
+- **Docs match the code** — every doc surface (README, `--help`, SKILL.md, USER_GUIDE, MCP help) re-audited against the CLI; install snippets now use `ticketlens@beta`, Node is `>=22.6`, and the CLI tip shows the real $9/mo Pro price
 - **Console: Behavior settings** — pick when the idle-warning appears (5 min, 10 min or 1 h) and a playful or plain tone, per user, in Settings > Behavior
 - **Console: session-expiry warning** — a stay-or-logout countdown appears shortly before your session ends; any activity resets it
 - **Console: collapsed-sidebar Owner Panel** — the hover menu now opens and stays open when you click an item, like the other groups
