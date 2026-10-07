@@ -42,6 +42,7 @@
   - [Schedule](#schedule)
   - [History](#history)
   - [Recall](#recall)
+  - [MCP Server](#mcp-server)
   - [Comment, Transition, Assign, Duplicates, Link, Update, Create & Worklog](#comment-transition-assign-duplicates-link-update-create--worklog)
   - [Response-Time Stats](#response-time-stats)
   - [Pre-fetch Issue Types](#pre-fetch-issue-types)
@@ -49,6 +50,7 @@
   - [Custom Attention Rules](#custom-attention-rules)
   - [Login](#login)
   - [License](#license)
+  - [AI Provider Keys](#ai-provider-keys)
   - [Update Skill](#update-skill)
   - [/jtb — Jira TicketBrief for Claude Code](#jtb--jira-ticketbrief-for-claude-code)
 - [All Examples](#all-examples)
@@ -65,7 +67,7 @@
 
 ## What is TicketLens?
 
-TicketLens is a local-first Jira CLI that preprocesses ticket context on your machine and hands your AI tools a clean, compressed brief — instead of dumping raw Jira API JSON into your session. It supports Jira Cloud, Server, and Data Center, works with any AI tool that accepts text, and runs independently of any AI session.
+TicketLens is a local-first ticket CLI that preprocesses ticket context on your machine and hands your AI tools a clean, compressed brief — instead of dumping raw Jira API JSON into your session. It supports Jira Cloud, Server, and Data Center (plus GitHub Issues and Linear), works with any AI tool that accepts text, and runs independently of any AI session.
 
 Zero npm dependencies. Node.js built-ins only.
 
@@ -73,7 +75,7 @@ Zero npm dependencies. Node.js built-ins only.
 
 ## Why TicketLens?
 
-- **Privacy** — ticket content never leaves your machine; no cloud relay, no data sent to Anthropic or anyone else
+- **Privacy** — ticket content stays on your machine by default; no cloud relay, no data sent to Anthropic or anyone else. Only the opt-in features that need a backend (`--cloud`, `compliance --consensus`, `triage --push`/`--share`, Recall team sync) send data to TicketLens
 - **60–80% token savings** — structured briefs instead of verbose Jira JSON; 4-hour cache by default
 - **Scriptable** — standard CLI output: pipe to cron, git hooks, CI/CD, or any LLM tool
 - **Multi-profile** — connect multiple Jira instances simultaneously; auto-route by ticket prefix or project path
@@ -85,7 +87,7 @@ Zero npm dependencies. Node.js built-ins only.
 ## Quick Start
 
 ```bash
-npm install -g ticketlens
+npm i -g ticketlens@beta
 ticketlens init          # Guided setup: Jira, GitHub Issues, or Linear — connection test included
 ticketlens CNV1-2        # Fetch a ticket brief
 ticketlens triage        # Scan your assigned tickets
@@ -94,8 +96,8 @@ ticketlens triage        # Scan your assigned tickets
 Or without installing:
 
 ```bash
-npx ticketlens init
-npx ticketlens CNV1-2
+npx ticketlens@beta init
+npx ticketlens@beta CNV1-2
 ```
 
 Tip: `tl` works everywhere `ticketlens` does — running `tl`/`ticketlens config` before anything is configured also launches guided setup, no dead end. Pass `--no-input` to force non-interactive behavior even in a terminal (scripts, CI).
@@ -120,6 +122,7 @@ Tip: `tl` works everywhere `ticketlens` does — running `tl`/`ticketlens config
 | `ticketlens switch` | Arrow-key panel to switch between configured profiles |
 | `ticketlens config [--profile=NAME]` | Edit any field on an existing profile — always re-validates the connection |
 | `ticketlens profiles` | List all configured profiles (alias: `ticketlens ls`) |
+| `ticketlens profiles set-team <NAME> [team]` | Route a profile's Recall notes to one Console team (for accounts in several teams) |
 | `ticketlens delete <NAME>` | Remove a profile and its credentials (prompts `y/N` in TTY; use `--yes` in scripts/CI) |
 
 `init` collects: profile name, tracker type (Jira / GitHub Issues / Linear), URL or workspace, credentials (masked), and optional ticket prefixes, project paths, and triage statuses. On connection failure, a retry menu lets you fix credentials, URL, or skip — all inputs pre-populated. If your Jira instance sits behind a VPN and resolves to a private/internal address, you'll be asked to confirm you trust that connection before it's allowed through — a one-time confirmation, remembered per profile and scoped to that exact host (changing the URL asks again). `config` is tracker-aware and always re-validates the connection after edits.
@@ -293,12 +296,11 @@ Flag validation provides actionable hints:
 ```bash
 ticketlens compliance <TICKET-KEY>                # Check ticket requirements against local diff [Pro/Free 3/mo]
 ticketlens compliance <TICKET-KEY> --profile=acme # Specify a profile
-ticketlens compliance <TICKET-KEY> --plain        # Plain markdown output
 ticketlens compliance <TICKET-KEY> --consensus    # Multi-agent AI review instead of the local matcher [Pro]
 ticketlens compliance <TICKET-KEY> --consensus -y # Same, skipping the cost-confirmation prompt
 ```
 
-Runs the same compliance check as `ticketlens CNV1-2 --compliance` but as a dedicated subcommand — useful when you want to check compliance without fetching the full ticket brief. Free accounts get 3 checks per month; Pro is unlimited.
+Runs the same compliance check as `ticketlens CNV1-2 --compliance` but as a dedicated subcommand — useful when you want to check compliance without fetching the full ticket brief. Free accounts get 3 checks per month; Pro is unlimited. The diff used for matching (and sent for `--consensus`) excludes Markdown files (`*.md`), so requirements met only by doc changes won't register as covered.
 
 `--consensus` (Pro) replaces the local deterministic matcher with independent reviews from your team's AI provider pool, reconciled by majority vote after a disagreement-triggered refinement round. Requires `ticketlens login` and a "consensus" role set up at Console > Admin > AI Roles, with 2+ providers attached from your team's shared registry (Console > Admin > AI Provider Pool — any title/key/endpoint/model, not a fixed list). This is the only compliance path that sends your diff off-machine — to TicketLens's backend, which fans out to each provider (keys are encrypted server-side and never sent to the CLI). The diff is scanned for secrets before anything is sent; a detected secret blocks the run with no AI call made. Prompts for confirmation before spending your team's API credits unless `-y`/`--yes` is passed.
 
@@ -331,7 +333,6 @@ Installs a `pre-push` git hook that runs `ticketlens compliance` on every push. 
 ```bash
 ticketlens pr <TICKET-KEY>                    # Generate PR description from ticket
 ticketlens pr <TICKET-KEY> --profile=acme    # Specify a profile
-ticketlens pr <TICKET-KEY> --plain           # Plain markdown output
 ticketlens pr <TICKET-KEY> | pbcopy          # Copy to clipboard
 ticketlens pr <TICKET-KEY> --open            # Open a real GitHub PR compare page (Pro, GitHub only)
 ```
@@ -399,7 +400,7 @@ ticketlens cache clear --profile=acme          # One profile's files only
 ticketlens cache clear --older-than=30d --yes  # Skip confirmation (CI/scripts)
 ```
 
-Age units: `d` = days · `m` = months (30d) · `y` = years (365d)
+Age units: `h` = hours · `d` = days · `w` = weeks · `m` = months (30d) · `y` = years (365d)
 
 Cache locations:
 - Attachments: `~/.ticketlens/cache/TICKET-KEY/`
@@ -475,6 +476,18 @@ Every note is scanned before saving — anything shaped like a real secret (API 
 
 ---
 
+### MCP Server
+
+```bash
+ticketlens mcp                  # Start the MCP stdio server (every CLI action as a tool)
+ticketlens mcp install          # Register it in the current project's .mcp.json
+ticketlens mcp install --dry-run  # Preview without writing
+```
+
+Exposes 24 tools (`fetch`, `triage`, `compliance`, `review`, `standup`, `pr`, `stats`, `issue_types`, `history`, `collisions`, `ledger`, `doctor`, `recall_*`, `ticket_*`) to any MCP-compatible AI harness. Starting the server and `mcp install` are ungated; each tool enforces its own tier at call time. Per-tool tiers and details are in the "Any MCP-capable AI harness" paragraph under [Recall](#recall).
+
+---
+
 ### Comment, Transition, Assign, Duplicates, Link, Update, Create & Worklog
 
 ```bash
@@ -524,11 +537,11 @@ Write directly to the ticket in its real tracker — Jira, GitHub, or Linear —
 
 `ticketlens create` creates a new ticket with a fixed minimal field set — no arbitrary custom fields. Unlike every other write command, there's no existing ticket to target, so `--profile` (or your default profile) picks the tracker instead of a ticket key. `--project` is the Jira project key or Linear team key — required for both, ignored on GitHub since its target repo is already fixed by the profile. `--type` is Jira's issue type (e.g. `"Task"`, `"Bug"`) — required for Jira, ignored elsewhere. No `--confirm` gate, same risk tier as `update`/`assign` — but this is the highest-blast-radius command in the whole family: a bad `--project`/`--type` fabricates a real, hard-to-walk-back item in a live tracker, so an invalid value surfaces the tracker's own error rather than a silent guess.
 
-`--attach=path1,path2` (comma-separated local file paths) is available on `comment` and `create` only, up to 50 files per call (Pro, Team, Enterprise). Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
+`--attach=path1,path2` (comma-separated local file paths) is available on `comment`, `create`, and `note add`/`note patch`, up to 50 files per call (Pro, Team, Enterprise). Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
 
 **A bad `--project`/`--type` gets a better error, automatically.** If create fails because the project or issue type doesn't exist, TicketLens fetches your tracker's real, current project list (and, for Jira, the real issue types for that project) and shows them alongside the failure — e.g. `Known creatable projects: CNV1, CNV2.` — rather than a bare tracker error. This is reactive only: it never runs on a successful create, never auto-retries the write, and is cached locally per profile for 3 days (a targeted, single-project lookup — same bar `issue-types --project=KEY` uses) so a burst of failed attempts doesn't re-fetch every time. `ticketlens issue-types` (below) is the proactive counterpart — pre-fetches and caches the same data ahead of time, so a `create` right after it is a pure cache hit.
 
-All six write actions (comment/transition/assign/link/update/create) have a short local debounce (10s) against an accidental double-fire (a flaky retry, hitting enter twice), and every successful write is appended to a local, append-only audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — unlike Recall notes, ticket writes aren't naturally idempotent, so a timed-out attempt is surfaced to you instead of silently repeated. `duplicates` has neither, since nothing is written.
+All seven write actions (comment/transition/assign/link/update/create/worklog) have a short local debounce (10s) against an accidental double-fire (a flaky retry, hitting enter twice), and every successful write is appended to a local, append-only audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — unlike Recall notes, ticket writes aren't naturally idempotent, so a timed-out attempt is surfaced to you instead of silently repeated. `duplicates` has neither, since nothing is written.
 
 ---
 
@@ -580,7 +593,7 @@ ticketlens doctor --format=json | jq '.ok'
 ticketlens doctor --mcp                  # Also check the MCP server handshake (spawns a subprocess)
 ```
 
-Runs five checks — profile configuration, license freshness, tracker connectivity, attachment cache health, and the Recall sync queue — and reports pass/fail with an actionable hint per failure, instead of a raw stack trace. Free tier, fully unrestricted; no license required.
+Runs six checks — profile configuration, license freshness, tracker connectivity, attachment cache health, the Recall sync queue, and MCP registration (plus an opt-in MCP handshake check with `--mcp`) — and reports pass/fail with an actionable hint per failure, instead of a raw stack trace. Free tier, fully unrestricted; no license required.
 
 ---
 
@@ -603,7 +616,7 @@ Add an `attentionRules` array to any profile in `~/.ticketlens/profiles.json` to
 }
 ```
 
-Rules are evaluated in order — first match wins. Supported `match` keys: `priority`, `label`, `status`, `keyPrefix`. Supported `action` values: `force-urgent` (bumps to needs-response) and `ignore` (excludes from output). Requires a Pro license.
+Rules are evaluated in order — first match wins. Supported `match` keys: `priority`, `label`, `status`, `keyPrefix`. Supported `action` values: `force-urgent` (bumps to needs-response) and `ignore` (excludes from output).
 
 ---
 
@@ -612,7 +625,7 @@ Rules are evaluated in order — first match wins. Supported `match` keys: `prio
 ```bash
 ticketlens login           # Open browser → authorize in Console → token saved automatically
 ticketlens login --manual  # Paste a token instead (CI/headless environments)
-ticketlens logout          # Revoke and remove the stored CLI token
+ticketlens logout          # Remove the stored CLI token
 ticketlens sync            # Pull your latest tracker profiles from the Console
 ```
 
@@ -624,7 +637,7 @@ Use `--manual` when there is no GUI (CI runners, SSH sessions, containers).
 
 `ticketlens sync` pulls any tracker profiles you have configured in the Console and writes them locally, keeping your CLI in sync with your team settings without re-running `init`.
 
-> **Console features** — `ticketlens triage --push`, `--share`, `ticketlens collisions`, and `ticketlens schedule` all require an active Console session. Run `ticketlens login` once and the token is stored automatically.
+> **Console features** — `ticketlens triage --push`, `--share`, `ticketlens collisions`, and `ticketlens schedule` all require an active Console session (`schedule` falls back to local-only mode when logged out). Run `ticketlens login` once and the token is stored automatically.
 
 ---
 
@@ -634,6 +647,17 @@ Use `--manual` when there is no GUI (CI runners, SSH sessions, containers).
 ticketlens license                # Show tier and status
 ticketlens activate <KEY>         # Activate a Pro or Team license
 ```
+
+---
+
+### AI Provider Keys
+
+```bash
+ticketlens cloud-keys list|add|remove|test|priority|timeout   # Manage encrypted AI provider keys (requires login)
+ticketlens config set aiProvider groq                          # Default provider for --summarize / --handoff
+```
+
+Details and the full command list are under [Pro](#pro--9mo).
 
 ---
 
@@ -665,7 +689,7 @@ Supported assistants detected automatically:
 **Install:**
 
 ```bash
-npm install -g ticketlens && ticketlens init
+npm i -g ticketlens@beta && ticketlens init
 ticketlens update-skill        # copies /jtb skill into ~/.claude/commands/jtb.md
 # Restart Claude Code, then:
 # /jtb CNV1-2
@@ -674,7 +698,7 @@ ticketlens update-skill        # copies /jtb skill into ~/.claude/commands/jtb.m
 **Keeping the skill up to date:**
 
 ```bash
-npm install -g ticketlens@latest   # update the CLI
+npm i -g ticketlens@beta   # update the CLI
 ticketlens update-skill            # sync the /jtb skill to the new version
 ```
 
@@ -714,8 +738,10 @@ ticketlens config                             # Edit the active profile
 ticketlens config --profile=acme             # Edit a specific profile
 ticketlens config set aiProvider groq        # Set default AI provider (groq|openai|anthropic)
 ticketlens config set recallStrictness strict # Tune Recall-capture strictness (loose|balanced|strict)
+ticketlens config set errorReporting off      # Opt out of (or `on` to opt in to) anonymous error reports
 ticketlens profiles                           # List all configured profiles
 ticketlens ls                                 # Alias for profiles
+ticketlens profiles set-team <NAME> "Team"     # Route a profile's Recall notes to one Console team
 ticketlens profiles --plain                   # Tab-separated (scripts / pipes)
 ticketlens delete <PROFILE-NAME>              # Remove a profile (prompts y/N in TTY)
 ticketlens delete <PROFILE-NAME> --yes        # Remove without prompt (scripts/CI)
@@ -821,8 +847,8 @@ ticketlens cache clear --older-than=30d --yes            # Skip confirmation (CI
 
 # ── Schedule ─────────────────────────────────────────────────────────────────
 ticketlens schedule                           # Interactive wizard — set time, timezone, profile [Pro]
-ticketlens schedule --stop                    # Cancel the scheduled digest [Pro]
-ticketlens schedule --status                  # Show current schedule [Pro]
+ticketlens schedule --stop                    # Cancel the scheduled digest
+ticketlens schedule --status                  # Show current schedule
 ticketlens schedule --local --time=07:00 --save=./triage.txt  # Local-only cron/LaunchAgent, no Console auth [Pro]
 
 # ── History ───────────────────────────────────────────────────────────────────
@@ -834,9 +860,11 @@ echo "note body" | ticketlens note add --title="..." --attach=shot.png,log.txt  
 ticketlens note delete --id="..." --ticket=CNV1-2  # Remove a note from your local vault [Pro]
 ticketlens recall CNV1-2                      # Search saved notes by ticket key [Pro]
 ticketlens recall "retry backoff"             # Free-text search across all notes [Pro]
+ticketlens recall CNV1-2 --full               # Print each matching note's full body [Pro]
+ticketlens recall CNV1-2 --plain              # Plain, pipe-safe output [Pro]
 ticketlens recall sync                        # Retry any notes stuck in the local queue [Team+]
 ticketlens recall settings                    # Show effective retry-queue settings + capture strictness, fetched live [Team+]
-ticketlens mcp                                # Start the MCP stdio server (recall/ticket write tools) [Pro]
+ticketlens mcp                                # Start the MCP stdio server (every CLI action as a tool; each tool enforces its own tier)
 ticketlens mcp install                        # Register it into the current project's .mcp.json
 ticketlens mcp install --dry-run              # Preview the registration without writing
 
@@ -881,6 +909,7 @@ ticketlens doctor --mcp                       # Also check the MCP server handsh
 
 # ── Compliance ────────────────────────────────────────────────────────────────
 ticketlens compliance <TICKET-KEY>            # Check ticket requirements against local diff [Pro/Free 3/mo]
+ticketlens compliance <TICKET-KEY> --consensus -y  # Multi-agent AI review, skip cost prompt [Pro]
 ticketlens ledger                             # View local compliance audit ledger [Pro]
 ticketlens install-hooks                      # Install pre-push compliance gate
 ticketlens install-hooks --uninstall          # Remove installed hooks
@@ -888,6 +917,7 @@ ticketlens install-hooks --uninstall          # Remove installed hooks
 # ── PR Description ─────────────────────────────────────────────────────────────
 ticketlens pr <TICKET-KEY>                    # Generate PR description from ticket
 ticketlens pr <TICKET-KEY> | pbcopy          # Copy to clipboard
+ticketlens pr <TICKET-KEY> --open             # Open a real GitHub PR compare page (Pro, GitHub only)
 
 # ── AI provider keys (BYOK) ───────────────────────────────────────────────────
 ticketlens cloud-keys list                            # List configured AI providers
@@ -904,7 +934,7 @@ ticketlens cloud-keys --help                          # Subcommand help
 # ── Login ─────────────────────────────────────────────────────────────────────
 ticketlens login                              # Browser flow — opens Console, token saved automatically
 ticketlens login --manual                     # Paste flow — for CI/headless environments
-ticketlens logout                             # Revoke and remove stored CLI token
+ticketlens logout                             # Remove stored CLI token
 ticketlens sync                               # Pull tracker profiles from the Console
 
 # ── License and account ────────────────────────────────────────────────────────
@@ -953,7 +983,7 @@ ticketlens note delete --id="..."        # Remove a note from your local vault
 ticketlens recall <query|TICKET-KEY>     # Search your saved Recall notes
 ticketlens recall sync                   # Retry any notes stuck in the local queue
 ticketlens recall settings               # Show effective retry-queue settings + capture strictness, fetched live
-ticketlens mcp                           # Start the MCP stdio server (recall/ticket write tools)
+ticketlens mcp                           # Start the MCP stdio server (every CLI action as a tool)
 ticketlens comment CNV1-2 --body="..."   # Post a comment to the tracker
 ticketlens comment CNV1-2 --body="..." --attach=./bug.png  # Attach local files (comment/create only)
 ticketlens transition CNV1-2 --target="Done" --confirm  # Transition ticket status
@@ -1104,8 +1134,7 @@ Credentials in `~/.ticketlens/credentials.json` (chmod 600):
 | 2 | Ticket prefix match | `ticketlens CNV1-2` → prefix `PROJ` → `myteam` |
 | 3 | Project path match | `triage` in `~/projects/myteam-app` → `myteam` |
 | 4 | `config.default` field | Explicit default set via `ticketlens switch` |
-| 5 | First profile in file | Fallback when `config.default` is absent |
-| 6 | Environment variables | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` / `JIRA_PAT` |
+| 5 | Environment variables | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` / `JIRA_PAT` |
 
 ---
 

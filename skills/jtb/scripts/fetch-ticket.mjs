@@ -1456,7 +1456,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   // Contextual upsell: after a deep traversal with a substantial graph, nudge toward --summarize
   if (depth > 1 && !args.includes('--summarize') && (ticket.linked?.length ?? 0) >= 2) {
     const s = createStyler({ isTTY: process.stderr.isTTY });
-    printErrFn(`  ${s.dim('○')} ${s.dim('Tip: large briefs compress further — `--summarize` condenses this to a single AI digest ($8/mo)')}\n`);
+    printErrFn(`  ${s.dim('○')} ${s.dim('Tip: large briefs compress further — `--summarize` condenses this to a single AI digest ($9/mo)')}\n`);
   }
 }
 

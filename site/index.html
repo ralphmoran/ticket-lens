@@ -70,7 +70,7 @@
     <div class="hero-inner">
       <div class="hero-badge">
         <div class="hero-badge-dot"></div>
-        Zero npm deps &middot; Node.js &ge;20 &middot; Open core
+        Zero npm deps &middot; Node.js &ge;22.6 &middot; Open core
       </div>
       <h1>Your AI assistant<br>shouldn't need to<br><em>read your tickets.</em></h1>
       <p class="hero-sub">TicketLens fetches, compresses, and caches Jira context locally — so Claude Code, Cursor, and any AI tool get structured briefs instead of raw API noise. Ticket content never leaves your machine.</p>
@@ -187,8 +187,8 @@
           <div class="how-num">01</div>
           <div class="how-content">
             <h3 class="how-name">Install</h3>
-            <p class="how-desc">One command. Globally available. Zero runtime npm dependencies beyond Node.js &ge;20.</p>
-            <code class="how-code">npm i -g ticketlens</code>
+            <p class="how-desc">One command. Globally available. Zero runtime npm dependencies beyond Node.js &ge;22.6.</p>
+            <code class="how-code">npm i -g ticketlens@beta</code>
           </div>
         </div>
         <div class="how-step fade-in">
@@ -323,7 +323,7 @@
             </span>
             <span class="feat-item-name">Recall</span>
             <span class="feat-item-desc">Your own notes, auto-injected into future briefs</span>
-            <span class="feat-tier pro">Pro</span>
+            <span class="feat-tier pro">Pro add-on</span>
           </div>
           <div class="feat-item" data-feat="8" tabindex="0" role="button" aria-pressed="false">
             <span class="feat-item-icon">
@@ -418,7 +418,7 @@
           <button class="billing-opt" data-billing="monthly">Monthly</button>
           <button class="billing-opt is-active" data-billing="annual">
             Annual
-            <span class="billing-badge">2 months free</span>
+            <span class="billing-badge">~20% off</span>
           </button>
         </div>
       </div>
@@ -454,13 +454,13 @@
           </div>
           <div class="pricing-period">
             <span class="price-mo">billed monthly</span>
-            <span class="price-yr">$84/yr — 2 months free</span>
+            <span class="price-yr">$84/yr — ~20% off</span>
           </div>
           <ul class="pricing-feats">
             <li>Everything in Free</li>
-            <li>Recall — your own notes, auto-matched and injected into future briefs</li>
+            <li>Recall (Pro add-on; included in Team) — your own notes, auto-matched and injected into future briefs</li>
             <li>Gaps — requirements found in linked tickets or attachments, missing from this one</li>
-            <li>Write back to the tracker — post comments, transition status, assign to yourself (ticketlens comment/transition/assign)</li>
+            <li>Write back to the tracker — post comments, transition status, assign to yourself or another developer (ticketlens comment/transition/assign)</li>
             <li>Duplicate-ticket detection — find likely duplicates in the same project (ticketlens duplicates)</li>
             <li>Link two tickets — Jira/GitHub/Linear (ticketlens link)</li>
             <li>Update title/description/labels/priority (ticketlens update)</li>
@@ -492,7 +492,7 @@
           </div>
           <div class="pricing-period">
             <span class="price-mo">per month</span>
-            <span class="price-yr">$180/seat/yr — 2 months free</span>
+            <span class="price-yr">$180/seat/yr — ~20% off</span>
           </div>
           <ul class="pricing-feats">
             <li>Everything in Pro</li>
@@ -504,6 +504,7 @@
             <li>Team health, compliance analytics &amp; response stats dashboard</li>
             <li>Collision detection (branch overlap alerts)</li>
             <li>Slack alerts &amp; digest schedules (incl. custom rule-triggered notify/schedule)</li>
+            <li>Recall included — team-shared notes with Console verification</li>
             <li>Priority support</li>
           </ul>
           <a href="https://YOUR_STORE_SLUG.lemonsqueezy.com/checkout/buy/YOUR_TEAM_VARIANT_ID?embed=1&media=0" class="pricing-cta ghost lemonsqueezy-button">Get Team →</a>
@@ -522,7 +523,7 @@
             <div class="pricing-enterprise-label">Enterprise</div>
             <p class="pricing-enterprise-desc">SSO, centralized billing, DPA, and dedicated onboarding for teams of 50+. Your ticket data never leaves your network — passes security review in days.</p>
           </div>
-          <a href="mailto:enterprise@ticketlens.io" class="pricing-cta ghost pricing-enterprise-cta">Talk to us →</a>
+          <a href="mailto:enterprise@ticketlens.app" class="pricing-cta ghost pricing-enterprise-cta">Talk to us →</a>
         </div>
       </div>
       <p class="pricing-note fade-in"><strong>Open core</strong> — The CLI is free forever. No usage limits. No forced account.</p>
@@ -536,7 +537,7 @@
         <div>
           <span class="section-tag">Enterprise-ready</span>
           <h2 class="section-h2">Built for teams that can't afford<br>data leaks.</h2>
-          <p class="section-lead" style="margin-bottom:0">TicketLens never routes your ticket content through external servers. That's not a setting — it's the architecture.</p>
+          <p class="section-lead" style="margin-bottom:0">TicketLens fetches your ticket content directly from your tracker and never relays it through our servers. Cloud features (--summarize --cloud, Recall sync, Team dashboards, Slack alerts) are opt-in and send only the data each one needs.</p>
           <div class="compliance-badges">
             <!-- GDPR -->
             <div class="compliance-badge">
@@ -694,30 +695,30 @@
           <div class="install-card-title">Global install (recommended)</div>
           <div class="install-card-sub">Install once, use from any directory.</div>
           <div class="code-block">
-            <button class="copy-btn" data-copy="npm install -g ticketlens&#10;tl init&#10;tl CNV1-2">Copy</button>
+            <button class="copy-btn" data-copy="npm install -g ticketlens@beta&#10;tl init&#10;tl CNV1-2">Copy</button>
             <span class="code-comment"># Install</span><br>
-            <span class="code-cmd">npm install -g ticketlens</span><br><br>
+            <span class="code-cmd">npm install -g ticketlens@beta</span><br><br>
             <span class="code-comment"># Connect your Jira — pick projects &amp; statuses from a live list</span><br>
             <span class="code-cmd">tl <span class="code-arg">init</span></span><br><br>
             <span class="code-comment"># Fetch a ticket brief</span><br>
             <span class="code-cmd">tl <span class="code-arg">CNV1-2</span></span>
           </div>
-          <div class="install-prereq">Prerequisites: <strong>Node.js &ge;20</strong></div>
+          <div class="install-prereq">Prerequisites: <strong>Node.js &ge;22.6</strong></div>
           <div class="install-prereq"><code>tl</code> works everywhere <code>ticketlens</code> does</div>
         </div>
         <div class="install-card fd2">
           <div class="install-card-title">Claude Code /jtb skill</div>
           <div class="install-card-sub">Loads full ticket context directly into your Claude session.</div>
           <div class="code-block">
-            <button class="copy-btn" data-copy="npm install -g ticketlens && ticketlens init&#10;ticketlens update-skill">Copy</button>
+            <button class="copy-btn" data-copy="npm install -g ticketlens@beta && ticketlens init&#10;ticketlens update-skill">Copy</button>
             <span class="code-comment"># Install + configure</span><br>
-            <span class="code-cmd">npm install -g ticketlens &amp;&amp; ticketlens init</span><br><br>
+            <span class="code-cmd">npm install -g ticketlens@beta &amp;&amp; ticketlens init</span><br><br>
             <span class="code-comment"># Install /jtb Claude Code command</span><br>
             <span class="code-cmd">ticketlens update-skill</span><br><br>
             <span class="code-comment"># Then in Claude Code:</span><br>
             <span class="code-cmd"><span class="code-arg">/jtb CNV1-2</span></span>
           </div>
-          <div class="install-prereq">Requires: <strong>Claude Code</strong> + <strong>Node.js &ge;20</strong></div>
+          <div class="install-prereq">Requires: <strong>Claude Code</strong> + <strong>Node.js &ge;22.6</strong></div>
         </div>
       </div>
     </div>
@@ -737,7 +738,7 @@
               Is ticket data ever sent to the cloud?
               <span class="faq-icon" aria-hidden="true">+</span>
             </button>
-            <div class="faq-a">No. TicketLens fetches tickets directly from your Jira instance and stores briefs locally at <code>~/.ticketlens/cache/</code>. Nothing is routed through TicketLens servers. When you use <code>--summarize --cloud</code>, only your pre-compressed brief (not raw ticket data) is sent.</div>
+            <div class="faq-a">No. TicketLens fetches tickets directly from your Jira instance and stores briefs locally at <code>~/.ticketlens/cache/</code>. Nothing is routed through TicketLens servers by default. Opt-in cloud features send only what they need: <code>--summarize --cloud</code> sends your pre-compressed brief (not raw ticket data), and Recall sync, Team dashboards and Slack alerts send the notes or metadata they display.</div>
           </div>
           <div class="faq-item">
             <button class="faq-q" aria-expanded="false">

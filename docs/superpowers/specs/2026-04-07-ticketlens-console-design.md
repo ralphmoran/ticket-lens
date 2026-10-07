@@ -3,6 +3,8 @@
 **Status:** Approved  
 **Phase:** C (Frontend Dashboard)
 
+> **Superseded / archived 2026-10-07.** This is the original 2026-04-07 design. The Console has since diverged; the source of truth is `ticketlens-api` (`app/Enums/Permission.php`, `routes/web.php`, `config/tiers.php`, `resources/js/Layouts/ConsoleLayout.vue`) and `ROADMAP.md`. Inline "Superseded" notes mark contradictions only; the original text is unchanged.
+
 ---
 
 ## 1. Overview
@@ -19,7 +21,7 @@ The Console makes CLI savings legible to managers who approve budgets. CLI sells
 
 | Concern | Decision |
 |---|---|
-| Repo | `ticketlens-api` (same Laravel 11 app) |
+| Repo | `ticketlens-api` (same Laravel 11 app; now Laravel 13, `composer.json`) |
 | Frontend | Inertia.js + Vue 3 (`<script setup>`) |
 | Styling | Tailwind CSS v4 (already installed) |
 | Build | Vite 8 (already configured) |
@@ -51,6 +53,9 @@ const ADMIN_REVENUE    = 1 << 9;  // 512
 
 Adding a new module requires no migration — define a new constant, guard the route and component. Done.
 
+> **Superseded 2026-10-07:** Bits 128/256/512 are now `TeamManageMembers`, `TeamManageSeats` and `AttentionQueue`; there are no `ADMIN_*` bits (the owner is `users.is_owner`, god mode in `PermissionService`). Added: `TeamViewHealth` 1024, `WorkflowRules` 2048, `Recall` 4096. See `app/Enums/Permission.php:9-21`. The permission file is `resources/js/permissions.ts`; the composable is `usePermissions.js`.
+
+
 ### 3.2 Tier Composites (constants only, never stored in DB)
 
 ```php
@@ -60,6 +65,9 @@ const TIER_TEAM       = TIER_PRO|COMPLIANCE|EXPORT|MULTI_ACCOUNT;     // 127
 const TIER_ENTERPRISE = TIER_TEAM;                                    // 127 + custom overrides
 const ADMIN_MASK      = ADMIN_USERS|ADMIN_LICENSES|ADMIN_REVENUE;     // 896
 ```
+
+> **Superseded 2026-10-07:** current presets are Free 64, Pro 2119 (adds `WorkflowRules`), Team and Enterprise 6783 (adds `AttentionQueue`, `Recall`); `teamManagerMask()` = 384 is OR'd onto group owners (`Permission.php:41-47`). Prices live in `config/tiers.php` (Pro 9, Team 19).
+
 
 ### 3.3 Data Model
 
@@ -162,6 +170,9 @@ All Console routes are under `/console`, guarded by `auth` + Inertia middleware.
 /webhooks/lemonsqueezy      → public POST, HMAC-verified
 ```
 
+> **Superseded 2026-10-07:** `/console` redirects to `/console/dashboard`; the digests page is `/console/digest-history`; `/console/compliance` was removed (`ticketlens-api@3748725`); admin pages moved to `/console/owner/*` (clients, licenses, revenue, tiers, audit, health, activity, error-reports) and `/console/admin/*` (team and manager pages); the upgrade page is `/console/upgrade`; `/console/analytics` is open to all tiers (Free sees a teaser). Added routes: `/behavior`, `/connections`, `/queue`, `/admin/recall`, `/admin/ai*`, `/admin/jira`, `/admin/rules`, `/admin/templates`. See `routes/web.php`.
+
+
 Route middleware enforces `HasPermission` per route. Unauthorized → redirect to `/upgrade` (client) or `/console` (insufficient admin bits).
 
 ---
@@ -182,6 +193,9 @@ Route middleware enforces `HasPermission` per route. Unauthorized → redirect t
 | Admin: Licenses | — | — | — | — | ✅ |
 | Admin: Revenue / MRR | — | — | — | — | ✅ |
 
+> **Superseded 2026-10-07:** the Compliance row no longer exists (page and `/v1/compliance` removed in `ticketlens-api@3748725`); Export is Team+ only (`Permission::team()`), not Pro; Savings Analytics is available to all tiers with a Free teaser.
+
+
 **Free teaser:** Savings Analytics renders a preview chart with blurred/locked data and an upgrade CTA. This is the highest-ROI upgrade nudge — makes the CLI's token savings visible before the user commits to Pro.
 
 ---
@@ -199,6 +213,9 @@ Route middleware enforces `HasPermission` per route. Unauthorized → redirect t
 **Summarize History** — Cloud summarize calls (`POST /v1/summarize`). Useful for BYOK cost tracking.
 
 **Compliance** — History of `POST /v1/compliance` checks. Per-ticket results, monthly usage counter vs. limit (Free: 3, Pro: unlimited).
+
+> **Superseded 2026-10-07:** removed in `ticketlens-api@3748725`. Compliance now surfaces as Team-only Admin > Compliance Analytics (`/console/admin/compliance-analytics`).
+
 
 **Account** — License key status, tier, renewal date. BYOK API key management (Anthropic/OpenAI). LemonSqueezy upgrade/downgrade link.
 
@@ -228,6 +245,9 @@ The Console must feel like an extension of the CLI. A heavy dashboard would cont
 
 **Admin landing state:** MRR waterfall prominently. Everything else (client list, license admin) one click away — not on the landing view.
 
+> **Superseded 2026-10-07:** `Console/Owner/Revenue.vue` currently shows an MRR and subscription overview; no waterfall chart is implemented. The ⌘K command palette is shipped (`ConsoleLayout.vue`, `paletteNavigate`) and a dark/light theme toggle exists (`ConsoleLayout.vue:28-40`).
+
+
 **Same-page nav clicks (backlog #36, 2026-09-21):** clicking a sidebar link, the header gear or a Settings tab for the page already shown makes no request.
 - Same URL means identical path and query; the hash is ignored.
 - The Cmd-K palette, notification items and the Upgrade link still request.
@@ -256,6 +276,9 @@ No migration required. Assign the bit to a tier constant or individual user: `us
 - OAuth SSO (future)
 - In-Console Jira ticket creation/editing (rejected — see `decision_no_jira_crud.md`)
 - Dark/light mode toggle (dark-only, matching landing page)
+
+> **Superseded 2026-10-07:** real-time updates shipped (ROADMAP item 59, `useLiveReload.js`, Reverb events) and a dark/light theme toggle exists (`ConsoleLayout.vue:28-40`). The rest of this list still holds.
+
 
 ---
 

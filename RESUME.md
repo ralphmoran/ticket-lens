@@ -1,5 +1,7 @@
 # Session Resume Guide
 
+> **Superseded / archived 2026-10-07.** Historical snapshot as of 2026-04-01; do not resume from it. Current state: `git log` on `main` (HEAD `b2f1645` at audit time), `package.json` version 0.43.6 (npm `beta` 0.43.6, `latest` 0.38.0), and `ROADMAP.md`. The `.worktrees/` directory is empty and `git worktree list` shows only `main`. Inline notes below point to current code; the original text is kept unchanged.
+
 > This file is the authoritative resume point for any new Claude Code session continuing TicketLens development.
 
 ## Quick Context
@@ -9,8 +11,8 @@
 - **Active branch:** `feature/phase2-sprint` in worktree `.worktrees/phase2-sprint`
 - **Worktree HEAD:** `dea8bca` (docs: document --compliance flag in SKILL.md)
 - **CLI main HEAD:** `225a71e` (docs: mark Phase 2 complete in RESUME.md)
-- **Backend main HEAD:** `a4ea6cb` (feat: POST /v1/compliance endpoint — server-side compliance check)
-- **CLI tests:** 576 passing, 0 failures
+- **Backend main HEAD:** `a4ea6cb` (feat: POST /v1/compliance endpoint — server-side compliance check) — *Superseded: the endpoint and its Console page were removed in `ticketlens-api@3748725` (ROADMAP items 47/48); `routes/api.php` no longer defines it.*
+- **CLI tests:** 576 passing, 0 failures — *Superseded: 4,162 tests as of 2026-09-26 (ROADMAP item 67).*
 - **Backend compliance tests:** 5/5 passing (full suite requires Sail for MySQL-dependent tests)
 
 ---
@@ -23,7 +25,7 @@
 
 | # | Task | Status | Commit |
 |---|------|--------|--------|
-| 1 | Node engines fix (`>=18` → `>=20`) | ✅ Done | `3537061` |
+| 1 | Node engines fix (`>=18` → `>=20`) | ✅ Done | `3537061` (superseded: engines now `>=22.6.0`) |
 | 2 | Backend CI pipeline (PHP 8.3/8.4, SQLite) | ✅ Done | `a0761a4` (backend `main`) |
 | 3 | Atlassian MCP competitive positioning | ✅ Done | `eda37f2` |
 | — | Domain rename `.io` → `.dev` | ✅ Done | `42b253f` (CLI main), `8f38cd9` (worktree), `5c29f15` (backend) |
@@ -43,7 +45,7 @@ All work is on branch `feature/phase2-sprint` in worktree `.worktrees/phase2-spr
 | 4 | `lib/diff-analyzer.mjs` | ✅ Done | `3c706ec` | +8 → 567 |
 | 5 | `lib/compliance-checker.mjs` orchestrator | ✅ Done | `68a812d` → `36fb265` | +9 → 576 |
 | 6 | CLI `--compliance` flag | ✅ Done | `a8322cf` | 576 (no new unit tests) |
-| 7 | Backend `POST /v1/compliance` endpoint | ✅ Done | `a4ea6cb` (backend) | +5 backend tests |
+| 7 | Backend `POST /v1/compliance` endpoint | ✅ Done | `a4ea6cb` (backend) | +5 backend tests (superseded: endpoint removed in `ticketlens-api@3748725`) |
 | 8 | Final verification + SKILL.md | ✅ Done | `dea8bca` | 576 CLI ✔ 5/5 backend ✔ |
 
 ---

@@ -22,16 +22,18 @@ A Claude Code skill that fetches a Jira ticket's full context and produces a str
 
 ## Installation
 
-The skill lives at `~/.agents/skills/jtb/`. No npm install required — it uses only Node.js built-in modules.
+Install the CLI with `npm i -g ticketlens@beta`, run `ticketlens init`, then `ticketlens update-skill` to copy the `/jtb` skill into your AI assistant's commands directory (e.g. `~/.claude/commands/jtb.md`). It has zero npm dependencies — Node.js built-ins only.
+
+> This guide covers fetch and triage. For every other command (Recall, MCP, ticket write-back, compliance, stats, cache, etc.) see the root [README.md](../../../README.md) or run `ticketlens --help`. Triage also reports a `stale` urgency (Pro) and supports more flags (`--sort`, `--static`, `--plain`, `--all`, `--save`, `--push`, …) than listed below; see `ticketlens triage --help`.
 
 **Requirements:**
-- Node.js 18+ (uses native `fetch` and `node:test`)
+- Node.js >= 22.6 (uses native `fetch` and `node:test`)
 - A Jira Cloud or Jira Server/Data Center instance
 
 ### File Structure
 
 ```
-~/.agents/skills/jtb/
+skills/jtb/   (in the repo)
 ├── SKILL.md                        # Claude Code skill definition
 ├── README.md                       # Quick reference
 ├── docs/
@@ -98,7 +100,7 @@ Profiles let you work with multiple Jira instances. Tickets are automatically ro
 | `baseUrl` | Yes | both | Jira instance URL |
 | `auth` | Yes | both | `"cloud"` (Basic email+token), `"server"` (Bearer PAT), or `"basic"` (Basic user+password for pre-8.14 Server) |
 | `email` | Yes | both | Atlassian email (Cloud) or username (Server) |
-| `ticketPrefixes` | Yes | fetch | Array of Jira project keys this profile handles |
+| `ticketPrefixes` | No | fetch | Array of Jira project keys this profile handles |
 | `projectPaths` | No | triage | Array of local paths — triage auto-selects profile when cwd is inside one |
 | `triageStatuses` | No | triage | Jira statuses to scan (default: `["In Progress", "Code Review", "QA"]`) |
 
@@ -136,8 +138,8 @@ If a prefix matches multiple profiles, a warning is emitted and the first match 
 
 1. Add a profile entry to `~/.ticketlens/profiles.json` with the project's ticket prefixes and paths
 2. Add matching credentials to `~/.ticketlens/credentials.json`
-3. Test fetch: `node ~/.agents/skills/jtb/scripts/fetch-ticket.mjs NEWPROJ-1 --depth=0`
-4. Test triage: `node ~/.agents/skills/jtb/scripts/fetch-my-tickets.mjs --profile=newprofile`
+3. Test fetch: `ticketlens NEWPROJ-1 --depth=0`
+4. Test triage: `ticketlens triage --profile=newprofile`
 
 ### Environment Variables (Single Account)
 
@@ -174,7 +176,7 @@ If `JIRA_PAT` is set (or profile has `pat`), Bearer auth is used (Server/DC). Ot
 ### Standalone CLI
 
 ```bash
-node ~/.agents/skills/jtb/scripts/fetch-ticket.mjs TICKET-KEY [--depth=N] [--profile=NAME]
+ticketlens TICKET-KEY [--depth=N] [--profile=NAME]
 ```
 
 Output goes to stdout (the TicketBrief markdown). Errors go to stderr with exit code 1.
@@ -204,7 +206,7 @@ Scans your assigned Jira tickets and surfaces ones needing your attention.
 ### Standalone CLI
 
 ```bash
-node ~/.agents/skills/jtb/scripts/fetch-my-tickets.mjs [--stale=N] [--status=X,Y] [--profile=NAME]
+ticketlens triage [--stale=N] [--status=X,Y] [--profile=NAME]
 ```
 
 ### What it does
@@ -470,7 +472,7 @@ Use `--profile=NAME` to force a specific profile. Check that your `ticketPrefixe
 
 ### 404 Not Found
 
-- Check the ticket key is correct (case-sensitive, e.g., `PROD-1234` not `prod-1234`)
+- Check the ticket key is correct (lowercase keys such as `prod-1234` are auto-uppercased; the project key must still exist)
 - Verify you have access to the project in Jira
 
 ### 410 Gone (Jira Cloud)
@@ -494,32 +496,30 @@ This is normal if the ticket text doesn't contain file paths, class names, SHAs,
 ### Running Tests
 
 ```bash
-cd ~/.agents/skills/jtb
-node --test scripts/test/*.test.mjs
+npm test   # from the repo root
 ```
 
 All tests use `node:test` + `node:assert` with zero external dependencies.
 
 ### Test Structure
 
-| Test file | Module | Tests |
-|-----------|--------|-------|
-| `code-ref-parser.test.mjs` | code-ref-parser | 12 |
-| `vcs-detector.test.mjs` | vcs-detector | 4 |
-| `jira-client.test.mjs` | jira-client | 32 |
-| `brief-assembler.test.mjs` | brief-assembler | 11 |
-| `attention-scorer.test.mjs` | attention-scorer | 27 |
-| `profile-resolver.test.mjs` | profile-resolver | 22 |
-| `fetch-ticket.test.mjs` | fetch-ticket (integration) | 5 |
-| `fetch-my-tickets.test.mjs` | fetch-my-tickets (integration) | 4 |
-| `adf-converter.test.mjs` | adf-converter | 13 |
-| **Total** | | **134** |
+| Test file | Module |
+|-----------|--------|
+| `code-ref-parser.test.mjs` | code-ref-parser |
+| `vcs-detector.test.mjs` | vcs-detector |
+| `jira-client.test.mjs` | jira-client |
+| `brief-assembler.test.mjs` | brief-assembler |
+| `attention-scorer.test.mjs` | attention-scorer |
+| `profile-resolver.test.mjs` | profile-resolver |
+| `fetch-ticket.test.mjs` | fetch-ticket (integration) |
+| `fetch-my-tickets.test.mjs` | fetch-my-tickets (integration) |
+| `adf-converter.test.mjs` | adf-converter |
 
 ### Test Fixtures
 
 Jira API response fixtures are at:
 ```
-~/Desktop/Projects/ticket-lens/fixtures/jira-fixtures/
+fixtures/jira-fixtures/
 ├── PROD-1234-cloud.json     # Jira Cloud format
 └── PROD-1234-server.json    # Jira Server format
 ```
@@ -530,7 +530,7 @@ Jira API response fixtures are at:
 2. Implement the function in `code-ref-parser.mjs`
 3. Add it to `extractCodeReferences()`
 4. Add the category to `brief-assembler.mjs` categories array
-5. Run `node --test scripts/test/*.test.mjs` to verify
+5. Run `npm test` to verify
 
 ### Adding Support for a New VCS
 

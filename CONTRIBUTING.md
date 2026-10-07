@@ -7,12 +7,12 @@ Thanks for your interest in contributing to TicketLens! This guide covers everyt
 ```bash
 git clone https://github.com/ralphmoran/ticket-lens.git
 cd ticket-lens
-npm test  # 168 tests, no install needed
+npm test  # no install needed
 ```
 
 That's it. No `npm install`, no build step. TicketLens has **zero npm dependencies** — it uses only Node.js built-ins.
 
-**Requirements:** Node.js >= 20.0.0
+**Requirements:** Node.js >= 22.6.0
 
 ## Project Structure
 
@@ -67,7 +67,7 @@ We use **test-driven development (TDD)**. For any change:
 
 This is non-negotiable. TicketLens ships with zero npm dependencies. This gives us:
 
-- Sub-second install (`npm i -g ticketlens`)
+- Sub-second install (`npm i -g ticketlens@beta`)
 - Zero supply chain attack surface
 - Every line of code is auditable
 - No upstream breaking changes
@@ -125,7 +125,7 @@ TicketLens supports both Jira Cloud (v3 API) and Jira Server/DC (v2 API). Any Ji
 
 1. Fork the repo and create a branch from `main`
 2. Make your changes following the guidelines above
-3. Run `npm test` — all 168+ tests must pass
+3. Run `npm test` — all tests must pass
 4. Push and open a PR with a clear description of what and why
 5. Link any related issues
 

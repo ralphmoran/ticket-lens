@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.49.1 -->
+<!-- jtb-skill-version: 0.49.2 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -484,7 +484,7 @@ ticketlens worklog PROD-1234=1h30m PROD-5678=45m --comment="Sprint work" --confi
 - The MCP tool takes `entries[]` with per-ticket `comment`/`started`.
 - The CLI applies one `--comment`/`--started` to every ticket.
 
-`--attach=path1,path2` (comma-separated local file paths) is available on `comment` and `create` only, up to 50 files per call (Pro, Team, Enterprise). Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
+`--attach=path1,path2` (comma-separated local file paths) is available on `comment`, `create`, and `note add`/`note patch`, up to 50 files per call (Pro, Team, Enterprise). Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
 
 The write actions (comment/transition/assign/link/update/create/worklog) have a short local debounce (10s) against an accidental double-fire, and every write is appended to a local audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — surface the failure to the user rather than silently re-attempting, since a ticket write isn't naturally idempotent the way a Recall note save is. `duplicates` has neither, since nothing is written.
 
@@ -588,7 +588,7 @@ Use this evaluation order:
 `--compliance` never sends data anywhere. The diff stays local. All analysis is performed by Claude Code within your session context. (The standalone command's `--consensus` opt-in below is the one exception — see that section.)
 
 ### Standalone command
-The same tier-gated check also runs as its own command — `ticketlens compliance PROJ-123` — independent of a full ticket fetch. This is what `ticketlens install-hooks` wires into a pre-push git hook (`ticketlens compliance "$KEY" || exit 1`, gated on a configurable coverage threshold). It shares the same `FREE_LIMIT`/Pro gate and the same compliance ledger as the `--compliance` flag above.
+The same tier-gated check also runs as its own command — `ticketlens compliance PROJ-123` — independent of a full ticket fetch. This is what `ticketlens install-hooks` wires into a pre-push git hook (`ticketlens compliance "$KEY" || exit 1`, gated on a configurable coverage threshold). It shares the same `FREE_LIMIT`/Pro gate and the same compliance ledger as the `--compliance` flag above. The diff it evaluates (and sends for `--consensus`) excludes Markdown files (`*.md`), so requirements met only by doc changes won't register as covered.
 
 If this harness has TicketLens's MCP server configured (a tool named `compliance` — often shown as `mcp__ticketlens__compliance` — visible in your tool list), prefer it over the bash form: same tier gate (Free: 3 checks/month, Pro: unlimited), same report — just no shell command to construct or stdout to parse. It accepts `ticket`/`profile`/`consensus`, matching the standalone command's arguments below.
 
@@ -623,7 +623,7 @@ Generates an AI-powered summary of the full brief, collapsing verbose descriptio
 
 - **BYOK (default):** reads your AI API key from `~/.ticketlens/credentials.json`. First use will prompt for consent.
 - **`--cloud`:** routes through TicketLens cloud API (no local key needed, requires Pro).
-- **`--provider=NAME`:** override the AI provider. Supported values depend on your credentials (e.g. `claude`, `openai`).
+- **`--provider=NAME`:** override the AI provider. Supported values: `anthropic`, `openai`, `groq` (whichever you have a key for).
 - **`--budget=N`:** prune the brief to approximately N tokens before summarising. Forces plain-text output.
 
 ### --handoff (Pro)

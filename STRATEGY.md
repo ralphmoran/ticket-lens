@@ -73,7 +73,7 @@ Developers lose 15-30 minutes per ticket gathering context before writing a sing
 
 **Goal**: Get the product in front of people. Measure demand before building premium features.
 
-Current state: 134 tests, clean architecture, multi-account support, Jira Cloud v3 migration complete, zero deps.
+Current state (Phase A snapshot, 2026-03; 4,162 tests by 2026-09-26 per ROADMAP item 67): 134 tests, clean architecture, multi-account support, Jira Cloud v3 migration complete, zero deps.
 
 **Actions:**
 - [x] Fix Jira Cloud v3 API migration (unblocks Cloud users)
@@ -139,7 +139,7 @@ If yes: proceed to Phase C. If no: iterate on Phase B, double down on marketing,
 | Configurable cache TTL | No | Yes | Yes | Yes |
 | Scheduled digest | No | Yes | Yes | Yes |
 | Ticket history tracking | No | Yes | Yes | Yes |
-| Console dashboard | No | Yes | Yes | Yes |
+| Console dashboard | Teaser (usage charts locked) | Full | Full | Full |
 | Parallel collision detection | No | No | Yes | Yes |
 | Standup/PR generator | No | No | Yes | Yes |
 | Handoff brief (`--handoff`) | No | No | Yes | Yes |

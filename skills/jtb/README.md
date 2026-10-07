@@ -5,7 +5,7 @@ Fetches a Jira ticket's full context and assembles a structured brief for implem
 ## Quick Start
 
 ```bash
-npm install -g ticketlens
+npm i -g ticketlens@beta
 ticketlens init          # Configure your Jira connection
 ```
 
@@ -254,7 +254,7 @@ All fields pre-populated. Press `Enter` to keep any value unchanged.
 | 1 | `--profile=NAME` flag | `ticketlens PROJ-123 --profile=client` |
 | 2 | Ticket prefix match | `PROJ-123` → prefix `PROJ` → `myteam` |
 | 3 | Project path match | cwd in `~/projects/client-app` → `client` |
-| 4 | Default / first profile | First entry in `profiles.json` |
+| 4 | Default profile | `default` field in `profiles.json` (set via `ticketlens switch`) |
 | 5 | Environment variables | `JIRA_BASE_URL`, `JIRA_EMAIL`, etc. |
 
 **Multi-profile disambiguation:** If two profiles share a prefix, an arrow-key selector appears. The selected profile is correctly applied through any subsequent retries or switches — selecting a different profile always replaces the previous `--profile=` arg cleanly.
@@ -282,7 +282,7 @@ Claude Code reads each file as context before entering plan mode:
 | TXT, CSV, MD, LOG, JSON | Read as plain text |
 | ZIP, DOCX, XLSX, etc. | Path noted — not read directly |
 
-Files over **10 MB** are skipped with a note. Cached files are reused on repeat fetches.
+Files over **10 MB** are skipped with a note, and so are files past the per-ticket cap (10 on Free, 50 on Pro, Team and Enterprise). Cached files are reused on repeat fetches.
 
 ```bash
 ticketlens PROJ-123 --no-attachments   # Skip download entirely
@@ -301,7 +301,7 @@ After the first fetch, ticket data is saved locally and reused on repeat fetches
 
 The cache is depth-aware: a cached depth-2 response satisfies a depth-1 or depth-0 request. Pass `--no-cache` to bypass and re-fetch from Jira.
 
-**TTL is configurable per profile** — the default is 4 hours. When an expired file is read, it is **deleted automatically** (lazy eviction), so stale files never accumulate on disk. Set a longer window if you revisit tickets weeks or months later:
+**TTL is configurable per profile (Pro)** — the default, and the only option on Free, is 4 hours. When an expired file is read, it is **deleted automatically** (lazy eviction), so stale files never accumulate on disk. Set a longer window if you revisit tickets weeks or months later:
 
 ```bash
 ticketlens config   # set "Brief cache TTL" in the Optional section
