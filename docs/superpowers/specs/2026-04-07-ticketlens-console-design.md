@@ -27,7 +27,7 @@ The Console makes CLI savings legible to managers who approve budgets. CLI sells
 | Build | Vite 8 (already configured) |
 | Auth | Laravel Sanctum (session-based for Inertia) |
 | Existing CLI API | `/v1/...` routes untouched — CLI consumers unaffected |
-| Landing page | `site/index.html` in `ticket-lens` repo — pure static HTML, unchanged |
+| Landing page | ~~`site/index.html` in `ticket-lens` repo~~ **Superseded 2026-10-07:** `site/` was retired. The template is `resources/landing/index.html` in `ticketlens-api`, rendered to `public/landing.html` by `php artisan landing:build` with prices from `config/tiers.php`. |
 
 Inertia.js eliminates a separate API layer for the frontend. The Console is controller-driven from Laravel, sharing models and services with the existing CLI backend.
 
