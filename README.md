@@ -1122,6 +1122,9 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
+- **Console: Behavior settings** — pick when the idle-warning appears (5 min, 10 min or 1 h) and a playful or plain tone, per user, in Settings > Behavior
+- **Console: session-expiry warning** — a stay-or-logout countdown appears shortly before your session ends; any activity resets it
+- **Console: collapsed-sidebar Owner Panel** — the hover menu now opens and stays open when you click an item, like the other groups
 - **Tiered attachment cap** — per-call attachment count is now 10 on Free and 50 on Pro, Team and Enterprise (was a flat 20), for uploads, `fetch` downloads and Recall sync. Excess files are reported, not silently dropped
 - **`ticketlens pr --open`** — opens a real GitHub PR compare page prefilled with the same description `pr` already prints, instead of just printing it. GitHub only, no stored write-credential. Pro tier
 - **`review`/`compliance` fixes** — branch diff now uses merge-base semantics, no longer picks up unrelated unmerged-main files; AC parser now recognizes Jira wiki `Requirements`/`How to test` headers, not just literal "Acceptance Criteria"
