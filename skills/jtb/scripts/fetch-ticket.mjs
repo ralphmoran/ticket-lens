@@ -32,6 +32,7 @@ import { parseAge } from './lib/cache-manager.mjs';
 import { createStyler } from './lib/ansi.mjs';
 import { apiBase } from './lib/api-utils.mjs';
 import { isLicensed, showUpgradePrompt, readLicense } from './lib/license.mjs';
+import { SUMMARIZE_TIP } from './lib/upsell-tips.mjs';
 import { detectVcs } from './lib/vcs-detector.mjs';
 import { runComplianceCheck } from './lib/compliance-checker.mjs';
 import { runConsensusCheck } from './lib/consensus-checker.mjs';
@@ -1456,7 +1457,7 @@ export async function run(args, envOrOpts = process.env, fetcher = globalThis.fe
   // Contextual upsell: after a deep traversal with a substantial graph, nudge toward --summarize
   if (depth > 1 && !args.includes('--summarize') && (ticket.linked?.length ?? 0) >= 2) {
     const s = createStyler({ isTTY: process.stderr.isTTY });
-    printErrFn(`  ${s.dim('○')} ${s.dim('Tip: large briefs compress further — `--summarize` condenses this to a single AI digest ($9/mo)')}\n`);
+    printErrFn(`  ${s.dim('○')} ${s.dim(SUMMARIZE_TIP)}\n`);
   }
 }
 

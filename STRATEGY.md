@@ -92,8 +92,8 @@ Current state (Phase A snapshot, 2026-03; 4,162 tests by 2026-09-26 per ROADMAP 
 
 **Tier philosophy:**
 - **Free** — Everything local. Me, now, one ticket. No limits on depth, fetch, or triage.
-- **Pro ($9/mo)** — Individual mistake prevention. The free tier tells you the truth when you ask it. Pro tells you when you forgot to ask. Features: spec drift detection, git hook compliance gate, ticket-to-PR assembler, token budget optimizer, compliance ledger, stale delta report, AI summary (BYOK), configurable cache TTL, unlimited compliance checks, scheduled digest.
-- **Team ($19/seat/mo)** — Shared intelligence. Work that crosses people, time, and systems. Adds: parallel collision detection, standup/PR generator, handoff brief, shareable triage snapshot, team compliance analytics, --assignee/--sprint flags, CSV/JSON export, seat management, console team panel.
+- **Pro ($9/mo)** — Individual mistake prevention. The free tier tells you the truth when you ask it. Pro tells you when you forgot to ask. Features: spec drift detection, PR requirements-coverage analysis and `pr --open`, token budget optimizer, compliance ledger, stale delta report, AI summary (BYOK), configurable cache TTL, unlimited compliance checks, scheduled digest.
+- **Team ($19/seat/mo)** — Shared intelligence. Work that crosses people, time, and systems. Adds: parallel collision detection, handoff brief, shareable triage snapshot, team compliance analytics, --assignee/--sprint flags, CSV/JSON export, seat management, console team panel.
 
 Key principle: if a feature touches another human, persists state beyond a session, or integrates with a second system → Team tier. If it prevents individual mistakes without needing infrastructure → Pro tier.
 
@@ -130,8 +130,9 @@ If yes: proceed to Phase C. If no: iterate on Phase B, double down on marketing,
 | `--check` (VCS diff context) | Yes | Yes | Yes | Yes |
 | 4h brief cache | Yes | Yes | Yes | Yes |
 | Spec drift detection | No | Yes | Yes | Yes |
-| Git hook compliance gate | No | Yes | Yes | Yes |
-| Ticket-to-PR assembler | No | Yes | Yes | Yes |
+| Git hook compliance gate | Yes | Yes | Yes | Yes |
+| Ticket-to-PR description (`ticketlens pr`) | Yes | Yes | Yes | Yes |
+| PR requirements-coverage analysis, `pr --open` | No | Yes | Yes | Yes |
 | Token budget optimizer (`--budget N`) | No | Yes | Yes | Yes |
 | Compliance ledger (audit trail) | No | Yes | Yes | Yes |
 | Stale delta report | No | Yes | Yes | Yes |
@@ -141,7 +142,7 @@ If yes: proceed to Phase C. If no: iterate on Phase B, double down on marketing,
 | Ticket history tracking | No | Yes | Yes | Yes |
 | Console dashboard | Teaser (usage charts locked) | Full | Full | Full |
 | Parallel collision detection | No | No | Yes | Yes |
-| Standup/PR generator | No | No | Yes | Yes |
+| Standup generator (`ticketlens standup`) | Yes | Yes | Yes | Yes |
 | Handoff brief (`--handoff`) | No | No | Yes | Yes |
 | Shareable triage snapshot | No | No | Yes | Yes |
 | Team compliance analytics | No | No | Yes | Yes |
