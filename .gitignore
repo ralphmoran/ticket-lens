@@ -15,3 +15,9 @@ skills-lock.json
 !.aidesigner/.gitkeep
 .mcp.json
 .planning/
+
+# Local-only artifacts (audit docs are never committed)
+graphify-out/
+triage.txt
+docs/audits/
+docs/qa/
