@@ -1058,6 +1058,8 @@ Or manage keys in **Console → Admin → AI Settings**.
 
 Pro also unlocks configurable brief cache TTL per profile — set `cacheTtl` to `4h`, `1d`, `7d`, `30d`, or `0` (disable) via `ticketlens config`. Free tier is fixed at 4h.
 
+**Public API (Pro and Team):** build your own integrations on your triage snapshots, Recall notes and digests. Create scoped API keys (`triage:read`, `recall:read`, `recall:write`, `digest:send`; up to 5 active per account) in **Console → Settings → API Keys**, then call `/v1/public` with `Authorization: Bearer tl_pk_...`. Register HTTPS webhook endpoints in the same page to receive HMAC-SHA256 signed `triage.pushed` events (metadata only; ticket content never leaves your machine). Rate limit is 60 requests/min per key on Pro, 120 on Team. The OpenAPI 3.1 contract is public at `/v1/public/openapi.json`.
+
 ### Team — $19/seat/mo
 
 <div align="center">
@@ -1151,6 +1153,7 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
+- **Public API and webhooks** — per-integrator scoped API keys, a curated `/v1/public` surface (triage snapshots, Recall notes, digest send) with an OpenAPI 3.1 contract, and signed `triage.pushed` webhooks. Keys and endpoints are managed in Console > Settings > API Keys. Pro (60 requests/min) and Team (120 requests/min)
 - **Upsell tip without a price** — the `--summarize` tip after a deep `fetch` now says "(Pro)" instead of a hardcoded price; plans and prices live in the Console
 - **Docs match the code** — every doc surface (README, `--help`, SKILL.md, USER_GUIDE, MCP help) re-audited against the CLI; install snippets now use `ticketlens@beta`, Node is `>=22.6`, and the CLI tip shows the real $9/mo Pro price
 - **Console: Behavior settings** — pick when the idle-warning appears (5 min, 10 min or 1 h) and a playful or plain tone, per user, in Settings > Behavior
