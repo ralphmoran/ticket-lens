@@ -373,7 +373,7 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
 ---
 **Status 2026-08-18**: #1, #1b, #1c, #1d, #1e, #2, #2b, #3, #4, #5, #6, #8, #8b, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #22 shipped/closed. #4 (ROADMAP 49b) fully complete 2026-08-14, 11 of 11 tools ported, MCP surface at 22 tools. #13 fully closed 2026-08-16 (PHP side shipped). #14 fully closed 2026-08-16 — necessity question resolved 2026-08-14 (keep hook + SKILL), bracket-literal scanner gap fixed 2026-08-16. #6 + #16 (Recall note attachments, CLI + MCP) fully CLOSED 2026-08-17 — shipped, pushed, published, self-tested. #17 fully CLOSED 2026-08-17. #18 fully CLOSED 2026-08-18 — non-blocking word-count warning shipped, pushed, published, installed, self-tested. #19 fully CLOSED 2026-08-17/18 — full attachment sync + Console preview shipped, one real security bug (extension-based scan bypass) found via live red-team and fixed same session. #22 fully CLOSED 2026-08-18 — recurring CI failure root-caused (stale audits + a hardcoded-date time bomb) and fixed durably. #20 fully CLOSED 2026-08-18 — Console-manageable strictness shipped, red-teamed (30-item pass, all attacks defended), pushed, published, installed, self-tested. #21 FULLY CLOSED 2026-08-18 (`note patch` attachment support, bundled a real attachment-drop bug fix, 15-attack red-team pass all defended) — pushed, published `ticketlens@0.38.47` (beta), installed, self-tested (real CLI + real MCP server, both paths). Remaining: scope #7.
 
-51. **Console: warn before the session expires, offer "stay" or "log out", redirect on timeout.** Filed 2026-10-01, user request.
+51. ~~**Console: warn before the session expires, offer "stay" or "log out", redirect on timeout.**~~ DONE 2026-10-01, `ticketlens-api@4a49299`, ROADMAP 69 (this entry was stale until 2026-10-30). Filed 2026-10-01, user request.
     - Today: an expired session fails silently. `/broadcasting/auth` returns 403 and live updates stop.
     - Today: the next click or reload lands on login with no warning.
     - Wanted: a modal shortly before expiry, "Are you still awake?" or "Did you go get some coffee?".
@@ -385,3 +385,4 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Open: multiple tabs must share one countdown. Activity in any tab resets it.
     - Open: also catch 401, 403 and 419 from Inertia and Echo, and redirect cleanly.
     ROADMAP 69.
+    Escape follow-up CLOSED 2026-10-30, ROADMAP 73: drawer and idle warning joined the shared Escape stack (`useEscapeClose`).
