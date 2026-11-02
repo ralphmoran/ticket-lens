@@ -1,6 +1,6 @@
 # Backlog Focus — 2026-08-05
 
-Working list of everything currently in the backlog. This is the sole focus until items are cleared — do not pick up new work outside this list without updating it first. Kept local, not committed (same convention as `docs/audits/*.md`).
+Working list of everything currently in the backlog. This is the sole focus until items are cleared — do not pick up new work outside this list without updating it first. Committed alongside ROADMAP.md (unlike `docs/audits/*.md`, which stay local).
 
 Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status, update this file AND the memory file it links to AND ROADMAP.md (if the item has a row there) in the same pass.
 
