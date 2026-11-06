@@ -103,7 +103,11 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
 
 22. ~~**ticketlens-api CI was failing repeatedly (5-6 times).**~~ ROOT CAUSED + FIXED 2026-08-18, `ticketlens-api@f20ec7f` (+ `43e8074`, `ce4823d`). Not a code regression: (a) `composer audit`/`npm audit` steps failing on newly-disclosed HIGH-severity CVEs (guzzle, commonmark, nanoid, postcss) already patchable within existing version constraints; (b) the actual recurring cause — `tests/Feature/Api/Triage/PushControllerTest.php` hardcoded `captured_at` to a fixed calendar date (`2026-05-11`), and `PushController` prunes rows older than 90 days on every push. As real time passed 90+ days, the test's own rows got auto-pruned mid-test, failing on commits that never touched Triage code — a time bomb that resurfaces every ~90 days. Fixed durably with `now()`-relative dates. Full suite 1718/1718 passing, CI confirmed green.
 
-23. **All TicketLens services should be available as an API, so a 3rd-party platform can integrate them directly instead of the user needing a separate admin panel.** Filed 2026-08-24. Not scoped — needs its own pass (which services/endpoints, auth model for a 3rd-party integrator vs. today's CLI-token/session auth, whether this is the existing `/v1/*` surface opened up + documented, or a distinct public API layer, rate limiting, versioning/stability guarantees for external consumers).
+23. ~~**All TicketLens services should be available as an API, so a 3rd-party platform can integrate them directly instead of the user needing a separate admin panel.**~~ CLOSED 2026-10-25 as ROADMAP 55.
+    Scoped to a curated `/v1/public` surface: API keys, OpenAPI, docs shipped 2026-10-21.
+    Outbound `triage.pushed` webhook: `ticketlens-api@d0ba760`, pushed, not deployed.
+    OAuth and other webhook events deferred by design.
+    Memory: `project_roadmap55_public_api_webhooks_2026_10_25.md`.
 
 24. ~~**`recall-nudge-stop.mjs` nagging again — 4th independent report** (after #14/#15/#17).~~ CLOSED 2026-09-15, `ticket-lens@1774c7c`+`0ac9011` / `ticketlens-api@0c7d1ec`, published `ticketlens@0.38.52` (beta), installed + self-tested against the real global binary. Filed 2026-08-26, `personal/solopreneur` session. Real transcript: 18 stop hooks ran, hook blocked on "nothing captured to Recall," user then ran `recall_add` immediately after — capture did happen, just after the nag fired. Not yet bisected whether this is the same rollover/frequency root cause as #14, a new gate gap, or working-as-designed friction that's just persistently annoying. Needs its own investigation pass before a fix.
     **5th independent report, 2026-09-10**, `advent` project (staging, real Jira tickets, not solopreneur) — same exact shape: 19 stop hooks ran before capture landed. Hook blocked, user then ran `note add` (`ticket_link` MCP tool inverted link direction again on `PROD-18281`), capture succeeded right after. Confirms this isn't solopreneur/dogfooding-specific — reproduces cross-project on real ticket work. Still not bisected.
@@ -386,3 +390,123 @@ Per the [[feedback_doc_surface_sync]] rule: whenever an item here changes status
     - Open: also catch 401, 403 and 419 from Inertia and Echo, and redirect cleanly.
     ROADMAP 69.
     Escape follow-up CLOSED 2026-10-30, ROADMAP 73: drawer and idle warning joined the shared Escape stack (`useEscapeClose`).
+
+## Filed 2026-11-02 — feature proposals (not started, tiers are proposals)
+
+Origin: user asked for high-value Jira, Linear and Git features, then Console services. Memory: `project_backlog53_58_new_features_2026_11_02.md`, inventory in `reference_feature_coverage_2026_11_02.md`.
+User directive: every CLI feature below also ships as an MCP tool. MCP surface goes 24 to 27 tools.
+On ship, sync `help.mjs` (3 places), SKILL.md, README, MCP help, `jtb-skill-version`.
+
+53. **`ticketlens why <file[:lines]>`: show the ticket behind code.** Filed 2026-11-02, ROADMAP 74.
+    - Gap: `commit-linker.mjs` maps ticket to commits; nothing maps code to ticket.
+    - Flow: git blame, commit SHAs, ticket keys, briefs plus Recall notes.
+    - Output: one token-budgeted brief answering why this code exists.
+    - MCP: ships as a `why` tool; agents check intent before editing legacy code.
+    - Works for Jira, Linear and GitHub keys found in commits, branches, squash titles.
+    - Open: cap blamed commits per range; handle commits with no ticket key.
+    - Proposed tier: Pro.
+
+54. **`ticketlens release <from>..<to>`: changelog and release readiness from git.** Filed 2026-11-02, ROADMAP 75.
+    - Gap: no release or changelog command; `standup` reads git log by ticket only.
+    - Output: changelog grouped by ticket type, as markdown or JSON.
+    - Readiness flags: commits with no ticket key; tickets in range not Done.
+    - Reuses `standup-assembler.mjs` git parsing and adapter ticket fetches.
+    - MCP: ships as a read-only `release` tool.
+    - Open: Jira fixVersion and Linear cycle filters in v1 or later.
+    - Proposed tier: Pro; Team adds shared export.
+
+55. **`ticketlens reconcile [--apply]`: fix ticket status that disagrees with git.** Filed 2026-11-02, ROADMAP 76.
+    - Gap: stale detection reads the tracker changelog only, never git activity.
+    - Detects: In Progress with no commits for N days.
+    - Detects: PR merged but ticket still open; commits on a To Do ticket.
+    - `--apply` reuses each adapter's `transition()` behind the existing confirm gate.
+    - MCP: ships as a `reconcile` tool; apply mode requires `confirm: true`.
+    - Apply mode must reuse the atomic cooldown claim from backlog #34.
+    - Open: N-day default, and per-profile status-name mapping.
+    - Proposed tier: Pro, since transitions are already Pro.
+
+56. **Console: team audit trail for managers.** Filed 2026-11-02, ROADMAP 77.
+    - Gap: `AuditService` logs Members, Recall, Webhook and API-key actions; only Owner can view.
+    - Wanted: `/console/admin/audit` with actor, action and date filters.
+    - Wanted: CSV export as SOC 2 evidence.
+    - Must scope to the manager's own group; IDOR-test both directions.
+    - Verified 2026-11-04: dev database holds 164 `recall.deleted` and many member events.
+    - Reuse `Owner/Audit/Index.vue` columns: Time, Actor, Action, Target, IP.
+    - Allowlist team events only; hide impersonation, tier, license and grant events.
+    - Open: log missing events (rules, templates, AI pool changes).
+    - Revised 2026-11-04 after Console sweep: confirmed high value, small effort.
+    - Proposed tier: Team.
+
+57. **Console: webhook failure reason and test event.** Filed 2026-11-02, ROADMAP 78. Shrunk 2026-11-04.
+    - Gap: `webhook_endpoints` keeps only `failure_count` and `last_delivered_at`.
+    - Endpoints auto-disable after 10 failures with no visible reason.
+    - Already shipped: card shows last delivered, failed count, Active/Disabled, Re-enable (`ApiWebhooksCard.vue`).
+    - Already shipped: API keys table shows Last used.
+    - Wanted: store the last failure reason (status code or error class) and show it.
+    - Wanted: a "Send test event" button.
+    - ~~Dropped: per-delivery history with latency and response; low traffic, one event type.~~
+    - ~~Dropped: replay and per-key call counts; Last used already covers keys.~~
+    - Keep metadata only, matching the webhook payload privacy rule.
+    - Proposed tier: Pro and Team, same as API keys. Low priority.
+
+58. **Console: team AI usage visibility, caps later.** Filed 2026-11-02, ROADMAP 79. Re-scoped 2026-11-04.
+    - Gap: consensus, the only pool-key consumer, writes no `usage_logs` row.
+    - Gap: Analytics is per-user (`AnalyticsController` filters `user_id`); managers see no team usage.
+    - Fact: auto-capture uses each user's own BYOK keys (`UserAiProvider`).
+    - Fact: dev database holds 149 auto-capture rows of 164; zero consensus rows.
+    - Risk: consensus fans one request across N pool providers, multiplying cost.
+    - Phase 1: log consensus calls to `usage_logs`, per member and provider.
+    - Phase 2: team usage view for managers in Analytics.
+    - Phase 3, after consensus adoption: monthly caps, Slack alert at 80%, hard stop.
+    - Open: hard stop blocks the call or falls back to another provider.
+    - Open: caps apply to pool keys only; BYOK is the user's own cost.
+    - Proposed tier: Team. Low priority until consensus is used.
+
+59. **MCP: show link direction and type on every linked ticket.** Filed 2026-11-04, ROADMAP 80.
+    - Origin: user checked a ticket's links by hand through the Jira REST API.
+    - Manual check: `GET /rest/api/2/issue/KEY?fields=issuelinks`, read `type.name`, `type.inward`, `type.outward`.
+    - Rule: `outwardIssue` present means this ticket does the outward verb: PROJ-1 approves PROJ-2.
+    - Problem: `fetch` hides which side of a link the ticket is on.
+    - Data exists: `jira-client.mjs:90` already keeps `direction`, `linkType`, `linkPhrase` per link.
+    - Lost: `brief-assembler.mjs:42` renders linked tickets with key, type, status; no relation.
+    - Lost: `pr-assembler.mjs:28` prints the generic `linkType`, not the directional phrase.
+    - Only `duplicates` shows `linkPhrase` today (`ticket-command.mjs:731`).
+    - Wanted: one relation line per link in `fetch`, e.g. `PROJ-1 approves PROJ-2`.
+    - Wanted: structured `type`, `phrase`, `direction` fields in the MCP JSON for agents.
+    - Wanted: `ticket_link` result echoes the sentence Jira stores, read back after posting.
+    - Related: #31 fixed the POST direction; this exposes direction on read.
+    - Linear and GitHub adapters return empty `linkedIssues`; map relations or document the limit.
+    - Open: new read-only `ticket_links` tool, or extend `fetch` output only.
+    - Must verify live on Jira Server and Cloud, per the #31 lesson.
+    - Proposed tier: Free for reads; the `ticket_link` echo stays Pro.
+    - Tests and docs use placeholder keys like PROJ-1, never real hostnames or tickets.
+
+60. **Show ticket labels in the `fetch` brief and MCP output.** Filed 2026-11-04, ROADMAP 81.
+    - Origin: user asked if labels can be read from a ticket in a harness session.
+    - Answer today: labels are parsed but never shown by `fetch` (`brief-assembler.mjs:14`).
+    - Parsed in all three adapters: `jira-client.mjs:81`, Linear and GitHub adapters.
+    - Used only by `triage --label` (JQL), attention rules, and `update --add-labels`.
+    - Use case: label `patch` tells the harness to draft an ops-project ticket requesting patch authorization.
+    - Drafting already exists: `ticket_create` plus `ticket_link`; only the label signal is missing.
+    - Wanted: `**Labels:**` in the brief header for Jira, Linear and GitHub.
+    - Wanted: structured `labels` array in the MCP `fetch` JSON for agents.
+    - Risk to verify live: Jira triage search omits `labels` (`DEFAULT_SEARCH_FIELDS`, `jira-client.mjs:381`).
+    - If confirmed, label attention rules never match Jira triage results; fix in same pass.
+    - Open: per-profile label hints, e.g. `patch` adds a drafting instruction to the brief.
+    - Open: whether to also show components and fix versions; components are already parsed.
+    - Proposed tier: Free; display only.
+    - Tests and docs use placeholder keys and labels, never real ones.
+    - On ship, sync `help.mjs`, SKILL.md, README, MCP help, `jtb-skill-version`.
+
+61. **Console: team adoption view for managers.** Filed 2026-11-05, ROADMAP 82.
+    - Origin: Console sweep 2026-11-04 found stale or empty manager dashboards.
+    - Evidence: Team Health "Updated 102d ago"; Response Stats "No data yet"; Last Push "126d ago".
+    - Cause: team views fill only when every member runs `triage --push`.
+    - Gap: Owner Client Health lists at-risk accounts (14+ days idle); managers have no equivalent.
+    - Wanted: flag members idle 14 days, without a CLI token, or with an unsynced profile.
+    - Wanted: one-click setup nudge (resend invite, Slack message) per flagged member.
+    - Wanted: seats used versus seats active, on the Seats page.
+    - Reuse the Client Health at-risk query, scoped to the manager's group.
+    - Why it matters: managers pay per seat; idle seats look like wasted money.
+    - Open: nudge channel (email, Slack, both) and cooldown.
+    - Proposed tier: Team.
