@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.49.2 -->
+<!-- jtb-skill-version: 0.49.3 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -220,7 +220,7 @@ ticketlens pr PROJ-123 $EXTRA_ARGS
 
 Where `$EXTRA_ARGS` are any flags passed (e.g. `--profile=acme`). Requires a ticket key as the first positional argument.
 
-Assembles a ready-to-paste PR description: what changed (from commits linked to the ticket), linked tickets, and — if the ticket has acceptance criteria — a requirements-coverage section. Read-only by default. The requirements-coverage section reuses the same Free-tier 3-checks/month counter as `--compliance`/`ticketlens compliance` — running `pr` on a ticket with acceptance criteria counts against that shared monthly limit; Pro removes the cap.
+Assembles a ready-to-paste PR description: what changed (from commits linked to the ticket), linked tickets (each stating its relation), and — if the ticket has acceptance criteria — a requirements-coverage section. Read-only by default. The requirements-coverage section reuses the same Free-tier 3-checks/month counter as `--compliance`/`ticketlens compliance` — running `pr` on a ticket with acceptance criteria counts against that shared monthly limit; Pro removes the cap.
 
 Add `--open` (TicketLens Pro required) to open a real GitHub PR compare page prefilled with this same description, instead of just printing it. GitHub only — refuses cleanly on a non-GitHub remote, a detached HEAD, a branch not yet pushed to origin, or when already on the base branch. Requires the current branch already pushed.
 
@@ -326,6 +326,8 @@ Enter plan mode with all gathered context:
 - VCS commits and branches related to the ticket
 - Which referenced files/classes exist locally
 - Linked ticket summaries and their comments
+- Ticket labels (`Labels:` in the header), e.g. `patch`
+- Each linked ticket's `Relation:` line, e.g. `PROD-1 blocks PROD-2`
 
 Present a clear implementation plan for the user to approve.
 
@@ -459,7 +461,7 @@ ticketlens worklog PROD-1234=1h30m PROD-5678=45m --comment="Sprint work" --confi
 
 `duplicates` lists likely-duplicate tickets in the same project. On Jira, any ticket already linked as a "Duplicate" is always listed first — that's a confirmed relationship a human already recorded, not a heuristic. Everything else is ranked by local title/description overlap — no tracker scores similarity server-side, so treat those as a nudge for the user to check manually, never as a confirmed duplicate to act on unprompted (e.g. don't auto-close or auto-comment based on a match). `--threshold=N` (0–1, default 0.35) tightens or loosens what counts as a text-match — it has no effect on Jira-linked duplicates, which are always shown. An empty result is the same approximation in the other direction — the local scorer can miss a real duplicate too, so don't treat "no likely duplicates found" as proof none exist.
 
-`link SOURCE-KEY TARGET-KEY` links two tickets — direction matters: SOURCE "types" TARGET (e.g. `link A B --type=Duplicate` means A duplicates B, not the other way around). Called with just the two keys, it lists the tracker's current valid link types without changing anything — never guess `--type`; always list first, then use one of the names shown. GitHub has no generic link relationship, so linking on a GitHub-tracked ticket *closes SOURCE as a duplicate of TARGET* — a real state change, not just a relationship add — and prints an explicit warning immediately before that happens, on top of the same `--confirm` gate.
+`link SOURCE-KEY TARGET-KEY` links two tickets — direction matters: SOURCE "types" TARGET (e.g. `link A B --type=Duplicate` means A duplicates B, not the other way around). Called with just the two keys, it lists the tracker's current valid link types without changing anything — never guess `--type`; always list first, then use one of the names shown. GitHub has no generic link relationship, so linking on a GitHub-tracked ticket *closes SOURCE as a duplicate of TARGET* — a real state change, not just a relationship add — and prints an explicit warning immediately before that happens, on top of the same `--confirm` gate. On Jira, success prints `Stored link:` as Jira saved it — read it to confirm direction.
 
 `update TICKET-KEY` updates a narrow, named field set — title, description, labels, priority. At least one field is required. Labels are always add/remove (`--add-labels=a,b` / `--remove-labels=c`), never a wholesale replace — an unnamed existing label is left alone, never silently dropped. No `--confirm` needed — these are reversible metadata edits, same risk tier as self-assign.
 
@@ -645,7 +647,7 @@ Non-Pro users push with `compliance_status: unknown` — no data is lost, and th
 
 ### triage --push priority/label fields (Team)
 
-`--push` now includes each ticket's `priority` and `labels` in the payload (previously omitted). This feeds two Console features under `/console/admin/rules`: real-value suggestions for the Priority/Label fields when building custom attention rules (previously only Status/Key prefix had them), and the `notify`/`schedule` custom-rule actions, which match on priority/label server-side. No new flag — this is automatic on every `--push`.
+`--push` now includes each ticket's `priority` and `labels` in the payload (previously omitted). This feeds two Console features under `/console/admin/rules`: real-value suggestions for the Priority/Label fields when building custom attention rules (previously only Status/Key prefix had them), and the `notify`/`schedule` custom-rule actions, which match on priority/label server-side. Jira labels are included too, capped at 50 labels of 100 characters. No new flag — this is automatic on every `--push`.
 
 ### triage --push ticket set (Team)
 

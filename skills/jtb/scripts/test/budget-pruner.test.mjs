@@ -21,6 +21,7 @@ function makeBrief({ key = 'PROJ-123', summary = 'Fix the bug', description = nu
   if (linkedTickets.length > 0) {
     const ltSections = linkedTickets.map(lt => {
       const lines = [`### ${lt.key}: ${lt.summary}`, `**Type:** Task | **Status:** Open`];
+      if (lt.relation) lines.push(`**Relation:** ${lt.relation}`);
       if (lt.description) lines.push(lt.description);
       if (lt.comments?.length > 0) {
         lines.push(lt.comments.map(c => `**${c.author}** (${c.date}): ${c.body}`).join('\n\n'));
@@ -299,6 +300,26 @@ describe('pruneBrief — priority 4: linked ticket comments', () => {
     assert.ok(result.pruned.includes('PROJ-200'), 'linked ticket key kept');
     assert.ok(result.pruned.includes('Parent epic'), 'linked ticket summary kept');
     assert.ok(!result.pruned.includes('Linked ticket comment body to remove.'), 'linked comment body removed');
+  });
+
+  it('keeps the Relation line — the cheapest part of a linked block and the one that says which way the link points (ROADMAP 80)', () => {
+    const brief = makeBrief({
+      description: 'D'.repeat(600),
+      linkedTickets: [
+        {
+          key: 'PROJ-200',
+          summary: 'Parent epic',
+          relation: 'PROJ-123 is blocked by PROJ-200',
+          description: 'Some linked description.',
+          comments: [{ author: 'Carol', date: FRESH_DATE, body: 'Linked ticket comment body to remove. '.repeat(20) }],
+        },
+      ],
+    });
+    const budget = Math.ceil(estimateTokens(brief) * 0.3);
+    const result = pruneBrief(brief, { budget, stream: makeStream(), now: NOW });
+
+    assert.ok(!result.pruned.includes('Linked ticket comment body to remove.'), 'pruning did reach the linked block');
+    assert.ok(result.pruned.includes('**Relation:** PROJ-123 is blocked by PROJ-200'), 'Relation line must survive pruning');
   });
 });
 

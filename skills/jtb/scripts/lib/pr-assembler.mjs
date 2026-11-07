@@ -12,21 +12,28 @@ import { runComplianceCheck, STATUS_ICON, statusColor } from './compliance-check
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { createStyler } from './ansi.mjs';
 import { detectRemoteUrl } from './git-exec.mjs';
+import { linkSentence } from './ticket-brief-fields.mjs';
 
 /**
  * Build the "### Linked tickets" section from a ticket's linkedIssues.
+ * Each line states the relation as Jira stores it ("PROJ-1 is blocked by
+ * PROJ-2"), because a bare type name ("Blocks") hides which end is which.
+ * A link without a stored phrase keeps the old "key: type" line.
  *
- * @param {Array} linkedIssues - array of { key, summary, linkType, direction }
+ * @param {Array} linkedIssues - array of { key, summary, linkType, direction, linkPhrase }
  * @param {object} s - styler from createStyler()
+ * @param {string} ticketKey - the ticket the links were read from
  * @returns {string} section markdown or empty string
  */
-function buildLinkedTicketsSection(linkedIssues, s) {
+function buildLinkedTicketsSection(linkedIssues, s, ticketKey) {
   if (!linkedIssues || linkedIssues.length === 0) return '';
 
+  const styleKey = key => s.brand(s.bold(key));
   const lines = ['', '### Linked tickets'];
   for (const issue of linkedIssues) {
     const rel = issue.linkType ?? issue.direction ?? 'Linked';
-    lines.push(`- ${s.brand(s.bold(issue.key))}: ${rel} — ${issue.summary}`);
+    const relation = linkSentence(ticketKey, issue, styleKey) || `${styleKey(issue.key)}: ${rel}`;
+    lines.push(`- ${relation} — ${issue.summary}`);
   }
   return lines.join('\n');
 }
@@ -144,7 +151,7 @@ export async function assemblePr(ticketKey, {
   }
 
   // Linked tickets (optional section)
-  const linkedSection = buildLinkedTicketsSection(linkedIssues, s);
+  const linkedSection = buildLinkedTicketsSection(linkedIssues, s, ticketKey);
   if (linkedSection) {
     lines.push(linkedSection);
   }

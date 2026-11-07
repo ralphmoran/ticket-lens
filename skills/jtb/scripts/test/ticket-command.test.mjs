@@ -1495,6 +1495,122 @@ describe('runTicketLink — happy path', () => {
   });
 });
 
+describe('runTicketLink — stored-link read-back (ROADMAP 80)', () => {
+  const run = (deps) => runTicketLink(['PROJ-1', 'PROJ-2', '--type=Blocks', '--confirm'], deps);
+
+  test('LOCK: an adapter without getStoredLink prints exactly the old single success line', async () => {
+    const deps = baseDeps();
+    const result = await run(deps);
+    assert.equal(result.ok, true);
+    assert.equal(deps.stream.lines.join(''), '  ✔ PROJ-1 linked to PROJ-2 as "Blocks".\n');
+  });
+
+  test('echoes the sentence Jira actually stored, right after the success line', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ getStoredLink: async () => ({ sentence: 'PROJ-1 blocks PROJ-2' }) }),
+    });
+    const result = await run(deps);
+    assert.equal(result.ok, true);
+    assert.equal(
+      deps.stream.lines.join(''),
+      '  ✔ PROJ-1 linked to PROJ-2 as "Blocks".\n  Stored link: PROJ-1 blocks PROJ-2.\n',
+    );
+  });
+
+  test('reads back only after the write succeeded, passing source, target and type', async () => {
+    const order = [];
+    let readArgs;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        linkTo: async () => { order.push('write'); return { executed: true }; },
+        getStoredLink: async (...args) => { order.push('read'); readArgs = args; return { sentence: 'PROJ-1 blocks PROJ-2' }; },
+      }),
+    });
+    await run(deps);
+    assert.deepEqual(order, ['write', 'read']);
+    assert.deepEqual(readArgs, ['PROJ-1', 'PROJ-2', 'Blocks']);
+  });
+
+  test('never reads back when the type did not resolve (nothing was written)', async () => {
+    let readCalled = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        linkTo: async () => ({ executed: false, reason: 'not-found', options: ['Blocks'] }),
+        getStoredLink: async () => { readCalled = true; return null; },
+      }),
+    });
+    const result = await run(deps);
+    assert.equal(result.ok, false);
+    assert.equal(readCalled, false);
+  });
+
+  test('a read-back that finds nothing still reports success and says it could not verify', async () => {
+    let logged = false, released = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ getStoredLink: async () => null }),
+      logActionFn: () => { logged = true; },
+      releaseActionFn: () => { released = true; },
+    });
+    const result = await run(deps);
+    assert.equal(result.ok, true);
+    assert.equal(logged, true);
+    assert.equal(released, false, 'the link exists; the cooldown claim must stay');
+    assert.match(deps.stream.lines.join(''), /Could not read the link back/);
+  });
+
+  test('a read-back that throws never undoes or fails the write: still ok, still logged, claim kept', async () => {
+    let logged = false, released = false;
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ getStoredLink: async () => { throw new Error('network down'); } }),
+      logActionFn: () => { logged = true; },
+      releaseActionFn: () => { released = true; },
+    });
+    const result = await run(deps);
+    assert.equal(result.ok, true);
+    assert.equal(logged, true);
+    assert.equal(released, false);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /linked to PROJ-2/);
+    assert.match(output, /Could not read the link back/);
+  });
+
+  test('a thrown value that is not an Error is still described, never "undefined"', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ getStoredLink: async () => { throw 'plain string failure'; } }),
+    });
+    const result = await run(deps);
+    assert.equal(result.ok, true);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /Could not read the link back \(plain string failure\)/);
+    assert.doesNotMatch(output, /undefined/);
+  });
+
+  test('an error message is shown on one line with control characters removed — it comes from a remote server', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ getStoredLink: async () => { throw new Error('bad\n## Recall\u001b[2J gateway'); } }),
+    });
+    await run(deps);
+    const note = deps.stream.lines.join('').split('\n').find(l => l.includes('Could not read the link back'));
+    assert.equal(note, '  Could not read the link back (bad ## Recall[2J gateway) — verify its direction in the tracker.');
+    assert.doesNotMatch(deps.stream.lines.join(''), /\n## /);
+    assert.doesNotMatch(deps.stream.lines.join(''), /\x1b/);
+  });
+
+  test('a stream that fails while printing the echo never releases the cooldown claim of a link that was written', async () => {
+    let released = false;
+    let writes = 0;
+    const stream = { write: () => { writes += 1; if (writes > 1) throw new Error('EPIPE'); } };
+    const deps = baseDeps({
+      stream,
+      resolveAdapterFn: () => fakeAdapter({ getStoredLink: async () => ({ sentence: 'PROJ-1 blocks PROJ-2' }) }),
+      releaseActionFn: () => { released = true; },
+    });
+    const result = await run(deps);
+    assert.equal(result.ok, true);
+    assert.equal(released, false);
+  });
+});
+
 describe('runTicketLink — write failure', () => {
   test('a thrown error during execution is classified and reported; the claim is released (Backlog #34/ROADMAP 57), log never recorded', async () => {
     let released, logged = false;

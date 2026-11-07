@@ -385,6 +385,35 @@ describe('fetchTicket', () => {
     assert.ok(fetched.has('A-1') && fetched.has('B-1') && fetched.has('C-1'));
   });
 
+  it('fetches a ticket once when it is linked twice with different link types (ROADMAP 80: otherwise the brief repeats its block)', async () => {
+    const linkTo = (key, type, phrase) => ({
+      type: { name: type, inward: phrase, outward: phrase },
+      outwardIssue: { key, fields: { summary: key, status: { name: 'Open' }, issuetype: { name: 'Task' } } },
+    });
+    const root = {
+      key: 'ROOT',
+      fields: {
+        summary: 'Root', issuetype: { name: 'Task' }, status: { name: 'Open' },
+        issuelinks: [linkTo('A-1', 'Blocks', 'blocks'), linkTo('A-1', 'Relates', 'relates to')],
+      },
+    };
+    const fetchedKeys = [];
+    const mockFetch = async (url) => {
+      const key = url.split('/').pop();
+      fetchedKeys.push(key);
+      if (key === 'ROOT') return { ok: true, json: async () => root };
+      return { ok: true, json: async () => ({ key, fields: { summary: key, issuetype: { name: 'Task' }, status: { name: 'Open' }, issuelinks: [] } }) };
+    };
+    const result = await fetchTicket('ROOT', {
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+      depth: 1,
+    });
+    assert.deepEqual(result.linkedTicketDetails.map(t => t.key), ['A-1']);
+    assert.equal(fetchedKeys.filter(k => k === 'A-1').length, 1, 'A-1 must be requested once');
+    assert.equal(result.linkedIssues.length, 2, 'both stored links stay on the parent, so both relations can still be shown');
+  });
+
   it('does not fetch the same ticket twice when it appears in multiple sibling link lists', async () => {
     // ROOT → [A, B]; A → [B, C]. B appears in both ROOT's and A's linked list.
     const makeWithLinks = (key, links) => ({
@@ -523,6 +552,28 @@ describe('searchTickets', () => {
     const fields = new URL(capturedUrl).searchParams.get('fields');
     assert.equal(fields, DEFAULT_SEARCH_FIELDS);
     assert.ok(!fields.includes('description'), 'default field list must not request description — that would bloat every triage/search response');
+  });
+
+  it('LOCK: the default list keeps every field triage already relied on', () => {
+    const fields = DEFAULT_SEARCH_FIELDS.split(',');
+    for (const name of ['summary', 'status', 'assignee', 'priority', 'issuetype', 'comment', 'updated', 'statuscategorychangedate', 'created', 'customfield_10020']) {
+      assert.ok(fields.includes(name), `default search fields lost "${name}"`);
+    }
+  });
+
+  it('returns each ticket\'s labels — Jira only sends fields it was asked for, and label rules plus the triage push read ticket.labels', async () => {
+    // Behaves like Jira: fields.labels is present only when "labels" was requested.
+    const mockFetch = async (url) => {
+      const requested = new URL(url).searchParams.get('fields').split(',');
+      const fields = { summary: 'Labelled', status: { name: 'Open' }, issuetype: { name: 'Task' } };
+      if (requested.includes('labels')) fields.labels = ['tmp-test'];
+      return { ok: true, json: async () => ({ issues: [{ key: 'CNV1-26', fields }] }) };
+    };
+    const tickets = await searchTickets('labels is not EMPTY', {
+      env: { JIRA_BASE_URL: 'https://test.atlassian.net', JIRA_PAT: 'tok' },
+      fetcher: mockFetch,
+    });
+    assert.deepEqual(tickets[0].labels, ['tmp-test']);
   });
 
   it('honors a caller-supplied fields override instead of the default', async () => {

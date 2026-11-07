@@ -268,12 +268,12 @@ When no tickets need attention: `"All clear — no tickets need your attention r
 
 ## Output Format
 
-The TicketBrief is structured markdown with these sections (empty sections are omitted):
+The TicketBrief is structured markdown with these sections (empty sections are omitted). `Labels` shows only when the ticket has labels. `Relation` states the link in Jira's own words:
 
 ```markdown
 # TICKET-KEY: Summary
 
-**Type:** Bug | **Status:** In Progress | **Priority:** High | **Assignee:** Name | **Reporter:** Name
+**Type:** Bug | **Status:** In Progress | **Priority:** High | **Assignee:** Name | **Reporter:** Name | **Labels:** backend, payments
 
 ## Description
 
@@ -296,6 +296,8 @@ Another comment...
 ### LINKED-KEY: Linked ticket summary
 
 **Type:** Task | **Status:** Blocked
+
+**Relation:** TICKET-KEY is blocked by LINKED-KEY
 
 Linked ticket description...
 

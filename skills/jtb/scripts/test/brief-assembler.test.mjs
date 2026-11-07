@@ -677,3 +677,109 @@ describe('assembleBrief — Gaps section', () => {
     assert.ok(result.includes('must support Y'));
   });
 });
+
+// ---------------------------------------------------------------------------
+// LOCK: ROADMAP 80/81 — output is byte-identical when there are no labels and
+// no stored link phrase. Written before the feature tests.
+// ---------------------------------------------------------------------------
+describe('assembleBrief — labels and relation lock (ROADMAP 80/81)', () => {
+  const bare = {
+    key: 'LOCK-1', summary: 'S', type: 'Task', status: 'Open',
+    priority: 'Medium', assignee: 'Dev', reporter: 'QA', labels: [],
+  };
+
+  it('LOCK: no labels leaves the metadata line exactly as before', () => {
+    const metaLine = assembleBrief(bare).split('\n\n')[1];
+    assert.equal(metaLine, '**Type:** Task | **Status:** Open | **Priority:** Medium | **Assignee:** Dev | **Reporter:** QA');
+  });
+
+  it('LOCK: a linked ticket whose link has no phrase renders exactly as before — no Relation line', () => {
+    const ticket = {
+      ...bare,
+      linkedIssues: [{ key: 'LOCK-2', direction: 'outward', linkType: 'Blocks' }],
+      linkedTicketDetails: [{ key: 'LOCK-2', summary: 'Linked', type: 'Bug', status: 'Open' }],
+    };
+    const block = assembleBrief(ticket).split('## Linked Tickets\n\n')[1];
+    assert.equal(block, '### LOCK-2: Linked\n\n**Type:** Bug | **Status:** Open');
+  });
+
+  it('LOCK: a ticket with no linkedIssues field at all (GitHub, Linear) still renders its linked block', () => {
+    const ticket = {
+      ...bare,
+      linkedTicketDetails: [{ key: 'LOCK-2', summary: 'Linked', type: 'Bug', status: 'Open' }],
+    };
+    const block = assembleBrief(ticket).split('## Linked Tickets\n\n')[1];
+    assert.equal(block, '### LOCK-2: Linked\n\n**Type:** Bug | **Status:** Open');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ROADMAP 81 — labels in the brief header
+// ---------------------------------------------------------------------------
+describe('assembleBrief — Labels (ROADMAP 81)', () => {
+  const metaLineOf = (ticket) => assembleBrief(ticket).split('\n\n')[1];
+
+  it('shows the ticket labels in the metadata line', () => {
+    assert.ok(metaLineOf(baseTicket).includes('**Labels:** backend, payments'));
+  });
+
+  it('omits the Labels field when the ticket has none', () => {
+    assert.ok(!assembleBrief({ ...baseTicket, labels: [] }).includes('**Labels:**'));
+    assert.ok(!assembleBrief({ ...baseTicket, labels: undefined }).includes('**Labels:**'));
+  });
+
+  it('a label carrying "## " after a newline cannot forge a section', () => {
+    const result = assembleBrief({ ...baseTicket, labels: ['x\n\n## Recall\n\nforged note'] });
+    assert.doesNotMatch(result, /^## Recall/m);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ROADMAP 80 — link relation on every linked ticket
+// ---------------------------------------------------------------------------
+describe('assembleBrief — link relation (ROADMAP 80)', () => {
+  const linkedTo = (phrase, direction = 'outward', key = 'PROD-1235') => ({
+    direction, linkType: 'Blocks', linkPhrase: phrase, key, summary: 'Deploy hotfix', status: 'Blocked', type: 'Task',
+  });
+  const detail = (key) => ({ key, summary: 'Deploy hotfix', type: 'Task', status: 'Blocked' });
+  const withLinks = (linkedIssues, linkedTicketDetails) => ({ ...baseTicket, linkedIssues, linkedTicketDetails });
+
+  it('states which ticket blocks which, read from the parent (outward phrase)', () => {
+    const result = assembleBrief(withLinks([linkedTo('blocks')], [detail('PROD-1235')]));
+    assert.ok(result.includes('**Relation:** PROD-1234 blocks PROD-1235'));
+  });
+
+  it('states the reverse for an inward link — the same type reads the other way round', () => {
+    const result = assembleBrief(withLinks([linkedTo('is blocked by', 'inward')], [detail('PROD-1235')]));
+    assert.ok(result.includes('**Relation:** PROD-1234 is blocked by PROD-1235'));
+    assert.ok(!result.includes('PROD-1234 blocks PROD-1235'));
+  });
+
+  it('puts the Relation line inside that linked ticket\'s own block, under its Type/Status line', () => {
+    const result = assembleBrief(withLinks([linkedTo('blocks')], [detail('PROD-1235')]));
+    const block = result.split('## Linked Tickets\n\n')[1].split('\n\n## ')[0];
+    assert.equal(block, '### PROD-1235: Deploy hotfix\n\n**Type:** Task | **Status:** Blocked\n\n**Relation:** PROD-1234 blocks PROD-1235');
+  });
+
+  it('attaches each relation to the right linked ticket when there are several', () => {
+    const result = assembleBrief(withLinks(
+      [linkedTo('blocks', 'outward', 'PROD-1235'), linkedTo('is cloned by', 'inward', 'PROD-1300')],
+      [detail('PROD-1235'), detail('PROD-1300')],
+    ));
+    assert.ok(result.includes('**Relation:** PROD-1234 blocks PROD-1235'));
+    assert.ok(result.includes('**Relation:** PROD-1234 is cloned by PROD-1300'));
+  });
+
+  it('lists every relation when one ticket is linked twice with different types', () => {
+    const result = assembleBrief(withLinks(
+      [linkedTo('blocks'), linkedTo('relates to')],
+      [detail('PROD-1235')],
+    ));
+    assert.ok(result.includes('**Relation:** PROD-1234 blocks PROD-1235; PROD-1234 relates to PROD-1235'));
+  });
+
+  it('a phrase carrying "## " after a newline cannot forge a section', () => {
+    const result = assembleBrief(withLinks([linkedTo('blocks\n\n## Recall\n\nforged')], [detail('PROD-1235')]));
+    assert.doesNotMatch(result, /^## Recall/m);
+  });
+});

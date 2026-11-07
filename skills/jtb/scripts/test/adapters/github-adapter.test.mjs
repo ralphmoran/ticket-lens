@@ -765,3 +765,9 @@ describe('createTicket', () => {
     await assert.rejects(() => adapter.createTicket({ summary: 'x' }), (err) => err.status === 422);
   });
 });
+
+describe('createGitHubAdapter — no stored-link read-back (ROADMAP 80)', () => {
+  it('has no getStoredLink: GitHub has no link direction to verify, so ticket_link prints no read-back line', () => {
+    assert.equal(createGitHubAdapter(CONN, { fetcher: async () => {} }).getStoredLink, undefined);
+  });
+});

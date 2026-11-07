@@ -2,6 +2,7 @@ import { createStyler } from './ansi.mjs';
 import { formatTable } from './table-formatter.mjs';
 import { formatSize } from './attachment-downloader.mjs';
 import { timeAgo, truncate, stripCr, escapeLeadingHeading } from './config.mjs';
+import { labelsText, relationText } from './ticket-brief-fields.mjs';
 
 function divWidth() {
   return 30;
@@ -156,6 +157,8 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
   if (ticket.sprint)  meta.push(`${s.dim('Sprint:')} ${ticket.sprint}`);
   if (ticket.created) meta.push(`${s.dim('Created:')} ${ticket.created.split('T')[0]}`);
   if (ticket.updated) meta.push(`${s.dim('Updated:')} ${ticket.updated.split('T')[0]}`);
+  const labels = labelsText(ticket);
+  if (labels) meta.push(`${s.dim('Labels:')} ${labels}`);
   sections.push(meta.join(s.dim('  ·  ')));
 
   if (recallStrictness !== 'balanced') {
@@ -186,6 +189,8 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
   if (ticket.linkedTicketDetails?.length > 0 && (ts === null || ts.linked !== false)) {
     const linkedSections = ticket.linkedTicketDetails.map(lt => {
       const parts = [`${s.brand(lt.key)}: ${lt.summary}`, `${s.dim('Type:')} ${lt.type} | ${s.dim('Status:')} ${statusColor(s, lt.status)}`];
+      const relation = relationText(ticket, lt);
+      if (relation) parts.push(`${s.dim('Relation:')} ${relation}`);
       if (lt.description) parts.push(stripCr(lt.description));
       if (lt.comments?.length > 0) {
         const cmts = lt.comments.map(c => {

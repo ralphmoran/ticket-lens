@@ -2269,3 +2269,45 @@ describe('opts.printErr — MCP error capture', () => {
     assert.equal(stderrOut.value, '', `real process.stderr must stay untouched across the recursive retry. Got: ${stderrOut.value}`);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ROADMAP 80/81 — the exact path MCP `fetch` takes: run() with injected
+// print/printErr. mcp-server.test.mjs injects a fake run(), so only this proves
+// that labels and link relations reach what the MCP client receives.
+// ---------------------------------------------------------------------------
+describe('labels and link relation reach the printed brief (ROADMAP 80/81)', () => {
+  const linkedIssueJson = (key) => ({
+    key,
+    fields: { summary: `Linked ${key}`, status: { name: 'Open' }, issuetype: { name: 'Task' }, labels: [], issuelinks: [] },
+  });
+  const fetcher = async (url) => {
+    const key = /\/issue\/([A-Z]+-\d+)/.exec(String(url))?.[1];
+    return { ok: true, status: 200, json: async () => (key === 'PROD-1234' ? cloudFixture : linkedIssueJson(key)) };
+  };
+
+  async function fetchBrief(extraArgs) {
+    let brief = '';
+    await run(['PROD-1234', '--plain', '--no-cache', ...extraArgs], {
+      env: validEnv, fetcher, configDir: NO_CONFIG, print: (s) => { brief += s; }, printErr: () => {},
+    });
+    process.exitCode = undefined;
+    return brief;
+  }
+
+  it('lists the ticket labels in the header', async () => {
+    const brief = await fetchBrief(['--depth=0']);
+    assert.ok(brief.split('\n\n')[1].includes('**Labels:** backend, payments'), brief.slice(0, 400));
+  });
+
+  it('states each linked ticket\'s relation in its own block, outward and inward alike', async () => {
+    const brief = await fetchBrief(['--depth=1']);
+    const linked = brief.split('## Linked Tickets\n\n')[1];
+    assert.match(linked, /### PROD-1235: Linked PROD-1235\n\n\*\*Type:\*\* Task \| \*\*Status:\*\* Open\n\n\*\*Relation:\*\* PROD-1234 blocks PROD-1235/);
+    assert.match(linked, /### PROD-1100: Linked PROD-1100\n\n\*\*Type:\*\* Task \| \*\*Status:\*\* Open\n\n\*\*Relation:\*\* PROD-1234 relates to PROD-1100/);
+  });
+
+  it('with --depth=0 no linked ticket is fetched, so there is no Relation line', async () => {
+    const brief = await fetchBrief(['--depth=0']);
+    assert.ok(!brief.includes('**Relation:**'));
+  });
+});

@@ -5,6 +5,7 @@
 import { formatTable } from './table-formatter.mjs';
 import { formatSize } from './attachment-downloader.mjs';
 import { timeAgo, truncate, stripCr, escapeLeadingHeading } from './config.mjs';
+import { labelsText, relationText } from './ticket-brief-fields.mjs';
 
 export function assembleBrief(ticket, codeRefs = null, templateSections = null, recallNotes = null, recallMoreCount = 0, gaps = null, recallStrictness = 'balanced') {
   const s = templateSections;
@@ -15,6 +16,8 @@ export function assembleBrief(ticket, codeRefs = null, templateSections = null, 
   if (ticket.sprint)  meta.push(`**Sprint:** ${ticket.sprint}`);
   if (ticket.created) meta.push(`**Created:** ${ticket.created.split('T')[0]}`);
   if (ticket.updated) meta.push(`**Updated:** ${ticket.updated.split('T')[0]}`);
+  const labels = labelsText(ticket);
+  if (labels) meta.push(`**Labels:** ${labels}`);
   sections.push(meta.join(' | '));
 
   if (recallStrictness !== 'balanced') {
@@ -42,6 +45,8 @@ export function assembleBrief(ticket, codeRefs = null, templateSections = null, 
   if (ticket.linkedTicketDetails?.length > 0 && (s === null || s.linked !== false)) {
     const linkedSections = ticket.linkedTicketDetails.map(lt => {
       const parts = [`### ${lt.key}: ${lt.summary}`, `**Type:** ${lt.type} | **Status:** ${lt.status}`];
+      const relation = relationText(ticket, lt);
+      if (relation) parts.push(`**Relation:** ${relation}`);
       if (lt.description) parts.push(stripCr(lt.description));
       if (lt.comments?.length > 0) {
         const cmts = lt.comments.map(c => {

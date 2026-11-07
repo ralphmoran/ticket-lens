@@ -230,8 +230,9 @@ export function pruneBrief(brief, { budget, stream, now } = {}) {
       const ltSection = sections[ltIdx];
       const oldTokens = estimateTokens(ltSection.content);
 
-      // For each linked ticket block, keep only the ### heading line and the
-      // **Type:** | **Status:** meta line (first two non-empty lines per block).
+      // For each linked ticket block, keep only the ### heading line, the
+      // **Type:** | **Status:** meta line, and the **Relation:** line (which way
+      // the link points — a handful of tokens, and not recoverable elsewhere).
       const headingLine = '## Linked Tickets';
       const withoutHeading = ltSection.content.slice(ltSection.content.indexOf('\n') + 1).replace(/^\n/, '');
       const ltBlocks = withoutHeading.split(/\n\n---\n\n/);
@@ -239,12 +240,9 @@ export function pruneBrief(brief, { budget, stream, now } = {}) {
       const prunedBlocks = ltBlocks.map(block => {
         if (!block.trim()) return block;
         const lines = block.split('\n');
-        // Keep the ### KEY: summary heading line + the meta line
-        const kept = lines.filter((l, i) => {
-          if (i === 0) return true; // ### heading
-          if (l.startsWith('**Type:**')) return true; // meta line
-          return false;
-        });
+        // Keep the ### KEY: summary heading line + the meta and relation lines
+        const kept = lines.filter((l, i) =>
+          i === 0 || l.startsWith('**Type:**') || l.startsWith('**Relation:**'));
         return kept.join('\n');
       });
 

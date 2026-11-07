@@ -173,7 +173,7 @@ ticketlens PROJ-123 --plain         # Plain markdown (pipe-safe, LLM-ready)
 ticketlens PROJ-123 --plain > brief.md
 ```
 
-The brief includes ticket metadata (type, status, priority, assignee, reporter, created date, updated date), description, comments, linked tickets, code references, and attachments.
+The brief includes ticket metadata (type, status, priority, assignee, reporter, created date, updated date, labels), description, comments, linked tickets (each stating its relation), code references, and attachments.
 
 ### Depth levels
 

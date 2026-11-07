@@ -378,7 +378,7 @@ export async function fetchProjects(opts = {}) {
 // candidate search, which also wants `description`) can extend it instead of
 // duplicating the list — the default stays identical for every caller that
 // doesn't pass an override.
-export const DEFAULT_SEARCH_FIELDS = 'summary,status,assignee,priority,issuetype,comment,updated,statuscategorychangedate,created,customfield_10020';
+export const DEFAULT_SEARCH_FIELDS = 'summary,status,assignee,priority,issuetype,comment,updated,statuscategorychangedate,created,customfield_10020,labels';
 
 export async function searchTickets(jql, opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), maxResults = 50, apiVersion = 2, timeoutMs = 10_000, expandChangelog = false, allowPrivateIp = false, fields = DEFAULT_SEARCH_FIELDS } = opts;
@@ -848,8 +848,9 @@ export async function fetchTicket(ticketKey, opts = {}) {
 
   if (_currentDepth < depth) {
     const MAX_TICKETS = 15;
-    const linkedKeys = ticket.linkedIssues
-      .map(l => l.key)
+    // Jira allows several link types between the same pair, so one key can
+    // appear more than once; de-duplicate or it is fetched (and shown) twice.
+    const linkedKeys = [...new Set(ticket.linkedIssues.map(l => l.key))]
       .filter(k => !_visited.has(k))
       .slice(0, Math.max(0, MAX_TICKETS - _visited.size));
 

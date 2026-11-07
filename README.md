@@ -161,6 +161,8 @@ ticketlens CNV1-2 --template=quick             # Apply a brief template (full|qu
 
 Max 15 tickets at any depth. Circular references handled automatically.
 
+The header lists the ticket's labels. Each linked ticket states its relation, e.g. `CNV1-2 blocks CNV1-3`. The same text reaches MCP `fetch` and `pr`.
+
 After the first fetch, ticket data is cached to `~/.ticketlens/cache/PROFILE/TICKET-KEY/brief.json` (4h TTL, depth-aware). A dim notice appears on stderr on cache hit:
 
 ```
@@ -226,6 +228,8 @@ ticketlens triage --static                     # Static table, no interactive mo
 | `●` yellow | Aging | Last comment or update is N+ days old |
 
 `--stale=N` controls both categories. Unanswered comments older than N days downgrade from "needs response" to "aging" automatically.
+
+`triage --push` sends each ticket's labels (first 50, 100 characters each) to the Console. Jira labels are included from this release. Label rules and notifications can now match them.
 
 `--sort=priority|urgency` controls display order for this run only. `priority` groups tickets by Jira priority (Highest → Lowest, unknown last) with urgency as the tiebreaker; `urgency` is today's default ordering. Set a permanent default by adding `"sortBy": "priority"` to a profile in `~/.ticketlens/profiles.json` — the flag overrides it for a single run, same relationship `--stale=N` has to `staleDays`. This is a personal, per-profile preference — it does not sync with the Console's own sort-order setting on the Account page, which only affects the Console queue view.
 
@@ -509,7 +513,7 @@ ticketlens worklog PROJ-123=1h30m PROJ-456=45m --comment="Sprint work" --confirm
 ticketlens worklog --help                                    # All options, limits, and examples
 ```
 
-Write directly to the ticket in its real tracker — Jira, GitHub, or Linear — from your terminal or an AI session via `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create`/`ticket_worklog` MCP tools. Requires a Pro license.
+Write directly to the ticket in its real tracker — Jira, GitHub, or Linear — from your terminal or an AI session via `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create`/`ticket_worklog` MCP tools. Requires a Pro license. On Jira, `ticket_link` echoes the link as Jira stored it.
 
 `ticketlens transition` with just a ticket key lists the tracker's current valid options without changing anything (Jira: real workflow transitions for that issue; GitHub: open/closed; Linear: team-scoped workflow states). Add both `--target` and `--confirm` to execute — `--confirm` is a deliberate two-step gate: a behavioral nudge and forensic trail, not a hard security guarantee. Every write, once resolved, is re-validated against the tracker's current state immediately before executing — never a blind write against a stale option.
 
@@ -1153,6 +1157,7 @@ npm test
 See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 Recently shipped:
+- **Labels and link direction in briefs** — `fetch` lists ticket labels and states each link, e.g. `PROJ-1 is blocked by PROJ-2`. `pr` and the MCP `fetch`/`pr` tools use the same wording. `ticket_link` on Jira echoes the link as Jira stored it. Jira triage no longer drops labels, so label rules match and `triage --push` sends them
 - **Public API and webhooks** — per-integrator scoped API keys, a curated `/v1/public` surface (triage snapshots, Recall notes, digest send) with an OpenAPI 3.1 contract, and signed `triage.pushed` webhooks. Keys and endpoints are managed in Console > Settings > API Keys. Pro (60 requests/min) and Team (120 requests/min)
 - **Upsell tip without a price** — the `--summarize` tip after a deep `fetch` now says "(Pro)" instead of a hardcoded price; plans and prices live in the Console
 - **Docs match the code** — every doc surface (README, `--help`, SKILL.md, USER_GUIDE, MCP help) re-audited against the CLI; install snippets now use `ticketlens@beta`, Node is `>=22.6`, and the CLI tip shows the real $9/mo Pro price

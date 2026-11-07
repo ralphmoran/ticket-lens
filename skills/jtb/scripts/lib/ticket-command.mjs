@@ -22,7 +22,10 @@ import { enrichUpdateFailure } from './ticket-update-enrichment.mjs';
 import { TICKET_KEY_PATTERN, normalizeTicketKey } from './cli.mjs';
 import { scoreCandidates } from './duplicate-scorer.mjs';
 import { attachmentCapFor, attachmentLimitNotice, PAID_MAX_ATTACHMENTS } from './attachment-caps.mjs';
+import { singleLine } from './ticket-brief-fields.mjs';
 import { createStyler } from './ansi.mjs';
+
+const MAX_READ_BACK_ERROR_LENGTH = 120;
 
 export function parseFlag(cmdArgs, name) {
   return cmdArgs.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -806,6 +809,32 @@ export async function runTicketLinkList(cmdArgs, {
 }
 
 /**
+ * Prints the link as the tracker stored it, once the write has succeeded, so a
+ * caller can see the direction instead of trusting it (backlog #31). Only
+ * adapters that implement getStoredLink take part. A read that fails or finds
+ * nothing is reported but never fails the command: the link already exists.
+ */
+async function echoStoredLink(adapter, sourceKey, targetKey, type, stream) {
+  if (typeof adapter.getStoredLink !== 'function') return;
+  let stored = null;
+  let reason = 'no matching link found';
+  try {
+    stored = await adapter.getStoredLink(sourceKey, targetKey, type);
+  } catch (err) {
+    // The message comes from a remote server: one line, no control characters.
+    reason = singleLine(err?.message ?? err, MAX_READ_BACK_ERROR_LENGTH) || 'unknown error';
+  }
+  const line = stored?.sentence
+    ? `  Stored link: ${stored.sentence}.\n`
+    : `  Could not read the link back (${reason}) — verify its direction in the tracker.\n`;
+  try {
+    stream.write(line);
+  } catch {
+    // The output stream is gone; the link is already written, so there is nothing to undo.
+  }
+}
+
+/**
  * Executes a link. Requires both --type and --confirm — a type without
  * confirm is incomplete input, never silently executed. Cooldown is keyed
  * on the source:target pair (not sourceKey alone) so a second link to a
@@ -886,6 +915,7 @@ export async function runTicketLink(cmdArgs, {
         ? `  ${s.green('✔')} ${s.brand(s.bold(sourceKey))} closed as a duplicate of ${s.brand(s.bold(targetKey))}.\n`
         : `  ${s.green('✔')} ${s.brand(s.bold(sourceKey))} linked to ${s.brand(s.bold(targetKey))} as ${s.bold(`"${type}"`)}.\n`,
     );
+    await echoStoredLink(adapter, sourceKey, targetKey, type, stream);
     return { ok: true };
   } catch (err) {
     safeRelease(releaseActionFn, cooldownKey, 'link', configDir);

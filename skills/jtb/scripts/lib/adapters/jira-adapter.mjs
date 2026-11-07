@@ -5,6 +5,7 @@ import { readAttachments } from '../attachment-uploader.mjs';
 import { buildMediaNode } from '../adf-converter.mjs';
 import { buildJiraEnv } from '../config.mjs';
 import { tokenize } from '../duplicate-scorer.mjs';
+import { relationText } from '../ticket-brief-fields.mjs';
 
 /**
  * Finds the option in a fresh transitions list matching a caller-given
@@ -176,6 +177,25 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       }
       await postIssueLink(sourceKey, targetKey, match.name, { ...base, ...opts });
       return { executed: true };
+    },
+
+    /**
+     * Reads a link back from Jira after linkTo() wrote it. What Jira stored is
+     * ground truth, unlike the type list linkTo() resolved from: backlog #31's
+     * link looked right in code and tests and was still stored backwards.
+     * depth: 0 fetches only the source ticket, never the tickets it links to.
+     * A failed read throws; the caller must not let that undo the write.
+     * @returns {Promise<{ sentence: string } | null>} e.g. "PROJ-1 blocks PROJ-2",
+     *   or null when no link of that type to targetKey (with a phrase) is found
+     */
+    async getStoredLink(sourceKey, targetKey, typeName, opts = {}) {
+      const source = await fetchTicket(sourceKey, { ...base, ...opts, depth: 0 });
+      const wanted = typeName.toLowerCase();
+      // Every direction: a reverse link of the same type may already exist, and
+      // showing only one of them could pass the wrong one off as the new link.
+      const ofType = source.linkedIssues.filter(l => l.linkType?.toLowerCase() === wanted);
+      const sentence = relationText({ key: sourceKey, linkedIssues: ofType }, { key: targetKey });
+      return sentence ? { sentence } : null;
     },
 
     /**

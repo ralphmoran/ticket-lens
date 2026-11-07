@@ -305,6 +305,19 @@ describe('findCandidates — duplicate-detection candidate search', () => {
     assert.match(jql, /key != "TEST-42"/);
   });
 
+  it('requests description (scoring needs it) and labels (it extends the default list, so it must not drop them — ROADMAP 81 adversarial check)', async () => {
+    let capturedUrl;
+    const fetcher = async (url) => {
+      capturedUrl = url;
+      return { ok: true, status: 200, json: async () => ({ issues: [] }) };
+    };
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    await adapter.findCandidates('login button broken', 'TEST-42');
+    const fields = new URL(capturedUrl).searchParams.get('fields').split(',');
+    assert.ok(fields.includes('description'));
+    assert.ok(fields.includes('labels'));
+  });
+
   it('ORs tokenized terms together instead of one long phrase — Jira\'s text ~ operator stops matching past ~40-70 chars of literal phrase', async () => {
     let capturedUrl;
     const fetcher = async (url) => {
@@ -466,6 +479,72 @@ describe('createJiraAdapter — linkTo', () => {
     };
     const adapter = createJiraAdapter({ ...CONN, allowPrivateIp: true }, { fetcher });
     await assert.doesNotReject(() => adapter.linkTo('TEST-1', 'TEST-2', 'Duplicate', { lookup: privateLookup }));
+  });
+});
+
+describe('createJiraAdapter — getStoredLink (ROADMAP 80: read the link back from Jira after writing it)', () => {
+  const node = (key) => ({ key, fields: { summary: 'Target', status: { name: 'Open' }, issuetype: { name: 'Task' } } });
+  const blocksOut = { type: { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }, outwardIssue: node('TEST-2') };
+  const blocksIn = { type: { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }, inwardIssue: node('TEST-2') };
+  const relatesOut = { type: { name: 'Relates', inward: 'relates to', outward: 'relates to' }, outwardIssue: node('TEST-2') };
+
+  function adapterReturning(issuelinks, calls = []) {
+    const fetcher = async (url, opts) => {
+      calls.push({ url, method: opts.method });
+      return { ok: true, status: 200, json: async () => ({ key: 'TEST-1', fields: { summary: 'Source', status: { name: 'Open' }, issuetype: { name: 'Task' }, issuelinks } }) };
+    };
+    return createJiraAdapter(CONN, { fetcher });
+  }
+
+  it('returns the sentence Jira stored, read from one fresh GET with no linked-ticket fan-out', async () => {
+    const calls = [];
+    const adapter = adapterReturning([blocksOut], calls);
+    const result = await adapter.getStoredLink('TEST-1', 'TEST-2', 'Blocks');
+    assert.deepEqual(result, { sentence: 'TEST-1 blocks TEST-2' });
+    assert.equal(calls.length, 1, 'depth 0: only the source ticket is fetched, never TEST-2');
+    assert.match(calls[0].url, /\/issue\/TEST-1/);
+  });
+
+  it('returns the inward wording when Jira stored the link the other way round', async () => {
+    const result = await adapterReturning([blocksIn]).getStoredLink('TEST-1', 'TEST-2', 'Blocks');
+    assert.deepEqual(result, { sentence: 'TEST-1 is blocked by TEST-2' });
+  });
+
+  it('matches the type name case-insensitively, like linkTo does', async () => {
+    const result = await adapterReturning([blocksOut]).getStoredLink('TEST-1', 'TEST-2', 'blocks');
+    assert.deepEqual(result, { sentence: 'TEST-1 blocks TEST-2' });
+  });
+
+  it('picks the link of the requested type when the pair also has another link type', async () => {
+    const result = await adapterReturning([relatesOut, blocksOut]).getStoredLink('TEST-1', 'TEST-2', 'Blocks');
+    assert.deepEqual(result, { sentence: 'TEST-1 blocks TEST-2' });
+  });
+
+  it('reports both directions when the pair already had the reverse link of the same type — never one that could pass for the link just written (backlog #31)', async () => {
+    const result = await adapterReturning([blocksIn, blocksOut]).getStoredLink('TEST-1', 'TEST-2', 'Blocks');
+    assert.deepEqual(result, { sentence: 'TEST-1 is blocked by TEST-2; TEST-1 blocks TEST-2' });
+  });
+
+  it('returns null when no stored link matches, so the caller can say it could not verify', async () => {
+    assert.equal(await adapterReturning([]).getStoredLink('TEST-1', 'TEST-2', 'Blocks'), null);
+    assert.equal(await adapterReturning([relatesOut]).getStoredLink('TEST-1', 'TEST-2', 'Blocks'), null);
+  });
+
+  it('returns null when Jira gave the link type no phrase', async () => {
+    const noPhrase = { type: { name: 'Blocks' }, outwardIssue: node('TEST-2') };
+    assert.equal(await adapterReturning([noPhrase]).getStoredLink('TEST-1', 'TEST-2', 'Blocks'), null);
+  });
+
+  it('lets a failed read propagate — the caller decides it must not undo the write', async () => {
+    const fetcher = async () => ({ ok: false, status: 500, json: async () => ({}) });
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    await assert.rejects(() => adapter.getStoredLink('TEST-1', 'TEST-2', 'Blocks'), /500/);
+  });
+
+  it('threads conn.allowPrivateIp into getStoredLink', async () => {
+    const fetcher = async () => ({ ok: true, status: 200, json: async () => ({ key: 'TEST-1', fields: { summary: 'x', status: { name: 'Open' }, issuetype: { name: 'Task' } } }) });
+    const adapter = createJiraAdapter({ ...CONN, allowPrivateIp: true }, { fetcher });
+    await assert.doesNotReject(() => adapter.getStoredLink('TEST-1', 'TEST-2', 'Blocks', { lookup: privateLookup }));
   });
 });
 

@@ -7,7 +7,7 @@
 export const TOOLS = [
   {
     name: 'fetch',
-    description: 'Fetch a ticket\'s full context brief (Jira/GitHub/Linear) — description, comments, linked tickets, code references, attachments. The core read action; free tier. Not a discovery tool — requires a known ticket key.',
+    description: 'Fetch a ticket\'s full context brief (Jira/GitHub/Linear) — description, comments, labels, linked tickets, code references, attachments. Each linked ticket states its relation, e.g. "PROJ-1 blocks PROJ-2". The core read action; free tier. Not a discovery tool — requires a known ticket key.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -79,7 +79,7 @@ export const TOOLS = [
   },
   {
     name: 'pr',
-    description: 'Assemble a ready-to-paste PR description for a ticket — what changed (from linked commits), linked tickets, and (if the ticket has acceptance criteria) a requirements-coverage section. Read-only by default. The requirements-coverage section reuses the same Free-tier 3-checks/month counter as the `compliance` tool — calling `pr` on a ticket with acceptance criteria counts against that shared monthly limit; TicketLens Pro removes the cap. `open: true` (TicketLens Pro required) opens a real GitHub PR compare page instead, prefilled with this same description — GitHub only, requires the current branch already pushed to origin; refuses cleanly on a non-GitHub remote, detached HEAD, or an unpushed branch.',
+    description: 'Assemble a ready-to-paste PR description for a ticket — what changed (from linked commits), linked tickets (each stating its relation, e.g. "PROJ-1 is blocked by PROJ-2"), and (if the ticket has acceptance criteria) a requirements-coverage section. Read-only by default. The requirements-coverage section reuses the same Free-tier 3-checks/month counter as the `compliance` tool — calling `pr` on a ticket with acceptance criteria counts against that shared monthly limit; TicketLens Pro removes the cap. `open: true` (TicketLens Pro required) opens a real GitHub PR compare page instead, prefilled with this same description — GitHub only, requires the current branch already pushed to origin; refuses cleanly on a non-GitHub remote, detached HEAD, or an unpushed branch.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -292,7 +292,7 @@ export const TOOLS = [
   },
   {
     name: 'ticket_link',
-    description: 'List or execute a link between two tickets in their tracker (Jira/GitHub/Linear). Called with only `ticket`/`target`, lists the tracker\'s current valid link types without changing anything. Destructive when `type` and `confirm: true` are both given — writes directly to the live tracker. Direction matters: `ticket` "types" `target` (e.g. ticket duplicates target). On GitHub, executing CLOSES `ticket` as a duplicate of `target` — a state change, not just a relationship add like Jira/Linear. Requires a TicketLens Pro license.',
+    description: 'List or execute a link between two tickets in their tracker (Jira/GitHub/Linear). Called with only `ticket`/`target`, lists the tracker\'s current valid link types without changing anything. Destructive when `type` and `confirm: true` are both given — writes directly to the live tracker. Direction matters: `ticket` "types" `target` (e.g. ticket duplicates target). On GitHub, executing CLOSES `ticket` as a duplicate of `target` — a state change, not just a relationship add like Jira/Linear. On Jira, a successful write echoes the stored link read back from Jira. Requires a TicketLens Pro license.',
     inputSchema: {
       type: 'object',
       properties: {

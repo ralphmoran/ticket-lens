@@ -233,3 +233,59 @@ describe('assemblePr', () => {
     assert.ok(result.includes('### What changed'), 'Should still include section header');
   });
 });
+
+// ---------------------------------------------------------------------------
+// ROADMAP 80 — "### Linked tickets" states the stored relation, not a bare type
+// ---------------------------------------------------------------------------
+describe('assemblePr — link relation (ROADMAP 80)', () => {
+  const ticketWith = (linkedIssues) => ({ ...MOCK_TICKET, linkedIssues });
+  const linkedLines = async (linkedIssues, overrides = {}) => {
+    const result = await assemblePr(TICKET_KEY, makeOpts({ fetchTicketFn: async () => ticketWith(linkedIssues), ...overrides }));
+    return result.split('### Linked tickets\n')[1].split('\n\n')[0].split('\n');
+  };
+
+  it('LOCK: a link without a stored phrase keeps today\'s "key: type — summary" line', async () => {
+    const lines = await linkedLines([
+      { key: 'PROJ-100', summary: 'Parent epic', linkType: 'Epic Link', direction: 'outward' },
+    ]);
+    assert.deepEqual(lines, ['- PROJ-100: Epic Link — Parent epic']);
+  });
+
+  it('LOCK: with no type and no phrase the line still falls back to "Linked"', async () => {
+    const lines = await linkedLines([{ key: 'PROJ-100', summary: 'Parent epic' }]);
+    assert.deepEqual(lines, ['- PROJ-100: Linked — Parent epic']);
+  });
+
+  it('states the full relation sentence for an outward link', async () => {
+    const lines = await linkedLines([
+      { key: 'PROJ-100', summary: 'Auth overhaul', linkType: 'Blocks', direction: 'outward', linkPhrase: 'blocks' },
+    ]);
+    assert.deepEqual(lines, ['- PROJ-123 blocks PROJ-100 — Auth overhaul']);
+  });
+
+  it('states the reverse for an inward link — a bare "Blocks" never told these two apart', async () => {
+    const lines = await linkedLines([
+      { key: 'PROJ-100', summary: 'Auth overhaul', linkType: 'Blocks', direction: 'inward', linkPhrase: 'is blocked by' },
+    ]);
+    assert.deepEqual(lines, ['- PROJ-123 is blocked by PROJ-100 — Auth overhaul']);
+  });
+
+  it('keeps the linked ticket key brand+bold when outStream is a TTY', async () => {
+    const result = await assemblePr(TICKET_KEY, makeOpts({
+      fetchTicketFn: async () => ticketWith([
+        { key: 'PROJ-100', summary: 'Auth overhaul', linkType: 'Blocks', direction: 'outward', linkPhrase: 'blocks' },
+      ]),
+      outStream: { write: () => {}, isTTY: true },
+    }));
+    assert.match(result, /blocks \x1b\[38;5;117m\x1b\[1mPROJ-100\x1b\[22m\x1b\[39m/);
+  });
+
+  it('a phrase carrying "## " after a newline cannot forge a heading in the PR description', async () => {
+    const result = await assemblePr(TICKET_KEY, makeOpts({
+      fetchTicketFn: async () => ticketWith([
+        { key: 'PROJ-100', summary: 'x', linkType: 'Blocks', direction: 'outward', linkPhrase: 'blocks\n## Injected\nforged' },
+      ]),
+    }));
+    assert.doesNotMatch(result, /^## Injected/m);
+  });
+});

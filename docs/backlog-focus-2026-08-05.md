@@ -462,7 +462,7 @@ On ship, sync `help.mjs` (3 places), SKILL.md, README, MCP help, `jtb-skill-vers
     - Open: caps apply to pool keys only; BYOK is the user's own cost.
     - Proposed tier: Team. Low priority until consensus is used.
 
-59. **MCP: show link direction and type on every linked ticket.** Filed 2026-11-04, ROADMAP 80.
+59. ~~**MCP: show link direction and type on every linked ticket.**~~ DONE 2026-11-06 (local, not yet committed), ROADMAP 80.
     - Origin: user checked a ticket's links by hand through the Jira REST API.
     - Manual check: `GET /rest/api/2/issue/KEY?fields=issuelinks`, read `type.name`, `type.inward`, `type.outward`.
     - Rule: `outwardIssue` present means this ticket does the outward verb: PROJ-1 approves PROJ-2.
@@ -480,8 +480,10 @@ On ship, sync `help.mjs` (3 places), SKILL.md, README, MCP help, `jtb-skill-vers
     - Must verify live on Jira Server and Cloud, per the #31 lesson.
     - Proposed tier: Free for reads; the `ticket_link` echo stays Pro.
     - Tests and docs use placeholder keys like PROJ-1, never real hostnames or tickets.
+    - Built: `Relation: PARENT phrase CHILD` per linked ticket in `fetch`; `pr` and `ticket_link` use the same sentence.
+    - Live-verified on Jira Cloud over CLI and MCP; markdown only, MCP `fetch` returns text.
 
-60. **Show ticket labels in the `fetch` brief and MCP output.** Filed 2026-11-04, ROADMAP 81.
+60. ~~**Show ticket labels in the `fetch` brief and MCP output.**~~ DONE 2026-11-06 (local, not yet committed), ROADMAP 81.
     - Origin: user asked if labels can be read from a ticket in a harness session.
     - Answer today: labels are parsed but never shown by `fetch` (`brief-assembler.mjs:14`).
     - Parsed in all three adapters: `jira-client.mjs:81`, Linear and GitHub adapters.
@@ -497,6 +499,9 @@ On ship, sync `help.mjs` (3 places), SKILL.md, README, MCP help, `jtb-skill-vers
     - Proposed tier: Free; display only.
     - Tests and docs use placeholder keys and labels, never real ones.
     - On ship, sync `help.mjs`, SKILL.md, README, MCP help, `jtb-skill-version`.
+    - Built: `Labels:` in the `fetch` header, plain and styled.
+    - Found and fixed: Jira triage search dropped `labels`, so label rules never matched.
+    - `triage --push` now sends Jira labels, capped at 50 of 100 characters (Console API limit).
 
 61. **Console: team adoption view for managers.** Filed 2026-11-05, ROADMAP 82.
     - Origin: Console sweep 2026-11-04 found stale or empty manager dashboards.

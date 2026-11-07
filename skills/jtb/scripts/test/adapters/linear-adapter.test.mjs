@@ -1072,3 +1072,9 @@ describe('attachFiles', () => {
     assert.equal(putOpts.redirect, 'manual');
   });
 });
+
+describe('createLinearAdapter — no stored-link read-back (ROADMAP 80)', () => {
+  it('has no getStoredLink: Linear returns no linkedIssues to read back, so ticket_link prints no read-back line', () => {
+    assert.equal(createLinearAdapter(CONN, { fetcher: async () => {} }).getStoredLink, undefined);
+  });
+});

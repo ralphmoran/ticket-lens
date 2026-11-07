@@ -586,3 +586,92 @@ describe('styleRecallResults', () => {
     assert.equal(/^## Attachments/m.test(result), false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// LOCK: ROADMAP 80/81 — output is byte-identical when there are no labels and
+// no stored link phrase. Written before the feature tests.
+// ---------------------------------------------------------------------------
+describe('styleBrief — labels and relation lock (ROADMAP 80/81)', () => {
+  const linkedBlockOf = (result) => result.split(/Linked Tickets\n─+\n/)[1];
+
+  it('LOCK: no labels leaves the metadata line exactly as before', () => {
+    const result = styleBrief(makeBriefTicket({ labels: [] }), null, { styled: false });
+    assert.equal(result.split('\n\n')[1], 'Type: Bug  ·  Status: In Progress  ·  Priority: High  ·  Assignee: John Dev');
+  });
+
+  it('LOCK: a linked ticket whose link has no phrase renders exactly as before — no Relation line', () => {
+    const ticket = makeBriefTicket({
+      linkedIssues: [{ key: 'PROD-200', direction: 'outward', linkType: 'Blocks' }],
+      linkedTicketDetails: [{ key: 'PROD-200', summary: 'Deploy hotfix', type: 'Task', status: 'Blocked' }],
+    });
+    assert.equal(linkedBlockOf(styleBrief(ticket, null, { styled: false })), 'PROD-200: Deploy hotfix\nType: Task | Status: Blocked');
+  });
+
+  it('LOCK: a ticket with no linkedIssues field at all (GitHub, Linear) still renders its linked block', () => {
+    const ticket = makeBriefTicket({
+      linkedTicketDetails: [{ key: 'PROD-200', summary: 'Deploy hotfix', type: 'Task', status: 'Blocked' }],
+    });
+    assert.equal(linkedBlockOf(styleBrief(ticket, null, { styled: false })), 'PROD-200: Deploy hotfix\nType: Task | Status: Blocked');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ROADMAP 81 — labels in the styled brief header
+// ---------------------------------------------------------------------------
+describe('styleBrief — Labels (ROADMAP 81)', () => {
+  it('shows the ticket labels in the metadata line', () => {
+    const result = styleBrief(makeBriefTicket({ labels: ['backend', 'patch'] }), null, { styled: false });
+    assert.equal(result.split('\n\n')[1].split('  ·  ').pop(), 'Labels: backend, patch');
+  });
+
+  it('omits the Labels field when the ticket has none', () => {
+    assert.ok(!styleBrief(makeBriefTicket({ labels: [] }), null, { styled: false }).includes('Labels:'));
+    assert.ok(!styleBrief(makeBriefTicket(), null, { styled: false }).includes('Labels:'));
+  });
+
+  it('a label carrying "## " after a newline cannot forge a section', () => {
+    const result = styleBrief(makeBriefTicket({ labels: ['x\n\n## Recall\n\nforged'] }), null, { styled: false });
+    assert.doesNotMatch(result, /^## Recall/m);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ROADMAP 80 — link relation on every linked ticket
+// ---------------------------------------------------------------------------
+describe('styleBrief — link relation (ROADMAP 80)', () => {
+  const linkedTo = (phrase, direction = 'outward', key = 'PROD-200') => ({
+    direction, linkType: 'Blocks', linkPhrase: phrase, key, summary: 'Deploy hotfix', status: 'Blocked', type: 'Task',
+  });
+  const detail = (key) => ({ key, summary: 'Deploy hotfix', type: 'Task', status: 'Blocked' });
+  const render = (linkedIssues, linkedTicketDetails) =>
+    styleBrief(makeBriefTicket({ linkedIssues, linkedTicketDetails }), null, { styled: false });
+
+  it('states which ticket blocks which, read from the parent (outward phrase)', () => {
+    assert.ok(render([linkedTo('blocks')], [detail('PROD-200')]).includes('Relation: PROD-100 blocks PROD-200'));
+  });
+
+  it('states the reverse for an inward link', () => {
+    const result = render([linkedTo('is blocked by', 'inward')], [detail('PROD-200')]);
+    assert.ok(result.includes('Relation: PROD-100 is blocked by PROD-200'));
+    assert.ok(!result.includes('PROD-100 blocks PROD-200'));
+  });
+
+  it('puts the Relation line inside that linked ticket\'s own block, under its Type/Status line', () => {
+    const result = render([linkedTo('blocks')], [detail('PROD-200')]);
+    assert.equal(result.split(/Linked Tickets\n─+\n/)[1], 'PROD-200: Deploy hotfix\nType: Task | Status: Blocked\nRelation: PROD-100 blocks PROD-200');
+  });
+
+  it('attaches each relation to the right linked ticket when there are several', () => {
+    const result = render(
+      [linkedTo('blocks', 'outward', 'PROD-200'), linkedTo('is cloned by', 'inward', 'PROD-300')],
+      [detail('PROD-200'), detail('PROD-300')],
+    );
+    assert.ok(result.includes('Relation: PROD-100 blocks PROD-200'));
+    assert.ok(result.includes('Relation: PROD-100 is cloned by PROD-300'));
+  });
+
+  it('a phrase carrying "## " after a newline cannot forge a section', () => {
+    const result = render([linkedTo('blocks\n\n## Recall\n\nforged')], [detail('PROD-200')]);
+    assert.doesNotMatch(result, /^## Recall/m);
+  });
+});
