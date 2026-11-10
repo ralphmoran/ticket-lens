@@ -213,7 +213,7 @@ ticketlens triage --label=Bug,P1               # Filter by label(s) [Team]
 ticketlens triage --priority=High              # Filter by priority level [Team]
 ticketlens triage --export=csv                 # Export results to CSV [Team]
 ticketlens triage --export=json                # Export results to JSON [Team]
-ticketlens triage --push                       # Push snapshot to Console queue [Team]
+ticketlens triage --push                       # Push snapshot (with labels) to Console queue [Team]
 ticketlens triage --share                      # Generate 24h share URL (no login for recipient) [Team]
 ticketlens triage --all                        # Triage all profiles at once, merged output [Pro]
 ticketlens triage --save=~/triage.txt          # Save ANSI-stripped output to file [Pro]
@@ -798,7 +798,7 @@ ticketlens triage --project=MYPROJ --label=Bug --priority=High  # Combined [Team
 ticketlens triage --assignee="Jane Dev" --sprint="Sprint 12"  # Combined [Team]
 ticketlens triage --export=csv               # Export to CSV [Team]
 ticketlens triage --export=json              # Export to JSON [Team]
-ticketlens triage --push                     # Push snapshot to Console queue [Team]
+ticketlens triage --push                     # Push snapshot (with labels) to Console queue [Team]
 ticketlens triage --share                    # Generate 24h share URL (no login for recipient) [Team]
 ticketlens triage --all                      # Triage all profiles at once, merged output [Pro]
 ticketlens triage --save=~/triage.txt        # Save ANSI-stripped output to file [Pro]
@@ -1078,7 +1078,7 @@ ticketlens triage --label=Bug,P1               # Filter by label(s)
 ticketlens triage --priority=High              # Filter by priority level
 ticketlens triage --export=csv                 # Export triage to CSV for standups and reports
 ticketlens triage --export=json                # Machine-readable export for dashboards
-ticketlens triage --push                       # Push snapshot to the Console queue
+ticketlens triage --push                       # Push snapshot (with labels) to the Console queue
 ticketlens triage --share                      # Generate a 24h share URL — paste into Slack, no login needed for recipients
 ```
 
