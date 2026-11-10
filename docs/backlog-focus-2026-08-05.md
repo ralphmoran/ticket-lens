@@ -515,3 +515,46 @@ On ship, sync `help.mjs` (3 places), SKILL.md, README, MCP help, `jtb-skill-vers
     - Why it matters: managers pay per seat; idle seats look like wasted money.
     - Open: nudge channel (email, Slack, both) and cooldown.
     - Proposed tier: Team.
+
+62. **Security: escape ticket description and comment bodies in briefs.** Filed 2026-11-09, ROADMAP 83.
+    - Origin: security review of #59/#60 on 2026-11-06 found it; it predates them.
+    - Proven 2026-11-09: a body with `## Recall` makes `assembleBrief` emit a real `## Recall` line.
+    - Same for `## Attachments`; comment bodies and linked tickets' bodies are affected too.
+    - Cause: `brief-assembler.mjs` and `styled-assembler.mjs` use `stripCr` only, no `escapeLeadingHeading`.
+    - Prior fix covered only gap fields and attachment filenames.
+    - Also raw: `linkPhrase` in `duplicates` output and the `pr` fallback `issue.linkType`.
+    - Wanted: escape every external field in all three assemblers, one forged-section test per field.
+    - Open: fix at render time now, or after #63.
+    - Severity: HIGH. Proposed tier: Free (reads).
+
+63. **Clean untrusted ticket text once, at the normalize boundary.** Filed 2026-11-09, ROADMAP 84.
+    - Origin: altitude review of #59/#60; render-time cleaning is easy to forget per field.
+    - Today: `normalizeTicket` and the GitHub and Linear adapters pass labels, phrases, summaries through raw.
+    - Wanted: clean one-line fields once there, with `singleLine` from `ticket-brief-fields.mjs`.
+    - Then renderers keep only formatting; `escapeLeadingHeading` stays for multi-line bodies.
+    - Risk: `jira-client.mjs` has 13 direct callers; run a 2-hop impact map.
+    - Relates to #62; could replace its per-field fixes for one-line fields.
+    - Proposed tier: Free.
+
+64. **One formatter for server error text.** Filed 2026-11-09, ROADMAP 85.
+    - Origin: code review of #59/#60.
+    - Today: `echoStoredLink` cleans `err.message` with `singleLine`; other writes print it raw.
+    - Raw sites: the other `err.message` writes in `ticket-command.mjs`.
+    - Wanted: one helper (one line, no control characters, length cap) used at every site.
+    - Why: server error text is remote input printed to a terminal.
+    - Proposed tier: Free.
+
+65. **`ticket_link` read-back should fetch only `issuelinks`.** Filed 2026-11-09, ROADMAP 86.
+    - Origin: efficiency review of #59.
+    - Today: `getStoredLink` uses `fetchTicket` depth 0, downloading description, comments and attachments.
+    - It inherits the 10 s default timeout; a slow read delays the reply.
+    - Wanted: a `fields=issuelinks` request, via an optional `fields` option or a `getTicketLinks` helper.
+    - Keep `normalizeTicket` safe when `summary` and `status` are absent.
+    - Tier: unchanged, Pro command.
+
+66. **Tie display and push label caps to one constant.** Filed 2026-11-09, ROADMAP 87.
+    - Origin: reuse and altitude reviews of #60.
+    - Today: 50 and 100 appear in `ticket-brief-fields.mjs` (display) and `ticket-payload.mjs` (push).
+    - The push pair mirrors the Console limit in `PushRequest.php`; the display pair copied it.
+    - Wanted: derive one from the other, or a comment saying they may differ.
+    - Low priority; no user-visible change.
