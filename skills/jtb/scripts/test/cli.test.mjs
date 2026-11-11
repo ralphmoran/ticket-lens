@@ -333,6 +333,12 @@ describe('parseCommand', () => {
     assert.equal(stillFetch.command, 'fetch');
   });
 
+  it('routes "parent" to parent command', () => {
+    const result = parseCommand(['parent', 'PROJ-1', 'PROJ-2', 'PROJ-3', '--confirm']);
+    assert.equal(result.command, 'parent');
+    assert.deepEqual(result.args, ['PROJ-1', 'PROJ-2', 'PROJ-3', '--confirm']);
+  });
+
   it('routes "link" to link command', () => {
     const result = parseCommand(['link', 'PROJ-1', 'PROJ-2', '--type=duplicate', '--confirm']);
     assert.equal(result.command, 'link');

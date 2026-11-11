@@ -74,7 +74,7 @@ describe('mcp-server', () => {
     it('returns exactly fetch, recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const names = messages[0].result.tools.map((t) => t.name).sort();
-      assert.deepEqual(names, ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'issue_types', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'ticket_worklog', 'triage']);
+      assert.deepEqual(names, ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'issue_types', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_parent', 'ticket_transition', 'ticket_update', 'ticket_worklog', 'triage']);
       for (const tool of messages[0].result.tools) {
         assert.equal(tool.inputSchema.type, 'object');
         assert.ok(tool.inputSchema.properties, `${tool.name} must declare input properties`);
@@ -1519,6 +1519,112 @@ describe('mcp-server', () => {
     });
   });
 
+  describe('tools/list ticket_parent', () => {
+    async function parentTool() {
+      const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
+      return messages[0].result.tools.find((t) => t.name === 'ticket_parent');
+    }
+
+    it('description states Jira/Linear, destructive, the confirm preview, and the sub-task and 50-child rules', async () => {
+      const { description } = await parentTool();
+      assert.match(description, /Jira/);
+      assert.match(description, /Linear/);
+      assert.match(description, /destructive/i);
+      assert.match(description, /confirm: true/);
+      assert.match(description, /sub-task/i);
+      assert.match(description, /50/);
+      assert.match(description, /Pro license/);
+    });
+
+    it('declares parent and a bounded children array, with confirm alongside them', async () => {
+      const { inputSchema } = await parentTool();
+      assert.deepEqual(inputSchema.required, ['parent', 'children']);
+      assert.equal(inputSchema.properties.parent.type, 'string');
+      assert.equal(inputSchema.properties.children.type, 'array');
+      assert.equal(inputSchema.properties.children.minItems, 1);
+      assert.equal(inputSchema.properties.children.maxItems, 50);
+      assert.equal(inputSchema.properties.children.items.type, 'string');
+      assert.equal(inputSchema.properties.confirm.type, 'boolean');
+    });
+  });
+
+  describe('tools/call ticket_parent', () => {
+    const call = (args) => [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_parent', arguments: args } }];
+    const CHILDREN = ['PROJ-2', 'PROJ-3'];
+
+    it('happy path: hands the epic, children and confirm to the runner, returns a non-error result', async () => {
+      let seen;
+      const runTicketParentFn = async (epic, children, opts) => { seen = { epic, children, opts }; opts.stream.write('  Set the parent on 2 of 2 tickets.\n'); return { ok: true, results: [] }; };
+      const { messages } = await drive(call({ parent: 'PROJ-1', children: CHILDREN, confirm: true }), { configDir, runTicketParentFn });
+      assert.equal(messages[0].result.isError, undefined);
+      assert.match(messages[0].result.content[0].text, /Set the parent on 2 of 2/);
+      assert.equal(seen.epic, 'PROJ-1');
+      assert.deepEqual(seen.children, CHILDREN);
+      assert.equal(seen.opts.confirm, true);
+      assert.equal(seen.opts.cliHints, false, 'MCP callers must see confirm: true wording, never --confirm');
+      assert.equal(seen.opts.configDir, configDir);
+    });
+
+    it('confirm defaults to false when absent', async () => {
+      let seen;
+      const runTicketParentFn = async (epic, children, opts) => { seen = opts; return { ok: false, reason: 'confirm-required', results: [] }; };
+      await drive(call({ parent: 'PROJ-1', children: CHILDREN }), { configDir, runTicketParentFn });
+      assert.equal(seen.confirm, false);
+    });
+
+    for (const bad of ['true', 'yes', 1, {}, [], null]) {
+      it(`confirm=${JSON.stringify(bad)} is not confirmation — only the boolean true is`, async () => {
+        let seen;
+        const runTicketParentFn = async (epic, children, opts) => { seen = opts; return { ok: false, results: [] }; };
+        await drive(call({ parent: 'PROJ-1', children: CHILDREN, confirm: bad }), { configDir, runTicketParentFn });
+        assert.equal(seen.confirm, false);
+      });
+    }
+
+    for (const [label, args, pattern] of [
+      ['no arguments', {}, /parent/i],
+      ['a missing parent', { children: CHILDREN }, /parent/i],
+      ['a non-string parent', { parent: 7, children: CHILDREN }, /parent/i],
+      ['a missing children array', { parent: 'PROJ-1' }, /children/i],
+      ['children as a string', { parent: 'PROJ-1', children: 'PROJ-2' }, /children/i],
+      ['an empty children array', { parent: 'PROJ-1', children: [] }, /children/i],
+    ]) {
+      it(`${label} returns a tool error without ever calling the runner`, async () => {
+        let called = false;
+        const runTicketParentFn = async () => { called = true; return { ok: true, results: [] }; };
+        const { messages } = await drive(call(args), { configDir, runTicketParentFn });
+        assert.equal(called, false);
+        assert.equal(messages[0].result.isError, true);
+        assert.match(messages[0].result.content[0].text, pattern);
+      });
+    }
+
+    it('flag-shaped text in a child stays inert — there is no argv to forge', async () => {
+      let seen;
+      const runTicketParentFn = async (epic, children, opts) => { seen = { children, opts }; return { ok: false, results: [] }; };
+      await drive(call({ parent: 'PROJ-1', children: ['--confirm', '--profile=evil'] }), { configDir, runTicketParentFn });
+      assert.equal(seen.opts.confirm, false);
+      assert.equal(seen.opts.profile, undefined);
+      assert.deepEqual(seen.children, ['--confirm', '--profile=evil']);
+    });
+
+    it('a runner result of {ok:false} (preview, refusal, partial failure) maps to a tool error that keeps the full text', async () => {
+      const runTicketParentFn = async (epic, children, opts) => { opts.stream.write('  PROJ-2 now under PROJ-1\n  Failed to write to PROJ-3: boom\n'); return { ok: false, results: [] }; };
+      const { messages } = await drive(call({ parent: 'PROJ-1', children: CHILDREN, confirm: true }), { configDir, runTicketParentFn });
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /PROJ-2 now under PROJ-1/);
+      assert.match(messages[0].result.content[0].text, /PROJ-3: boom/);
+    });
+
+    it('a runner that throws surfaces as a JSON-RPC-level error, never a crash of the server', async () => {
+      const runTicketParentFn = async () => { throw new Error('unexpected'); };
+      const { messages } = await drive([...call({ parent: 'PROJ-1', children: CHILDREN, confirm: true }), { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }], { configDir, runTicketParentFn });
+      assert.equal(messages.length, 2, 'the server must survive and answer the next request');
+      assert.equal(messages[0].error?.code, -32603);
+      assert.equal(messages[1].result.tools.some((t) => t.name === 'ticket_parent'), true);
+    });
+  });
+
   describe('tools/call ticket_transition', () => {
     it('no target dispatches to the read-only list function, never the executing one', async () => {
       let listCalled = false, executeCalled = false;
@@ -2042,7 +2148,7 @@ describe('mcp-server', () => {
       assert.equal(messages.length, 2, 'both the parse-error response and the valid tools/list response must appear');
       assert.ok(messages[0].error, 'first message must be a JSON-RPC error for the malformed line');
       assert.equal(messages[1].id, 2);
-      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'issue_types', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_transition', 'ticket_update', 'ticket_worklog', 'triage']);
+      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'issue_types', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_parent', 'ticket_transition', 'ticket_update', 'ticket_worklog', 'triage']);
     });
 
     it('a syntactically-valid-but-non-object JSON line (e.g. bare "null") does not crash the server or drop later messages', async () => {

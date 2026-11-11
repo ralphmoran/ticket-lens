@@ -154,6 +154,49 @@ describe('SKILL.md — write-back section documents worklog', () => {
   });
 });
 
+describe('SKILL.md — write-back section documents parent', () => {
+  it('lists ticketlens parent in the bash example block, in both preview and --confirm forms', () => {
+    const section = writeBackSection();
+    assert.match(section, /ticketlens parent \S+ \S+[^\n]*#[^\n]*preview/i, 'expected a preview-form example');
+    assert.match(section, /ticketlens parent [^\n]*--confirm/, 'expected a --confirm example');
+  });
+
+  it('states Jira and Linear, the sub-task refusal, and the 50-child cap', () => {
+    const section = writeBackSection();
+    assert.match(section, /`parent`[^\n]*Jira and Linear/i);
+    assert.match(section, /sub-task/i);
+    assert.match(section, /\b50\b/);
+  });
+
+  it('documents parent as short bullets — a lead line plus at least eight bullets of 15 words or fewer', () => {
+    const section = writeBackSection();
+    const start = section.indexOf('`parent EPIC-KEY');
+    assert.notEqual(start, -1, 'expected the parent lead line');
+    const block = section.slice(start).split('\n\n')[0];
+    const bullets = block.split('\n').filter((l) => l.startsWith('- '));
+    assert.ok(bullets.length >= 8, `expected a bullet list, found ${bullets.length} bullets`);
+    for (const bullet of bullets) {
+      const words = bullet.slice(2).trim().split(/\s+/).length;
+      assert.ok(words <= 15, `bullet has ${words} words: ${bullet}`);
+    }
+  });
+
+  it('names the ticket_parent MCP tool in the use-MCP-not-bash callout', () => {
+    assert.match(writeBackSection(), /`ticket_parent`/);
+  });
+
+  it('counts the write family as nine, never a stale "eight"', () => {
+    assert.doesNotMatch(writeBackSection(), /all eight/i);
+    assert.match(writeBackSection(), /all nine/i);
+  });
+
+  it('is bumped past 0.49.3 so update-skill propagates the parent docs', () => {
+    const m = SKILL_MD.match(/jtb-skill-version:\s*([\d.]+)/);
+    assert.ok(m, 'expected a jtb-skill-version marker on line 1');
+    assert.notEqual(m[1], '0.49.3', 'marker must move past the pre-parent version');
+  });
+});
+
 function recallMcpToolSection() {
   const start = SKILL_MD.indexOf('Pick exactly one path per capture');
   assert.ok(start !== -1, 'expected the Recall MCP-tool-selection paragraph to still exist');

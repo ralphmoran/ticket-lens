@@ -114,3 +114,30 @@ describe('README — M-11 duplicates hedges both directions', () => {
     assert.match(prose, /miss|not a guarantee|not a confirmed absence/i);
   });
 });
+
+describe('README — parent is documented (backlog #70)', () => {
+  it('the write-back section shows preview and --confirm examples, points at parent --help, and names Jira and Linear', () => {
+    const body = section(WRITE_BACK_HEADING);
+    assert.match(body, /ticketlens parent \S+ \S+ \S+ +#[^\n]*[Pp]review/);
+    assert.match(body, /ticketlens parent [^\n]*--confirm/);
+    assert.match(body, /ticketlens parent --help/);
+    assert.match(body, /Jira and Linear/);
+    assert.match(body, /sub-task/i);
+  });
+
+  it('names the ticket_parent MCP tool in the write-back summary and the MCP paragraph', () => {
+    assert.match(section(WRITE_BACK_HEADING), /`ticket_parent`/);
+    assert.match(README, /`ticket_worklog`, and `ticket_parent` as native tools/);
+  });
+
+  it('every command block that lists the write family also lists a parent example', () => {
+    assert.ok((README.match(/ticketlens parent /g) ?? []).length >= 6, 'expected parent in all three example blocks');
+  });
+
+  it('Recently shipped lists Parent', () => {
+    const start = README.indexOf('Recently shipped:');
+    assert.notEqual(start, -1);
+    const end = README.indexOf('\n---', start);
+    assert.match(README.slice(start, end === -1 ? undefined : end), /\*\*Parent\*\*/);
+  });
+});

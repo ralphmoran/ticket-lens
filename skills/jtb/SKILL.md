@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.49.3 -->
+<!-- jtb-skill-version: 0.50.0 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -453,6 +453,8 @@ ticketlens update PROD-1234 --add-labels=urgent --remove-labels=stale
 ticketlens create --project=PROD --type="Task" --summary="Fix login on mobile"  # create a new ticket
 ticketlens worklog PROD-1234=1h30m                             # preview what would be logged — writes nothing
 ticketlens worklog PROD-1234=1h30m PROD-5678=45m --comment="Sprint work" --confirm  # log time on several tickets (Jira only)
+ticketlens parent PROD-1 PROD-2 PROD-3                         # preview — writes nothing
+ticketlens parent PROD-1 PROD-2 PROD-3 --confirm               # put several tickets under one epic
 ```
 
 `transition` called with just a ticket key never mutates anything — it lists the tracker's current valid options (Jira: real workflow transitions for that issue; GitHub: open/closed; Linear: team-scoped workflow states). Only add `--target` **and** `--confirm` once the target has actually been confirmed with the user — `--confirm` is a deliberate two-step gate, not a formality to route around. Never guess a `--target` value; always list first, then use one of the names shown.
@@ -486,15 +488,31 @@ ticketlens worklog PROD-1234=1h30m PROD-5678=45m --comment="Sprint work" --confi
 - The MCP tool takes `entries[]` with per-ticket `comment`/`started`.
 - The CLI applies one `--comment`/`--started` to every ticket.
 
+`parent EPIC-KEY CHILD-KEY [CHILD-KEY ...]` puts many tickets under one epic.
+- `parent` works on Jira and Linear; GitHub has no parent and is refused.
+- The first key is the epic; every other key goes under it.
+- Per call: at most 50 children, no repeats, never the epic itself.
+- Every ticket is read first; a sub-task or missing ticket blocks the whole call.
+- Without `--confirm` it only previews each child's current parent; writes nothing.
+- Add `--confirm` only after the user has reviewed the previewed list.
+- A child already under that epic is skipped; a repeat is harmless.
+- A child under a different epic is moved. Say so before confirming.
+- Writes go one ticket at a time; a failure never stops the rest.
+- A rate limit or 401 stops the batch; retry only the listed tickets.
+- Every write is read back; a mismatch is reported, not claimed as success.
+- Jira Server/DC sets the Epic Link field; Cloud sets `parent`.
+- The epic's own connection is used for every child; `--profile` overrides.
+- Jira's own refusal text is shown per ticket; read it before retrying.
+
 `--attach=path1,path2` (comma-separated local file paths) is available on `comment`, `create`, and `note add`/`note patch`, up to 50 files per call (Pro, Team, Enterprise). Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
 
-The write actions (comment/transition/assign/link/update/create/worklog) have a short local debounce (10s) against an accidental double-fire, and every write is appended to a local audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — surface the failure to the user rather than silently re-attempting, since a ticket write isn't naturally idempotent the way a Recall note save is. `duplicates` has neither, since nothing is written.
+The write actions (comment/transition/assign/link/update/create/worklog) have a short local debounce (10s) against an accidental double-fire, and every write is appended to a local audit log (`~/.ticketlens/ticket-action-log.jsonl`). A write that times out is never retried automatically — surface the failure to the user rather than silently re-attempting, since a ticket write isn't naturally idempotent the way a Recall note save is. `duplicates` has neither, since nothing is written. `parent` has no debounce either: setting the same epic twice changes nothing.
 
-**Pick exactly one path per action — never both.** If this harness has TicketLens's MCP server configured (tools named `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create`/`ticket_worklog` — often shown as `mcp__ticketlens__ticket_comment` etc. — visible in your tool list), **use those tools, not the bash commands above** — same license gate, same cooldown, same audit log. Only fall back to the bash form when the MCP tools are genuinely absent from your tool list; if that's because this project has never registered the server, see the `ticketlens mcp install` note above (Recall section) — same guidance applies here.
+**Pick exactly one path per action — never both.** If this harness has TicketLens's MCP server configured (tools named `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create`/`ticket_worklog`/`ticket_parent` — often shown as `mcp__ticketlens__ticket_comment` etc. — visible in your tool list), **use those tools, not the bash commands above** — same license gate, same cooldown, same audit log. Only fall back to the bash form when the MCP tools are genuinely absent from your tool list; if that's because this project has never registered the server, see the `ticketlens mcp install` note above (Recall section) — same guidance applies here.
 
 The same stale-schema caveat applies here — if a call rejects a parameter this document says exists (e.g. `attachments` on `ticket_comment`/`ticket_create`) right after an upgrade, see the MCP tool-cache staleness note above (Recall section).
 
-Requires a Pro license — on Free, all eight no-op with an upgrade hint on stderr.
+Requires a Pro license — on Free, all nine no-op with an upgrade hint on stderr.
 
 ---
 

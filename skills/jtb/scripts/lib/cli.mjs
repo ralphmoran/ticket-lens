@@ -172,6 +172,10 @@ export function parseCommand(args) {
     return { command: 'worklog', args: args.slice(1) };
   }
 
+  if (first === 'parent') {
+    return { command: 'parent', args: args.slice(1) };
+  }
+
   if (first === 'duplicates') {
     return { command: 'duplicates', args: args.slice(1) };
   }

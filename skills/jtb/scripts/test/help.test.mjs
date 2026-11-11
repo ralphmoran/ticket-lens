@@ -7,7 +7,7 @@ import {
   printProfilesHelp, printScheduleHelp,
   printInitHelp, printSwitchHelp, printConfigHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
-  printCommentHelp, printTransitionHelp, printAssignHelp, printWorklogHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
+  printCommentHelp, printTransitionHelp, printAssignHelp, printWorklogHelp, printParentHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
   printCloudKeysHelp, printIssueTypesHelp, printPrHelp,
 } from '../lib/help.mjs';
 
@@ -579,6 +579,56 @@ describe('printWorklogHelp', () => {
   it('states there is no delete, so a preview-first flow is the safety net', () => {
     const out = captureHelp(printWorklogHelp);
     assert.match(out, /no delete|cannot be deleted|no way to delete/i);
+  });
+});
+
+describe('printParentHelp', () => {
+  it('documents the epic and children arguments, the mandatory --confirm, --profile and the Pro tier', () => {
+    const out = captureHelp(printParentHelp);
+    assert.match(out, /EPIC-KEY/);
+    assert.match(out, /CHILD-KEY/);
+    assert.match(out, /--confirm/);
+    assert.match(out, /--profile/);
+    assert.match(out, /\[Pro\]/);
+  });
+
+  it('states Jira and Linear are supported and GitHub is not', () => {
+    const out = captureHelp(printParentHelp);
+    assert.match(out, /Jira/);
+    assert.match(out, /Linear/);
+    assert.match(out, /GitHub.*(no parent|not supported|refused)/is);
+  });
+
+  it('states the 50-child cap, the sub-task refusal, and that everything is checked before any write', () => {
+    const out = captureHelp(printParentHelp);
+    assert.match(out, /50/);
+    assert.match(out, /sub-task/i);
+    assert.match(out, /before any/i);
+  });
+
+  it('explains the Server/DC Epic Link field and that a repeat is harmless', () => {
+    const out = captureHelp(printParentHelp);
+    assert.match(out, /Epic Link/);
+    assert.match(out, /already under|skipped/i);
+  });
+});
+
+describe('printHelp — parent', () => {
+  it('USAGE section documents ticketlens parent with its Pro tier', () => {
+    const out = captureHelp(printHelp);
+    const usageIdx = out.indexOf('USAGE');
+    const idx = out.indexOf('ticketlens parent');
+    assert.ok(idx !== -1 && idx > usageIdx, '"ticketlens parent" must appear in USAGE');
+    const line = out.split('\n').find(l => l.includes('ticketlens') && l.includes('parent'));
+    assert.match(line, /\[Pro\]/);
+  });
+});
+
+describe('printMcpHelp — ticket_parent', () => {
+  it('lists ticket_parent among the tools and notes it is confirm-gated', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /\bticket_parent\b/);
+    assert.match(out, /ticket_parent.*confirm: true/s);
   });
 });
 

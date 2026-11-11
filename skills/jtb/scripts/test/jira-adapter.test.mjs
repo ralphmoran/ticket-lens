@@ -794,3 +794,82 @@ describe('createJiraAdapter — attachFiles', () => {
     assert.match(result.errors[0].message, /413/);
   });
 });
+
+describe('createJiraAdapter — parent (epic) support', () => {
+  const CLOUD = { baseUrl: 'https://example.atlassian.net', auth: 'cloud', email: 'u@example.com', apiToken: 'tok' };
+  const FIELDS = [{ id: 'customfield_10014', name: 'Epic Link', schema: { custom: 'com.pyxis.greenhopper.jira:gh-epic-link' } }];
+
+  function recordingFetcher({ fields = FIELDS, issue = { key: 'TEST-2', fields: { issuetype: { name: 'Story' }, customfield_10014: 'TEST-1' } } } = {}) {
+    const calls = [];
+    const fetcher = async (url, opts = {}) => {
+      calls.push({ url, method: opts.method ?? 'GET', body: opts.body ? JSON.parse(opts.body) : undefined });
+      if (/\/field$/.test(url)) return { ok: true, status: 200, json: async () => fields };
+      if (opts.method === 'PUT') return { ok: true, status: 204 };
+      return { ok: true, status: 200, json: async () => issue };
+    };
+    return { fetcher, calls };
+  }
+
+  it('Cloud: is supported without looking up any field', async () => {
+    const { fetcher, calls } = recordingFetcher();
+    assert.deepEqual(await createJiraAdapter(CLOUD, { fetcher }).checkParentSupport(), { supported: true });
+    assert.equal(calls.length, 0);
+  });
+
+  it('Server/DC: is supported when the instance has an Epic Link field', async () => {
+    const { fetcher } = recordingFetcher();
+    assert.deepEqual(await createJiraAdapter(CONN, { fetcher }).checkParentSupport(), { supported: true });
+  });
+
+  it('Server/DC: reports unsupported, with a reason, when there is no Epic Link field', async () => {
+    const { fetcher } = recordingFetcher({ fields: [] });
+    const result = await createJiraAdapter(CONN, { fetcher }).checkParentSupport();
+    assert.equal(result.supported, false);
+    assert.match(result.reason, /Epic Link/);
+  });
+
+  it('Server/DC: looks the field up once and reuses it across reads and writes', async () => {
+    const { fetcher, calls } = recordingFetcher();
+    const adapter = createJiraAdapter(CONN, { fetcher });
+    await adapter.getParentInfo('TEST-2');
+    await adapter.getParentInfo('TEST-3');
+    await adapter.setParent('TEST-2', 'TEST-1');
+    assert.equal(calls.filter(c => /\/field$/.test(c.url)).length, 1);
+  });
+
+  it('Server/DC: getParentInfo reads the epic out of the Epic Link field', async () => {
+    const { fetcher } = recordingFetcher();
+    assert.deepEqual(await createJiraAdapter(CONN, { fetcher }).getParentInfo('TEST-2'), { key: 'TEST-2', type: 'Story', isSubtask: false, parentKey: 'TEST-1' });
+  });
+
+  it('Cloud: getParentInfo reads parent.key', async () => {
+    const { fetcher } = recordingFetcher({ issue: { key: 'TEST-2', fields: { issuetype: { name: 'Task' }, parent: { key: 'TEST-9' } } } });
+    assert.equal((await createJiraAdapter(CLOUD, { fetcher }).getParentInfo('TEST-2')).parentKey, 'TEST-9');
+  });
+
+  it('Server/DC: setParent writes the Epic Link field', async () => {
+    const { fetcher, calls } = recordingFetcher();
+    const result = await createJiraAdapter(CONN, { fetcher }).setParent('TEST-2', 'TEST-1');
+    assert.deepEqual(result, { executed: true });
+    assert.deepEqual(calls.find(c => c.method === 'PUT').body, { fields: { customfield_10014: 'TEST-1' } });
+  });
+
+  it('Cloud: setParent writes fields.parent', async () => {
+    const { fetcher, calls } = recordingFetcher();
+    await createJiraAdapter(CLOUD, { fetcher }).setParent('TEST-2', 'TEST-1');
+    assert.deepEqual(calls.find(c => c.method === 'PUT').body, { fields: { parent: { key: 'TEST-1' } } });
+  });
+
+  it('Server/DC without an Epic Link field: setParent refuses and sends nothing', async () => {
+    const { fetcher, calls } = recordingFetcher({ fields: [] });
+    const result = await createJiraAdapter(CONN, { fetcher }).setParent('TEST-2', 'TEST-1');
+    assert.deepEqual(result, { executed: false, reason: 'no-epic-link-field' });
+    assert.equal(calls.some(c => c.method === 'PUT'), false);
+  });
+
+  it('threads conn.allowPrivateIp into the parent calls', async () => {
+    const { fetcher } = recordingFetcher();
+    const adapter = createJiraAdapter({ ...CONN, allowPrivateIp: true }, { fetcher });
+    await assert.doesNotReject(() => adapter.setParent('TEST-2', 'TEST-1', { lookup: privateLookup }));
+  });
+});

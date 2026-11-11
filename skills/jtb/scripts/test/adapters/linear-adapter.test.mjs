@@ -1078,3 +1078,96 @@ describe('createLinearAdapter — no stored-link read-back (ROADMAP 80)', () => 
     assert.equal(createLinearAdapter(CONN, { fetcher: async () => {} }).getStoredLink, undefined);
   });
 });
+
+describe('parent (epic) support', () => {
+  const PARENT_INFO = { ...ISSUE_INFO, id: 'issue-uuid-parent' };
+
+  it('checkParentSupport: always supported', async () => {
+    assert.deepEqual(await createLinearAdapter(CONN, { fetcher: async () => { throw new Error('no network'); } }).checkParentSupport(), { supported: true });
+  });
+
+  it('getParentInfo: returns the parent identifier, never a sub-task flag', async () => {
+    const fetcher = sequencedFetcher([() => makeResponse({ issues: { nodes: [{ id: 'u1', identifier: 'ENG-43', parent: { identifier: 'ENG-1' } }] } })]);
+    assert.deepEqual(await createLinearAdapter(CONN, { fetcher }).getParentInfo('ENG-43'), { key: 'ENG-43', type: null, isSubtask: false, parentKey: 'ENG-1' });
+  });
+
+  it('getParentInfo: parentKey is null when the issue has no parent', async () => {
+    const fetcher = sequencedFetcher([() => makeResponse({ issues: { nodes: [{ id: 'u1', identifier: 'ENG-43', parent: null }] } })]);
+    assert.equal((await createLinearAdapter(CONN, { fetcher }).getParentInfo('ENG-43')).parentKey, null);
+  });
+
+  it('getParentInfo: an unknown issue throws, same as every other Linear lookup', async () => {
+    const fetcher = sequencedFetcher([() => makeResponse({ issues: { nodes: [] } })]);
+    await assert.rejects(createLinearAdapter(CONN, { fetcher }).getParentInfo('ENG-404'), /not found/i);
+  });
+
+  it('setParent: resolves both ids, then issueUpdate sets parentId on the child', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return makeResponse({ issues: { nodes: [ISSUE_INFO] } });
+      if (calls.length === 2) return makeResponse({ issues: { nodes: [PARENT_INFO] } });
+      return makeResponse({ issueUpdate: { success: true } });
+    };
+    const result = await createLinearAdapter(CONN, { fetcher }).setParent('ENG-43', 'ENG-1');
+    assert.deepEqual(result, { executed: true });
+    assert.equal(calls.length, 3);
+    assert.equal(calls[2].variables.id, 'issue-uuid-1');
+    assert.deepEqual(calls[2].variables.input, { parentId: 'issue-uuid-parent' });
+  });
+
+  it('setParent: resolves the parent once and reuses it for later children', async () => {
+    const calls = [];
+    const fetcher = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (/issueUpdate/.test(body.query)) return makeResponse({ issueUpdate: { success: true } });
+      return makeResponse({ issues: { nodes: [body.variables.id === 'ENG-1' ? PARENT_INFO : ISSUE_INFO] } });
+    };
+    const adapter = createLinearAdapter(CONN, { fetcher });
+    await adapter.setParent('ENG-43', 'ENG-1');
+    await adapter.setParent('ENG-44', 'ENG-1');
+    assert.equal(calls.filter(c => c.variables.id === 'ENG-1').length, 1);
+  });
+
+  it('setParent: throws when issueUpdate reports success:false', async () => {
+    const fetcher = sequencedFetcher([
+      () => makeResponse({ issues: { nodes: [ISSUE_INFO] } }),
+      () => makeResponse({ issues: { nodes: [PARENT_INFO] } }),
+      () => makeResponse({ issueUpdate: { success: false } }),
+    ]);
+    await assert.rejects(createLinearAdapter(CONN, { fetcher }).setParent('ENG-43', 'ENG-1'), /success:false/);
+  });
+});
+
+describe('gql failures carry what a batch needs to react', () => {
+  const failWith = (res) => createLinearAdapter(CONN, { fetcher: async () => res });
+
+  it('an HTTP 401 carries status 401', async () => {
+    await assert.rejects(failWith(makeErrorResponse(401)).fetchTicket('ENG-42'), (err) => err.status === 401);
+  });
+
+  it('an HTTP 500 carries status 500', async () => {
+    await assert.rejects(failWith(makeErrorResponse(500)).fetchTicket('ENG-42'), (err) => err.status === 500);
+  });
+
+  it('an HTTP 429 carries a rateLimit marker', async () => {
+    await assert.rejects(failWith(makeErrorResponse(429)).fetchTicket('ENG-42'), (err) => err.status === 429 && typeof err.rateLimit === 'object');
+  });
+
+  it('Linear\'s RATELIMITED error code (sent with HTTP 400) carries a rateLimit marker', async () => {
+    const res = { ok: false, status: 400, statusText: 'Bad Request', json: async () => ({}), text: async () => JSON.stringify({ errors: [{ message: 'Rate limit exceeded', extensions: { code: 'RATELIMITED' } }] }) };
+    await assert.rejects(failWith(res).fetchTicket('ENG-42'), (err) => typeof err.rateLimit === 'object');
+  });
+
+  it('a GraphQL error inside a 200 is a terminal 400, never read as a network failure', async () => {
+    const res = { ok: true, status: 200, json: async () => ({ errors: [{ message: 'parent cycle' }] }) };
+    await assert.rejects(failWith(res).fetchTicket('ENG-42'), (err) => err.status === 400 && /parent cycle/.test(err.message) && err.rateLimit === undefined);
+  });
+
+  it('a GraphQL RATELIMITED error inside a 200 carries a rateLimit marker', async () => {
+    const res = { ok: true, status: 200, json: async () => ({ errors: [{ message: 'slow down', extensions: { code: 'RATELIMITED' } }] }) };
+    await assert.rejects(failWith(res).fetchTicket('ENG-42'), (err) => typeof err.rateLimit === 'object');
+  });
+});

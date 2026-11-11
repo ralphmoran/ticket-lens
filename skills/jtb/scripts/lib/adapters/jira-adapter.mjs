@@ -1,5 +1,6 @@
 import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, fetchProjectPriorities, postComment, getTransitions, postTransition, assignIssue, fetchAssignableUsers, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue, DEFAULT_SEARCH_FIELDS } from '../jira-client.mjs';
 import { postWorklog } from '../jira-worklog-client.mjs';
+import { fetchEpicLinkFieldId, fetchParentInfo, setIssueParent } from '../jira-parent-client.mjs';
 import { uploadAttachment, resolveMediaId } from '../jira-attachment-client.mjs';
 import { readAttachments } from '../attachment-uploader.mjs';
 import { buildMediaNode } from '../adf-converter.mjs';
@@ -33,6 +34,15 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
   const env = buildJiraEnv(conn);
   const apiVersion = conn.auth === 'cloud' ? 3 : 2;
   const base = { env, fetcher, apiVersion, allowPrivateIp: conn.allowPrivateIp };
+
+  // Server/DC only: the instance's Epic Link field id, looked up once per adapter.
+  // A failed lookup is not remembered, so a retry can succeed.
+  let epicLinkFieldLookup;
+  const epicLinkFieldId = (opts) => {
+    if (apiVersion === 3) return Promise.resolve(null);
+    epicLinkFieldLookup ??= fetchEpicLinkFieldId({ ...base, ...opts }).catch((err) => { epicLinkFieldLookup = undefined; throw err; });
+    return epicLinkFieldLookup;
+  };
 
   return {
     type: 'jira',
@@ -196,6 +206,33 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       const ofType = source.linkedIssues.filter(l => l.linkType?.toLowerCase() === wanted);
       const sentence = relationText({ key: sourceKey, linkedIssues: ofType }, { key: targetKey });
       return sentence ? { sentence } : null;
+    },
+
+    /**
+     * Cloud always supports a parent. Server/DC supports one only through its
+     * "Epic Link" field, so an instance without it is refused up front.
+     */
+    async checkParentSupport(opts = {}) {
+      if (apiVersion === 3) return { supported: true };
+      const id = await epicLinkFieldId(opts);
+      return id ? { supported: true } : { supported: false, reason: 'this Jira has no "Epic Link" field' };
+    },
+
+    /** Type, sub-task flag and current parent/epic of one issue — read-only. */
+    async getParentInfo(key, opts = {}) {
+      return fetchParentInfo(key, { ...base, ...opts, epicLinkFieldId: await epicLinkFieldId(opts) });
+    },
+
+    /**
+     * Sets `parentKey` as the epic/parent of `childKey`. Idempotent: setting the
+     * same parent twice changes nothing. Never sends a write Server/DC cannot
+     * express — a missing Epic Link field is a refusal, not an error.
+     */
+    async setParent(childKey, parentKey, opts = {}) {
+      const id = await epicLinkFieldId(opts);
+      if (apiVersion !== 3 && !id) return { executed: false, reason: 'no-epic-link-field' };
+      await setIssueParent(childKey, parentKey, { ...base, ...opts, epicLinkFieldId: id });
+      return { executed: true };
     },
 
     /**

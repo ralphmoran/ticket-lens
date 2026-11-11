@@ -53,6 +53,8 @@ export function normalizeLinearIssue(raw) {
   };
 }
 
+const RATE_LIMITED_CODE = 'RATELIMITED';
+
 async function gql(query, variables, { token, fetcher, signal }) {
   const res = await fetcher(LINEAR_API, {
     method: 'POST',
@@ -66,10 +68,20 @@ async function gql(query, variables, { token, fetcher, signal }) {
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
-    throw new Error(`Linear API error ${res.status} (${res.statusText})${detail ? ': ' + detail.slice(0, 300) : ''}`);
+    // status and rateLimit let a batch tell a halting failure (401, rate limit) from a one-ticket failure.
+    throw Object.assign(new Error(`Linear API error ${res.status} (${res.statusText})${detail ? ': ' + detail.slice(0, 300) : ''}`), {
+      status: res.status,
+      ...(res.status === 429 || detail.includes(RATE_LIMITED_CODE) ? { rateLimit: {} } : {}),
+    });
   }
   const { data, errors } = await res.json();
-  if (errors?.length) throw new Error(`Linear GraphQL error: ${errors[0].message}`);
+  // A GraphQL error inside a 200 is a rejected request, never a network failure: report it as a terminal 400.
+  if (errors?.length) {
+    throw Object.assign(new Error(`Linear GraphQL error: ${errors[0].message}`), {
+      status: 400,
+      ...(errors[0].extensions?.code === RATE_LIMITED_CODE ? { rateLimit: {} } : {}),
+    });
+  }
   return data;
 }
 
@@ -139,6 +151,7 @@ async function fetchTeamWorkflowStates(teamId, { token, fetcher, signal }) {
  */
 export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
   const token = conn.apiToken || conn.pat;
+  const parentIdByKey = Object.create(null);
 
   return {
     type: 'linear',
@@ -363,6 +376,52 @@ export function createLinearAdapter(conn, { fetcher = globalThis.fetch } = {}) {
       );
       if (!data.issueRelationCreate?.success) {
         throw new Error(`Linear issueRelationCreate reported success:false linking ${sourceKey} to ${targetKey}`);
+      }
+      return { executed: true };
+    },
+
+    /** Linear's parent is always available; any issue can be a parent. */
+    async checkParentSupport() {
+      return { supported: true };
+    },
+
+    /**
+     * Linear has no sub-task type: every issue can hold a parent, so `isSubtask`
+     * is always false and `type` is null.
+     */
+    async getParentInfo(key, opts = {}) {
+      const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
+      const data = await gql(
+        `query ($id: String!) {
+          issues(filter: { identifier: { eq: $id } }, first: 1) {
+            nodes { id identifier parent { identifier } }
+          }
+        }`,
+        { id: key },
+        { token, fetcher, signal },
+      );
+      const node = data.issues?.nodes?.[0];
+      if (!node) throw new Error(`Linear issue not found: ${key}`);
+      return { key: node.identifier ?? key, type: null, isSubtask: false, parentKey: node.parent?.identifier ?? null };
+    },
+
+    /**
+     * Sets `parentKey` as the parent of `childKey` through issueUpdate's
+     * `parentId` (the UUID, never the identifier). The parent's UUID is resolved
+     * once per adapter, since a batch reuses one parent for every child.
+     * Idempotent. Explicitly checks `success`, like every Linear mutation here.
+     */
+    async setParent(childKey, parentKey, opts = {}) {
+      const signal = AbortSignal.timeout(opts.timeoutMs ?? 10_000);
+      const child = await fetchIssueStateInfo(childKey, { token, fetcher, signal });
+      parentIdByKey[parentKey] ??= (await fetchIssueStateInfo(parentKey, { token, fetcher, signal })).id;
+      const data = await gql(
+        `mutation ($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }`,
+        { id: child.id, input: { parentId: parentIdByKey[parentKey] } },
+        { token, fetcher, signal },
+      );
+      if (!data.issueUpdate?.success) {
+        throw new Error(`Linear issueUpdate reported success:false setting the parent of ${childKey}`);
       }
       return { executed: true };
     },

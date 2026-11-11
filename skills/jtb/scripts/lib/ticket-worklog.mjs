@@ -46,7 +46,7 @@ const invalid = (error) => ({ error });
 const refused = (reason) => ({ ok: false, reason, results: [] });
 const fromResult = (result, valueKey) => (result.ok ? { value: result[valueKey] } : invalid(result.error));
 
-function parseTicket(raw) {
+export function parseTicket(raw) {
   if (typeof raw !== 'string') return invalid('"ticket" must be a string like PROJ-123.');
   const key = normalizeTicketKey(raw.trim());
   if (!TICKET_KEY_PATTERN.test(key)) return invalid(`${JSON.stringify(raw)} is not a valid ticket key.`);
@@ -337,15 +337,15 @@ const VALUE_FLAGS = ['comment', 'started', 'profile'];
  * silently keep only the first. Time entries are too costly to guess about.
  * @returns {string[]} one message per problem, empty when the flags are clean
  */
-function flagErrors(flags) {
+export function flagErrors(flags, valueFlags = VALUE_FLAGS) {
   const errors = [];
   const seen = new Set();
   for (const flag of flags) {
     const [name, ...rest] = flag.slice(2).split('=');
     const hasValue = flag.includes('=');
     if (flag === '--confirm') continue;
-    if (!VALUE_FLAGS.includes(name) || !hasValue) {
-      errors.push(`Unknown option ${hasValue ? `--${name}` : flag}${VALUE_FLAGS.includes(name) ? ` (use --${name}=VALUE)` : ''}.`);
+    if (!valueFlags.includes(name) || !hasValue) {
+      errors.push(`Unknown option ${hasValue ? `--${name}` : flag}${valueFlags.includes(name) ? ` (use --${name}=VALUE)` : ''}.`);
     } else if (!rest.join('=')) {
       errors.push(`--${name} needs a value, e.g. --${name}=...`);
     } else if (seen.has(name)) {

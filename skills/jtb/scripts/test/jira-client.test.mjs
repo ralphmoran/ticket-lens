@@ -2143,3 +2143,23 @@ describe('escapeJql — single source of truth for JQL string-literal escaping',
     assert.equal(escapeJql('login button broken'), 'login button broken');
   });
 });
+
+// ─── Lock: shapes the epic-parent feature must not change (backlog #70) ──────
+
+describe('lock — shared Jira shapes stay as they are', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+
+  it('normalizeTicket exposes exactly these keys — no parent or subtask leaks into every brief', () => {
+    assert.deepEqual(Object.keys(normalizeTicket(cloudFixture)).sort(), [
+      'assignee', 'attachments', 'comments', 'components', 'created', 'description', 'key', 'labels',
+      'linkedIssues', 'priority', 'reporter', 'sprint', 'status', 'statusChangedAt', 'summary', 'type', 'updated',
+    ]);
+  });
+
+  it('updateIssue never sends a parent field when only summary is given', async () => {
+    let captured;
+    const fetcher = async (url, opts) => { captured = JSON.parse(opts.body); return { ok: true, status: 204 }; };
+    await updateIssue('PROJ-1', { summary: 'Only this' }, { env: ENV, fetcher, apiVersion: 3 });
+    assert.deepEqual(Object.keys(captured.fields), ['summary']);
+  });
+});

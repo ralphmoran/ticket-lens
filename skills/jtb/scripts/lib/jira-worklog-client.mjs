@@ -17,14 +17,14 @@ import { buildAuthHeader, guardedFetch, validateBaseUrl, defaultLookupFor } from
  * so terminal control characters (an OSC 52 clipboard write, cursor movement)
  * are stripped before the text can reach a caller's terminal.
  */
-function summarizeJiraErrors(details) {
+export function summarizeJiraErrors(details) {
   const messages = Array.isArray(details?.errorMessages) ? details.errorMessages : [];
   const fields = details?.errors && typeof details.errors === 'object' ? Object.entries(details.errors).map(([field, msg]) => `${field}: ${msg}`) : [];
   return sanitizeUntrustedText([...messages, ...fields].map(String).join('; ')).slice(0, 300);
 }
 
 /** Retry-After is delta-seconds or an HTTP date; only the former is usable as a wait, anything else is null. */
-function parseRetryAfterSeconds(value) {
+export function parseRetryAfterSeconds(value) {
   const seconds = Number(value);
   return Number.isInteger(seconds) && seconds > 0 ? seconds : null;
 }

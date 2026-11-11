@@ -305,6 +305,25 @@ export const TOOLS = [
     },
   },
   {
+    name: 'ticket_parent',
+    description: 'Set one epic (parent) on many tickets at once in their tracker. Jira and Linear — GitHub has no parent and is refused. Destructive — writes directly to the live tracker. At most 50 children per call. Every ticket is read first: a sub-task, a missing ticket, or a bad key blocks the whole call before anything is written. A child already under that epic is skipped, not rewritten. Called without `confirm: true` it writes nothing and returns a preview of every child with its current parent; call again with `confirm: true` to write. Writes go one ticket at a time; a failure is reported per ticket and the rest continue, a rate limit or 401 stops the batch, and each write is read back from the tracker. Uses the epic\'s own connection for every child. Requires a TicketLens Pro license.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        parent: { type: 'string', description: 'Epic (parent) ticket key, e.g. PROJ-1. On Jira Server/DC this is set through the Epic Link field.' },
+        children: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 50,
+          description: 'Ticket keys to put under the epic, at most 50. The epic itself and repeated keys are refused.',
+          items: { type: 'string', description: 'Ticket key, e.g. PROJ-123.' },
+        },
+        confirm: { type: 'boolean', description: 'Must be true to actually write. Omit it to get a preview with nothing written.' },
+      },
+      required: ['parent', 'children'],
+    },
+  },
+  {
     name: 'ticket_update',
     description: 'Update a narrow, named field set on a ticket in its tracker (Jira/GitHub/Linear) — title, description, labels, priority. At least one field is required. Labels are add/remove, never a wholesale replace: an unnamed existing label is left alone. No discovery step and no confirm required — these are reversible metadata edits, not workflow-state changes. GitHub has no priority field; passing `priority` for a GitHub-tracked ticket is refused. A call can partially succeed (e.g. title updates but a label does not resolve) — the result reports exactly what landed. Requires a TicketLens Pro license.',
     inputSchema: {

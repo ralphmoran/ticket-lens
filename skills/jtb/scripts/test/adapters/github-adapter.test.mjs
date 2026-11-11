@@ -771,3 +771,10 @@ describe('createGitHubAdapter — no stored-link read-back (ROADMAP 80)', () => 
     assert.equal(createGitHubAdapter(CONN, { fetcher: async () => {} }).getStoredLink, undefined);
   });
 });
+
+describe('lock — GitHub has no parent support', () => {
+  it('exposes no setParent, so the parent command refuses GitHub tickets', () => {
+    const adapter = createGitHubAdapter(CONN, { fetcher: async () => { throw new Error('no network'); } });
+    assert.equal(typeof adapter.setParent, 'undefined');
+  });
+});
