@@ -328,6 +328,13 @@ describe('parseCommand', () => {
     assert.deepEqual(result.args, ['PROJ-1', '--threshold=0.5']);
   });
 
+  it('routes "search" to search command, keeping the raw JQL argument intact', () => {
+    const jql = '--jql=project = PROJ AND (text ~ "a" OR text ~ "b") ORDER BY created DESC';
+    const result = parseCommand(['search', jql]);
+    assert.equal(result.command, 'search');
+    assert.deepEqual(result.args, [jql]);
+  });
+
   it('lock — adding "duplicates" does not change the ticket-key fallback for anything else', () => {
     const stillFetch = parseCommand(['PROJ-999']);
     assert.equal(stillFetch.command, 'fetch');

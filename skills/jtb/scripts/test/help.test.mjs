@@ -7,7 +7,7 @@ import {
   printProfilesHelp, printScheduleHelp,
   printInitHelp, printSwitchHelp, printConfigHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
-  printCommentHelp, printTransitionHelp, printAssignHelp, printWorklogHelp, printParentHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
+  printCommentHelp, printTransitionHelp, printAssignHelp, printWorklogHelp, printParentHelp, printSearchHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
   printCloudKeysHelp, printIssueTypesHelp, printPrHelp,
 } from '../lib/help.mjs';
 
@@ -855,5 +855,30 @@ describe('printPrHelp — backlog #27', () => {
     assert.match(out, /--open/);
     assert.match(out, /Pro/);
     assert.match(out, /GitHub/);
+  });
+});
+
+describe('ticketlens search help (backlog #72)', () => {
+  it('lists search in the main help as a Jira-only command', () => {
+    const out = captureHelp(printHelp);
+    assert.match(out, /ticketlens search/);
+  });
+
+  it('documents the raw JQL flag with a nested OR/AND and ORDER BY example', () => {
+    const out = captureHelp(printSearchHelp);
+    assert.match(out, /--jql/);
+    assert.match(out, /ORDER BY/);
+    assert.match(out, /Jira only/i);
+  });
+
+  it('says plain terms must all match and results are capped at 25', () => {
+    const out = captureHelp(printSearchHelp);
+    assert.match(out, /every term/i);
+    assert.match(out, /25/);
+  });
+
+  it('lists ticket_search in the MCP help as read-only', () => {
+    const out = captureHelp(printMcpHelp);
+    assert.match(out, /ticket_search.*read-only/s);
   });
 });

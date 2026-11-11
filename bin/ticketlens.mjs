@@ -30,7 +30,7 @@ import {
   printCollisionsHelp, printStatsHelp, printIssueTypesHelp, printDoctorHelp,
   printCloudKeysHelp,
   printNoteHelp, printRecallHelp, printMcpHelp,
-  printCommentHelp, printTransitionHelp, printAssignHelp, printWorklogHelp, printParentHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
+  printCommentHelp, printTransitionHelp, printAssignHelp, printWorklogHelp, printParentHelp, printSearchHelp, printDuplicatesHelp, printLinkHelp, printUpdateHelp, printCreateHelp,
 } from '../skills/jtb/scripts/lib/help.mjs';
 import { runStats } from '../skills/jtb/scripts/lib/run-stats.mjs';
 import { runIssueTypes } from '../skills/jtb/scripts/lib/run-issue-types.mjs';
@@ -911,6 +911,19 @@ switch (command) {
       process.stderr.write(`Error: ${err.message}\n`);
       process.exitCode = 1;
       reportError(err, 'worklog');
+    });
+    break;
+  }
+
+  case 'search': {
+    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printSearchHelp(); break; }
+    const { runTicketSearch } = await import('../skills/jtb/scripts/lib/ticket-search.mjs');
+    runTicketSearch(cmdArgs).then(({ ok }) => {
+      if (!ok) process.exitCode = 1;
+    }).catch(err => {
+      process.stderr.write(`Error: ${err.message}\n`);
+      process.exitCode = 1;
+      reportError(err, 'search');
     });
     break;
   }

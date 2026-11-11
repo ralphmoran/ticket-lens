@@ -74,7 +74,7 @@ describe('mcp-server', () => {
     it('returns exactly fetch, recall_add, recall_search, ticket_comment, ticket_transition with valid JSON Schema params', async () => {
       const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir });
       const names = messages[0].result.tools.map((t) => t.name).sort();
-      assert.deepEqual(names, ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'issue_types', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_parent', 'ticket_transition', 'ticket_update', 'ticket_worklog', 'triage']);
+      assert.deepEqual(names, ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'issue_types', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_parent', 'ticket_search', 'ticket_transition', 'ticket_update', 'ticket_worklog', 'triage']);
       for (const tool of messages[0].result.tools) {
         assert.equal(tool.inputSchema.type, 'object');
         assert.ok(tool.inputSchema.properties, `${tool.name} must declare input properties`);
@@ -1823,6 +1823,63 @@ describe('mcp-server', () => {
     });
   });
 
+  describe('tools/call ticket_search', () => {
+    const call = (args) => [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ticket_search', arguments: args } }];
+
+    it('forwards jql, terms, projects and profile as structured data, not argv', async () => {
+      let seen;
+      const runTicketSearchFn = async (query, opts) => {
+        seen = query;
+        opts.stream.write('  PROJ-9  [Open]  Login broken\n');
+        return { ok: true, results: [{ key: 'PROJ-9' }] };
+      };
+      const { messages } = await drive(
+        call({ terms: ['--jql=x'], projects: ['PROJ'], profile: 'main' }),
+        { configDir, runTicketSearchFn },
+      );
+      assert.equal(messages[0].result.isError, undefined);
+      assert.ok(messages[0].result.content[0].text.includes('PROJ-9'));
+      assert.deepEqual(seen, { jql: undefined, terms: ['--jql=x'], projects: ['PROJ'], profile: 'main' });
+    });
+
+    it('passes a raw jql string through untouched', async () => {
+      let seen;
+      const runTicketSearchFn = async (query) => { seen = query; return { ok: true, results: [] }; };
+      const jql = 'project = PROJ AND (text ~ "a" OR text ~ "b") ORDER BY created DESC';
+      await drive(call({ jql }), { configDir, runTicketSearchFn });
+      assert.equal(seen.jql, jql);
+    });
+
+    it('rejects a call with neither jql nor terms without running a search', async () => {
+      let called = false;
+      const runTicketSearchFn = async () => { called = true; return { ok: true, results: [] }; };
+      const { messages } = await drive(call({}), { configDir, runTicketSearchFn });
+      assert.equal(called, false);
+      assert.equal(messages[0].result.isError, true);
+    });
+
+    it('rejects terms that are not an array of strings', async () => {
+      const runTicketSearchFn = async () => ({ ok: true, results: [] });
+      const { messages } = await drive(call({ terms: 'xss' }), { configDir, runTicketSearchFn });
+      assert.equal(messages[0].result.isError, true);
+    });
+
+    it('maps a failed search to a tool error', async () => {
+      const runTicketSearchFn = async (query, opts) => { opts.stream.write('  Jira rejected the search (400): bad\n'); return { ok: false }; };
+      const { messages } = await drive(call({ jql: 'bogus' }), { configDir, runTicketSearchFn });
+      assert.equal(messages[0].result.isError, true);
+      assert.match(messages[0].result.content[0].text, /rejected/);
+    });
+
+    it('the schema documents jql and carries no required argument', async () => {
+      const { messages } = await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list' }], { configDir });
+      const tool = messages[0].result.tools.find((t) => t.name === 'ticket_search');
+      assert.ok(tool.inputSchema.properties.jql);
+      assert.equal(tool.inputSchema.required, undefined);
+      assert.match(tool.description, /read-only/i);
+    });
+  });
+
   describe('tools/call ticket_duplicates', () => {
     it('happy path: returns a non-error result with the threshold forwarded, without touching real stdout', async () => {
       let seen;
@@ -2185,7 +2242,7 @@ describe('mcp-server', () => {
       assert.equal(messages.length, 2, 'both the parse-error response and the valid tools/list response must appear');
       assert.ok(messages[0].error, 'first message must be a JSON-RPC error for the malformed line');
       assert.equal(messages[1].id, 2);
-      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'issue_types', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_parent', 'ticket_transition', 'ticket_update', 'ticket_worklog', 'triage']);
+      assert.deepEqual(messages[1].result.tools.map((t) => t.name).sort(), ['collisions', 'compliance', 'doctor', 'fetch', 'history', 'issue_types', 'ledger', 'pr', 'recall_add', 'recall_delete', 'recall_search', 'recall_update', 'review', 'standup', 'stats', 'ticket_assign', 'ticket_comment', 'ticket_create', 'ticket_duplicates', 'ticket_link', 'ticket_parent', 'ticket_search', 'ticket_transition', 'ticket_update', 'ticket_worklog', 'triage']);
     });
 
     it('a syntactically-valid-but-non-object JSON line (e.g. bare "null") does not crash the server or drop later messages', async () => {

@@ -501,6 +501,8 @@ ticketlens transition PROJ-123                              # List valid transit
 ticketlens transition PROJ-123 --target="Done" --confirm    # Execute the transition
 ticketlens assign PROJ-123 --to=me                           # Assign the ticket to yourself
 ticketlens duplicates PROJ-123                                # Find likely duplicates (read-only)
+ticketlens search xss --project=PROJ                           # Search Jira by terms (read-only, Free, Jira only)
+ticketlens search --jql='project = PROJ AND (text ~ "login" OR text ~ "timeout") ORDER BY created DESC'  # Your own JQL, run as written
 ticketlens link PROJ-123 PROJ-456                             # List valid link types (read-only)
 ticketlens link PROJ-123 PROJ-456 --type="Duplicate" --confirm  # Execute the link
 ticketlens update PROJ-123 --title="Fix login on mobile"       # Update title/description/labels/priority
@@ -518,7 +520,7 @@ ticketlens parent PROJ-1 PROJ-2 PROJ-3 --confirm             # Put several ticke
 ticketlens parent --help                                     # All options, limits, and examples
 ```
 
-Write directly to the ticket in its real tracker — Jira, GitHub, or Linear — from your terminal or an AI session via `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create`/`ticket_worklog`/`ticket_parent` MCP tools. Requires a Pro license. On Jira, `ticket_link` echoes the link as Jira stored it, and `ticket_create`/`ticket_update` take `epicName` to name an epic.
+Write directly to the ticket in its real tracker — Jira, GitHub, or Linear — from your terminal or an AI session via `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_search`/`ticket_link`/`ticket_update`/`ticket_create`/`ticket_worklog`/`ticket_parent` MCP tools. Requires a Pro license. On Jira, `ticket_link` echoes the link as Jira stored it, and `ticket_create`/`ticket_update` take `epicName` to name an epic.
 
 `ticketlens transition` with just a ticket key lists the tracker's current valid options without changing anything (Jira: real workflow transitions for that issue; GitHub: open/closed; Linear: team-scoped workflow states). Add both `--target` and `--confirm` to execute — `--confirm` is a deliberate two-step gate: a behavioral nudge and forensic trail, not a hard security guarantee. Every write, once resolved, is re-validated against the tracker's current state immediately before executing — never a blind write against a stale option.
 
@@ -552,6 +554,8 @@ Write directly to the ticket in its real tracker — Jira, GitHub, or Linear —
 - `ticketlens parent --help` lists every option.
 
 `ticketlens duplicates` is read-only — it never links or changes anything, just lists likely matches in the same project. No tracker (Jira/GitHub/Linear) scores similarity server-side, so ranking happens locally from title/description word overlap; treat a match as a nudge to check manually, not a verdict. That local scoring can also miss a real duplicate — an empty result means none were found by this heuristic, not a confirmed absence. `--threshold=N` (0–1, default 0.35) controls how loose a match counts.
+
+`ticketlens search` finds Jira tickets by topic. It is read-only, Free, and Jira only. Plain terms must all match; `--project=KEY[,KEY]` limits them. `--jql="..."` sends your own JQL to Jira exactly as written — nested OR/AND groups and `ORDER BY` included — and cannot be combined with terms or `--project`. It shows at most 25 tickets and says when more match; a query Jira rejects shows Jira's own error. One Jira site per call: `--profile=NAME` picks it. The `ticket_search` MCP tool takes `jql`, or `terms` plus optional `projects`.
 
 `ticketlens link SOURCE-KEY TARGET-KEY` links two tickets — direction matters: SOURCE "types" TARGET (e.g. `link A B --type=Duplicate` means A duplicates B, not the other way around). With just the two keys it lists the tracker's current valid link types without changing anything — always fetched live for Jira, since link type names are per-instance configurable there. GitHub is different from Jira/Linear: it has no generic link relationship, so linking on a GitHub-tracked ticket *closes SOURCE as a duplicate of TARGET* — a state change, not just a relationship add — and prints an explicit warning immediately before that happens, on top of the same `--confirm` gate.
 
@@ -898,6 +902,8 @@ ticketlens transition CNV1-2 --target="Done" --confirm      # Execute the transi
 ticketlens assign CNV1-2 --to=me                            # Assign the ticket to yourself [Pro]
 ticketlens duplicates CNV1-2                                # Find likely duplicates (read-only) [Pro]
 ticketlens duplicates CNV1-2 --threshold=0.5                # Tighten the match threshold [Pro]
+ticketlens search xss --project=CNV1                          # Search Jira by plain terms, max 25 results [Jira only]
+ticketlens search --jql='project = CNV1 AND text ~ "sync" ORDER BY created DESC'  # Run your own JQL as written [Jira only]
 ticketlens link CNV1-2 CNV1-3                               # List valid link types (read-only) [Pro]
 ticketlens link CNV1-2 CNV1-3 --type="Duplicate" --confirm  # Execute the link [Pro]
 ticketlens update CNV1-2 --title="New title"                # Update title/description/labels/priority [Pro]
@@ -1017,6 +1023,7 @@ ticketlens comment CNV1-2 --body="..." --attach=./bug.png  # Attach local files 
 ticketlens transition CNV1-2 --target="Done" --confirm  # Transition ticket status
 ticketlens assign CNV1-2 --to=me         # Assign the ticket to yourself
 ticketlens duplicates CNV1-2             # Find likely duplicates (read-only)
+ticketlens search xss --project=CNV1   # Search Jira by terms or raw --jql (read-only)
 ticketlens link CNV1-2 CNV1-3 --type="Duplicate" --confirm  # Link two tickets
 ticketlens update CNV1-2 --title="..."   # Update title/description/labels/priority
 ticketlens create --project=CNV1 --type="Task" --summary="..."  # Create a new ticket

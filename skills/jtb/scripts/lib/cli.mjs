@@ -176,6 +176,10 @@ export function parseCommand(args) {
     return { command: 'parent', args: args.slice(1) };
   }
 
+  if (first === 'search') {
+    return { command: 'search', args: args.slice(1) };
+  }
+
   if (first === 'duplicates') {
     return { command: 'duplicates', args: args.slice(1) };
   }

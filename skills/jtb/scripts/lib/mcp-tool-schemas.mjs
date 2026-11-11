@@ -324,6 +324,19 @@ export const TOOLS = [
     },
   },
   {
+    name: 'ticket_search',
+    description: 'Search Jira tickets, read-only — never changes anything. Jira only. Pass `jql` to run your own JQL exactly as written, including OR/AND groups and ORDER BY, e.g. project = PROJ AND (text ~ "login" OR text ~ "timeout") ORDER BY created DESC. Or pass `terms` (every term must match) and optionally `projects` to build a text query for you; `jql` and `terms` cannot be combined. Returns at most 25 tickets (key, status, assignee, summary) and says when more match. A query Jira rejects returns Jira\'s own error text. Searches one Jira site per call: use `profile` to pick it. Free tier.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        jql: { type: 'string', description: 'A full JQL query, sent to Jira unchanged. Cannot be combined with `terms` or `projects`.' },
+        terms: { type: 'array', items: { type: 'string' }, description: 'Words or phrases that must all appear in the ticket text.' },
+        projects: { type: 'array', items: { type: 'string' }, description: 'Project keys to limit `terms` to, e.g. ["PROJ"]. They must share one profile.' },
+        profile: { type: 'string', description: 'Connection profile (Jira site) to search. Defaults to the default profile.' },
+      },
+    },
+  },
+  {
     name: 'ticket_update',
     description: 'Update a narrow, named field set on a ticket in its tracker (Jira/GitHub/Linear) — title, description, labels, priority, and on Jira the Epic Name of an epic. At least one field is required. Labels are add/remove, never a wholesale replace: an unnamed existing label is left alone. No discovery step and no confirm required — these are reversible metadata edits, not workflow-state changes. GitHub has no priority field; passing `priority` for a GitHub-tracked ticket is refused. A call can partially succeed (e.g. title updates but a label does not resolve) — the result reports exactly what landed. Requires a TicketLens Pro license.',
     inputSchema: {

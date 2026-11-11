@@ -60,6 +60,7 @@ export function printHelp({ stream = process.stdout } = {}) {
     `    ${s.brand('ticketlens')} assign ${s.dim('<TICKET-KEY> --to=me')}      Assign a ticket to yourself or (Jira) another dev  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} worklog ${s.dim('<KEY=DURATION ...> [--comment=... --started=...] --confirm')}  Log time on Jira tickets  ${s.dim('[Pro] [Jira only]')}`,
     `    ${s.brand('ticketlens')} parent ${s.dim('<EPIC-KEY> <CHILD-KEY ...> [--confirm]')}  Put many tickets under one epic  ${s.dim('[Pro]')}`,
+    `    ${s.brand('ticketlens')} search ${s.dim('<TERM ...> [--project=KEY] | --jql="..."')}  Search Jira tickets, plain terms or raw JQL  ${s.dim('[Jira only]')}`,
     `    ${s.brand('ticketlens')} duplicates ${s.dim('<TICKET-KEY> [--threshold=N]')}  Find likely duplicate tickets  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} link ${s.dim('<SOURCE> <TARGET> [--type=... --confirm]')}  Link two tickets  ${s.dim('[Pro]')}`,
     `    ${s.brand('ticketlens')} update ${s.dim('<TICKET-KEY> [--title=... --description=... --priority=... --add-labels=... --remove-labels=... --epic-name=...]')}  Update fields  ${s.dim('[Pro]')}`,
@@ -653,12 +654,12 @@ export function printMcpHelp({ stream = process.stdout } = {}) {
     `  native tools — ${s.cyan('fetch')}, ${s.cyan('triage')}, ${s.cyan('compliance')}, ${s.cyan('review')}, ${s.cyan('standup')}, ${s.cyan('pr')}, ${s.cyan('stats')}, ${s.cyan('history')},`,
     `  ${s.cyan('collisions')}, ${s.cyan('ledger')}, ${s.cyan('doctor')}, ${s.cyan('issue_types')}, ${s.cyan('recall_add')}, ${s.cyan('recall_update')}, ${s.cyan('recall_delete')},`,
     `  ${s.cyan('recall_search')}, ${s.cyan('ticket_comment')}, ${s.cyan('ticket_transition')}, ${s.cyan('ticket_assign')},`,
-    `  ${s.cyan('ticket_duplicates')}, ${s.cyan('ticket_link')}, ${s.cyan('ticket_update')}, ${s.cyan('ticket_create')}, ${s.cyan('ticket_worklog')}, ${s.cyan('ticket_parent')} — every CLI action`,
+    `  ${s.cyan('ticket_duplicates')}, ${s.cyan('ticket_search')}, ${s.cyan('ticket_link')}, ${s.cyan('ticket_update')}, ${s.cyan('ticket_create')}, ${s.cyan('ticket_worklog')}, ${s.cyan('ticket_parent')} — every CLI action`,
     `  now has an MCP tool, for any MCP-compatible AI harness, not just Claude Code.`,
     `  Thin adapter over the same code as ${s.cyan('TICKET-KEY')}/${s.cyan('doctor')}/${s.cyan('triage')}/${s.cyan('compliance')}/${s.cyan('review')}/`,
     `  ${s.cyan('standup')}/${s.cyan('pr')}/${s.cyan('stats')}/${s.cyan('history')}/${s.cyan('collisions')}/${s.cyan('ledger')}/${s.cyan('issue-types')}/${s.cyan('note add')}/${s.cyan('note patch')}/`,
     `  ${s.cyan('note delete')}/${s.cyan('recall')}/${s.cyan('comment')}/${s.cyan('transition')}/${s.cyan('assign')}/${s.cyan('duplicates')}/${s.cyan('link')}/`,
-    `  ${s.cyan('update')}/${s.cyan('create')}/${s.cyan('worklog')}/${s.cyan('parent')} above.`,
+    `  ${s.cyan('update')}/${s.cyan('create')}/${s.cyan('worklog')}/${s.cyan('parent')}/${s.cyan('search')} above.`,
     `  ${s.cyan('fetch')}, ${s.cyan('doctor')}, and ${s.cyan('standup')} are Free; ${s.cyan('triage')} is Free with some Pro/Team-gated`,
     `  options (see ${s.cyan('ticketlens triage --help')}); ${s.cyan('compliance')} and ${s.cyan('pr')} are Free, sharing a`,
     `  3-checks/month cap on their requirements-coverage section, Pro unlimited; ${s.cyan('pr')}'s`,
@@ -682,6 +683,7 @@ export function printMcpHelp({ stream = process.stdout } = {}) {
     `  \`confirm: true\` (it previews instead) — a worklog cannot be deleted through TicketLens;`,
     `  ${s.cyan('ticket_parent')} sets one epic on up to 50 tickets (Jira/Linear), refuses sub-tasks, and`,
     `  writes nothing without \`confirm: true\` (it previews instead);`,
+    `  ${s.cyan('ticket_search')} is read-only, Jira only: pass \`jql\` to run your own JQL as written;`,
     `  ${s.cyan('ticket_duplicates')} is read-only; ${s.cyan('ticket_link')} on GitHub closes the source issue as a`,
     `  duplicate — different semantics than Jira/Linear's relationship-only add; on Jira it`,
     `  also echoes the stored link read back from Jira;`,
@@ -913,6 +915,34 @@ export function printDuplicatesHelp({ stream = process.stdout } = {}) {
     '',
     `    ${s.dim('$')} ticketlens duplicates PROD-123`,
     `    ${s.dim('$')} ticketlens duplicates PROD-123 --threshold=0.5`,
+    '',
+  ];
+  stream.write(lines.join('\n') + '\n');
+}
+
+export function printSearchHelp({ stream = process.stdout } = {}) {
+  const s = createStyler({ isTTY: stream.isTTY });
+  const lines = [
+    '',
+    `  ${s.bold(s.brand('ticketlens'))} ${s.bold('search')} ${s.dim('<TERM ...> [--project=KEY[,KEY]] | --jql="..."')}  ${s.dim('[Jira only]')}`,
+    '',
+    `  Search Jira tickets. Read-only, Free tier. Jira only — GitHub and Linear are refused.`,
+    `  Plain terms: every term must appear in the ticket text; newest updated first.`,
+    `  Raw JQL: ${s.brand('--jql')} runs your query exactly as written — OR/AND groups, ORDER BY, anything Jira accepts.`,
+    `  Shows at most 25 tickets and says when more match. Jira's own error text is shown if it rejects a query.`,
+    '',
+    `  ${s.bold('OPTIONS')}`,
+    '',
+    `    ${s.brand('--jql')}=${s.dim('"..."')}     Full JQL query, sent to Jira unchanged ${s.dim('(not with terms or --project)')}`,
+    `    ${s.brand('--project')}=${s.dim('KEY,KEY')} Limit plain terms to these projects ${s.dim('(must share one profile)')}`,
+    `    ${s.brand('--profile')}=${s.dim('NAME')}   Jira site to search ${s.dim('(optional)')}`,
+    `    ${s.brand('-h')}, ${s.brand('--help')}     Show this help`,
+    '',
+    `  ${s.bold('EXAMPLES')}`,
+    '',
+    `    ${s.dim('$')} ticketlens search xss --project=PROJ`,
+    `    ${s.dim('$')} ticketlens search login acme`,
+    `    ${s.dim('$')} ticketlens search --jql='project = PROJ AND (text ~ "PROJ-101" OR (text ~ "login" AND text ~ "acme")) ORDER BY created DESC'`,
     '',
   ];
   stream.write(lines.join('\n') + '\n');
