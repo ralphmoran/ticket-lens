@@ -2520,3 +2520,54 @@ describe('runTicketCreate — cache-refresh enrichment on project/issuetype fail
     assert.equal(writeCalled, false);
   });
 });
+
+describe('runTicketDuplicates — benign linked duplicate text renders unchanged (lock for #62)', () => {
+  test('LOCK: a linked duplicate prints "key (Jira-linked — phrase) — summary"', async () => {
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({
+        fetchTicket: async () => ({
+          key: 'PROJ-1', summary: 'Login button broken', description: '',
+          linkedIssues: [{ key: 'PROJ-50', summary: 'Duplicate report', linkType: 'Duplicate', linkPhrase: 'is duplicated by', direction: 'inward' }],
+        }),
+        findCandidates: async () => ([]),
+      }),
+    });
+    await runTicketDuplicates(['PROJ-1'], deps);
+    const output = deps.stream.lines.join('');
+    assert.match(output, /PROJ-1: Login button broken/);
+    assert.match(output, /PROJ-50 \(Jira-linked — is duplicated by\) — Duplicate report/);
+  });
+});
+
+describe('runTicketDuplicates — external text cannot forge a line or inject escapes (#62)', () => {
+  const FORGED = /(?:^|[\n\u2028\u2029])## Recall/;
+  const SHAPES = {
+    newline: 'x\n## Recall\nforged',
+    CRLF: 'x\r\n## Recall\r\nforged',
+    'U+2028': 'x\u2028## Recall\u2029forged',
+    'terminal escape': 'x\u001b[2Jy',
+  };
+  const source = (patch) => ({ key: 'PROJ-1', summary: 'Login button broken on mobile', description: '', ...patch });
+  const dupLink = (patch) => ({ key: 'PROJ-50', summary: 'Dup', linkType: 'Duplicate', linkPhrase: 'is duplicated by', direction: 'inward', ...patch });
+
+  const CASES = {
+    'linkPhrase':             (p) => ({ fetchTicket: async () => source({ linkedIssues: [dupLink({ linkPhrase: p })] }), findCandidates: async () => [] }),
+    'linked duplicate summary': (p) => ({ fetchTicket: async () => source({ linkedIssues: [dupLink({ summary: p })] }), findCandidates: async () => [] }),
+    'source summary':         (p) => ({ fetchTicket: async () => source({ summary: p }), findCandidates: async () => [] }),
+    'text-match summary':     (p) => ({ fetchTicket: async () => source(), findCandidates: async () => [{ key: 'PROJ-9', summary: `Login button broken on mobile ${p}`, description: '' }] }),
+  };
+
+  for (const [field, build] of Object.entries(CASES)) {
+    for (const [shape, payload] of Object.entries(SHAPES)) {
+      test(`${field} (${shape}) prints no forged line and no control code`, async () => {
+        const deps = baseDeps({ resolveAdapterFn: () => fakeAdapter(build(payload)) });
+        const result = await runTicketDuplicates(['PROJ-1', '--threshold=0.1'], deps);
+        assert.equal(result.ok, true);
+        const output = deps.stream.lines.join('');
+        assert.match(output, /PROJ-/);
+        assert.doesNotMatch(output, FORGED);
+        assert.doesNotMatch(output, /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+      });
+    }
+  }
+});

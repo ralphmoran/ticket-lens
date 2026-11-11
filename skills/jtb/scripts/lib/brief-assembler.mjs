@@ -4,18 +4,18 @@
 
 import { formatTable } from './table-formatter.mjs';
 import { formatSize } from './attachment-downloader.mjs';
-import { timeAgo, truncate, stripCr, escapeLeadingHeading } from './config.mjs';
-import { labelsText, relationText } from './ticket-brief-fields.mjs';
+import { timeAgo, truncate, escapeLeadingHeading } from './config.mjs';
+import { labelsText, relationText, singleLine, blockText, dateOnly } from './ticket-brief-fields.mjs';
 
 export function assembleBrief(ticket, codeRefs = null, templateSections = null, recallNotes = null, recallMoreCount = 0, gaps = null, recallStrictness = 'balanced') {
   const s = templateSections;
   const sections = [];
-  sections.push(`# ${ticket.key}: ${ticket.summary}`);
+  sections.push(`# ${singleLine(ticket.key)}: ${singleLine(ticket.summary)}`);
 
-  const meta = [`**Type:** ${ticket.type}`, `**Status:** ${ticket.status}`, `**Priority:** ${ticket.priority}`, `**Assignee:** ${ticket.assignee ?? 'Unassigned'}`, `**Reporter:** ${ticket.reporter ?? 'Unknown'}`];
-  if (ticket.sprint)  meta.push(`**Sprint:** ${ticket.sprint}`);
-  if (ticket.created) meta.push(`**Created:** ${ticket.created.split('T')[0]}`);
-  if (ticket.updated) meta.push(`**Updated:** ${ticket.updated.split('T')[0]}`);
+  const meta = [`**Type:** ${singleLine(ticket.type)}`, `**Status:** ${singleLine(ticket.status)}`, `**Priority:** ${singleLine(ticket.priority)}`, `**Assignee:** ${singleLine(ticket.assignee ?? 'Unassigned')}`, `**Reporter:** ${singleLine(ticket.reporter ?? 'Unknown')}`];
+  if (ticket.sprint)  meta.push(`**Sprint:** ${singleLine(ticket.sprint)}`);
+  if (ticket.created) meta.push(`**Created:** ${dateOnly(ticket.created)}`);
+  if (ticket.updated) meta.push(`**Updated:** ${dateOnly(ticket.updated)}`);
   const labels = labelsText(ticket);
   if (labels) meta.push(`**Labels:** ${labels}`);
   sections.push(meta.join(' | '));
@@ -25,7 +25,7 @@ export function assembleBrief(ticket, codeRefs = null, templateSections = null, 
   }
 
   if (ticket.description && (s === null || s.description !== false)) {
-    sections.push(`## Description\n\n${stripCr(ticket.description)}`);
+    sections.push(`## Description\n\n${blockText(ticket.description)}`);
   }
 
   const commentsEnabled = s === null || s.comments?.enabled !== false;
@@ -35,24 +35,22 @@ export function assembleBrief(ticket, codeRefs = null, templateSections = null, 
     ? ticket.comments.slice(0, commentsMax === Infinity ? ticket.comments.length : commentsMax)
     : [];
   if (visibleComments.length > 0) {
-    const commentLines = visibleComments.map(c => {
-      const date = c.created ? c.created.split('T')[0] : 'unknown';
-      return `### **${c.author}** (${date})\n\n${c.body.replace(/\r/g, '')}`;
-    });
+    const commentLines = visibleComments.map(c =>
+      `### **${singleLine(c.author)}** (${dateOnly(c.created)})\n\n${blockText(c.body)}`
+    );
     sections.push(`## Comments\n\n${commentLines.join('\n\n---\n\n')}`);
   }
 
   if (ticket.linkedTicketDetails?.length > 0 && (s === null || s.linked !== false)) {
     const linkedSections = ticket.linkedTicketDetails.map(lt => {
-      const parts = [`### ${lt.key}: ${lt.summary}`, `**Type:** ${lt.type} | **Status:** ${lt.status}`];
+      const parts = [`### ${singleLine(lt.key)}: ${singleLine(lt.summary)}`, `**Type:** ${singleLine(lt.type)} | **Status:** ${singleLine(lt.status)}`];
       const relation = relationText(ticket, lt);
       if (relation) parts.push(`**Relation:** ${relation}`);
-      if (lt.description) parts.push(stripCr(lt.description));
+      if (lt.description) parts.push(blockText(lt.description));
       if (lt.comments?.length > 0) {
-        const cmts = lt.comments.map(c => {
-          const date = c.created ? c.created.split('T')[0] : 'unknown';
-          return `**${c.author}** (${date}): ${c.body.replace(/\r/g, '')}`;
-        });
+        const cmts = lt.comments.map(c =>
+          `**${singleLine(c.author)}** (${dateOnly(c.created)}): ${blockText(c.body)}`
+        );
         parts.push(cmts.join('\n\n'));
       }
       return parts.join('\n\n');
@@ -62,8 +60,8 @@ export function assembleBrief(ticket, codeRefs = null, templateSections = null, 
 
   if (ticket.confluencePages?.length > 0 && (s === null || s.confluence !== false)) {
     const pageLines = ticket.confluencePages.map(p => {
-      const parts = [`### ${p.title ?? p.url}`];
-      if (p.text) parts.push(p.text);
+      const parts = [`### ${singleLine(p.title ?? p.url)}`];
+      if (p.text) parts.push(blockText(p.text));
       return parts.join('\n\n');
     });
     sections.push(`## Confluence Pages\n\n${pageLines.join('\n\n---\n\n')}`);
@@ -91,14 +89,15 @@ export function assembleBrief(ticket, codeRefs = null, templateSections = null, 
     const lines = ticket.attachments.map(a => {
       const r = (ticket.localAttachments ?? []).find(x => x.filename === a.filename);
       const sz = formatSize(a.size);
+      const name = singleLine(a.filename);
       if (r?.localPath) {
         const note = r.skipReason === 'cached' ? ', cached' : '';
-        return `- \`${r.localPath}\` _(${a.filename}, ${sz}${note})_`;
+        return `- \`${r.localPath}\` _(${name}, ${sz}${note})_`;
       }
-      if (r?.skipReason === 'too-large') return `- ${a.filename} _(${sz} — exceeds 10 MB limit)_`;
-      if (r?.skipReason === 'limit')     return `- ${a.filename} _(${sz} — attachment limit reached)_`;
-      if (r?.skipReason === 'error')     return `- ${a.filename} _(${sz} — download failed: ${r.error})_`;
-      return `- ${a.filename} _(${sz})_`;
+      if (r?.skipReason === 'too-large') return `- ${name} _(${sz} — exceeds 10 MB limit)_`;
+      if (r?.skipReason === 'limit')     return `- ${name} _(${sz} — attachment limit reached)_`;
+      if (r?.skipReason === 'error')     return `- ${name} _(${sz} — download failed: ${singleLine(r.error)})_`;
+      return `- ${name} _(${sz})_`;
     });
     sections.push(`## Attachments\n\n${lines.join('\n')}`);
   }

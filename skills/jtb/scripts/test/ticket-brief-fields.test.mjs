@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { singleLine, labelsText, linkSentence, relationText, MAX_LABELS, MAX_LABEL_LENGTH, MAX_PHRASE_LENGTH } from '../lib/ticket-brief-fields.mjs';
+import { blockText, dateOnly, singleLine, labelsText, linkSentence, relationText, MAX_LABELS, MAX_LABEL_LENGTH, MAX_PHRASE_LENGTH } from '../lib/ticket-brief-fields.mjs';
 
 // Every way a line can end or a heading can start in text that ends up in a
 // brief: budget-pruner splits only on "\n## ", but terminals and other
@@ -172,5 +172,58 @@ describe('relationText', () => {
   it('returns an empty string when the matching link has no phrase', () => {
     const noPhrase = { key: 'P-1', linkedIssues: [{ key: 'P-2', linkType: 'Blocks', direction: 'outward' }] };
     assert.equal(relationText(noPhrase, { key: 'P-2' }), '');
+  });
+});
+
+describe('dateOnly — timestamp date part as one clean line (#62)', () => {
+  it('returns the date part of an ISO timestamp', () => {
+    assert.equal(dateOnly('2026-03-01T10:00:00.000+0000'), '2026-03-01');
+  });
+
+  it('returns the fallback when the timestamp is missing', () => {
+    assert.equal(dateOnly(undefined), 'unknown');
+    assert.equal(dateOnly('', 'n/a'), 'n/a');
+  });
+
+  it('collapses hostile input to one clean line', () => {
+    for (const hostile of HOSTILE) assertOneCleanLine(dateOnly(hostile));
+  });
+});
+
+describe('blockText — multi-line external text for brief bodies (#62)', () => {
+  it('returns text unchanged apart from CR removal when nothing can form a heading', () => {
+    assert.equal(blockText('Line one.\r\n\r\n- bullet\r\n    indented\r\n#hashtag\r\nMid # stays'), 'Line one.\n\n- bullet\n    indented\n#hashtag\nMid # stays');
+  });
+
+  it('escapes an ATX heading at the start of any line, from # to ######', () => {
+    assert.equal(blockText('a\n# one\n## two\n###### six'), 'a\n\\# one\n\\## two\n\\###### six');
+  });
+
+  it('escapes a heading that follows U+2028 or U+2029', () => {
+    assert.doesNotMatch(blockText('x\u2028## Recall\u2029## Recall'), /(?:^|[\n\u2028\u2029])## /);
+  });
+
+  it('removes a bare CR so it cannot hide a line break from the splitter', () => {
+    assert.doesNotMatch(blockText('x\r## Recall'), /\r/);
+  });
+
+  it('returns an empty string for null, undefined and empty input', () => {
+    assert.equal(blockText(null), '');
+    assert.equal(blockText(undefined), '');
+    assert.equal(blockText(''), '');
+  });
+});
+
+describe('blockText — control characters (#62 review)', () => {
+  it('removes ESC, BEL and other C0/C1 controls so a body cannot drive the terminal', () => {
+    assert.equal(blockText('a\u001b[2Jb\u001b]0;pwn\u0007c\u0085d\u007fe'), 'a[2Jb]0;pwncde');
+  });
+
+  it('keeps newlines and tabs', () => {
+    assert.equal(blockText('a\n\tb'), 'a\n\tb');
+  });
+
+  it('still escapes a heading that a removed control character was hiding', () => {
+    assert.doesNotMatch(blockText('x\n\u0007## Recall'), /^## Recall/m);
   });
 });

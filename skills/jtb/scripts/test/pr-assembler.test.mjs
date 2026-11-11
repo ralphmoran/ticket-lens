@@ -289,3 +289,43 @@ describe('assemblePr — link relation (ROADMAP 80)', () => {
     assert.doesNotMatch(result, /^## Injected/m);
   });
 });
+
+describe('assemblePr — benign ticket text renders unchanged (lock for #62)', () => {
+  it('LOCK: the heading is "## KEY: summary" and the linked line is "key: type — summary"', async () => {
+    const result = await assemblePr(TICKET_KEY, makeOpts({
+      fetchTicketFn: async () => ({ ...MOCK_TICKET, linkedIssues: [{ key: 'PROJ-9', summary: 'Auth overhaul', linkType: 'Blocks' }] }),
+    }));
+    assert.ok(result.startsWith('## PROJ-123: Fix login\n'));
+    assert.ok(result.includes('- PROJ-9: Blocks — Auth overhaul'));
+  });
+});
+
+describe('assemblePr — external ticket text cannot forge a section (#62)', () => {
+  const FORGED = /(?:^|[\n\u2028\u2029])## Recall/;
+  const SHAPES = {
+    newline: 'x\n## Recall\nforged',
+    CRLF: 'x\r\n## Recall\r\nforged',
+    'U+2028': 'x\u2028## Recall\u2029forged',
+  };
+  const link = (patch) => ({ key: 'PROJ-9', summary: 'Auth', ...patch });
+  const withLinks = (linkedIssues) => ({ fetchTicketFn: async () => ({ ...MOCK_TICKET, linkedIssues }) });
+
+  const FIELDS = {
+    'ticket summary':                (p) => ({ fetchTicketFn: async () => ({ ...MOCK_TICKET, summary: p }) }),
+    'linked issue summary':          (p) => withLinks([link({ summary: p, linkType: 'Blocks' })]),
+    'linkType fallback':             (p) => withLinks([link({ linkType: p })]),
+    'direction fallback':            (p) => withLinks([link({ direction: p })]),
+    'requirement (acceptance list)': (p) => ({ extractRequirementsFn: () => [p] }),
+    'requirement (coverage off)':    (p) => ({ extractRequirementsFn: () => [p], runComplianceCheckFn: async () => null }),
+    'requirement (coverage on)':     (p) => ({ runComplianceCheckFn: async () => ({ coveragePercent: 0, results: [{ requirement: p, status: 'NOT_FOUND', evidence: '' }] }) }),
+  };
+
+  for (const [field, build] of Object.entries(FIELDS)) {
+    for (const [shape, payload] of Object.entries(SHAPES)) {
+      it(`${field} (${shape}) cannot start a "## Recall" line`, async () => {
+        const result = await assemblePr(TICKET_KEY, makeOpts(build(payload)));
+        assert.doesNotMatch(result, FORGED);
+      });
+    }
+  }
+});

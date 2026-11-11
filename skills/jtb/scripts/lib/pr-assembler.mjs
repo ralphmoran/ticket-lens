@@ -12,7 +12,7 @@ import { runComplianceCheck, STATUS_ICON, statusColor } from './compliance-check
 import { DEFAULT_CONFIG_DIR } from './config.mjs';
 import { createStyler } from './ansi.mjs';
 import { detectRemoteUrl } from './git-exec.mjs';
-import { linkSentence } from './ticket-brief-fields.mjs';
+import { linkSentence, singleLine } from './ticket-brief-fields.mjs';
 
 /**
  * Build the "### Linked tickets" section from a ticket's linkedIssues.
@@ -31,9 +31,9 @@ function buildLinkedTicketsSection(linkedIssues, s, ticketKey) {
   const styleKey = key => s.brand(s.bold(key));
   const lines = ['', '### Linked tickets'];
   for (const issue of linkedIssues) {
-    const rel = issue.linkType ?? issue.direction ?? 'Linked';
-    const relation = linkSentence(ticketKey, issue, styleKey) || `${styleKey(issue.key)}: ${rel}`;
-    lines.push(`- ${relation} — ${issue.summary}`);
+    const rel = singleLine(issue.linkType ?? issue.direction ?? 'Linked');
+    const relation = linkSentence(ticketKey, issue, styleKey) || `${styleKey(singleLine(issue.key))}: ${rel}`;
+    lines.push(`- ${relation} — ${singleLine(issue.summary)}`);
   }
   return lines.join('\n');
 }
@@ -50,7 +50,7 @@ function buildCoverageSection(complianceResult, requirements, s) {
   if (complianceResult === null) {
     const lines = ['', '### Requirements coverage (coverage unavailable — Pro required)'];
     for (const req of requirements) {
-      lines.push(`- ${req}`);
+      lines.push(`- ${singleLine(req)}`);
     }
     return lines.join('\n');
   }
@@ -61,7 +61,7 @@ function buildCoverageSection(complianceResult, requirements, s) {
   for (const { requirement, status, evidence } of results) {
     const icon = statusColor(status, s)(STATUS_ICON[status] ?? '?');
     const suffix = evidence ? ` (${evidence})` : '';
-    lines.push(`- ${icon} ${requirement}${suffix}`);
+    lines.push(`- ${icon} ${singleLine(requirement)}${suffix}`);
   }
 
   return lines.join('\n');
@@ -124,7 +124,7 @@ export async function assemblePr(ticketKey, {
   );
 
   // Build output
-  const lines = [`## ${s.brand(s.bold(ticketKey))}: ${summary}`, ''];
+  const lines = [`## ${s.brand(s.bold(ticketKey))}: ${singleLine(summary)}`, ''];
 
   // What changed — commits are raw git --oneline strings: "<sha> <message>"
   lines.push('### What changed');
@@ -146,7 +146,7 @@ export async function assemblePr(ticketKey, {
     lines.push('_No acceptance criteria found._');
   } else {
     for (const req of requirements) {
-      lines.push(`- ${req}`);
+      lines.push(`- ${singleLine(req)}`);
     }
   }
 

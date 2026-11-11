@@ -722,7 +722,7 @@ export async function runTicketDuplicates(cmdArgs, {
     const results = [...linkedDuplicates, ...textMatches.filter(r => !linkedKeys.has(r.key))];
 
     const s = createStyler({ isTTY: stream.isTTY });
-    stream.write(`  ${s.brand(s.bold(ticketKey))}: ${s.bold(source.summary ?? '')}\n\n`);
+    stream.write(`  ${s.brand(s.bold(ticketKey))}: ${s.bold(singleLine(source.summary))}\n\n`);
 
     if (results.length === 0) {
       stream.write(`  No likely duplicates found (heuristic match only — not a guarantee none exist).\n`);
@@ -731,12 +731,12 @@ export async function runTicketDuplicates(cmdArgs, {
     stream.write(`  Possible duplicates:\n\n`);
     for (const r of results) {
       if (r.linked) {
-        stream.write(`    ${s.brand('●')} ${s.bold(r.key)} (${s.green(`Jira-linked — ${r.linkPhrase}`)}) — ${r.summary}\n`);
+        stream.write(`    ${s.brand('●')} ${s.bold(singleLine(r.key))} (${s.green(`Jira-linked — ${singleLine(r.linkPhrase)}`)}) — ${singleLine(r.summary)}\n`);
         continue;
       }
       const pct = Math.round(r.score * 100);
       const pctColor = matchColor(pct, s);
-      stream.write(`    ${s.brand('●')} ${s.bold(r.key)} (${pctColor(`${pct}% match`)}) — ${r.summary}\n`);
+      stream.write(`    ${s.brand('●')} ${s.bold(singleLine(r.key))} (${pctColor(`${pct}% match`)}) — ${singleLine(r.summary)}\n`);
     }
     return { ok: true, results };
   } catch (err) {

@@ -21,6 +21,10 @@ export const MAX_PHRASE_LENGTH = 100;
 
 const ELLIPSIS = '…';
 
+// C0 and C1 controls and DEL, except tab and newline: a body keeps its layout
+// but can no longer carry terminal escape sequences (ESC, OSC, BEL) or a bare CR.
+const BLOCK_CONTROL_CHARS = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g;
+
 /**
  * Untrusted text as one clean line: every whitespace run (newlines, \r,
  * U+2028/2029, tabs, NBSP) becomes one space, then control characters are
@@ -35,6 +39,30 @@ export function singleLine(value, maxLength = Infinity) {
   if (text.length <= maxLength) return text;
   const chars = Array.from(text);
   return chars.length > maxLength ? `${chars.slice(0, maxLength - 1).join('')}${ELLIPSIS}` : text;
+}
+
+/**
+ * Untrusted multi-line text (a description, a comment, a Confluence page) for a
+ * brief body. Its line breaks must survive, so it cannot be flattened like
+ * singleLine: control characters (except tab and newline) are dropped, and every
+ * line that would start a heading is escaped, so the text can neither drive a
+ * terminal nor open a section for budget-pruner.
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function blockText(value) {
+  return escapeLeadingHeading(String(value ?? '').replace(BLOCK_CONTROL_CHARS, ''));
+}
+
+/**
+ * The date part of an ISO timestamp as one clean line, or `fallback` when the
+ * ticket gave none.
+ * @param {unknown} value
+ * @param {string} [fallback]
+ * @returns {string}
+ */
+export function dateOnly(value, fallback = 'unknown') {
+  return value ? singleLine(String(value).split('T')[0]) : fallback;
 }
 
 /**

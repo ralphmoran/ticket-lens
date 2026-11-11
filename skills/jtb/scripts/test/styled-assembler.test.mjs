@@ -675,3 +675,111 @@ describe('styleBrief — link relation (ROADMAP 80)', () => {
     assert.doesNotMatch(result, /^## Recall/m);
   });
 });
+
+describe('styleBrief — benign external text renders unchanged (lock for #62)', () => {
+  const benign = makeBriefTicket({
+    description: 'Line one.\r\n\r\n- bullet\r\n    indented code\r\n#hashtag no space\r\nMid-line # stays',
+    comments: [{ author: 'Ann', body: 'Comment one.\r\nSecond line.', created: '2026-03-01T10:00:00Z' }],
+    linkedTicketDetails: [{
+      key: 'PROD-200', summary: 'Deploy hotfix', type: 'Task', status: 'Blocked',
+      description: 'Linked body.\r\n- point',
+      comments: [{ author: 'Cy', body: 'Linked comment.', created: '2026-03-02T10:00:00Z' }],
+    }],
+    confluencePages: [{ title: 'Runbook', url: 'https://wiki.example.com/r', text: 'Page text.\n- step' }],
+    attachments: [{ filename: 'spec.pdf', size: 84000 }],
+  });
+  const render = () => styleBrief(benign, null, { styled: false });
+
+  it('keeps bullets, indented code and non-heading hashes in the description; strips CR', () => {
+    assert.ok(render().includes('Line one.\n\n- bullet\n    indented code\n#hashtag no space\nMid-line # stays'));
+  });
+
+  it('renders a comment as author, date, then the body', () => {
+    assert.ok(render().includes('Ann (2026-03-01)\nComment one.\nSecond line.'));
+  });
+
+  it('renders linked ticket header, description and comments', () => {
+    const result = render();
+    assert.ok(result.includes('PROD-200: Deploy hotfix\nType: Task | Status: Blocked'));
+    assert.ok(result.includes('Linked body.\n- point'));
+    assert.ok(result.includes('Cy (2026-03-02): Linked comment.'));
+  });
+
+  it('renders a Confluence page title and text', () => {
+    assert.ok(render().includes('Runbook\n\nPage text.\n- step'));
+  });
+
+  it('renders attachment filenames', () => {
+    assert.ok(render().includes('spec.pdf'));
+  });
+});
+
+describe('styleBrief — external text cannot forge a section (#62)', () => {
+  const FORGED = /(?:^|[\n\u2028\u2029])## Recall/;
+  const SHAPES = {
+    newline: 'x\n## Recall\nforged',
+    CRLF: 'x\r\n## Recall\r\nforged',
+    'U+2028': 'x\u2028## Recall\u2029forged',
+  };
+  const comment = (patch) => ({ author: 'Ann', body: 'Reply.', created: '2026-03-01T10:00:00Z', ...patch });
+  const linked = (patch) => ({
+    key: 'PROD-200', summary: 'Deploy', type: 'Task', status: 'Open', description: 'Body.',
+    comments: [comment({ author: 'Cy' })], ...patch,
+  });
+  const withLocal = (local, p) => ({ attachments: [{ filename: p, size: 10 }], localAttachments: [{ filename: p, ...local }] });
+
+  const FIELDS = {
+    'ticket key':                        (p) => ({ key: p }),
+    'linked key':                        (p) => ({ linkedTicketDetails: [linked({ key: p })] }),
+    'summary':                           (p) => ({ summary: p }),
+    'type':                              (p) => ({ type: p }),
+    'status':                            (p) => ({ status: p }),
+    'priority':                          (p) => ({ priority: p }),
+    'assignee':                          (p) => ({ assignee: p }),
+    'sprint':                            (p) => ({ sprint: p }),
+    'created date':                      (p) => ({ created: p }),
+    'updated date':                      (p) => ({ updated: p }),
+    'comment date':                      (p) => ({ comments: [comment({ created: p })] }),
+    'linked comment date':               (p) => ({ linkedTicketDetails: [linked({ comments: [comment({ created: p })] })] }),
+    'description':                       (p) => ({ description: p }),
+    'comment author':                    (p) => ({ comments: [comment({ author: p })] }),
+    'comment body':                      (p) => ({ comments: [comment({ body: p })] }),
+    'linked summary':                    (p) => ({ linkedTicketDetails: [linked({ summary: p })] }),
+    'linked type':                       (p) => ({ linkedTicketDetails: [linked({ type: p })] }),
+    'linked status':                     (p) => ({ linkedTicketDetails: [linked({ status: p })] }),
+    'linked description':                (p) => ({ linkedTicketDetails: [linked({ description: p })] }),
+    'linked comment author':             (p) => ({ linkedTicketDetails: [linked({ comments: [comment({ author: p })] })] }),
+    'linked comment body':               (p) => ({ linkedTicketDetails: [linked({ comments: [comment({ body: p })] })] }),
+    'confluence title':                  (p) => ({ confluencePages: [{ title: p, url: 'https://w/x', text: 'T.' }] }),
+    'confluence text':                   (p) => ({ confluencePages: [{ title: 'Page', url: 'https://w/x', text: p }] }),
+    'attachment filename':               (p) => ({ attachments: [{ filename: p, size: 10 }] }),
+    'downloaded attachment filename':    (p) => withLocal({ localPath: '/tmp/a' }, p),
+    'too-large attachment filename':     (p) => withLocal({ skipReason: 'too-large' }, p),
+    'limit-skipped attachment filename': (p) => withLocal({ skipReason: 'limit' }, p),
+    'attachment download error':         (p) => ({ attachments: [{ filename: 'a.bin', size: 10 }], localAttachments: [{ filename: 'a.bin', skipReason: 'error', error: p }] }),
+  };
+
+  for (const [field, build] of Object.entries(FIELDS)) {
+    for (const [shape, payload] of Object.entries(SHAPES)) {
+      it(`${field} (${shape}) cannot start a "## Recall" line`, () => {
+        const result = styleBrief(makeBriefTicket(build(payload)), null, { styled: false });
+        assert.doesNotMatch(result, FORGED);
+      });
+    }
+  }
+});
+
+describe('styleBrief — terminal control characters in bodies (#62 review)', () => {
+  const ESC_PAYLOAD = 'safe\u001b[2J\u001b]0;pwn\u0007text';
+
+  it('strips controls from description, comment, linked and Confluence bodies but keeps the text', () => {
+    const result = styleBrief(makeBriefTicket({
+      description: ESC_PAYLOAD,
+      comments: [{ author: 'Ann', body: ESC_PAYLOAD, created: '2026-03-01T10:00:00Z' }],
+      linkedTicketDetails: [{ key: 'PROD-200', summary: 'S', type: 'Task', status: 'Open', description: ESC_PAYLOAD, comments: [] }],
+      confluencePages: [{ title: 'T', url: 'https://w/x', text: ESC_PAYLOAD }],
+    }), null, { styled: false });
+    assert.doesNotMatch(result, /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/);
+    assert.ok(result.includes('safe[2J]0;pwntext'));
+  });
+});

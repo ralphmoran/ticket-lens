@@ -1,8 +1,8 @@
 import { createStyler } from './ansi.mjs';
 import { formatTable } from './table-formatter.mjs';
 import { formatSize } from './attachment-downloader.mjs';
-import { timeAgo, truncate, stripCr, escapeLeadingHeading } from './config.mjs';
-import { labelsText, relationText } from './ticket-brief-fields.mjs';
+import { timeAgo, truncate, escapeLeadingHeading } from './config.mjs';
+import { labelsText, relationText, singleLine, blockText, dateOnly } from './ticket-brief-fields.mjs';
 
 function divWidth() {
   return 30;
@@ -145,18 +145,18 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
   const sections = [];
 
   // Header: ticket key + summary
-  sections.push(s.bold(s.brand(`${ticket.key}: ${ticket.summary}`)));
+  sections.push(s.bold(s.brand(`${singleLine(ticket.key)}: ${singleLine(ticket.summary)}`)));
 
   // Metadata line (always included)
   const meta = [
-    `${s.dim('Type:')} ${ticket.type}`,
-    `${s.dim('Status:')} ${statusColor(s, ticket.status)}`,
-    `${s.dim('Priority:')} ${ticket.priority ? priorityColor(s, ticket.priority) : '—'}`,
-    `${s.dim('Assignee:')} ${ticket.assignee ?? 'Unassigned'}`,
+    `${s.dim('Type:')} ${singleLine(ticket.type)}`,
+    `${s.dim('Status:')} ${statusColor(s, singleLine(ticket.status))}`,
+    `${s.dim('Priority:')} ${ticket.priority ? priorityColor(s, singleLine(ticket.priority)) : '—'}`,
+    `${s.dim('Assignee:')} ${singleLine(ticket.assignee ?? 'Unassigned')}`,
   ];
-  if (ticket.sprint)  meta.push(`${s.dim('Sprint:')} ${ticket.sprint}`);
-  if (ticket.created) meta.push(`${s.dim('Created:')} ${ticket.created.split('T')[0]}`);
-  if (ticket.updated) meta.push(`${s.dim('Updated:')} ${ticket.updated.split('T')[0]}`);
+  if (ticket.sprint)  meta.push(`${s.dim('Sprint:')} ${singleLine(ticket.sprint)}`);
+  if (ticket.created) meta.push(`${s.dim('Created:')} ${dateOnly(ticket.created)}`);
+  if (ticket.updated) meta.push(`${s.dim('Updated:')} ${dateOnly(ticket.updated)}`);
   const labels = labelsText(ticket);
   if (labels) meta.push(`${s.dim('Labels:')} ${labels}`);
   sections.push(meta.join(s.dim('  ·  ')));
@@ -167,7 +167,7 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
 
   // Description
   if (ticket.description && (ts === null || ts.description !== false)) {
-    sections.push(`${s.bold(s.brand('Description'))}\n${s.dim('─'.repeat(divWidth()))}\n${stripCr(ticket.description)}`);
+    sections.push(`${s.bold(s.brand('Description'))}\n${s.dim('─'.repeat(divWidth()))}\n${blockText(ticket.description)}`);
   }
 
   // Comments
@@ -178,25 +178,23 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
     ? ticket.comments.slice(0, commentsMax === Infinity ? ticket.comments.length : commentsMax)
     : [];
   if (visibleComments.length > 0) {
-    const commentLines = visibleComments.map(c => {
-      const date = c.created ? c.created.split('T')[0] : 'unknown';
-      return `${s.brand(c.author)} ${s.dim(`(${date})`)}\n${stripCr(c.body)}`;
-    });
+    const commentLines = visibleComments.map(c =>
+      `${s.brand(singleLine(c.author))} ${s.dim(`(${dateOnly(c.created)})`)}\n${blockText(c.body)}`
+    );
     sections.push(`${s.bold(s.brand('Comments'))}\n${s.dim('─'.repeat(divWidth()))}\n${commentLines.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
   }
 
   // Linked tickets
   if (ticket.linkedTicketDetails?.length > 0 && (ts === null || ts.linked !== false)) {
     const linkedSections = ticket.linkedTicketDetails.map(lt => {
-      const parts = [`${s.brand(lt.key)}: ${lt.summary}`, `${s.dim('Type:')} ${lt.type} | ${s.dim('Status:')} ${statusColor(s, lt.status)}`];
+      const parts = [`${s.brand(singleLine(lt.key))}: ${singleLine(lt.summary)}`, `${s.dim('Type:')} ${singleLine(lt.type)} | ${s.dim('Status:')} ${statusColor(s, singleLine(lt.status))}`];
       const relation = relationText(ticket, lt);
       if (relation) parts.push(`${s.dim('Relation:')} ${relation}`);
-      if (lt.description) parts.push(stripCr(lt.description));
+      if (lt.description) parts.push(blockText(lt.description));
       if (lt.comments?.length > 0) {
-        const cmts = lt.comments.map(c => {
-          const date = c.created ? c.created.split('T')[0] : 'unknown';
-          return `${s.brand(c.author)} ${s.dim(`(${date})`)}: ${stripCr(c.body)}`;
-        });
+        const cmts = lt.comments.map(c =>
+          `${s.brand(singleLine(c.author))} ${s.dim(`(${dateOnly(c.created)})`)}: ${blockText(c.body)}`
+        );
         parts.push(cmts.join('\n'));
       }
       return parts.join('\n');
@@ -207,8 +205,8 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
   // Confluence pages
   if (ticket.confluencePages?.length > 0 && (ts === null || ts.confluence !== false)) {
     const pageLines = ticket.confluencePages.map(p => {
-      const parts = [s.brand(p.title ?? p.url)];
-      if (p.text) parts.push(p.text);
+      const parts = [s.brand(singleLine(p.title ?? p.url))];
+      if (p.text) parts.push(blockText(p.text));
       return parts.join('\n\n');
     });
     sections.push(`${s.bold(s.brand('Confluence Pages'))}\n${s.dim('─'.repeat(divWidth()))}\n${pageLines.join(`\n\n${s.dim('─'.repeat(halfDivWidth()))}\n`)}`);
@@ -237,14 +235,15 @@ export function styleBrief(ticket, codeRefs = null, opts = {}) {
     const lines = ticket.attachments.map(a => {
       const r = (ticket.localAttachments ?? []).find(x => x.filename === a.filename);
       const sz = formatSize(a.size);
+      const name = singleLine(a.filename);
       if (r?.localPath) {
         const note = r.skipReason === 'cached' ? s.dim(', cached') : '';
-        return `  ${s.brand(r.localPath)}${note}  ${s.dim(a.filename + ', ' + sz)}`;
+        return `  ${s.brand(r.localPath)}${note}  ${s.dim(name + ', ' + sz)}`;
       }
-      if (r?.skipReason === 'too-large') return `  ${a.filename}  ${s.dim(sz + ' — exceeds 10 MB limit')}`;
-      if (r?.skipReason === 'limit')     return `  ${a.filename}  ${s.dim(sz + ' — attachment limit reached')}`;
-      if (r?.skipReason === 'error')     return `  ${a.filename}  ${s.red('download failed: ' + r.error)}`;
-      return `  ${a.filename}  ${s.dim(sz)}`;
+      if (r?.skipReason === 'too-large') return `  ${name}  ${s.dim(sz + ' — exceeds 10 MB limit')}`;
+      if (r?.skipReason === 'limit')     return `  ${name}  ${s.dim(sz + ' — attachment limit reached')}`;
+      if (r?.skipReason === 'error')     return `  ${name}  ${s.red('download failed: ' + singleLine(r.error))}`;
+      return `  ${name}  ${s.dim(sz)}`;
     });
     sections.push(`${s.bold(s.brand('Attachments'))}\n${s.dim('─'.repeat(divWidth()))}\n${lines.join('\n')}`);
   }
