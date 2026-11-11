@@ -392,6 +392,26 @@ describe('runTicketParentChildren — review hardening', () => {
   });
 });
 
+describe('runTicketParentChildren — tracker-supplied epic key', () => {
+  for (const [label, key] of [
+    ['an escape sequence', 'PROJ-1\u001b]52;c;ZXZpbA==\u0007'],
+    ['a newline and a forged line', 'PROJ-1\n  ✔ PROJ-9 now under PROJ-1'],
+    ['a path-traversal payload', 'PROJ-1/../../x'],
+    ['an empty string', ''],
+  ]) {
+    test(`${label} as the canonical key is ignored: the typed key is used, nothing hostile is printed`, async () => {
+      const adapter = fakeAdapter({ infos: { [EPIC]: { key } } });
+      const deps = baseDeps({ adapter, confirm: false });
+      await runTicketParentChildren(EPIC, CHILDREN, deps);
+      assert.doesNotMatch(deps.stream.text(), /\u001b|\u0007|✔ PROJ-9|\.\.\//);
+      assert.match(deps.stream.text(), /Would set PROJ-1 as the parent/);
+      const written = baseDeps({ adapter: fakeAdapter({ infos: { [EPIC]: { key } } }) });
+      await runTicketParentChildren(EPIC, CHILDREN, written);
+      assert.deepEqual(written._adapter.calls.map((c) => c.parent), [EPIC, EPIC]);
+    });
+  }
+});
+
 describe('runTicketParent — CLI argument parsing', () => {
   function capture(overrides = {}) {
     const seen = {};

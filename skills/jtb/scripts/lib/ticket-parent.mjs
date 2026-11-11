@@ -22,6 +22,7 @@ import { resolveAdapter } from './resolve-adapter.mjs';
 import { logAction } from './ticket-action-log.mjs';
 import { createStyler, sanitizeUntrustedText } from './ansi.mjs';
 import { parseFlag, requireLicense, resolveTicketAdapter, formatWriteFailure, classifyWriteFailure } from './ticket-command.mjs';
+import { TICKET_KEY_PATTERN } from './cli.mjs';
 import { parseTicket, flagErrors } from './ticket-worklog.mjs';
 
 export const MAX_PARENT_CHILDREN = 50;
@@ -108,12 +109,14 @@ async function readAll(adapter, epic, children, stream) {
     return null;
   }
   // A moved or renamed epic comes back under its new key; children report that key as their parent.
-  return { epic: epicRead.info.key ?? epic, infos: new Map(childReads.map(read => [read.key, read.info])) };
+  // The key is tracker text: only a well-formed one replaces what the user typed.
+  const canonical = TICKET_KEY_PATTERN.test(epicRead.info.key) ? epicRead.info.key : epic;
+  return { epic: canonical, infos: new Map(childReads.map(read => [read.key, read.info])) };
 }
 
 function writePreview(epic, children, infos, { stream, cliHints }) {
   const s = createStyler({ isTTY: stream.isTTY });
-  stream.write(`  Would set ${s.brand(s.bold(epic))} as the parent of ${plural(children.length, 'ticket')}:\n\n`);
+  stream.write(`  Would set ${s.brand(s.bold(safe(epic)))} as the parent of ${plural(children.length, 'ticket')}:\n\n`);
   for (const key of children) {
     const info = infos.get(key);
     const current = info.parentKey === epic
@@ -147,7 +150,7 @@ async function verify(child, epic, { adapter, stream }) {
     return false;
   }
   if (stored === epic) return true;
-  stream.write(`  ${child} was written, but the tracker shows ${stored ? `parent ${safe(stored)}` : 'no parent'} (expected ${epic}). Check it in the tracker.\n`);
+  stream.write(`  ${child} was written, but the tracker shows ${stored ? `parent ${safe(stored)}` : 'no parent'} (expected ${safe(epic)}). Check it in the tracker.\n`);
   return false;
 }
 
@@ -168,7 +171,7 @@ async function setOne(child, epic, ctx) {
   audit(child, epic, ctx);
   if (!(await verify(child, epic, ctx))) return { ticket: child, status: 'unverified' };
   const s = createStyler({ isTTY: stream.isTTY });
-  stream.write(`  ${s.green('✔')} ${s.brand(s.bold(child))} now under ${s.brand(s.bold(epic))}\n`);
+  stream.write(`  ${s.green('✔')} ${s.brand(s.bold(child))} now under ${s.brand(s.bold(safe(epic)))}\n`);
   return { ticket: child, status: 'set' };
 }
 
@@ -200,7 +203,7 @@ function writeSummary(results, alreadyUnder, epic, stream) {
   const unverified = names(r => r.status === 'unverified');
   const retry = names(r => r.status === 'failed' || r.status === 'skipped');
   stream.write(`\n  Set the parent on ${results.filter(r => r.status === 'set').length} of ${results.length} tickets.\n`);
-  if (alreadyUnder.length) stream.write(`  Already under ${epic}: ${alreadyUnder.join(', ')}.\n`);
+  if (alreadyUnder.length) stream.write(`  Already under ${safe(epic)}: ${alreadyUnder.join(', ')}.\n`);
   if (unverified) stream.write(`  Written but not confirmed — check in the tracker: ${unverified}.\n`);
   if (retry) stream.write(`  Retry only: ${retry}.\n`);
 }
@@ -264,7 +267,7 @@ export async function runTicketParentChildren(epicKey, childKeys, {
   const alreadyUnder = children.filter(key => infos.get(key).parentKey === target);
   const pending = children.filter(key => !alreadyUnder.includes(key));
   if (pending.length === 0) {
-    stream.write(`  Nothing to change: ${plural(children.length, 'ticket')} already under ${target}.\n`);
+    stream.write(`  Nothing to change: ${plural(children.length, 'ticket')} already under ${safe(target)}.\n`);
     return { ok: true, results: alreadyUnder.map(ticket => ({ ticket, status: 'already' })) };
   }
   if (confirm !== true) {
