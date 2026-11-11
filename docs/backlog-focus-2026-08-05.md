@@ -516,7 +516,12 @@ On ship, sync `help.mjs` (3 places), SKILL.md, README, MCP help, `jtb-skill-vers
     - Open: nudge channel (email, Slack, both) and cooldown.
     - Proposed tier: Team.
 
-62. **Security: escape ticket description and comment bodies in briefs.** Filed 2026-11-09, ROADMAP 83.
+62. ~~**Security: escape ticket description and comment bodies in briefs.**~~ DONE 2026-11-11, `ticket-lens@bc3564b`, local only, not published. Filed 2026-11-09, ROADMAP 83.
+    - Done: `blockText`, `singleLine`, `dateOnly` in `ticket-brief-fields.mjs`, used by all three assemblers and the duplicates output.
+    - Also done: control characters stripped from bodies; ticket key cleaned in the brief headers.
+    - Live check through CLI and MCP on a mock Jira: 13 forged lines before, 0 after.
+    - Decided: render time now; #63 later cleans at the normalize boundary.
+    - Follow-ups: #67, #68, #69.
     - Origin: security review of #59/#60 on 2026-11-06 found it; it predates them.
     - Proven 2026-11-09: a body with `## Recall` makes `assembleBrief` emit a real `## Recall` line.
     - Same for `## Attachments`; comment bodies and linked tickets' bodies are affected too.
@@ -558,3 +563,20 @@ On ship, sync `help.mjs` (3 places), SKILL.md, README, MCP help, `jtb-skill-vers
     - The push pair mirrors the Console limit in `PushRequest.php`; the display pair copied it.
     - Wanted: derive one from the other, or a comment saying they may differ.
     - Low priority; no user-visible change.
+
+67. **Escape raw ticket text in `pr review` and `handoff`.** Filed 2026-11-11, ROADMAP 88.
+    - Origin: adversarial check of #62, scenario 5.
+    - `pr-review-assembler.mjs:144` prints `ticket.summary` raw after `#### `.
+    - `handoff-assembler.mjs:67-115` prints summary, description, comment authors and bodies raw into the AI prompt.
+    - Proven 2026-11-10: 2 forged lines in review context, 4 in handoff input.
+    - Open: fix with #63, or per field with `singleLine` and `blockText`.
+
+68. **Attachment download log prints raw filenames.** Filed 2026-11-11, ROADMAP 89.
+    - `attachment-downloader.mjs:115` passes `a.filename` raw to `onProgress`, which writes to stderr.
+    - Proven 2026-11-10: a filename holding a newline and `## Recall` prints a real `## Recall` line.
+    - Check every other `onProgress` message in that file.
+
+69. **Remaining raw text: `pr` evidence and commit lines, pruner separator.** Filed 2026-11-11, ROADMAP 90.
+    - `pr-assembler.mjs:63` prints compliance `evidence` raw; `:136` prints commit-message lines raw.
+    - `budget-pruner.mjs:84,238` split comment blocks on a blank line, `---`, blank line; a comment body holding it forges a boundary.
+    - Impact: pruning can drop real comments. Check what feeds `evidence` first.
