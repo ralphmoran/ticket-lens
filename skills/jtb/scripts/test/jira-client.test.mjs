@@ -2163,3 +2163,63 @@ describe('lock — shared Jira shapes stay as they are', () => {
     assert.deepEqual(Object.keys(captured.fields), ['summary']);
   });
 });
+
+describe('extraFields (custom fields such as Epic Name)', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+  const capture = () => {
+    const seen = {};
+    seen.fetcher = async (url, opts) => { seen.body = JSON.parse(opts.body); return { ok: true, status: 201, json: async () => ({ key: 'PROJ-9', id: '9' }) }; };
+    return seen;
+  };
+
+  it('createIssue adds extraFields next to the core fields', async () => {
+    const seen = capture();
+    await createIssue({ project: 'PROJ', type: 'Epic', summary: 'Checkout', extraFields: { customfield_10011: 'Checkout' } }, { env: ENV, fetcher: seen.fetcher });
+    assert.deepEqual(seen.body, { fields: { customfield_10011: 'Checkout', project: { key: 'PROJ' }, issuetype: { name: 'Epic' }, summary: 'Checkout' } });
+  });
+
+  it('createIssue: extraFields can never override project, issuetype or summary', async () => {
+    const seen = capture();
+    await createIssue({ project: 'PROJ', type: 'Task', summary: 'Real', extraFields: { summary: 'Hijack', project: { key: 'EVIL' }, issuetype: { name: 'Bug' } } }, { env: ENV, fetcher: seen.fetcher });
+    assert.deepEqual(seen.body.fields, { project: { key: 'PROJ' }, issuetype: { name: 'Task' }, summary: 'Real' });
+  });
+
+  it('createIssue: the body is unchanged when no extraFields are given', async () => {
+    const seen = capture();
+    await createIssue({ project: 'PROJ', type: 'Task', summary: 'Plain', description: 'Body' }, { env: ENV, fetcher: seen.fetcher, apiVersion: 2 });
+    assert.deepEqual(seen.body, { fields: { project: { key: 'PROJ' }, issuetype: { name: 'Task' }, summary: 'Plain', description: 'Body' } });
+  });
+
+  it('updateIssue sends extraFields on their own', async () => {
+    const seen = capture();
+    await updateIssue('PROJ-1', { extraFields: { customfield_10011: 'Renamed' } }, { env: ENV, fetcher: seen.fetcher, apiVersion: 3 });
+    assert.deepEqual(seen.body, { fields: { customfield_10011: 'Renamed' } });
+  });
+
+  it('updateIssue merges extraFields with the named fields; the named fields win on a clash', async () => {
+    const seen = capture();
+    await updateIssue('PROJ-1', { summary: 'Real', extraFields: { customfield_10011: 'Renamed', summary: 'Hijack' } }, { env: ENV, fetcher: seen.fetcher, apiVersion: 3 });
+    assert.deepEqual(seen.body, { fields: { customfield_10011: 'Renamed', summary: 'Real' } });
+  });
+});
+
+describe('extraFields accept custom field ids only', () => {
+  const ENV = { JIRA_BASE_URL: 'https://example.atlassian.net', JIRA_EMAIL: 'user@example.com', JIRA_API_TOKEN: 'tok' };
+  const capture = () => {
+    const seen = {};
+    seen.fetcher = async (url, opts) => { seen.body = JSON.parse(opts.body); return { ok: true, status: 201, json: async () => ({ key: 'PROJ-9', id: '9' }) }; };
+    return seen;
+  };
+
+  it('updateIssue drops a core-field key even when the named field was not given', async () => {
+    const seen = capture();
+    await updateIssue('PROJ-1', { description: 'x', extraFields: { summary: 'Hijack', assignee: { id: 'x' }, customfield_10011: 'Name' } }, { env: ENV, fetcher: seen.fetcher, apiVersion: 2 });
+    assert.deepEqual(Object.keys(seen.body.fields).sort(), ['customfield_10011', 'description']);
+  });
+
+  it('createIssue drops keys that are not custom fields', async () => {
+    const seen = capture();
+    await createIssue({ project: 'PROJ', type: 'Epic', summary: 'S', extraFields: { reporter: { id: 'x' }, customfield_10011: 'Name', 'customfield_1;': 'x' } }, { env: ENV, fetcher: seen.fetcher });
+    assert.deepEqual(Object.keys(seen.body.fields).sort(), ['customfield_10011', 'issuetype', 'project', 'summary']);
+  });
+});

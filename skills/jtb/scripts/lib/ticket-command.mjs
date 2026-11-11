@@ -219,15 +219,20 @@ function formatFieldError(field, info) {
     const list = info.missing ?? info.options ?? [];
     return `${field} (not found${list.length ? `: ${list.join(', ')}` : ''})`;
   }
+  if (info?.reason === 'not-supported') return `${field} (Jira would not accept it here: a team-managed project or not an epic)`;
+  if (info?.reason === 'empty') return `${field} (must not be empty)`;
   const perLabel = Object.entries(info ?? {}).map(([label, err]) => `${label}: ${err.message}`).join(', ');
   return `${field} (${perLabel})`;
 }
+
+const EPIC_NAME_NEEDS_VALUE = '  --epic-name needs a value, e.g. --epic-name="Checkout".\n';
 
 function describeAppliedFields(applied) {
   const parts = [];
   if (applied.title) parts.push('title');
   if (applied.description) parts.push('description');
   if (applied.priority) parts.push(`priority=${applied.priority}`);
+  if (applied.epicName) parts.push(`epicName=${applied.epicName}`);
   if (applied.addLabels?.length) parts.push(`+labels(${applied.addLabels.join(', ')})`);
   if (applied.removeLabels?.length) parts.push(`-labels(${applied.removeLabels.join(', ')})`);
   return parts.join(', ');
@@ -958,7 +963,7 @@ export async function runTicketUpdate(cmdArgs, {
   writeMetadataCacheFn = writeMetadataCache,
   actor = os.userInfo().username,
 } = {}) {
-  const usage = 'Usage: ticketlens update TICKET-KEY [--title="..."] [--description="..."] [--add-labels=a,b] [--remove-labels=c] [--priority="High"]\n';
+  const usage = 'Usage: ticketlens update TICKET-KEY [--title="..."] [--description="..."] [--add-labels=a,b] [--remove-labels=c] [--priority="High"] [--epic-name="..."]\n';
   if (!requireLicense(isLicensedFn, configDir, 'ticketlens update', stream)) return { ok: false };
 
   const ticketKey = requireTicketKey(cmdArgs, usage, stream);
@@ -967,12 +972,17 @@ export async function runTicketUpdate(cmdArgs, {
   const title = parseFlag(cmdArgs, 'title');
   const description = parseFlag(cmdArgs, 'description');
   const priority = parseFlag(cmdArgs, 'priority');
+  const epicName = parseFlag(cmdArgs, 'epic-name');
   const addLabelsArg = parseFlag(cmdArgs, 'add-labels');
   const removeLabelsArg = parseFlag(cmdArgs, 'remove-labels');
   const addLabels = addLabelsArg ? addLabelsArg.split(',').map(l => l.trim()).filter(Boolean) : undefined;
   const removeLabels = removeLabelsArg ? removeLabelsArg.split(',').map(l => l.trim()).filter(Boolean) : undefined;
 
-  if (title === undefined && description === undefined && priority === undefined && !addLabels?.length && !removeLabels?.length) {
+  if (epicName !== undefined && !epicName.trim()) {
+    stream.write(EPIC_NAME_NEEDS_VALUE);
+    return { ok: false };
+  }
+  if (title === undefined && description === undefined && priority === undefined && epicName === undefined && !addLabels?.length && !removeLabels?.length) {
     stream.write(usage);
     return { ok: false };
   }
@@ -995,8 +1005,14 @@ export async function runTicketUpdate(cmdArgs, {
     return { ok: false };
   }
 
+  if (adapter.type !== 'jira' && epicName !== undefined) {
+    safeRelease(releaseActionFn, ticketKey, 'update', configDir);
+    stream.write(`  --epic-name is only supported on Jira — ${ticketKey} is on ${adapter.type}. Remove --epic-name and retry.\n`);
+    return { ok: false };
+  }
+
   try {
-    const result = await adapter.updateFields(ticketKey, { title, description, priority, addLabels, removeLabels }, { readMetadataCacheFn, writeMetadataCacheFn, profileName: conn.profileName, configDir });
+    const result = await adapter.updateFields(ticketKey, { title, description, priority, addLabels, removeLabels, ...(epicName !== undefined && { epicName }) }, { readMetadataCacheFn, writeMetadataCacheFn, profileName: conn.profileName, configDir });
     const hasApplied = Object.keys(result.applied).length > 0;
     const hasErrors = Object.keys(result.errors).length > 0;
 
@@ -1058,7 +1074,7 @@ export async function runTicketCreate(cmdArgs, {
   findProfilesByPrefixFn = findProfilesByPrefix,
   actor = os.userInfo().username,
 } = {}) {
-  const usage = 'Usage: ticketlens create --project=KEY --type="Task" --summary="..." [--description="..."] [--profile=NAME]\n';
+  const usage = 'Usage: ticketlens create --project=KEY --type="Task" --summary="..." [--description="..."] [--epic-name="..."] [--profile=NAME]\n';
   if (!requireLicense(isLicensedFn, configDir, 'ticketlens create', stream)) return { ok: false };
 
   const summary = parseFlag(cmdArgs, 'summary');
@@ -1070,7 +1086,12 @@ export async function runTicketCreate(cmdArgs, {
   const project = parseFlag(cmdArgs, 'project');
   const type = parseFlag(cmdArgs, 'type');
   const description = parseFlag(cmdArgs, 'description');
+  const epicName = parseFlag(cmdArgs, 'epic-name');
   const attachPaths = parseAttachPaths(cmdArgs);
+  if (epicName !== undefined && !epicName.trim()) {
+    stream.write(EPIC_NAME_NEEDS_VALUE);
+    return { ok: false };
+  }
 
   const resolved = resolveTicketAdapter(undefined, cmdArgs, { configDir, resolveConnectionFn, resolveAdapterFn, stream });
   if (!resolved) return { ok: false };
@@ -1088,6 +1109,9 @@ export async function runTicketCreate(cmdArgs, {
   }
   if (adapter.type !== 'jira' && type !== undefined) {
     stream.write(`  Note: --type is ignored by ${adapter.type} — issue created without it.\n`);
+  }
+  if (adapter.type !== 'jira' && epicName !== undefined) {
+    stream.write(`  Note: --epic-name is ignored by ${adapter.type} — issue created without it.\n`);
   }
 
   // Highest-blast-radius write in the family: no ticket key exists yet to
@@ -1126,7 +1150,7 @@ export async function runTicketCreate(cmdArgs, {
 
   let result;
   try {
-    result = await adapter.createTicket({ project, type, summary, description });
+    result = await adapter.createTicket({ project, type, summary, description, ...(adapter.type === 'jira' && epicName !== undefined && { epicName }) });
   } catch (err) {
     // Definite failure — no ticket was created, so the claim is released to
     // let a corrected retry through immediately (Backlog #34/ROADMAP 57).
@@ -1194,5 +1218,8 @@ export async function runTicketCreate(cmdArgs, {
   }
 
   stream.write(`  ${s.green('✔')} Created ${s.brand(s.bold(result.key))}${result.url ? ` (${result.url})` : ''}\n` + formatAttachSummary(attachResult, s));
+  if (result.epicNameSet === false) {
+    stream.write('  Note: Jira would not accept an Epic Name here (team-managed project or not an epic), so --epic-name was ignored.\n');
+  }
   return { ok: true, key: result.key };
 }

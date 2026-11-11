@@ -325,7 +325,7 @@ export const TOOLS = [
   },
   {
     name: 'ticket_update',
-    description: 'Update a narrow, named field set on a ticket in its tracker (Jira/GitHub/Linear) — title, description, labels, priority. At least one field is required. Labels are add/remove, never a wholesale replace: an unnamed existing label is left alone. No discovery step and no confirm required — these are reversible metadata edits, not workflow-state changes. GitHub has no priority field; passing `priority` for a GitHub-tracked ticket is refused. A call can partially succeed (e.g. title updates but a label does not resolve) — the result reports exactly what landed. Requires a TicketLens Pro license.',
+    description: 'Update a narrow, named field set on a ticket in its tracker (Jira/GitHub/Linear) — title, description, labels, priority, and on Jira the Epic Name of an epic. At least one field is required. Labels are add/remove, never a wholesale replace: an unnamed existing label is left alone. No discovery step and no confirm required — these are reversible metadata edits, not workflow-state changes. GitHub has no priority field; passing `priority` for a GitHub-tracked ticket is refused. A call can partially succeed (e.g. title updates but a label does not resolve) — the result reports exactly what landed. Requires a TicketLens Pro license.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -335,6 +335,7 @@ export const TOOLS = [
         addLabels: { type: 'array', items: { type: 'string' }, description: 'Labels to add. Existing labels not named here are left alone.' },
         removeLabels: { type: 'array', items: { type: 'string' }, description: 'Labels to remove.' },
         priority: { type: 'string', description: 'New priority name, e.g. "High". Not supported on GitHub.' },
+        epicName: { type: 'string', description: 'Jira only: set or fix the Epic Name of an epic (without one Jira labels its children "unlabelled-KEY"). At most 255 characters, longer is cut. Team-managed projects have no such field; the call reports it as not supported.' },
       },
       required: ['ticket'],
     },
@@ -349,6 +350,7 @@ export const TOOLS = [
         type: { type: 'string', description: 'Jira issue type, e.g. "Task" or "Bug". Required for Jira only; ignored on GitHub/Linear.' },
         summary: { type: 'string', description: 'Ticket title/summary.' },
         description: { type: 'string', description: 'Ticket description. Omit for none.' },
+        epicName: { type: 'string', description: 'Jira only: the Epic Name of a new epic, shown in epic lists and on its children (without one Jira labels children "unlabelled-KEY"). Defaults to the summary when the type is "Epic" and the project has the field; pass it for a localized type name. At most 255 characters, longer is cut. Team-managed projects have no such field and ignore it.' },
         attachments: { type: 'array', items: { type: 'string' }, description: 'Local file paths to attach, uploaded after the ticket is created. On Linear the image is automatically linked into the description. On Jira it becomes a real, visible attachment on the issue, but is not embedded inline in the initial description (use ticket_comment afterward for an inline thumbnail). Not supported on GitHub.' },
         profile: { type: 'string', description: 'Connection profile to target, overriding folder-based inference and the default profile. Use this when `project` belongs to a profile other than the one auto-resolved from the current working directory.' },
       },

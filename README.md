@@ -508,6 +508,8 @@ ticketlens update PROJ-123 --add-labels=urgent,backend --remove-labels=stale
 ticketlens create --project=PROJ --type="Task" --summary="Fix login on mobile"  # Create a new ticket
 ticketlens create --project=ENG --summary="New Linear issue" --profile=linear-team
 ticketlens create --project=PROJ --type="Bug" --summary="Broken layout" --attach=./screenshot.png
+ticketlens create --project=PROJ --type="Epic" --summary="Checkout rework" --epic-name="Checkout"  # New epic with an Epic Name (Jira)
+ticketlens update PROJ-7 --epic-name="Checkout"             # Name or fix an epic (Jira only)
 ticketlens worklog PROJ-123=1h30m                            # Preview a worklog — writes nothing (Jira only)
 ticketlens worklog PROJ-123=1h30m PROJ-456=45m --comment="Sprint work" --confirm  # Log time on several tickets
 ticketlens worklog --help                                    # All options, limits, and examples
@@ -516,7 +518,7 @@ ticketlens parent PROJ-1 PROJ-2 PROJ-3 --confirm             # Put several ticke
 ticketlens parent --help                                     # All options, limits, and examples
 ```
 
-Write directly to the ticket in its real tracker — Jira, GitHub, or Linear — from your terminal or an AI session via `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create`/`ticket_worklog`/`ticket_parent` MCP tools. Requires a Pro license. On Jira, `ticket_link` echoes the link as Jira stored it.
+Write directly to the ticket in its real tracker — Jira, GitHub, or Linear — from your terminal or an AI session via `ticket_comment`/`ticket_transition`/`ticket_assign`/`ticket_duplicates`/`ticket_link`/`ticket_update`/`ticket_create`/`ticket_worklog`/`ticket_parent` MCP tools. Requires a Pro license. On Jira, `ticket_link` echoes the link as Jira stored it, and `ticket_create`/`ticket_update` take `epicName` to name an epic.
 
 `ticketlens transition` with just a ticket key lists the tracker's current valid options without changing anything (Jira: real workflow transitions for that issue; GitHub: open/closed; Linear: team-scoped workflow states). Add both `--target` and `--confirm` to execute — `--confirm` is a deliberate two-step gate: a behavioral nudge and forensic trail, not a hard security guarantee. Every write, once resolved, is re-validated against the tracker's current state immediately before executing — never a blind write against a stale option.
 
@@ -546,15 +548,16 @@ Write directly to the ticket in its real tracker — Jira, GitHub, or Linear —
 - Writes go one at a time; a failure never stops the rest.
 - A rate limit or 401 stops the batch; each write is read back.
 - Jira Cloud sets `parent`; Server/DC sets the Epic Link field.
+- A Jira epic with no Epic Name labels its children "unlabelled-KEY"; `parent` warns and names the fix.
 - `ticketlens parent --help` lists every option.
 
 `ticketlens duplicates` is read-only — it never links or changes anything, just lists likely matches in the same project. No tracker (Jira/GitHub/Linear) scores similarity server-side, so ranking happens locally from title/description word overlap; treat a match as a nudge to check manually, not a verdict. That local scoring can also miss a real duplicate — an empty result means none were found by this heuristic, not a confirmed absence. `--threshold=N` (0–1, default 0.35) controls how loose a match counts.
 
 `ticketlens link SOURCE-KEY TARGET-KEY` links two tickets — direction matters: SOURCE "types" TARGET (e.g. `link A B --type=Duplicate` means A duplicates B, not the other way around). With just the two keys it lists the tracker's current valid link types without changing anything — always fetched live for Jira, since link type names are per-instance configurable there. GitHub is different from Jira/Linear: it has no generic link relationship, so linking on a GitHub-tracked ticket *closes SOURCE as a duplicate of TARGET* — a state change, not just a relationship add — and prints an explicit warning immediately before that happens, on top of the same `--confirm` gate.
 
-`ticketlens update TICKET-KEY` updates a narrow, named field set — title, description, labels, priority. At least one field is required. Labels are always add/remove (`--add-labels=a,b` / `--remove-labels=c`), never a wholesale replace — an unnamed existing label is left alone, never silently dropped. No `--confirm` needed: unlike transition/link, update has no discovery step and only makes reversible metadata edits, the same risk tier as `assign`. GitHub has no priority field on issues, so `--priority` against a GitHub-tracked ticket is refused up front. Each tracker's label mechanics genuinely differ — Jira and Linear apply everything in one atomic call; GitHub's title/description and each label operation are independent, so a call can partially succeed (e.g. the title updates but one label name doesn't resolve) — the result always reports exactly which fields landed.
+`ticketlens update TICKET-KEY` updates a narrow, named field set — title, description, labels, priority. At least one field is required. Labels are always add/remove (`--add-labels=a,b` / `--remove-labels=c`), never a wholesale replace — an unnamed existing label is left alone, never silently dropped. No `--confirm` needed: unlike transition/link, update has no discovery step and only makes reversible metadata edits, the same risk tier as `assign`. GitHub has no priority field on issues, so `--priority` against a GitHub-tracked ticket is refused up front. Each tracker's label mechanics genuinely differ — Jira and Linear apply everything in one atomic call; GitHub's title/description and each label operation are independent, so a call can partially succeed (e.g. the title updates but one label name doesn't resolve) — the result always reports exactly which fields landed. `--epic-name` (Jira only) sets or fixes an epic's Epic Name: without one, Jira shows the epic's children as `unlabelled-KEY`. It works on company-managed and Server/DC projects; a team-managed project has no such field and the call says so.
 
-`ticketlens create` creates a new ticket with a fixed minimal field set — no arbitrary custom fields. Unlike every other write command, there's no existing ticket to target, so `--profile` (or your default profile) picks the tracker instead of a ticket key. `--project` is the Jira project key or Linear team key — required for both, ignored on GitHub since its target repo is already fixed by the profile. `--type` is Jira's issue type (e.g. `"Task"`, `"Bug"`) — required for Jira, ignored elsewhere. No `--confirm` gate, same risk tier as `update`/`assign` — but this is the highest-blast-radius command in the whole family: a bad `--project`/`--type` fabricates a real, hard-to-walk-back item in a live tracker, so an invalid value surfaces the tracker's own error rather than a silent guess.
+`ticketlens create` creates a new ticket with a fixed minimal field set — no arbitrary custom fields. Unlike every other write command, there's no existing ticket to target, so `--profile` (or your default profile) picks the tracker instead of a ticket key. `--project` is the Jira project key or Linear team key — required for both, ignored on GitHub since its target repo is already fixed by the profile. `--type` is Jira's issue type (e.g. `"Task"`, `"Bug"`) — required for Jira, ignored elsewhere. No `--confirm` gate, same risk tier as `update`/`assign` — but this is the highest-blast-radius command in the whole family: a bad `--project`/`--type` fabricates a real, hard-to-walk-back item in a live tracker, so an invalid value surfaces the tracker's own error rather than a silent guess. On Jira, `--epic-name` names a new epic and defaults to the summary (cut to 255 characters) when `--type` is `Epic` and the project has the field, so its children are never labelled `unlabelled-KEY`; pass it explicitly for a localized type name.
 
 `--attach=path1,path2` (comma-separated local file paths) is available on `comment`, `create`, and `note add`/`note patch`, up to 50 files per call (Pro, Team, Enterprise). Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
 
@@ -902,6 +905,8 @@ ticketlens update CNV1-2 --add-labels=urgent --remove-labels=stale  # Add/remove
 ticketlens create --project=CNV1 --type="Task" --summary="New ticket"  # Create a new ticket [Pro]
 ticketlens create --project=ENG --summary="New issue" --profile=linear-team  # Create on a different profile [Pro]
 ticketlens create --project=CNV1 --type="Bug" --summary="Broken layout" --attach=./screenshot.png  # Create with an attachment [Pro]
+ticketlens create --project=CNV1 --type="Epic" --summary="Checkout rework" --epic-name="Checkout"  # New epic with an Epic Name (Jira) [Pro]
+ticketlens update CNV1-7 --epic-name="Checkout"            # Name or fix an epic (Jira only) [Pro]
 ticketlens worklog CNV1-2=1h30m                             # Preview a worklog — writes nothing (Jira only) [Pro]
 ticketlens worklog CNV1-2=1h30m CNV1-3=45m --confirm        # Log time on several tickets (Jira only) [Pro]
 ticketlens worklog --help                                  # Worklog help: options, limits, examples
@@ -1192,6 +1197,7 @@ Recently shipped:
 - **Console: Recall "select all N matching" bulk delete** — Gmail-style banner deletes every note matching your search/filters across all pages, not just the current one
 - **Recall Stop-hook fix** — the end-of-session Recall reminder no longer fires because of file writes; only real ticket writes (comment, transition, assign, update) arm it. Also hardened against malformed transcripts and a session-id path-collision bug found by adversarial testing. Pro+/Team accounts now get a silent pass instead of a hard block, since the autonomous background capture already covers them; free tier is unchanged
 - **Console: no repeat request on same-page menu clicks** — sidebar links, the header gear and Settings tabs skip the request when they point at the page you are on
+- **Epic Name** (`--epic-name`, `epicName` MCP) — epics created on company-managed Jira get a name, so children no longer show `unlabelled-KEY`; `update` fixes existing ones. Pro tier
 - **Parent** (`ticketlens parent`, `ticket_parent` MCP) — put up to 50 tickets under one epic on Jira or Linear, preview first. Pro tier
 - **Worklog** (`ticketlens worklog`, `ticket_worklog` MCP) — log time on Jira tickets, preview first. Pro tier
 - **Autonomous Recall capture** — TicketLens judges and saves a note after a session, no `note add` call, reusing your login. Pro+ tier

@@ -617,6 +617,7 @@ function buildTicketUpdateArgs(args) {
   if (args.title !== undefined) cmdArgs.push(`--title=${args.title}`);
   if (args.description !== undefined) cmdArgs.push(`--description=${args.description}`);
   if (args.priority !== undefined) cmdArgs.push(`--priority=${args.priority}`);
+  if (args.epicName !== undefined) cmdArgs.push(`--epic-name=${args.epicName}`);
   if (Array.isArray(args.addLabels) && args.addLabels.length > 0) cmdArgs.push(`--add-labels=${args.addLabels.join(',')}`);
   if (Array.isArray(args.removeLabels) && args.removeLabels.length > 0) cmdArgs.push(`--remove-labels=${args.removeLabels.join(',')}`);
   return cmdArgs;
@@ -651,6 +652,7 @@ function buildTicketCreateArgs(args) {
   if (args.type !== undefined) cmdArgs.push(`--type=${args.type}`);
   cmdArgs.push(`--summary=${args.summary}`);
   if (args.description !== undefined) cmdArgs.push(`--description=${args.description}`);
+  if (args.epicName !== undefined) cmdArgs.push(`--epic-name=${args.epicName}`);
   if (args.attachments?.length) cmdArgs.push(`--attach=${args.attachments.join(',')}`);
   if (args.profile !== undefined) cmdArgs.push(`--profile=${args.profile}`);
   return cmdArgs;

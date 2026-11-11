@@ -14,6 +14,8 @@ import { summarizeJiraErrors, parseRetryAfterSeconds } from './jira-worklog-clie
 
 const EPIC_LINK_SCHEMA = 'com.pyxis.greenhopper.jira:gh-epic-link';
 const EPIC_LINK_NAME = 'Epic Link';
+const EPIC_NAME_SCHEMA = 'com.pyxis.greenhopper.jira:gh-epic-label';
+const EPIC_NAME_NAME = 'Epic Name';
 
 function resolveRequest(opts) {
   const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
@@ -43,17 +45,35 @@ async function send(url, { method, body }, { headers, guard, timeoutMs }, failur
   throw err;
 }
 
+// A field id comes from the tracker and ends up as a key in a write body: only a real custom field id passes.
+const CUSTOM_FIELD_ID = /^customfield_\d+$/;
+const isCustomField = (f) => typeof f?.id === 'string' && CUSTOM_FIELD_ID.test(f.id);
+
+/** Finds a custom field by schema type first (survives a rename), then by exact display name. */
+function findFieldId(fields, schema, name) {
+  return (fields.find(f => isCustomField(f) && f.schema?.custom === schema) ?? fields.find(f => isCustomField(f) && f.name === name))?.id ?? null;
+}
+
 /**
- * Id of this instance's Epic Link custom field, or null when it has none.
- * Matched by schema type first (survives a renamed field), then by exact name.
+ * Ids of this instance's Epic Link and Epic Name custom fields, from one
+ * request. Either is null when the instance has none (team-managed Cloud has
+ * neither; company-managed Cloud and Server/DC have both).
+ * @returns {Promise<{ epicLinkFieldId: string|null, epicNameFieldId: string|null }>}
  */
-export async function fetchEpicLinkFieldId(opts = {}) {
+export async function fetchEpicFieldIds(opts = {}) {
   const req = resolveRequest(opts);
   const response = await send(`${req.baseUrl}/rest/api/${req.apiVersion}/field`, { method: 'GET' }, req, 'listing fields');
   const fields = await response.json();
-  if (!Array.isArray(fields)) return null;
-  const match = fields.find(f => f?.schema?.custom === EPIC_LINK_SCHEMA) ?? fields.find(f => f?.name === EPIC_LINK_NAME);
-  return match?.id ?? null;
+  if (!Array.isArray(fields)) return { epicLinkFieldId: null, epicNameFieldId: null };
+  return {
+    epicLinkFieldId: findFieldId(fields, EPIC_LINK_SCHEMA, EPIC_LINK_NAME),
+    epicNameFieldId: findFieldId(fields, EPIC_NAME_SCHEMA, EPIC_NAME_NAME),
+  };
+}
+
+/** Id of this instance's Epic Link custom field, or null when it has none. */
+export async function fetchEpicLinkFieldId(opts = {}) {
+  return (await fetchEpicFieldIds(opts)).epicLinkFieldId;
 }
 
 /**
@@ -63,8 +83,8 @@ export async function fetchEpicLinkFieldId(opts = {}) {
  */
 export async function fetchParentInfo(ticketKey, opts = {}) {
   const req = resolveRequest(opts);
-  const { epicLinkFieldId } = opts;
-  const fieldList = ['issuetype', 'parent', ...(req.apiVersion === 2 && epicLinkFieldId ? [epicLinkFieldId] : [])];
+  const { epicLinkFieldId, epicNameFieldId } = opts;
+  const fieldList = ['issuetype', 'parent', ...(req.apiVersion === 2 && epicLinkFieldId ? [epicLinkFieldId] : []), ...(epicNameFieldId ? [epicNameFieldId] : [])];
   const url = `${req.baseUrl}/rest/api/${req.apiVersion}/issue/${encodeURIComponent(ticketKey)}?fields=${encodeURIComponent(fieldList.join(','))}`;
   const response = await send(url, { method: 'GET' }, req, `fetching ${ticketKey}`);
   const raw = await response.json();
@@ -74,7 +94,10 @@ export async function fetchParentInfo(ticketKey, opts = {}) {
   const parentKey = req.apiVersion === 3
     ? (f.parent?.key ?? null)
     : (!isSubtask && epicLinkFieldId && typeof f[epicLinkFieldId] === 'string' ? f[epicLinkFieldId] : null);
-  return { key: raw.key ?? ticketKey, type: f.issuetype?.name ?? null, isSubtask, parentKey };
+  // epicName is present only when this issue carries the field: null means it is there but empty,
+  // while a key that is absent (a team-managed epic, a Story) means the issue has no Epic Name at all.
+  const hasEpicName = Boolean(epicNameFieldId) && epicNameFieldId in f;
+  return { key: raw.key ?? ticketKey, type: f.issuetype?.name ?? null, isSubtask, parentKey, ...(hasEpicName ? { epicName: f[epicNameFieldId] ?? null } : {}) };
 }
 
 /** Sets `childKey`'s parent (Cloud) or Epic Link (Server/DC) to `parentKey`. */

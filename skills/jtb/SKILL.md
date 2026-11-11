@@ -1,4 +1,4 @@
-<!-- jtb-skill-version: 0.50.0 -->
+<!-- jtb-skill-version: 0.50.1 -->
 ---
 name: jtb
 description: Fetch a Jira ticket's full context (description, comments, linked issues, code references) and assemble a structured TicketBrief for implementation planning. Use when user types /jtb, mentions a Jira ticket key, or wants to plan work from a Jira ticket.
@@ -451,6 +451,8 @@ ticketlens link PROD-1234 PROD-5678 --type="Duplicate" --confirm  # execute the 
 ticketlens update PROD-1234 --title="Fix login on mobile"     # update title/description/labels/priority
 ticketlens update PROD-1234 --add-labels=urgent --remove-labels=stale
 ticketlens create --project=PROD --type="Task" --summary="Fix login on mobile"  # create a new ticket
+ticketlens create --project=PROD --type="Epic" --summary="Checkout rework" --epic-name="Checkout"  # new epic with an Epic Name (Jira)
+ticketlens update PROD-7 --epic-name="Checkout"                # name or fix an epic (Jira only)
 ticketlens worklog PROD-1234=1h30m                             # preview what would be logged — writes nothing
 ticketlens worklog PROD-1234=1h30m PROD-5678=45m --comment="Sprint work" --confirm  # log time on several tickets (Jira only)
 ticketlens parent PROD-1 PROD-2 PROD-3                         # preview — writes nothing
@@ -465,9 +467,9 @@ ticketlens parent PROD-1 PROD-2 PROD-3 --confirm               # put several tic
 
 `link SOURCE-KEY TARGET-KEY` links two tickets — direction matters: SOURCE "types" TARGET (e.g. `link A B --type=Duplicate` means A duplicates B, not the other way around). Called with just the two keys, it lists the tracker's current valid link types without changing anything — never guess `--type`; always list first, then use one of the names shown. GitHub has no generic link relationship, so linking on a GitHub-tracked ticket *closes SOURCE as a duplicate of TARGET* — a real state change, not just a relationship add — and prints an explicit warning immediately before that happens, on top of the same `--confirm` gate. On Jira, success prints `Stored link:` as Jira saved it — read it to confirm direction.
 
-`update TICKET-KEY` updates a narrow, named field set — title, description, labels, priority. At least one field is required. Labels are always add/remove (`--add-labels=a,b` / `--remove-labels=c`), never a wholesale replace — an unnamed existing label is left alone, never silently dropped. No `--confirm` needed — these are reversible metadata edits, same risk tier as self-assign.
+`update TICKET-KEY` updates a narrow, named field set — title, description, labels, priority. At least one field is required. Labels are always add/remove (`--add-labels=a,b` / `--remove-labels=c`), never a wholesale replace — an unnamed existing label is left alone, never silently dropped. No `--confirm` needed — these are reversible metadata edits, same risk tier as self-assign. `--epic-name=` (Jira only) sets or fixes an epic's Epic Name; without one Jira shows its children as `unlabelled-KEY`. Company-managed and Server/DC projects only; team-managed ones report it as not supported. The MCP tool takes `epicName`.
 
-`create` makes a brand-new ticket — there's no existing ticket to target, so `--project` (Jira project key / Linear team key) and `--type` (Jira issue type, ignored elsewhere) pick the destination instead of a ticket key. This is the highest-blast-radius command in the family: a bad `--project`/`--type` fabricates a real, hard-to-walk-back item in a live tracker. No `--confirm` gate — double-check the values with the user before calling it, since an invalid value surfaces the tracker's own error rather than a silent guess.
+`create` makes a brand-new ticket — there's no existing ticket to target, so `--project` (Jira project key / Linear team key) and `--type` (Jira issue type, ignored elsewhere) pick the destination instead of a ticket key. This is the highest-blast-radius command in the family: a bad `--project`/`--type` fabricates a real, hard-to-walk-back item in a live tracker. No `--confirm` gate — double-check the values with the user before calling it, since an invalid value surfaces the tracker's own error rather than a silent guess. On Jira, `--epic-name` names a new epic; it defaults to the summary (cut to 255 characters) when `--type` is `Epic` and the project has the field. Pass it for a localized type name. The MCP tool takes `epicName`.
 
 `worklog KEY=DURATION [KEY=DURATION ...]` logs time on one or several tickets.
 - `worklog` is Jira only; GitHub and Linear have no worklog API and are refused.
@@ -503,6 +505,7 @@ ticketlens parent PROD-1 PROD-2 PROD-3 --confirm               # put several tic
 - Jira Server/DC sets the Epic Link field; Cloud sets `parent`.
 - The epic's own connection is used for every child; `--profile` overrides.
 - Jira's own refusal text is shown per ticket; read it before retrying.
+- A Jira epic with no Epic Name labels its children "unlabelled-KEY"; `parent` warns.
 
 `--attach=path1,path2` (comma-separated local file paths) is available on `comment`, `create`, and `note add`/`note patch`, up to 50 files per call (Pro, Team, Enterprise). Images render as an inline thumbnail on Jira and Linear; GitHub has no attachment upload API, so `--attach` is unsupported there.
 

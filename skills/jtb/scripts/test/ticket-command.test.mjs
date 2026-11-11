@@ -2571,3 +2571,121 @@ describe('runTicketDuplicates — external text cannot forge a line or inject es
     }
   }
 });
+
+describe('runTicketCreate — --epic-name', () => {
+  const run = (args, adapterOverrides = {}, depOverrides = {}) => {
+    const seen = {};
+    const deps = baseDeps({
+      resolveAdapterFn: () => fakeAdapter({ createTicket: async (fields) => { seen.fields = fields; return adapterOverrides.result ?? { key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99' }; }, ...adapterOverrides.adapter }),
+      ...depOverrides,
+    });
+    return runTicketCreate(args, deps).then((result) => ({ result, seen, text: deps.stream.lines.join('') }));
+  };
+
+  test('passes the name to createTicket', async () => {
+    const { result, seen } = await run(['--project=PROJ', '--type=Epic', '--summary=Checkout rework', '--epic-name=Checkout']);
+    assert.equal(result.ok, true);
+    assert.equal(seen.fields.epicName, 'Checkout');
+  });
+
+  test('without the flag createTicket gets no epicName key at all', async () => {
+    const { seen } = await run(['--project=PROJ', '--type=Epic', '--summary=Checkout rework']);
+    assert.equal('epicName' in seen.fields, false);
+  });
+
+  for (const blank of ['', '   ']) {
+    test(`a blank value (${JSON.stringify(blank)}) is refused and nothing is created`, async () => {
+      let created = false;
+      const { result, text } = await run(['--project=PROJ', '--type=Epic', '--summary=x', `--epic-name=${blank}`], { adapter: { createTicket: async () => { created = true; return { key: 'PROJ-1' }; } } });
+      assert.equal(result.ok, false);
+      assert.equal(created, false);
+      assert.match(text, /--epic-name needs a value/);
+    });
+  }
+
+  test('a tracker without epics notes that the flag is ignored, and does not pass it on', async () => {
+    const { result, seen, text } = await run(['--project=ENG', '--summary=x', '--epic-name=Checkout'], { adapter: { type: 'linear' } });
+    assert.equal(result.ok, true);
+    assert.equal('epicName' in seen.fields, false);
+    assert.match(text, /--epic-name is ignored by linear/);
+  });
+
+  test('when Jira had no Epic Name field the ticket is still created, with a note', async () => {
+    const { result, text } = await run(['--project=PROJ', '--type=Epic', '--summary=x', '--epic-name=Checkout'], { result: { key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99', epicNameSet: false } });
+    assert.equal(result.ok, true);
+    assert.equal(result.key, 'PROJ-99');
+    assert.match(text, /would not accept an Epic Name here.*--epic-name was ignored/i);
+  });
+
+  test('no note when the name was applied', async () => {
+    const { text } = await run(['--project=PROJ', '--type=Epic', '--summary=x', '--epic-name=Checkout'], { result: { key: 'PROJ-99', id: '99', url: 'https://example/PROJ-99', epicNameSet: true } });
+    assert.doesNotMatch(text, /Epic Name field/);
+  });
+
+  test('the usage line names the flag', async () => {
+    const { text } = await run(['--project=PROJ']);
+    assert.match(text, /--epic-name/);
+  });
+});
+
+describe('runTicketUpdate — --epic-name', () => {
+  const run = (args, adapterOverrides = {}, depOverrides = {}) => {
+    const seen = { released: false };
+    const deps = baseDeps({
+      releaseActionFn: () => { seen.released = true; },
+      resolveAdapterFn: () => fakeAdapter({ updateFields: async (key, fields) => { seen.fields = fields; return { applied: { epicName: 'Checkout' }, errors: {} }; }, ...adapterOverrides }),
+      ...depOverrides,
+    });
+    return runTicketUpdate(args, deps).then((result) => ({ result, seen, text: deps.stream.lines.join('') }));
+  };
+
+  test('--epic-name alone is a valid update and reaches updateFields', async () => {
+    const { result, seen, text } = await run(['PROJ-1', '--epic-name=Checkout']);
+    assert.equal(result.ok, true);
+    assert.equal(seen.fields.epicName, 'Checkout');
+    assert.match(text, /updated: epicName=Checkout/);
+  });
+
+  test('without the flag updateFields gets exactly the old field set', async () => {
+    const { seen } = await run(['PROJ-1', '--title=x']);
+    assert.deepEqual(Object.keys(seen.fields).sort(), ['addLabels', 'description', 'priority', 'removeLabels', 'title']);
+  });
+
+  for (const blank of ['', '   ']) {
+    test(`a blank value (${JSON.stringify(blank)}) is refused before any claim or write`, async () => {
+      let claimed = false, wrote = false;
+      const { result, text } = await run(['PROJ-1', `--epic-name=${blank}`], { updateFields: async () => { wrote = true; return { applied: {}, errors: {} }; } }, { claimActionFn: () => { claimed = true; return { claimed: true, remainingMs: 0 }; } });
+      assert.equal(result.ok, false);
+      assert.equal(claimed, false);
+      assert.equal(wrote, false);
+      assert.match(text, /--epic-name needs a value/);
+    });
+  }
+
+  for (const type of ['github', 'linear']) {
+    test(`${type} is refused up front, nothing is sent and the claim is released`, async () => {
+      let wrote = false;
+      const { result, seen, text } = await run(['PROJ-1', '--epic-name=Checkout'], { type, updateFields: async () => { wrote = true; return { applied: {}, errors: {} }; } });
+      assert.equal(result.ok, false);
+      assert.equal(wrote, false);
+      assert.equal(seen.released, true);
+      assert.match(text, new RegExp(`--epic-name is only supported on Jira.*${type}`, 'i'));
+    });
+  }
+
+  test('a Jira project without the field reports it as a field error', async () => {
+    const { result, text } = await run(['PROJ-1', '--epic-name=Checkout'], { updateFields: async () => ({ applied: {}, errors: { epicName: { reason: 'not-supported' } } }) });
+    assert.equal(result.ok, false);
+    assert.match(text, /epicName \(Jira would not accept it here/);
+  });
+
+  test('an empty-name rejection from the adapter reads clearly', async () => {
+    const { text } = await run(['PROJ-1', '--epic-name=Checkout'], { updateFields: async () => ({ applied: {}, errors: { epicName: { reason: 'empty' } } }) });
+    assert.match(text, /epicName \(must not be empty\)/);
+  });
+
+  test('the usage line names the flag', async () => {
+    const { text } = await run(['PROJ-1']);
+    assert.match(text, /--epic-name/);
+  });
+});

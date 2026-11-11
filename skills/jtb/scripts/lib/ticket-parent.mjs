@@ -85,17 +85,17 @@ async function mapLimit(items, limit, fn) {
   return results;
 }
 
-async function readInfo(adapter, key) {
+async function readInfo(adapter, key, opts) {
   try {
-    return { key, info: await adapter.getParentInfo(key) };
+    return { key, info: await adapter.getParentInfo(key, opts) };
   } catch (err) {
     return { key, error: safe(err?.message) };
   }
 }
 
-/** @returns {{ epic: string, infos: Map<string, object> } | null} the epic's canonical key and per-child info, or null after writing every problem */
+/** @returns {{ epic: string, epicInfo: object, infos: Map<string, object> } | null} the epic's canonical key and info plus per-child info, or null after writing every problem */
 async function readAll(adapter, epic, children, stream) {
-  const reads = await mapLimit([epic, ...children], READ_CONCURRENCY, (key) => readInfo(adapter, key));
+  const reads = await mapLimit([epic, ...children], READ_CONCURRENCY, (key) => readInfo(adapter, key, key === epic ? { withEpicName: true } : undefined));
   const [epicRead, ...childReads] = reads;
   const problems = [];
   if (epicRead.error) problems.push(`Epic ${epic} could not be read: ${epicRead.error}.`);
@@ -111,7 +111,17 @@ async function readAll(adapter, epic, children, stream) {
   // A moved or renamed epic comes back under its new key; children report that key as their parent.
   // The key is tracker text: only a well-formed one replaces what the user typed.
   const canonical = TICKET_KEY_PATTERN.test(epicRead.info.key) ? epicRead.info.key : epic;
-  return { epic: canonical, infos: new Map(childReads.map(read => [read.key, read.info])) };
+  return { epic: canonical, epicInfo: epicRead.info, infos: new Map(childReads.map(read => [read.key, read.info])) };
+}
+
+/**
+ * Jira shows the children of an epic with no Epic Name as "unlabelled-KEY". Only
+ * an epic whose tracker reported an empty name field is flagged: no field, no warning.
+ */
+function warnIfEpicUnnamed(epic, epicInfo, { stream, cliHints }) {
+  if (!('epicName' in epicInfo) || String(epicInfo.epicName ?? '').trim()) return;
+  const fix = cliHints ? `ticketlens update ${epic} --epic-name="..."` : `ticket_update with epicName on ${epic}`;
+  stream.write(`  Warning: epic ${epic} has no Epic Name, so Jira shows its children as "unlabelled-${epic}". Fix: ${fix}\n`);
 }
 
 function writePreview(epic, children, infos, { stream, cliHints }) {
@@ -262,7 +272,8 @@ export async function runTicketParentChildren(epicKey, childKeys, {
 
   const read = await readAll(adapter, epic, children, stream);
   if (!read) return refused();
-  const { infos, epic: target } = read;
+  const { infos, epic: target, epicInfo } = read;
+  warnIfEpicUnnamed(target, epicInfo, { stream, cliHints });
 
   const alreadyUnder = children.filter(key => infos.get(key).parentKey === target);
   const pending = children.filter(key => !alreadyUnder.includes(key));

@@ -1,6 +1,6 @@
 import { fetchTicket, fetchCurrentUser, searchTickets, fetchStatuses, fetchProjects, fetchIssueTypes, fetchProjectPriorities, postComment, getTransitions, postTransition, assignIssue, fetchAssignableUsers, escapeJql, getIssueLinkTypes, postIssueLink, updateIssue, createIssue, DEFAULT_SEARCH_FIELDS } from '../jira-client.mjs';
 import { postWorklog } from '../jira-worklog-client.mjs';
-import { fetchEpicLinkFieldId, fetchParentInfo, setIssueParent } from '../jira-parent-client.mjs';
+import { fetchEpicFieldIds, fetchParentInfo, setIssueParent } from '../jira-parent-client.mjs';
 import { uploadAttachment, resolveMediaId } from '../jira-attachment-client.mjs';
 import { readAttachments } from '../attachment-uploader.mjs';
 import { buildMediaNode } from '../adf-converter.mjs';
@@ -21,6 +21,20 @@ import { relationText } from '../ticket-brief-fields.mjs';
 const CANDIDATE_TERM_LIMIT = 8;
 const CANDIDATE_SEARCH_FIELDS = `${DEFAULT_SEARCH_FIELDS},description`;
 
+// Jira's Epic Name field is single-line text capped at 255 characters.
+const EPIC_NAME_MAX_CHARS = 255;
+// Jira's 400 for a field the project does not have (team-managed project on a site that also has
+// company-managed ones) names that field in `errors`. Nothing was written, so retrying without it is safe.
+const rejectsField = (err, fieldId) => err?.status === 400 && Object.hasOwn(err.details?.errors ?? {}, fieldId);
+const cleanEpicName = (text) => [...String(text ?? '')
+  .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+  .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, '') // zero-width and bidi controls can spoof what a name says
+  .replace(/\s+/g, ' ')
+  .trim()]
+  .slice(0, EPIC_NAME_MAX_CHARS) // by code point, so an emoji is never cut in half
+  .join('')
+  .trim();
+
 function resolveTransitionTarget(options, target) {
   const t = String(target).toLowerCase();
   return options.find(o => o.id === String(target) || o.name.toLowerCase() === t || (o.to ?? '').toLowerCase() === t);
@@ -35,13 +49,26 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
   const apiVersion = conn.auth === 'cloud' ? 3 : 2;
   const base = { env, fetcher, apiVersion, allowPrivateIp: conn.allowPrivateIp };
 
-  // Server/DC only: the instance's Epic Link field id, looked up once per adapter.
+  // The instance's Epic Link and Epic Name field ids, looked up at most once per adapter.
   // A failed lookup is not remembered, so a retry can succeed.
-  let epicLinkFieldLookup;
-  const epicLinkFieldId = (opts) => {
-    if (apiVersion === 3) return Promise.resolve(null);
-    epicLinkFieldLookup ??= fetchEpicLinkFieldId({ ...base, ...opts }).catch((err) => { epicLinkFieldLookup = undefined; throw err; });
-    return epicLinkFieldLookup;
+  let epicFieldsLookup;
+  const epicFields = (opts) => {
+    epicFieldsLookup ??= fetchEpicFieldIds({ ...base, ...opts }).catch((err) => { epicFieldsLookup = undefined; throw err; });
+    return epicFieldsLookup;
+  };
+  // Server/DC only: Cloud sets the parent through its own `parent` field.
+  const epicLinkFieldId = async (opts) => (apiVersion === 3 ? null : (await epicFields(opts)).epicLinkFieldId);
+  // For reads: a failed lookup means "no Epic Name", never a failed read.
+  const epicNameFieldIdOrNull = async (opts) => {
+    try { return (await epicFields(opts)).epicNameFieldId; } catch { return null; }
+  };
+  // For a create: only a definite "you cannot see the fields" (403/404) goes ahead without the name.
+  // A timeout, 429, 5xx or 401 throws before anything is written, so a retry cannot leave a nameless epic.
+  const epicNameFieldIdForCreate = async (opts) => {
+    try { return (await epicFields(opts)).epicNameFieldId; } catch (err) {
+      if (err?.status === 403 || err?.status === 404) return null;
+      throw err;
+    }
   };
 
   return {
@@ -220,7 +247,9 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
 
     /** Type, sub-task flag and current parent/epic of one issue — read-only. */
     async getParentInfo(key, opts = {}) {
-      return fetchParentInfo(key, { ...base, ...opts, epicLinkFieldId: await epicLinkFieldId(opts) });
+      // Only the epic itself is read for its name (`withEpicName`): children never pay for the lookup.
+      const epicNameFieldId = opts.withEpicName ? await epicNameFieldIdOrNull(opts) : undefined;
+      return fetchParentInfo(key, { ...base, ...opts, epicLinkFieldId: await epicLinkFieldId(opts), epicNameFieldId });
     },
 
     /**
@@ -245,15 +274,38 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
      * an invalid name surfaces Jira's own 400 with details, same design
      * choice already made for ticket_create's issuetype field.
      */
-    async updateFields(key, { title, description, priority, addLabels, removeLabels } = {}, opts = {}) {
-      await updateIssue(key, { summary: title, description, priority, addLabels, removeLabels }, { ...base, ...opts });
+    async updateFields(key, { title, description, priority, addLabels, removeLabels, epicName } = {}, opts = {}) {
       const applied = {};
+      const errors = {};
+      let extraFields;
+      if (epicName !== undefined) {
+        // Not best-effort: the caller asked for this field, so a failed lookup must surface.
+        const id = (await epicFields(opts)).epicNameFieldId;
+        const name = cleanEpicName(epicName);
+        if (!id) errors.epicName = { reason: 'not-supported' };
+        else if (!name) errors.epicName = { reason: 'empty' };
+        else extraFields = { [id]: name };
+      }
+      const hasNamedFields = title !== undefined || description !== undefined || priority !== undefined || addLabels?.length || removeLabels?.length;
+      if (epicName !== undefined && !extraFields && !hasNamedFields) return { applied, errors };
+
+      const write = (fields) => updateIssue(key, { summary: title, description, priority, addLabels, removeLabels, extraFields: fields }, { ...base, ...opts });
+      try {
+        await write(extraFields);
+      } catch (err) {
+        if (!extraFields || !rejectsField(err, Object.keys(extraFields)[0])) throw err;
+        extraFields = undefined;
+        errors.epicName = { reason: 'not-supported' };
+        if (hasNamedFields) await write(undefined);
+        else return { applied, errors };
+      }
       if (title !== undefined) applied.title = true;
       if (description !== undefined) applied.description = true;
       if (priority !== undefined) applied.priority = priority;
       if (addLabels?.length) applied.addLabels = addLabels;
       if (removeLabels?.length) applied.removeLabels = removeLabels;
-      return { applied, errors: {} };
+      if (extraFields) applied.epicName = Object.values(extraFields)[0];
+      return { applied, errors };
     },
 
     /**
@@ -261,8 +313,27 @@ export function createJiraAdapter(conn, { fetcher = globalThis.fetch } = {}) {
      * client-side, same design choice already made for updateFields'
      * priority field. An invalid issuetype surfaces Jira's own 400.
      */
-    createTicket: ({ project, type, summary, description } = {}, opts = {}) =>
-      createIssue({ project, type, summary, description }, { ...base, ...opts }),
+    async createTicket({ project, type, summary, description, epicName } = {}, opts = {}) {
+      // Company-managed Jira keeps the epic's name in its own required-by-the-UI field; without it
+      // Jira shows the epic's children as "unlabelled-KEY". Only an Epic (or an explicit
+      // epicName, for localized type names) pays for the field lookup.
+      const wantsEpicName = epicName !== undefined || /^epic$/i.test(type ?? '');
+      const fieldId = wantsEpicName ? await epicNameFieldIdForCreate(opts) : null;
+      const name = fieldId ? (cleanEpicName(epicName) || cleanEpicName(summary)) : '';
+      const extraFields = name ? { [fieldId]: name } : undefined;
+      const create = (fields) => createIssue({ project, type, summary, description, extraFields: fields }, { ...base, ...opts });
+      let created;
+      let nameSent = Boolean(extraFields);
+      try {
+        created = await create(extraFields);
+      } catch (err) {
+        if (!extraFields || !rejectsField(err, fieldId)) throw err;
+        created = await create(undefined);
+        nameSent = false;
+      }
+      if (nameSent) return { ...created, epicNameSet: true };
+      return epicName !== undefined ? { ...created, epicNameSet: false } : created;
+    },
 
     /**
      * Real, currently-creatable projects for this token — used to enrich a

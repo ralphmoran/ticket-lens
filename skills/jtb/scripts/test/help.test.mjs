@@ -624,6 +624,41 @@ describe('printHelp — parent', () => {
   });
 });
 
+describe('help — Epic Name', () => {
+  it('printUpdateHelp documents --epic-name as Jira-only and why it matters', () => {
+    const out = captureHelp(printUpdateHelp);
+    assert.match(out, /--epic-name/);
+    assert.match(out, /Epic Name/);
+    assert.match(out, /unlabelled/);
+    assert.match(out, /Jira/);
+  });
+
+  it('printCreateHelp documents --epic-name, its summary default, and localized type names', () => {
+    const out = captureHelp(printCreateHelp);
+    assert.match(out, /--epic-name/);
+    assert.match(out, /defaults to the summary/i);
+    assert.match(out, /localized/i);
+  });
+
+  it('printParentHelp mentions the warning for an epic with no name and the fix', () => {
+    const out = captureHelp(printParentHelp);
+    assert.match(out, /unlabelled/);
+    assert.match(out, /--epic-name/);
+  });
+
+  it('the USAGE one-liners for create and update show --epic-name', () => {
+    const out = captureHelp(printHelp);
+    const create = out.split('\n').find(l => l.includes('ticketlens') && l.includes('create ') && l.includes('--summary'));
+    const update = out.split('\n').find(l => l.includes('ticketlens') && l.includes('update ') && l.includes('--title'));
+    assert.match(create, /--epic-name/);
+    assert.match(update, /--epic-name/);
+  });
+
+  it('printMcpHelp tells MCP callers about epicName', () => {
+    assert.match(captureHelp(printMcpHelp), /epicName/);
+  });
+});
+
 describe('printMcpHelp — ticket_parent', () => {
   it('lists ticket_parent among the tools and notes it is confirm-gated', () => {
     const out = captureHelp(printMcpHelp);

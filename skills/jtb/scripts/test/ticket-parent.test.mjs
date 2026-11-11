@@ -412,6 +412,59 @@ describe('runTicketParentChildren — tracker-supplied epic key', () => {
   }
 });
 
+describe('runTicketParentChildren — epic without a name', () => {
+  test('only the epic is read with its name; children and read-backs are not', async () => {
+    const asked = [];
+    const adapter = fakeAdapter();
+    const original = adapter.getParentInfo;
+    adapter.getParentInfo = async (key, opts) => { asked.push([key, Boolean(opts?.withEpicName)]); return original(key); };
+    await runTicketParentChildren(EPIC, CHILDREN, baseDeps({ adapter }));
+    assert.deepEqual(asked.filter(([, name]) => name).map(([key]) => key), [EPIC]);
+  });
+
+  for (const epicName of [null, '', '   ']) {
+    test(`an epic whose Epic Name is ${JSON.stringify(epicName)} gets a warning with the fix, and the call carries on`, async () => {
+      const adapter = fakeAdapter({ infos: { [EPIC]: { epicName } } });
+      const deps = baseDeps({ adapter });
+      const result = await runTicketParentChildren(EPIC, CHILDREN, deps);
+      assert.equal(result.ok, true);
+      assert.equal(adapter.calls.length, 2);
+      assert.match(deps.stream.text(), /Warning: epic PROJ-1 has no Epic Name.*unlabelled-PROJ-1/);
+      assert.match(deps.stream.text(), /ticketlens update PROJ-1 --epic-name=/);
+    });
+  }
+
+  test('MCP callers are pointed at ticket_update, not a shell command', async () => {
+    const deps = baseDeps({ adapter: fakeAdapter({ infos: { [EPIC]: { epicName: null } } }), cliHints: false });
+    await runTicketParentChildren(EPIC, CHILDREN, deps);
+    assert.match(deps.stream.text(), /ticket_update.*epicName/);
+    assert.doesNotMatch(deps.stream.text(), /ticketlens update/);
+  });
+
+  test('the warning shows in the preview too', async () => {
+    const deps = baseDeps({ adapter: fakeAdapter({ infos: { [EPIC]: { epicName: null } } }), confirm: false });
+    await runTicketParentChildren(EPIC, CHILDREN, deps);
+    assert.match(deps.stream.text(), /has no Epic Name/);
+    assert.match(deps.stream.text(), /Would set PROJ-1/);
+  });
+
+  test('and when there is nothing to change', async () => {
+    const adapter = fakeAdapter({ infos: { [EPIC]: { epicName: null }, 'PROJ-2': { parentKey: EPIC }, 'PROJ-3': { parentKey: EPIC } } });
+    const deps = baseDeps({ adapter });
+    await runTicketParentChildren(EPIC, CHILDREN, deps);
+    assert.match(deps.stream.text(), /has no Epic Name/);
+    assert.match(deps.stream.text(), /Nothing to change/);
+  });
+
+  for (const [label, info] of [['a named epic', { epicName: 'Checkout' }], ['a tracker with no Epic Name field', {}]]) {
+    test(`${label} gets no warning`, async () => {
+      const deps = baseDeps({ adapter: fakeAdapter({ infos: { [EPIC]: info } }) });
+      await runTicketParentChildren(EPIC, CHILDREN, deps);
+      assert.doesNotMatch(deps.stream.text(), /Epic Name/);
+    });
+  }
+});
+
 describe('runTicketParent — CLI argument parsing', () => {
   function capture(overrides = {}) {
     const seen = {};

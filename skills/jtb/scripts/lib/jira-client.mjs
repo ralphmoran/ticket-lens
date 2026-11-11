@@ -667,13 +667,14 @@ export async function fetchAssignableUsers(ticketKey, query, opts = {}) {
  * of them — never both — which callers naturally satisfy since labels only
  * ever go through `update`.
  */
-export async function updateIssue(ticketKey, { summary, description, priority, addLabels, removeLabels } = {}, opts = {}) {
+export async function updateIssue(ticketKey, { summary, description, priority, addLabels, removeLabels, extraFields } = {}, opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
   validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const url = `${baseUrl}/rest/api/${apiVersion}/issue/${encodeURIComponent(ticketKey)}`;
 
-  const fields = {};
+  // extraFields (custom fields such as Epic Name) go first so the named fields win a clash.
+  const fields = { ...customFieldsOnly(extraFields) };
   if (summary !== undefined) fields.summary = summary;
   if (description !== undefined) fields.description = apiVersion === 3 ? textToAdf(description) : description;
   if (priority !== undefined) fields.priority = { name: priority };
@@ -795,13 +796,19 @@ export async function fetchProjectPriorities(projectKey, issueTypeId, opts = {})
  * 400 with details, same design choice already made for updateIssue's
  * priority field. No separate discovery call, no client-side field list.
  */
-export async function createIssue({ project, type, summary, description } = {}, opts = {}) {
+// Custom fields only: a key that is not `customfield_N` can never reach the body, so no tracker-supplied
+// field id can overwrite a core field such as summary or assignee.
+const CUSTOM_FIELD_KEY = /^customfield_\d+$/;
+const customFieldsOnly = (extra) => Object.fromEntries(Object.entries(extra ?? {}).filter(([key]) => CUSTOM_FIELD_KEY.test(key)));
+
+export async function createIssue({ project, type, summary, description, extraFields } = {}, opts = {}) {
   const { env = process.env, fetcher = globalThis.fetch, lookup = defaultLookupFor(fetcher), apiVersion = 2, timeoutMs = 10_000, allowPrivateIp = false } = opts;
   validateBaseUrl(env.JIRA_BASE_URL, allowPrivateIp);
   const baseUrl = env.JIRA_BASE_URL.replace(/\/$/, '');
   const url = `${baseUrl}/rest/api/${apiVersion}/issue`;
 
-  const fields = { project: { key: project }, issuetype: { name: type }, summary };
+  // extraFields (custom fields such as Epic Name) go first so they can never override the core fields.
+  const fields = { ...customFieldsOnly(extraFields), project: { key: project }, issuetype: { name: type }, summary };
   if (description !== undefined) fields.description = apiVersion === 3 ? textToAdf(description) : description;
 
   const fetchOpts = {

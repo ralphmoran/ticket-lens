@@ -873,3 +873,277 @@ describe('createJiraAdapter — parent (epic) support', () => {
     await assert.doesNotReject(() => adapter.setParent('TEST-2', 'TEST-1', { lookup: privateLookup }));
   });
 });
+
+describe('createJiraAdapter — Epic Name', () => {
+  const CLOUD = { baseUrl: 'https://example.atlassian.net', auth: 'cloud', email: 'u@example.com', apiToken: 'tok' };
+  const EPIC_NAME = { id: 'customfield_10011', name: 'Epic Name', schema: { custom: 'com.pyxis.greenhopper.jira:gh-epic-label' } };
+  const EPIC_LINK = { id: 'customfield_10014', name: 'Epic Link', schema: { custom: 'com.pyxis.greenhopper.jira:gh-epic-link' } };
+
+  const NOT_ON_SCREEN = { errors: { customfield_10011: "Field 'customfield_10011' cannot be set. It is not on the appropriate screen, or unknown." } };
+
+  function tracker({ fields = [EPIC_LINK, EPIC_NAME], fieldStatus = 200, rejectEpicName = false, rejectBody = NOT_ON_SCREEN, issue = { key: 'TEST-5', fields: { issuetype: { name: 'Epic' }, customfield_10011: null } } } = {}) {
+    const calls = [];
+    const fetcher = async (url, opts = {}) => {
+      const method = opts.method ?? 'GET';
+      calls.push({ url, method, body: opts.body ? JSON.parse(opts.body) : undefined });
+      if (/\/field$/.test(url)) return { ok: fieldStatus === 200, status: fieldStatus, json: async () => fields };
+      const carriesName = opts.body && 'customfield_10011' in (JSON.parse(opts.body).fields ?? {});
+      if ((method === 'POST' || method === 'PUT') && rejectEpicName && carriesName) return { ok: false, status: 400, json: async () => rejectBody };
+      if (method === 'POST') return { ok: true, status: 201, json: async () => ({ key: 'TEST-9', id: '9' }) };
+      if (method === 'PUT') return { ok: true, status: 204 };
+      return { ok: true, status: 200, json: async () => issue };
+    };
+    return {
+      fetcher, calls,
+      posted: () => calls.filter(c => c.method === 'POST').at(-1)?.body,
+      put: () => calls.filter(c => c.method === 'PUT').at(-1)?.body,
+      writes: (method) => calls.filter(c => c.method === method).length,
+      lookups: () => calls.filter(c => /\/field$/.test(c.url)).length,
+    };
+  }
+
+  describe('createTicket', () => {
+    it('an Epic on an instance with an Epic Name field sends the summary as the Epic Name', async () => {
+      const t = tracker();
+      const result = await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Epic', summary: 'Checkout' });
+      assert.equal(t.posted().fields.customfield_10011, 'Checkout');
+      assert.equal(result.epicNameSet, true);
+      assert.equal(result.key, 'TEST-9');
+    });
+
+    it('company-managed Cloud (v3) works the same way', async () => {
+      const t = tracker();
+      await createJiraAdapter(CLOUD, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Epic', summary: 'Checkout' });
+      assert.equal(t.posted().fields.customfield_10011, 'Checkout');
+    });
+
+    it('matches the type "epic" in any letter case', async () => {
+      const t = tracker();
+      await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'EPIC', summary: 'Checkout' });
+      assert.equal(t.posted().fields.customfield_10011, 'Checkout');
+    });
+
+    it('an explicit epicName wins over the summary', async () => {
+      const t = tracker();
+      await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Epic', summary: 'Long descriptive title', epicName: 'Checkout' });
+      assert.equal(t.posted().fields.customfield_10011, 'Checkout');
+      assert.equal(t.posted().fields.summary, 'Long descriptive title');
+    });
+
+    it('an explicit epicName is sent for a type not named "Epic" (localized instances)', async () => {
+      const t = tracker();
+      await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Épica', summary: 'Paiement', epicName: 'Paiement' });
+      assert.equal(t.posted().fields.customfield_10011, 'Paiement');
+    });
+
+    it('a Task never triggers a field lookup, and its body and result are unchanged', async () => {
+      const t = tracker();
+      const result = await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Task', summary: 'Plain', description: 'Body' });
+      assert.equal(t.lookups(), 0);
+      assert.deepEqual(t.posted(), { fields: { project: { key: 'TEST' }, issuetype: { name: 'Task' }, summary: 'Plain', description: 'Body' } });
+      assert.equal('epicNameSet' in result, false);
+    });
+
+    it('an Epic on a team-managed site (no Epic Name field) is created exactly as before', async () => {
+      const t = tracker({ fields: [{ id: 'summary', name: 'Summary' }] });
+      const result = await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Epic', summary: 'Checkout' });
+      assert.deepEqual(t.posted(), { fields: { project: { key: 'TEST' }, issuetype: { name: 'Epic' }, summary: 'Checkout' } });
+      assert.equal('epicNameSet' in result, false);
+    });
+
+    it('an explicit epicName on a site with no Epic Name field reports epicNameSet false and sends nothing extra', async () => {
+      const t = tracker({ fields: [] });
+      const result = await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Epic', summary: 'Checkout', epicName: 'Checkout' });
+      assert.equal(result.epicNameSet, false);
+      assert.equal(Object.keys(t.posted().fields).includes('customfield_10011'), false);
+    });
+
+    it('the default name is the summary cut to 255 characters, on one line', async () => {
+      const t = tracker();
+      await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Epic', summary: `${'a'.repeat(300)}` });
+      assert.equal(t.posted().fields.customfield_10011.length, 255);
+      const t2 = tracker();
+      await createJiraAdapter(CONN, { fetcher: t2.fetcher }).createTicket({ project: 'TEST', type: 'Epic', summary: 'one\ntwo\u0007 three', epicName: ' spaced \t out\u001b[2J ' });
+      assert.equal(t2.posted().fields.customfield_10011, 'spaced out [2J');
+    });
+
+    it('strips bidi overrides and zero-width characters from the name', async () => {
+      const t = tracker();
+      await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Epic', summary: 'x', epicName: 'Safe\u202Egnp.exe\u200B\u2066x\u2069\uFEFF' });
+      assert.equal(t.posted().fields.customfield_10011, 'Safegnp.exex');
+    });
+
+    it('cuts at 255 characters without splitting an emoji in half', async () => {
+      const t = tracker();
+      await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Epic', summary: 'x', epicName: `${'a'.repeat(254)}😀😀` });
+      const sent = t.posted().fields.customfield_10011;
+      assert.equal([...sent].length, 255);
+      assert.equal(sent.endsWith('😀'), true);
+      assert.equal(/[\uD800-\uDBFF]$/.test(sent), false);
+    });
+
+    it('a blank explicit epicName falls back to the summary', async () => {
+      const t = tracker();
+      await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Epic', summary: 'Checkout', epicName: '   ' });
+      assert.equal(t.posted().fields.customfield_10011, 'Checkout');
+    });
+
+    for (const status of [429, 500, 502, 401]) {
+      it(`a field lookup that fails with ${status} stops the create before anything is written, so no nameless epic appears`, async () => {
+        const t = tracker({ fieldStatus: status });
+        await assert.rejects(() => createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Epic', summary: 'Checkout' }), (err) => err.status === status);
+        assert.equal(t.writes('POST'), 0);
+      });
+    }
+
+    it('a field lookup that times out (no status) also stops the create', async () => {
+      const calls = [];
+      const fetcher = async (url, opts = {}) => { calls.push(opts.method ?? 'GET'); throw Object.assign(new Error('timeout'), { name: 'TimeoutError' }); };
+      await assert.rejects(() => createJiraAdapter(CONN, { fetcher }).createTicket({ project: 'TEST', type: 'Epic', summary: 'x' }), /timeout/);
+      assert.equal(calls.includes('POST'), false);
+    });
+
+    it('a Task is never held up by a failing field lookup: it never looks', async () => {
+      const t = tracker({ fieldStatus: 500 });
+      const result = await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Task', summary: 'Plain' });
+      assert.equal(result.key, 'TEST-9');
+    });
+
+    it('a 403 on the field list (cannot see fields) goes ahead without a name, as before', async () => {
+      const t = tracker({ fieldStatus: 403 });
+      const result = await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Epic', summary: 'Checkout' });
+      assert.equal(result.key, 'TEST-9');
+      assert.deepEqual(Object.keys(t.posted().fields).sort(), ['issuetype', 'project', 'summary']);
+    });
+  });
+
+  describe('updateFields', () => {
+    it('epicName is written to the Epic Name field in the same PUT as the other fields', async () => {
+      const t = tracker();
+      const result = await createJiraAdapter(CONN, { fetcher: t.fetcher }).updateFields('TEST-5', { title: 'New title', epicName: 'Checkout' });
+      assert.deepEqual(t.put(), { fields: { customfield_10011: 'Checkout', summary: 'New title' } });
+      assert.deepEqual(result, { applied: { title: true, epicName: 'Checkout' }, errors: {} });
+    });
+
+    it('epicName alone is a valid update', async () => {
+      const t = tracker();
+      await createJiraAdapter(CLOUD, { fetcher: t.fetcher }).updateFields('TEST-5', { epicName: 'Checkout' });
+      assert.deepEqual(t.put(), { fields: { customfield_10011: 'Checkout' } });
+    });
+
+    it('epicName is cleaned like the create path: one line, at most 255 characters', async () => {
+      const t = tracker();
+      await createJiraAdapter(CONN, { fetcher: t.fetcher }).updateFields('TEST-5', { epicName: `${'b'.repeat(300)}` });
+      assert.equal(t.put().fields.customfield_10011.length, 255);
+    });
+
+    it('with no Epic Name field, epicName alone sends nothing and reports not-supported', async () => {
+      const t = tracker({ fields: [] });
+      const result = await createJiraAdapter(CONN, { fetcher: t.fetcher }).updateFields('TEST-5', { epicName: 'Checkout' });
+      assert.equal(t.put(), undefined);
+      assert.deepEqual(result, { applied: {}, errors: { epicName: { reason: 'not-supported' } } });
+    });
+
+    it('with no Epic Name field, the other fields still land and epicName is reported', async () => {
+      const t = tracker({ fields: [] });
+      const result = await createJiraAdapter(CONN, { fetcher: t.fetcher }).updateFields('TEST-5', { title: 'New title', epicName: 'Checkout' });
+      assert.deepEqual(t.put(), { fields: { summary: 'New title' } });
+      assert.deepEqual(result, { applied: { title: true }, errors: { epicName: { reason: 'not-supported' } } });
+    });
+
+    it('a failing field lookup is surfaced, never swallowed into "not supported"', async () => {
+      const t = tracker({ fieldStatus: 403 });
+      await assert.rejects(() => createJiraAdapter(CONN, { fetcher: t.fetcher }).updateFields('TEST-5', { epicName: 'Checkout' }), (err) => err.status === 403);
+    });
+
+    it('without epicName there is no field lookup and the request is unchanged', async () => {
+      const t = tracker();
+      await createJiraAdapter(CONN, { fetcher: t.fetcher }).updateFields('TEST-5', { title: 'Only this' });
+      assert.equal(t.lookups(), 0);
+      assert.deepEqual(t.put(), { fields: { summary: 'Only this' } });
+    });
+  });
+
+  describe('a site that has the field but a project that does not (mixed company-managed and team-managed)', () => {
+    it('create: Jira rejects the field, so the create is retried once without it and succeeds', async () => {
+      const t = tracker({ rejectEpicName: true });
+      const result = await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TM', type: 'Epic', summary: 'Checkout' });
+      assert.equal(t.writes('POST'), 2);
+      assert.deepEqual(Object.keys(t.posted().fields).sort(), ['issuetype', 'project', 'summary']);
+      assert.equal(result.key, 'TEST-9');
+      assert.equal('epicNameSet' in result, false);
+    });
+
+    it('create with an explicit epicName reports epicNameSet false after the retry', async () => {
+      const t = tracker({ rejectEpicName: true });
+      const result = await createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TM', type: 'Epic', summary: 'Checkout', epicName: 'Checkout' });
+      assert.equal(result.epicNameSet, false);
+    });
+
+    it('create: a 400 that does not mention the Epic Name field is not retried', async () => {
+      const t = tracker({ rejectEpicName: true, rejectBody: { errors: { issuetype: 'valid issue type is required' } } });
+      await assert.rejects(() => createJiraAdapter(CONN, { fetcher: t.fetcher }).createTicket({ project: 'TEST', type: 'Epic', summary: 'x' }), (err) => err.status === 400 && 'issuetype' in err.details.errors);
+      assert.equal(t.writes('POST'), 1);
+    });
+
+    it('update: Jira rejects the field, other fields are retried without it and epicName is reported', async () => {
+      const t = tracker({ rejectEpicName: true });
+      const result = await createJiraAdapter(CONN, { fetcher: t.fetcher }).updateFields('TM-5', { title: 'New title', epicName: 'Checkout' });
+      assert.equal(t.writes('PUT'), 2);
+      assert.deepEqual(t.put(), { fields: { summary: 'New title' } });
+      assert.deepEqual(result, { applied: { title: true }, errors: { epicName: { reason: 'not-supported' } } });
+    });
+
+    it('update: epicName alone is reported as not supported, with nothing retried', async () => {
+      const t = tracker({ rejectEpicName: true });
+      const result = await createJiraAdapter(CONN, { fetcher: t.fetcher }).updateFields('TM-5', { epicName: 'Checkout' });
+      assert.equal(t.writes('PUT'), 1);
+      assert.deepEqual(result, { applied: {}, errors: { epicName: { reason: 'not-supported' } } });
+    });
+
+    it('update: a 400 about another field is thrown untouched', async () => {
+      const t = tracker({ rejectEpicName: true, rejectBody: { errors: { priority: 'bad priority' } } });
+      await assert.rejects(() => createJiraAdapter(CONN, { fetcher: t.fetcher }).updateFields('TEST-5', { priority: 'Bogus', epicName: 'Checkout' }), (err) => err.status === 400 && 'priority' in err.details.errors);
+      assert.equal(t.writes('PUT'), 1);
+    });
+  });
+
+  describe('getParentInfo', () => {
+    it('returns the epic name, null when the field is empty', async () => {
+      const t = tracker();
+      assert.equal((await createJiraAdapter(CONN, { fetcher: t.fetcher }).getParentInfo('TEST-5', { withEpicName: true })).epicName, null);
+      const named = tracker({ issue: { key: 'TEST-5', fields: { issuetype: { name: 'Epic' }, customfield_10011: 'Checkout' } } });
+      assert.equal((await createJiraAdapter(CONN, { fetcher: named.fetcher }).getParentInfo('TEST-5', { withEpicName: true })).epicName, 'Checkout');
+    });
+
+    it('Cloud: a child read (no withEpicName) makes no field lookup at all', async () => {
+      const t = tracker({ issue: { key: 'TEST-5', fields: { issuetype: { name: 'Task' }, parent: { key: 'TEST-1' } } } });
+      const info = await createJiraAdapter(CLOUD, { fetcher: t.fetcher }).getParentInfo('TEST-5');
+      assert.equal(t.lookups(), 0);
+      assert.equal(info.parentKey, 'TEST-1');
+      assert.equal('epicName' in info, false);
+    });
+
+    it('a team-managed epic on a site that lists the field has no epicName key, so it is never called unnamed', async () => {
+      const t = tracker({ issue: { key: 'TM-1', fields: { issuetype: { name: 'Epic' } } } });
+      const info = await createJiraAdapter(CLOUD, { fetcher: t.fetcher }).getParentInfo('TM-1', { withEpicName: true });
+      assert.equal('epicName' in info, false);
+    });
+
+    it('Cloud: a failing field lookup leaves the read working, without an epicName', async () => {
+      const t = tracker({ fieldStatus: 403, issue: { key: 'TEST-5', fields: { issuetype: { name: 'Task' }, parent: { key: 'TEST-1' } } } });
+      const info = await createJiraAdapter(CLOUD, { fetcher: t.fetcher }).getParentInfo('TEST-5', { withEpicName: true });
+      assert.equal(info.parentKey, 'TEST-1');
+      assert.equal('epicName' in info, false);
+    });
+
+    it('the field ids are looked up once across create, update and read', async () => {
+      const t = tracker();
+      const adapter = createJiraAdapter(CONN, { fetcher: t.fetcher });
+      await adapter.getParentInfo('TEST-5', { withEpicName: true });
+      await adapter.createTicket({ project: 'TEST', type: 'Epic', summary: 'x' });
+      await adapter.updateFields('TEST-5', { epicName: 'y' });
+      assert.equal(t.lookups(), 1);
+    });
+  });
+});

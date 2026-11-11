@@ -197,6 +197,40 @@ describe('SKILL.md — write-back section documents parent', () => {
   });
 });
 
+describe('SKILL.md — write-back section documents Epic Name', () => {
+  it('shows --epic-name on both create and update in the example block', () => {
+    const section = writeBackSection();
+    assert.match(section, /ticketlens create [^\n]*--type="Epic"[^\n]*--epic-name=/);
+    assert.match(section, /ticketlens update [^\n]*--epic-name=/);
+  });
+
+  it('explains why it matters, that it is Jira-only, and that create defaults it to the summary', () => {
+    const section = writeBackSection();
+    assert.match(section, /unlabelled-/);
+    assert.match(section, /Epic Name[^\n]*Jira/i);
+    assert.match(section, /defaults to the summary/i);
+  });
+
+  it('names epicName for the MCP tools', () => {
+    assert.match(writeBackSection(), /`epicName`/);
+  });
+
+  it('the parent bullets mention the warning for an epic with no name, in 15 words or fewer', () => {
+    const section = writeBackSection();
+    const start = section.indexOf('`parent EPIC-KEY');
+    const block = section.slice(start).split('\n\n')[0];
+    const bullet = block.split('\n').find((l) => l.startsWith('- ') && /unlabelled/.test(l));
+    assert.ok(bullet, 'expected a parent bullet about unlabelled children');
+    assert.ok(bullet.slice(2).trim().split(/\s+/).length <= 15, bullet);
+  });
+
+  it('is bumped past 0.50.0 so update-skill propagates the Epic Name docs', () => {
+    const m = SKILL_MD.match(/jtb-skill-version:\s*([\d.]+)/);
+    assert.ok(m, 'expected a jtb-skill-version marker on line 1');
+    assert.notEqual(m[1], '0.50.0', 'marker must move past the pre-Epic-Name version');
+  });
+});
+
 function recallMcpToolSection() {
   const start = SKILL_MD.indexOf('Pick exactly one path per capture');
   assert.ok(start !== -1, 'expected the Recall MCP-tool-selection paragraph to still exist');

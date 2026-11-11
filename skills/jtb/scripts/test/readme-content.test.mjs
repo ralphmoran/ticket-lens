@@ -141,3 +141,17 @@ describe('README — parent is documented (backlog #70)', () => {
     assert.match(README.slice(start, end === -1 ? undefined : end), /\*\*Parent\*\*/);
   });
 });
+
+describe('README — Epic Name is documented', () => {
+  it('the write-back section shows --epic-name on create and update and explains the "unlabelled" symptom', () => {
+    const body = section(WRITE_BACK_HEADING);
+    assert.match(body, /ticketlens create [^\n]*--type="Epic"[^\n]*--epic-name=/);
+    assert.match(body, /ticketlens update [^\n]*--epic-name=/);
+    assert.match(body, /unlabelled-/);
+    assert.match(body, /Epic Name/);
+  });
+
+  it('the All Examples block lists the Epic create and the epic-name update', () => {
+    assert.ok((README.match(/--epic-name=/g) ?? []).length >= 4, 'expected --epic-name in the write-back and All Examples blocks');
+  });
+});

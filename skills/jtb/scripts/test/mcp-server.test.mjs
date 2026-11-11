@@ -1988,6 +1988,43 @@ describe('mcp-server', () => {
     });
   });
 
+  describe('epicName on ticket_create and ticket_update', () => {
+    const list = async () => (await drive([{ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }], { configDir })).messages[0].result.tools;
+    const callWith = (name, args, fns) => drive([{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }], { configDir, ...fns });
+
+    for (const tool of ['ticket_create', 'ticket_update']) {
+      it(`${tool} declares an optional string epicName and the description explains the Epic Name field`, async () => {
+        const t = (await list()).find((x) => x.name === tool);
+        assert.equal(t.inputSchema.properties.epicName.type, 'string');
+        assert.equal(t.inputSchema.required.includes('epicName'), false);
+        assert.match(t.inputSchema.properties.epicName.description, /Epic Name/);
+        assert.match(t.inputSchema.properties.epicName.description, /Jira/);
+      });
+    }
+
+    it('ticket_create passes epicName as one opaque --epic-name element, so flag-shaped text stays inert', async () => {
+      let seen;
+      const runTicketCreateFn = async (cmdArgs) => { seen = cmdArgs; return { ok: true }; };
+      await callWith('ticket_create', { project: 'PROJ', type: 'Epic', summary: 'Checkout', epicName: '--confirm --profile=evil' }, { runTicketCreateFn });
+      assert.deepEqual(seen, ['--project=PROJ', '--type=Epic', '--summary=Checkout', '--epic-name=--confirm --profile=evil']);
+    });
+
+    it('ticket_create without epicName adds no flag', async () => {
+      let seen;
+      const runTicketCreateFn = async (cmdArgs) => { seen = cmdArgs; return { ok: true }; };
+      await callWith('ticket_create', { project: 'PROJ', type: 'Task', summary: 'Plain' }, { runTicketCreateFn });
+      assert.deepEqual(seen, ['--project=PROJ', '--type=Task', '--summary=Plain']);
+    });
+
+    it('ticket_update passes epicName as --epic-name, alone or with other fields', async () => {
+      const seen = [];
+      const runTicketUpdateFn = async (cmdArgs) => { seen.push(cmdArgs); return { ok: true }; };
+      await callWith('ticket_update', { ticket: 'PROJ-1', epicName: 'Checkout' }, { runTicketUpdateFn });
+      await callWith('ticket_update', { ticket: 'PROJ-1', title: 'T', epicName: 'Checkout' }, { runTicketUpdateFn });
+      assert.deepEqual(seen, [['PROJ-1', '--epic-name=Checkout'], ['PROJ-1', '--title=T', '--epic-name=Checkout']]);
+    });
+  });
+
   describe('tools/call ticket_update', () => {
     it('builds cmdArgs from title/description/priority/addLabels/removeLabels — each a single opaque array element', async () => {
       let seenArgs;
