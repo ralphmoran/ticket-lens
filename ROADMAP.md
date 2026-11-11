@@ -313,6 +313,7 @@ Build only what paying customers or market demand requires.
 | 88 | Bug | **Escape raw ticket text in `pr review` and `handoff` (backlog #67)** | **Filed 2026-11-11, not started.** Found by the #62 adversarial check. `pr-review-assembler.mjs:144` prints `ticket.summary` raw after `#### `. `handoff-assembler.mjs:67-115` prints summary, description, comment authors and bodies raw into the AI prompt; a body can add a fake `--- Comments ---` marker. Proven 2026-11-10: 2 forged lines in review context, 4 in handoff input. Open: fix with #63's normalize-boundary cleaning, or per field with `singleLine` and `blockText`. | Small |
 | 89 | Bug | **Attachment download log prints raw filenames (backlog #68)** | **Filed 2026-11-11, not started.** `attachment-downloader.mjs:115` passes `a.filename` raw to `onProgress`, which writes to stderr. Proven 2026-11-10: a filename holding a newline and `## Recall` prints a real `## Recall` line. Other `onProgress` messages in the file need the same check. | Small |
 | 90 | Bug | **Remaining raw text: `pr` evidence and commit lines, pruner separator (backlog #69)** | **Filed 2026-11-11, not started.** `pr-assembler.mjs:63` prints compliance `evidence` raw and `:136` prints commit-message lines raw. `budget-pruner.mjs:84,238` split comment blocks on a blank line, `---`, blank line, so a body holding that string forges a block boundary and can make pruning drop real comments. Check what feeds `evidence` first. | Small |
+| 91 | Feature | **Bulk-set an epic (parent) on many tickets (backlog #70)** | **Filed 2026-11-11, not started.** User request. Today nothing sets a parent: `ticket_update` has no parent field and `ticket_link` writes link types only. Wanted: new command and MCP tool, `ticketlens parent EPIC-1 KEY-1 KEY-2 ...`, mirroring `ticket_link` (preview, then `--confirm`). Children are an explicit key list; no JQL. One write per child; report each result, keep going after a failure. Jira Cloud sets `parent`; Server/DC and company-managed projects use the Epic Link field, found by field lookup. Open: Linear `parentId`; tier; child cap; refuse sub-tasks and a child that already has that parent. | Medium |
 
 ---
 
@@ -419,8 +420,8 @@ Phase D:   Multi-tracker + Enterprise
 | **GATE** | | | | **50+ Pro, 10+ Teams?** |
 | C.0 | — | 13 | — | Console foundation ✅ complete (built in parallel with B.7) |
 | C | 7-9 | 28 | Months 6-10 | SaaS revenue, hosting costs begin — Iter. 8-9 largely built; Iter. 7 cloud sync pending validation gate |
-| D | 10-12 | 62 | Month 12+ | Enterprise + multi-tracker |
+| D | 10-12 | 63 | Month 12+ | Enterprise + multi-tracker |
 | Parked | — | 3 | — | — |
-| **Total** | | **155** | | |
+| **Total** | | **156** | | |
 
 Items count every table row, sub-items included. Recounted 2026-11-09.

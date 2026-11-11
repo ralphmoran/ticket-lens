@@ -580,3 +580,13 @@ On ship, sync `help.mjs` (3 places), SKILL.md, README, MCP help, `jtb-skill-vers
     - `pr-assembler.mjs:63` prints compliance `evidence` raw; `:136` prints commit-message lines raw.
     - `budget-pruner.mjs:84,238` split comment blocks on a blank line, `---`, blank line; a comment body holding it forges a boundary.
     - Impact: pruning can drop real comments. Check what feeds `evidence` first.
+
+70. **Bulk-set an epic (parent) on many tickets.** Filed 2026-11-11, ROADMAP 91.
+    - Origin: user request.
+    - Today: `ticket_update` has no parent field; `ticket_link` writes link types only.
+    - Wanted: new command and MCP tool, `ticketlens parent EPIC-1 KEY-1 KEY-2 ...`.
+    - Shape: mirrors `ticket_link`; preview first, writes only with `--confirm`.
+    - Children: an explicit key list; no JQL (decided 2026-11-11).
+    - One write per child; report each result and keep going after a failure.
+    - Jira Cloud sets `parent`; Server/DC and company-managed projects use the Epic Link field, found by field lookup.
+    - Open: Linear `parentId`; tier; child cap; refuse sub-tasks and a child that already has that parent.
