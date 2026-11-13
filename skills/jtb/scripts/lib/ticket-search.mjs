@@ -21,26 +21,40 @@ const USAGE = [
   '       ticketlens search --jql="project = PROJ AND text ~ \\"login\\" ORDER BY created DESC" [--profile=NAME]',
 ].join('\n');
 
+const LEADING_NOT_OPERATORS = /^[-!]+/;
+
+/** Jira reads a leading "-" or "!" in a text term as NOT; a backslash makes it a plain character. */
+function escapeTerm(term) {
+  return escapeJql(term).replace(LEADING_NOT_OPERATORS, run => [...run].map(c => `\\\\${c}`).join(''));
+}
+
 /** Terms are quoted and escaped; project keys are validated by the caller. */
 export function buildTermsJql(terms, projects = []) {
   const scope = projects.length ? `project in (${projects.map(p => `"${escapeJql(p)}"`).join(', ')}) AND ` : '';
-  const text = terms.map(t => `text ~ "${escapeJql(t)}"`).join(' AND ');
+  const text = terms.map(t => `text ~ "${escapeTerm(t)}"`).join(' AND ');
   return `${scope}${text} ORDER BY updated DESC`;
 }
 
 const KNOWN_FLAGS = ['jql', 'project', 'profile'];
 
-/** Accepts `--flag=value` and `--flag value`; any other dash argument is an error, never a term. */
+/**
+ * Accepts `--flag=value` and `--flag value`; any other dash argument is an error, never a term.
+ * A bare `--` ends option parsing: everything after it is a term, so `-- -test` searches "-test".
+ */
 function parseArgv(cmdArgs) {
   const flags = {};
   const terms = [];
   for (let i = 0; i < cmdArgs.length; i++) {
     const arg = cmdArgs[i];
+    if (arg === '--') { terms.push(...cmdArgs.slice(i + 1)); break; }
     if (!arg.startsWith('-')) { terms.push(arg); continue; }
     const match = /^--([a-z]+)(?:=([\s\S]*))?$/.exec(arg);
-    if (!match || !KNOWN_FLAGS.includes(match[1])) return { error: `Unknown option: ${singleLine(arg, 40)}. Try --help.` };
+    if (!match || !KNOWN_FLAGS.includes(match[1])) {
+      const shown = singleLine(arg, 40);
+      return { error: `Unknown option: ${shown}. Try --help, or to search for it: ticketlens search -- ${shown}` };
+    }
     if (match[2] !== undefined) flags[match[1]] = match[2];
-    else if (i + 1 < cmdArgs.length) flags[match[1]] = cmdArgs[++i];
+    else if (i + 1 < cmdArgs.length && cmdArgs[i + 1] !== '--') flags[match[1]] = cmdArgs[++i];
     else return { error: `Option --${match[1]} needs a value.` };
   }
   const projects = flags.project ? flags.project.split(',').map(p => p.trim()).filter(Boolean) : [];

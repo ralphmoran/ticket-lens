@@ -659,3 +659,35 @@ describe('bin/ticketlens.mjs', () => {
     });
   });
 });
+
+describe('bin/ticketlens.mjs search — "--" separator', () => {
+  const runSearch = (args) => {
+    const home = mkdtempSync(join(tmpdir(), 'tl-search-sep-'));
+    try {
+      const result = spawnSync('node', [binPath, 'search', ...args], {
+        encoding: 'utf8',
+        timeout: SPAWN_TIMEOUT_MS,
+        env: { ...process.env, HOME: home, CI: 'true' },
+      });
+      return result.stdout + result.stderr;
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  };
+
+  it('search --help prints the search help', () => {
+    assert.match(runSearch(['--help']), /Search Jira tickets\./);
+  });
+
+  it('a term "-h" after -- is searched, not treated as a help request', () => {
+    const out = runSearch(['--', '-h']);
+    assert.doesNotMatch(out, /Search Jira tickets\./);
+    assert.match(out, /No connection configured/);
+  });
+
+  it('a term "--help" after -- is searched, not treated as a help request', () => {
+    const out = runSearch(['xss', '--', '--help']);
+    assert.doesNotMatch(out, /Search Jira tickets\./);
+    assert.match(out, /No connection configured/);
+  });
+});

@@ -916,7 +916,9 @@ switch (command) {
   }
 
   case 'search': {
-    if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) { printSearchHelp(); break; }
+    // Past a bare `--` every token is a search term, so `search -- -h` looks for "-h".
+    const optionArgs = cmdArgs.includes('--') ? cmdArgs.slice(0, cmdArgs.indexOf('--')) : cmdArgs;
+    if (optionArgs.includes('--help') || optionArgs.includes('-h')) { printSearchHelp(); break; }
     const { runTicketSearch } = await import('../skills/jtb/scripts/lib/ticket-search.mjs');
     runTicketSearch(cmdArgs).then(({ ok }) => {
       if (!ok) process.exitCode = 1;

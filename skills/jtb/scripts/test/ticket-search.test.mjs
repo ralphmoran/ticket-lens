@@ -178,7 +178,7 @@ describe('runTicketSearchQuery — structured entry for MCP', () => {
   test('a term that looks like a flag stays a term', async () => {
     const { adapter, calls } = capturingAdapter();
     await runTicketSearchQuery({ terms: ['--jql=project = SECRET'] }, baseDeps({ adapter }));
-    assert.equal(calls[0].jql, 'text ~ "--jql=project = SECRET" ORDER BY updated DESC');
+    assert.equal(calls[0].jql, 'text ~ "\\\\-\\\\-jql=project = SECRET" ORDER BY updated DESC');
   });
 
   test('passes a jql string through untouched', async () => {
@@ -210,10 +210,139 @@ describe('runTicketSearch — argument parsing (review M1)', () => {
     assert.match(deps.stream.lines.join(''), /Unknown option/);
   });
 
+  test('refuses "--" as a flag value instead of swallowing the separator', async () => {
+    for (const args of [['--project', '--', 'x'], ['--jql', '--'], ['--profile', '--', 'x']]) {
+      const { adapter, calls } = capturingAdapter();
+      const deps = baseDeps({ adapter });
+      const result = await runTicketSearch(args, deps);
+      assert.equal(result.ok, false, args.join(' '));
+      assert.equal(calls.length, 0, args.join(' '));
+      assert.match(deps.stream.lines.join(''), /needs a value/, args.join(' '));
+    }
+  });
+
   test('rejects a flag that is missing its value', async () => {
     const deps = baseDeps();
     const result = await runTicketSearch(['xss', '--project'], deps);
     assert.equal(result.ok, false);
+  });
+});
+
+describe('runTicketSearch — wildcards and dash-leading terms (lock)', () => {
+  test('passes * and ? in a term to Jira untouched', async () => {
+    const { adapter, calls } = capturingAdapter();
+    await runTicketSearch(['log*', 'te?t'], baseDeps({ adapter }));
+    assert.equal(calls[0].jql, 'text ~ "log*" AND text ~ "te?t" ORDER BY updated DESC');
+  });
+
+  test('a bare dash-leading argument is an unknown option, never a term', async () => {
+    const { adapter, calls } = capturingAdapter();
+    const deps = baseDeps({ adapter });
+    const result = await runTicketSearch(['-test'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(calls.length, 0);
+    assert.match(deps.stream.lines.join(''), /Unknown option: -test/);
+  });
+});
+
+describe('runTicketSearch — leading NOT operators in a term', () => {
+  test('a dash inside a term is left alone (lock)', async () => {
+    const { adapter, calls } = capturingAdapter();
+    await runTicketSearch(['foo-bar'], baseDeps({ adapter }));
+    assert.equal(calls[0].jql, 'text ~ "foo-bar" ORDER BY updated DESC');
+  });
+
+  test('a leading dash is escaped so Jira searches the word, not NOT-word', async () => {
+    const { adapter, calls } = capturingAdapter();
+    await runTicketSearch(['--', '-test'], baseDeps({ adapter }));
+    assert.equal(calls[0].jql, 'text ~ "\\\\-test" ORDER BY updated DESC');
+  });
+
+  test('a leading ! is escaped the same way', async () => {
+    const { adapter, calls } = capturingAdapter();
+    await runTicketSearch(['!test'], baseDeps({ adapter }));
+    assert.equal(calls[0].jql, 'text ~ "\\\\!test" ORDER BY updated DESC');
+  });
+
+  test('every character of a leading run is escaped', async () => {
+    const { adapter, calls } = capturingAdapter();
+    await runTicketSearch(['--', '--test'], baseDeps({ adapter }));
+    assert.equal(calls[0].jql, 'text ~ "\\\\-\\\\-test" ORDER BY updated DESC');
+  });
+
+  test('the structured MCP entry escapes a leading dash too', async () => {
+    const { adapter, calls } = capturingAdapter();
+    await runTicketSearchQuery({ terms: ['-test'] }, baseDeps({ adapter }));
+    assert.equal(calls[0].jql, 'text ~ "\\\\-test" ORDER BY updated DESC');
+  });
+
+  test('a backslash after a leading dash is escaped in order', async () => {
+    const { adapter, calls } = capturingAdapter();
+    await runTicketSearch(['--', '-\\'], baseDeps({ adapter }));
+    assert.equal(calls[0].jql, 'text ~ "\\\\-\\\\" ORDER BY updated DESC');
+  });
+
+  test('a mixed leading run of ! and - is escaped character by character', async () => {
+    const { adapter, calls } = capturingAdapter();
+    await runTicketSearch(['--', '!-x'], baseDeps({ adapter }));
+    assert.equal(calls[0].jql, 'text ~ "\\\\!\\\\-x" ORDER BY updated DESC');
+  });
+
+  test('surrounding whitespace is trimmed so it cannot hide a leading dash', async () => {
+    const { adapter, calls } = capturingAdapter();
+    await runTicketSearch(['--', ' -test '], baseDeps({ adapter }));
+    assert.equal(calls[0].jql, 'text ~ "\\\\-test" ORDER BY updated DESC');
+  });
+
+  test('raw --jql is never rewritten', async () => {
+    const { adapter, calls } = capturingAdapter();
+    await runTicketSearch(['--jql=text ~ "-test"'], baseDeps({ adapter }));
+    assert.equal(calls[0].jql, 'text ~ "-test"');
+  });
+});
+
+describe('runTicketSearch — "--" ends option parsing', () => {
+  test('a dash-leading term after -- is searched as text', async () => {
+    const { adapter, calls } = capturingAdapter();
+    const result = await runTicketSearch(['--', '-test'], baseDeps({ adapter }));
+    assert.equal(result.ok, true);
+    assert.equal(calls[0].jql, 'text ~ "\\\\-test" ORDER BY updated DESC');
+  });
+
+  test('options before -- still apply and terms after it stay terms', async () => {
+    const { adapter, calls } = capturingAdapter();
+    await runTicketSearch(['--project=PROJ', '--', '-a', '--b'], baseDeps({ adapter }));
+    assert.equal(calls[0].jql, 'project in ("PROJ") AND text ~ "\\\\-a" AND text ~ "\\\\-\\\\-b" ORDER BY updated DESC');
+  });
+
+  test('a flag-looking token after -- stays a term and cannot inject --jql', async () => {
+    const { adapter, calls } = capturingAdapter();
+    await runTicketSearch(['xss', '--', '--jql=project = SECRET'], baseDeps({ adapter }));
+    assert.equal(calls[0].jql, 'text ~ "xss" AND text ~ "\\\\-\\\\-jql=project = SECRET" ORDER BY updated DESC');
+  });
+
+  test('-- with nothing after it prints usage and searches nothing', async () => {
+    const { adapter, calls } = capturingAdapter();
+    const deps = baseDeps({ adapter });
+    const result = await runTicketSearch(['--'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(calls.length, 0);
+    assert.match(deps.stream.lines.join(''), /Usage/);
+  });
+
+  test('--jql before -- still refuses plain terms after it', async () => {
+    const { adapter, calls } = capturingAdapter();
+    const deps = baseDeps({ adapter });
+    const result = await runTicketSearch([`--jql=${COMPLEX_JQL}`, '--', 'x'], deps);
+    assert.equal(result.ok, false);
+    assert.equal(calls.length, 0);
+    assert.match(deps.stream.lines.join(''), /either/i);
+  });
+
+  test('the unknown-option error tells the user how to search a dash-leading term', async () => {
+    const deps = baseDeps();
+    await runTicketSearch(['-test'], deps);
+    assert.match(deps.stream.lines.join(''), /ticketlens search -- -test/);
   });
 });
 

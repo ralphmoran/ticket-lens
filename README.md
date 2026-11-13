@@ -503,6 +503,7 @@ ticketlens assign PROJ-123 --to=me                           # Assign the ticket
 ticketlens duplicates PROJ-123                                # Find likely duplicates (read-only)
 ticketlens search xss --project=PROJ                           # Search Jira by terms (read-only, Free, Jira only)
 ticketlens search --jql='project = PROJ AND (text ~ "login" OR text ~ "timeout") ORDER BY created DESC'  # Your own JQL, run as written
+ticketlens search 'log*' -- -test                              # Wildcards; "--" lets a term start with a dash
 ticketlens link PROJ-123 PROJ-456                             # List valid link types (read-only)
 ticketlens link PROJ-123 PROJ-456 --type="Duplicate" --confirm  # Execute the link
 ticketlens update PROJ-123 --title="Fix login on mobile"       # Update title/description/labels/priority
@@ -555,7 +556,7 @@ Write directly to the ticket in its real tracker — Jira, GitHub, or Linear —
 
 `ticketlens duplicates` is read-only — it never links or changes anything, just lists likely matches in the same project. No tracker (Jira/GitHub/Linear) scores similarity server-side, so ranking happens locally from title/description word overlap; treat a match as a nudge to check manually, not a verdict. That local scoring can also miss a real duplicate — an empty result means none were found by this heuristic, not a confirmed absence. `--threshold=N` (0–1, default 0.35) controls how loose a match counts.
 
-`ticketlens search` finds Jira tickets by topic. It is read-only, Free, and Jira only. Plain terms must all match; `--project=KEY[,KEY]` limits them. `--jql="..."` sends your own JQL to Jira exactly as written — nested OR/AND groups and `ORDER BY` included — and cannot be combined with terms or `--project`. It shows at most 25 tickets and says when more match; a query Jira rejects shows Jira's own error. One Jira site per call: `--profile=NAME` picks it. The `ticket_search` MCP tool takes `jql`, or `terms` plus optional `projects`.
+`ticketlens search` finds Jira tickets by topic. It is read-only, Free, and Jira only. Plain terms must all match; `--project=KEY[,KEY]` limits them. `*` and `?` work as wildcards inside a term (`log*`, `te?t`), but Jira does not allow one as the first character. A term that starts with a dash needs a `--` first: `ticketlens search -- -test`; a leading `-` or `!` is sent as a plain character, so Jira does not read it as NOT. `--jql="..."` sends your own JQL to Jira exactly as written — nested OR/AND groups and `ORDER BY` included — and cannot be combined with terms or `--project`. It shows at most 25 tickets and says when more match; a query Jira rejects shows Jira's own error. One Jira site per call: `--profile=NAME` picks it. The `ticket_search` MCP tool takes `jql`, or `terms` plus optional `projects`.
 
 `ticketlens link SOURCE-KEY TARGET-KEY` links two tickets — direction matters: SOURCE "types" TARGET (e.g. `link A B --type=Duplicate` means A duplicates B, not the other way around). With just the two keys it lists the tracker's current valid link types without changing anything — always fetched live for Jira, since link type names are per-instance configurable there. GitHub is different from Jira/Linear: it has no generic link relationship, so linking on a GitHub-tracked ticket *closes SOURCE as a duplicate of TARGET* — a state change, not just a relationship add — and prints an explicit warning immediately before that happens, on top of the same `--confirm` gate.
 
@@ -904,6 +905,7 @@ ticketlens duplicates CNV1-2                                # Find likely duplic
 ticketlens duplicates CNV1-2 --threshold=0.5                # Tighten the match threshold [Pro]
 ticketlens search xss --project=CNV1                          # Search Jira by plain terms, max 25 results [Jira only]
 ticketlens search --jql='project = CNV1 AND text ~ "sync" ORDER BY created DESC'  # Run your own JQL as written [Jira only]
+ticketlens search 'sync*' -- -test                           # Wildcard term plus a dash-leading term [Jira only]
 ticketlens link CNV1-2 CNV1-3                               # List valid link types (read-only) [Pro]
 ticketlens link CNV1-2 CNV1-3 --type="Duplicate" --confirm  # Execute the link [Pro]
 ticketlens update CNV1-2 --title="New title"                # Update title/description/labels/priority [Pro]
