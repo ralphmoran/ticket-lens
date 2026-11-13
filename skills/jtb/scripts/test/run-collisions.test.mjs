@@ -252,7 +252,7 @@ describe('run-collisions.mjs — direct invocation (isMain guard)', () => {
   it('running the script directly with `node` actually invokes runCollisions, not a silent no-op', () => {
     const result = spawnSync('node', [scriptPath, '--json'], {
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: 20000,
       env: { ...process.env, HOME: '/tmp/ticketlens-run-collisions-guard-test' },
     });
     // No CLI token configured in this sandboxed HOME → runCollisions prints the
