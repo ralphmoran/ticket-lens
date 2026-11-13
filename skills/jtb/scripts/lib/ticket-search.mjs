@@ -18,7 +18,7 @@ const SEARCH_FIELDS = 'summary,status,assignee,issuetype,updated';
 const PROJECT_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,49}$/;
 const USAGE = [
   'Usage: ticketlens search TERM... [--project=KEY[,KEY]] [--profile=NAME]',
-  '       ticketlens search --jql="project = PROJ AND text ~ \\"login\\" ORDER BY created DESC" [--profile=NAME]\n',
+  '       ticketlens search --jql="project = PROJ AND text ~ \\"login\\" ORDER BY created DESC" [--profile=NAME]',
 ].join('\n');
 
 /** Terms are quoted and escaped; project keys are validated by the caller. */
@@ -50,8 +50,7 @@ function parseArgv(cmdArgs) {
 function validateQuery({ jql, terms, projects }) {
   if (jql !== undefined && terms.length) return 'Use either plain terms or --jql, not both.';
   if (jql !== undefined && projects.length) return 'Put the project in the JQL itself; --project only scopes plain terms.';
-  if (jql === undefined && terms.length === 0) return USAGE.trimEnd();
-  if (jql !== undefined && jql.trim() === '') return USAGE.trimEnd();
+  if (jql === undefined && terms.length === 0) return USAGE;
   const badKey = projects.find(p => !PROJECT_KEY_PATTERN.test(p));
   if (badKey) return `Not a valid project key: "${singleLine(badKey, 60)}".`;
   return null;

@@ -10,6 +10,8 @@ import { writeLicense } from '../lib/license.mjs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const binPath = join(__dirname, '..', '..', '..', '..', 'bin', 'ticketlens.mjs');
 const pkgPath = join(__dirname, '..', '..', '..', '..', 'package.json');
+// A killed child reports status null ("got null"); node startup under a busy parallel suite can exceed 5s.
+const SPAWN_TIMEOUT_MS = 20000;
 
 describe('bin/ticketlens.mjs', () => {
   it('file exists', () => {
@@ -23,21 +25,21 @@ describe('bin/ticketlens.mjs', () => {
   });
 
   it('--help exits 0 and mentions ticketlens', () => {
-    const result = spawnSync('node', [binPath, '--help'], { encoding: 'utf8', timeout: 5000 });
+    const result = spawnSync('node', [binPath, '--help'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS });
     assert.equal(result.status, 0, `Expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
     const output = result.stdout + result.stderr;
     assert.ok(output.includes('ticketlens'), 'help output must mention ticketlens');
   });
 
   it('--version exits 0 and prints version number', () => {
-    const result = spawnSync('node', [binPath, '--version'], { encoding: 'utf8', timeout: 5000 });
+    const result = spawnSync('node', [binPath, '--version'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS });
     assert.equal(result.status, 0, `Expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
     const output = result.stdout + result.stderr;
     assert.ok(/\d+\.\d+\.\d+/.test(output), 'version output must include a version number');
   });
 
   it('--version shows the wordmark banner with tagline (non-TTY spawn: plain fallback line)', () => {
-    const result = spawnSync('node', [binPath, '--version'], { encoding: 'utf8', timeout: 5000 });
+    const result = spawnSync('node', [binPath, '--version'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS });
     assert.equal(result.status, 0);
     const output = result.stdout + result.stderr;
     assert.ok(output.includes('TicketLens'), 'must include the TicketLens wordmark');
@@ -49,7 +51,7 @@ describe('bin/ticketlens.mjs', () => {
     // Passing a key with no connection configured should fail gracefully, not crash
     const result = spawnSync('node', [binPath, 'PROJ-999'], {
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: SPAWN_TIMEOUT_MS,
       env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
     });
     // Should exit non-zero (no connection) but not throw an unhandled exception
@@ -61,7 +63,7 @@ describe('bin/ticketlens.mjs', () => {
   it('ls command prints profile list (alias for profiles)', () => {
     const result = spawnSync('node', [binPath, 'ls'], {
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: SPAWN_TIMEOUT_MS,
       env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
     });
     const combined = result.stdout + result.stderr;
@@ -78,7 +80,7 @@ describe('bin/ticketlens.mjs', () => {
   it('--help never launches an interactive wizard even when setup is fresh', () => {
     const result = spawnSync('node', [binPath, '--help'], {
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: SPAWN_TIMEOUT_MS,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
     });
@@ -91,7 +93,7 @@ describe('bin/ticketlens.mjs', () => {
   it('bare invocation on non-TTY prints help regardless of setup state', () => {
     const result = spawnSync('node', [binPath], {
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: SPAWN_TIMEOUT_MS,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
     });
@@ -103,7 +105,7 @@ describe('bin/ticketlens.mjs', () => {
   it('bare invocation with CI=true never launches an interactive wizard', () => {
     const result = spawnSync('node', [binPath], {
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: SPAWN_TIMEOUT_MS,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, HOME: '/tmp/ticketlens-no-home', CI: 'true' },
     });
@@ -115,7 +117,7 @@ describe('bin/ticketlens.mjs', () => {
   it('--no-input bare invocation prints help, not a fetch attempt on a literal "--no-input" ticket key', () => {
     const result = spawnSync('node', [binPath, '--no-input'], {
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: SPAWN_TIMEOUT_MS,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
     });
@@ -127,7 +129,7 @@ describe('bin/ticketlens.mjs', () => {
   it('config --no-input on fresh state falls through to the unchanged dead-end error', () => {
     const result = spawnSync('node', [binPath, 'config', '--no-input'], {
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: SPAWN_TIMEOUT_MS,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
     });
@@ -138,7 +140,7 @@ describe('bin/ticketlens.mjs', () => {
   it('delete without --yes in non-TTY exits 1 with explanation', () => {
     const result = spawnSync('node', [binPath, 'delete', 'nonexistent-profile'], {
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: SPAWN_TIMEOUT_MS,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
     });
@@ -153,7 +155,7 @@ describe('bin/ticketlens.mjs', () => {
   it('profiles set-team without a profile name prints usage and exits 1', () => {
     const result = spawnSync('node', [binPath, 'profiles', 'set-team'], {
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: SPAWN_TIMEOUT_MS,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
     });
@@ -167,7 +169,7 @@ describe('bin/ticketlens.mjs', () => {
   it('profiles set-team with a profile name but no team name reaches the command (no crash) — reports the profile is unknown when none is configured', () => {
     const result = spawnSync('node', [binPath, 'profiles', 'set-team', 'advent'], {
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: SPAWN_TIMEOUT_MS,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
     });
@@ -181,7 +183,7 @@ describe('bin/ticketlens.mjs', () => {
   it('delete --yes with nonexistent profile exits 1', () => {
     const result = spawnSync('node', [binPath, 'delete', 'nonexistent-profile', '--yes'], {
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: SPAWN_TIMEOUT_MS,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
     });
@@ -251,7 +253,7 @@ describe('bin/ticketlens.mjs', () => {
     it(`"ticketlens ${cmd} ${flag}" exits 0 and prints help`, () => {
       const result = spawnSync('node', [binPath, cmd, flag], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
       });
@@ -269,7 +271,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'note', 'add', '--title=x', '--ticket=PROD-1'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         input: 'Body text.',
         env: { ...process.env, HOME: freshHome, CI: 'true' },
       });
@@ -285,7 +287,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'recall', 'backoff'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         env: { ...process.env, HOME: freshHome, CI: 'true' },
       });
       assert.notEqual(result.status, 0);
@@ -298,7 +300,7 @@ describe('bin/ticketlens.mjs', () => {
   it('"ticketlens mcp" starts the stdio server and exits cleanly when stdin closes, with an initialize handshake answered on stdout', () => {
     const result = spawnSync('node', [binPath, 'mcp'], {
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: SPAWN_TIMEOUT_MS,
       input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) + '\n',
       env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
     });
@@ -318,7 +320,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'doctor', '--format=json'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: freshCwd,
         env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
@@ -386,7 +388,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'cloud-keys', 'list'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         env: { ...process.env, HOME: freshHome, CI: 'true' },
       });
       assert.doesNotMatch(result.stderr + result.stdout, /not a valid ticket key/);
@@ -401,7 +403,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'comment', 'PROD-1', '--body=hi'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         env: { ...process.env, HOME: freshHome, CI: 'true' },
       });
       assert.notEqual(result.status, 0);
@@ -416,7 +418,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'transition', 'PROD-1'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         env: { ...process.env, HOME: freshHome, CI: 'true' },
       });
       assert.notEqual(result.status, 0);
@@ -431,7 +433,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'transition', 'PROD-1', '--target=Done'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         env: { ...process.env, HOME: freshHome, CI: 'true' },
       });
       assert.notEqual(result.status, 0);
@@ -446,7 +448,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'assign', 'PROD-1', '--to=me'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         env: { ...process.env, HOME: freshHome, CI: 'true' },
       });
       assert.notEqual(result.status, 0);
@@ -461,7 +463,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'duplicates', 'PROD-1'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         env: { ...process.env, HOME: freshHome, CI: 'true' },
       });
       assert.notEqual(result.status, 0);
@@ -476,7 +478,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'link', 'PROD-1', 'PROD-2'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         env: { ...process.env, HOME: freshHome, CI: 'true' },
       });
       assert.notEqual(result.status, 0);
@@ -491,7 +493,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'link', 'PROD-1', 'PROD-2', '--type=duplicate'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         env: { ...process.env, HOME: freshHome, CI: 'true' },
       });
       assert.notEqual(result.status, 0);
@@ -506,7 +508,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'update', 'PROD-1', '--title=New title'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         env: { ...process.env, HOME: freshHome, CI: 'true' },
       });
       assert.notEqual(result.status, 0);
@@ -521,7 +523,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'history', '--help'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         env: { ...process.env, HOME: freshHome, CI: 'true' },
       });
       assert.equal(result.status, 0, `Expected exit 0 for --help regardless of license, got ${result.status}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
@@ -538,7 +540,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'create', '--project=PROD', '--type=Task', '--summary=New'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         env: { ...process.env, HOME: freshHome, CI: 'true' },
       });
       assert.notEqual(result.status, 0);
@@ -553,7 +555,7 @@ describe('bin/ticketlens.mjs', () => {
     try {
       const result = spawnSync('node', [binPath, 'mcp', 'install', '--dry-run'], {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: SPAWN_TIMEOUT_MS,
         cwd: freshCwd,
         env: { ...process.env, HOME: '/tmp/ticketlens-no-home' },
       });
@@ -584,7 +586,7 @@ describe('bin/ticketlens.mjs', () => {
         }, join(freshHome, '.ticketlens'));
         const result = spawnSync('node', [binPath, 'license'], {
           encoding: 'utf8',
-          timeout: 5000,
+          timeout: SPAWN_TIMEOUT_MS,
           env: { ...process.env, HOME: freshHome, CI: 'true' },
         });
         assert.equal(result.status, 0);
@@ -606,7 +608,7 @@ describe('bin/ticketlens.mjs', () => {
         }, join(freshHome, '.ticketlens'));
         const result = spawnSync('node', [binPath, 'license'], {
           encoding: 'utf8',
-          timeout: 5000,
+          timeout: SPAWN_TIMEOUT_MS,
           env: { ...process.env, HOME: freshHome, CI: 'true' },
         });
         assert.equal(result.status, 0);
@@ -628,7 +630,7 @@ describe('bin/ticketlens.mjs', () => {
         }, join(freshHome, '.ticketlens'));
         const result = spawnSync('node', [binPath, 'license'], {
           encoding: 'utf8',
-          timeout: 5000,
+          timeout: SPAWN_TIMEOUT_MS,
           env: { ...process.env, HOME: freshHome, CI: 'true' },
         });
         assert.equal(result.status, 0);
@@ -644,7 +646,7 @@ describe('bin/ticketlens.mjs', () => {
       try {
         const result = spawnSync('node', [binPath, 'license'], {
           encoding: 'utf8',
-          timeout: 5000,
+          timeout: SPAWN_TIMEOUT_MS,
           env: { ...process.env, HOME: freshHome, CI: 'true' },
         });
         assert.equal(result.status, 0);
